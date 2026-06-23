@@ -19,7 +19,7 @@ These rules apply to all work in this repository.
 ## ExpenseFlow Domain Vocabulary
 
 - The primary case is `Expense Report`.
-- Expense Report stages are `Draft`, `Submitted`, `Manager Review`, `Finance Review`, `Approved`, and `Reimbursed`.
+- Expense Report stages are `Drafted`, `Submitted`, `Manager Approval`, `AP Review`, `Paid`, and `Reconciled`.
 - The supported roles are `Finance Admin`, `Department Manager`, and `Employee`.
 - Generated code, tests, routes, models, and documentation should use these exact domain terms unless an existing file defines a narrower local convention.
 
