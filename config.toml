@@ -1,0 +1,8 @@
+# Ensure complex thought while staying conscious of token usage. Dev can set to high if needed.
+model_reasoning_effort = "medium"
+
+# Will be developing/changing files. Balances need for file developemnt and machine safety (can't access files outside of workspace)
+sandbox_mode           = "workspace-write"
+
+# Reduces friction during development while maintaining security against unsafe actions (file changes, bash commands, network calls, etc.)
+approval_policy        = "on-request"
