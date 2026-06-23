@@ -4,6 +4,7 @@ These rules apply to all work in this repository.
 
 ## Data Handling
 
+- Follow the repository data classification posture in [docs/data-classification.md](docs/data-classification.md).
 - Never place controlled data, production data, customer data, credentials, tokens, API keys, secrets, or private identifiers in prompts, generated code, logs, tests, fixtures, documentation, or output.
 - When realistic data is needed, substitute a synthetic fixture that cannot identify a real person, organization, account, transaction, vendor, card, or system secret.
 - If a request includes controlled data or secrets, refuse to repeat or transform those values and replace them with a clearly synthetic example.

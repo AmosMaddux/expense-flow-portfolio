@@ -29,6 +29,7 @@ From a clean clone, a new engineer should reach a governed Codex session with th
 
    ```sh
    test -f AGENTS.md
+   test -f docs/data-classification.md
    test -f config.toml
    ```
 
@@ -36,26 +37,40 @@ From a clean clone, a new engineer should reach a governed Codex session with th
 
    Read [AGENTS.md](AGENTS.md). It defines the allowed stacks, forbidden stacks, data-handling rules, ExpenseFlow vocabulary, and forbidden product scope.
 
-4. Review the local Codex configuration.
+4. Review the data classification posture.
+
+   Read [docs/data-classification.md](docs/data-classification.md). It defines the PUBLIC, CUI, and SBU data buckets; tenant isolation expectations; least-privilege expectations; and payment-data logging restrictions.
+
+5. Review the local Codex configuration.
 
    Read [config.toml](config.toml). It defines the local Codex model reasoning effort, sandbox mode, and approval policy for this repository.
 
-5. Start Codex from the repository root so it can load the local contract and configuration.
+6. Start Codex from the repository root so it can load the local contract, data posture, and configuration.
 
    ```sh
    codex
    ```
 
-6. In the Codex session, verify the working directory is this repository and that requests follow the contract.
+7. In the Codex session, verify the working directory is this repository and that requests follow the contract.
 
    ```sh
    pwd
    git status --short
    ```
 
-7. Use only synthetic data in prompts, examples, tests, fixtures, logs, and documentation. Do not paste real customer data, production data, payment data, bank-feed transaction data, credentials, tokens, API keys, or private identifiers into Codex.
+8. Use only synthetic data in prompts, examples, tests, fixtures, logs, and documentation. Do not paste real customer data, production data, payment data, bank-feed transaction data, credentials, tokens, API keys, or private identifiers into Codex.
+
+## Posture and ADR Conventions
+
+[docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.
+
+Future architecture decisions should be recorded as ADRs under `docs/adr/`. Name ADR files with the pattern `NNNN-short-title.md`, such as `0001-tenant-isolation.md`.
+
+ADRs must use synthetic examples only and follow [AGENTS.md](AGENTS.md) plus the data classification posture.
 
 ## Governance Links
 
 - [Agent contract](AGENTS.md)
+- [Data classification posture](docs/data-classification.md)
 - [Codex configuration](config.toml)
+- ADR convention: record future decisions under `docs/adr/` using `NNNN-short-title.md`
