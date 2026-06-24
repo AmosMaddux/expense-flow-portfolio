@@ -83,6 +83,18 @@ From a clean clone, a new engineer should reach a governed Codex session with th
 
 8. Use only synthetic data in prompts, examples, tests, fixtures, logs, and documentation. Do not paste real customer data, production data, payment data, bank-feed transaction data, credentials, tokens, API keys, or private identifiers into Codex.
 
+## Python Setup
+
+Setup virtual environment with
+```sh
+uv sync
+```
+
+Use ``uv run [command]`` to run commands using the python virtual environment. Ex:
+```sh
+uv run backend/python/main.py
+```
+
 ## Posture and ADR Conventions
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.
