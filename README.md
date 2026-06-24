@@ -1,6 +1,27 @@
 # ExpenseFlow
 
-ExpenseFlow is an expense tracking repository governed by the local agent contract and Codex configuration.
+ExpenseFlow is a multi-tenant expense and reimbursement workflow app for corporate finance teams. It manages each `Expense Report` as a case through employee submission, manager approval, AP review, payment stub, and reconciliation, producing clean GL-ready records with an immutable audit trail.
+
+## Core Workflow
+
+Expense Reports move through six stages: `Drafted`, `Submitted`, `Manager Approval`, `AP Review`, `Paid`, and `Reconciled`.
+
+The current stage is the source of truth for the case condition. There is no separate status field. Rejections at `Manager Approval` or `AP Review` return the case to `Drafted`, and `Reconciled` is the terminal stage.
+
+## Roles
+
+ExpenseFlow separates internal finance workspaces from the external employee portal:
+
+- `Finance Admin`: oversees workspace settings, users, GL mapping, policy text, case auditability, and second-pair review.
+- `Department Manager`: approves or rejects line items, clears flags, verifies AP coding, marks deductibility, issues the payment stub, and reconciles the case.
+- `Employee`: submits expenses or contractor-style invoices, uploads receipts, logs mileage, tracks their own cases, disputes, and comments.
+- `Admin`: platform operator role for the ExpenseFlow vendor, with no tenant impersonation in the MVP.
+
+## MVP Boundaries
+
+The MVP includes multi-tenant isolation, an immutable audit trail, email and password authentication with MFA, a hard-coded flag threshold such as line items over `$500`, manual deductibility, and a payment stub.
+
+The MVP does not include SSO, SAML, OIDC, magic links, tenant impersonation, anomaly detection, automated deductibility classification, a general ledger system, SLA timers, escalation routing, or a separate overdue queue.
 
 ## Agent Contract
 
@@ -10,9 +31,11 @@ The contract covers:
 
 - Data handling rules for controlled data, production data, secrets, and synthetic fixtures.
 - Only allowed application stacks: TypeScript with Express and Python with FastAPI.
+- Required versions for pinned technologies: Python 3.13, React 18, and pydantic v2.
+- Product workflow, case model, roles, tenant boundaries, authorization expectations, and MVP limits.
 - Forbidden technologies outside those stacks, including Java, Spring, JPA, and MongoDB.
-- Required ExpenseFlow vocabulary, including `Expense Report`, supported stages, and supported roles.
-- Forbidden product scope, including payroll, tax filing, procurement, inventory, travel booking, banking, card issuing, and general ledger systems.
+- Git branch, commit, push, and CI/CD governance.
+- Forbidden product scope, including payroll, tax filing, procurement, inventory, travel booking, banking, card issuing, general ledger systems, SSO, tenant impersonation, anomaly detection, and SLA automation.
 
 ## Clean-Clone Setup
 
@@ -35,7 +58,7 @@ From a clean clone, a new engineer should reach a governed Codex session with th
 
 3. Review the agent contract before asking Codex to change files.
 
-   Read [AGENTS.md](AGENTS.md). It defines the allowed stacks, forbidden stacks, data-handling rules, ExpenseFlow vocabulary, and forbidden product scope.
+   Read [AGENTS.md](AGENTS.md). It defines the allowed stacks, required technology versions, forbidden stacks, data-handling rules, ExpenseFlow workflow and roles, Git governance, and forbidden product scope.
 
 4. Review the data classification posture.
 
