@@ -22,6 +22,10 @@ class ExpenseLineItem(BaseModel):
     @field_validator("currency", mode="before")
     @classmethod
     def validate_currency_format(cls, value: str) -> str:
-        if not value.isupper() or len(value) != 3:
+        if not isinstance(value, str):
             raise MalformedCurrencyError(value)
+
+        if len(value) != 3 or not value.isupper() or not value.isalpha():
+            raise MalformedCurrencyError(value)
+
         return value

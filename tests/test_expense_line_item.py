@@ -20,7 +20,7 @@ def test_expense_line_item_rejects_negative_amount() -> None:
         ExpenseLineItem(amount="-1.00", currency="USD")
 
 
-@pytest.mark.parametrize("currency", ["usd", "US"])
+@pytest.mark.parametrize("currency", ["usd", "US", "US3"])
 def test_expense_line_item_rejects_malformed_currency(currency: str) -> None:
     with pytest.raises(
         ValidationError,

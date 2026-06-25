@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 
 class NegativeAmountError(ValueError):
@@ -7,7 +8,7 @@ class NegativeAmountError(ValueError):
 
 
 class MalformedCurrencyError(ValueError):
-    def __init__(self, currency: str) -> None:
+    def __init__(self, currency: Any) -> None:
         super().__init__(
-            f"Currency must be exactly 3 uppercase letters. Got: {currency}"
+            f"Currency must be exactly 3 uppercase letters. Got: {str(currency)}"
         )
