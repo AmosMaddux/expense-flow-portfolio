@@ -24,7 +24,7 @@ Use this checklist for every pull request that changes ExpenseFlow code, tests, 
 
 - If the PR touches authentication, authorization, or tenant-scoping code, call out the exact tenant boundary that was verified.
 - If the PR touches case transitions, confirm the new path respects the Expense Report workflow and does not bypass stage gates.
-- If the PR adds or changes logging, confirm the output is safe for controlled data and synthetic examples only.
+- If the PR adds or changes logging or generated output, confirm it cannot expose controlled data, credentials, private identifiers, or real records; examples and fixtures must be clearly synthetic.
 
 ## Approval Standard
 
