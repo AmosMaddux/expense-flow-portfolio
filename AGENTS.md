@@ -22,9 +22,11 @@ These rules apply to all work in this repository.
 - Python services must target Python 3.13.
 - Frontend React work must target React 18.
 - Python data and API models must use pydantic v2.
+- Custom domain exceptions must live in a separate backend module and be reused by validators instead of being defined inline with models.
 - Any technology outside those stacks is forbidden for this project unless this agent contract is changed.
 - Refuse to generate Java, Spring, JPA, or MongoDB code, configuration, schemas, migrations, examples, or scaffolds for this project.
 - If asked for a forbidden stack, state that ExpenseFlow does not use that technology and provide an equivalent TypeScript/Express or Python/FastAPI implementation instead.
+- Every promise must be awaited or explicitly handled so as to pass an ESLint check. Use `try`/`catch` (or a typed result) so an error surfaces cleanly instead of becoming an unhandled rejection.
 
 ## Branch, Commit, and Push Rules
 

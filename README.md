@@ -85,14 +85,21 @@ From a clean clone, a new engineer should reach a governed Codex session with th
 
 ## Python Setup
 
-Setup virtual environment with
+Create the project virtual environment from the committed dependency files with:
 ```sh
 uv sync
 ```
 
-Use ``uv run [command]`` to run commands using the python virtual environment. Ex:
+This creates a local `.venv/` directory. The virtual environment itself is intentionally not committed because it is machine-specific; `pyproject.toml` and `uv.lock` are the shareable source of truth for other developers after push.
+
+Use ``uv run [command]`` to run commands using the Python virtual environment. Ex:
 ```sh
 uv run backend/python/main.py
+```
+
+Run tests with:
+```sh
+uv run pytest
 ```
 
 ## Posture and ADR Conventions
