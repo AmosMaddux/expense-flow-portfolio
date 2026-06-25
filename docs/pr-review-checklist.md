@@ -28,4 +28,4 @@ Use this checklist for every pull request that changes ExpenseFlow code, tests, 
 
 ## Approval Standard
 
-Do not approve the PR until every required check above is satisfied or a follow-up fix is explicitly tracked.
+Do not approve the PR until every required check above is satisfied. Track follow-up work only for non-blocking improvements that do not weaken tenant isolation, input validation, auditability, or controlled-data logging safeguards.
