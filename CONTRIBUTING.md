@@ -1,6 +1,6 @@
 # Contributing
 
-ExpenseFlow uses a protected main branch, a develop integration branch, and short-lived working branches with pull-request review for every change. These rules reflect the team Branch and CI/CD Pipeline Conventions. Keep changes small, focused, and easy to review.
+ExpenseFlow uses a protected main branch, a develop integration branch, and short-lived working branches with pull-request review for every change. These rules reflect the team branch and release conventions. Keep changes small, focused, and easy to review.
 
 ## Pull Requests
 
@@ -29,9 +29,9 @@ Use one commit per meaningful change. Do not combine unrelated changes in one co
 
 `main` is the production branch and contains the current stable version of the app.
 
-- Trigger: on merge.
-- Pipeline: full test suite, security scanning, production deployment with an approval gate, and smoke tests.
+- Required before merge: full test suite, security scanning, deployment approval, and smoke-test plan are complete.
 - Protection: requires PR approval, allows no direct commits, and accepts PRs only from `release/*` or `hotfix/*` branches.
+- Deployment: production deployment requires an approval gate and post-deploy smoke tests.
 - Cadence: review `develop` after every sprint to decide whether a merge to `release/*` and `main` is ready.
 
 Agents and engineers must not commit directly to `main` or push directly to `main`.
@@ -40,8 +40,7 @@ Agents and engineers must not commit directly to `main` or push directly to `mai
 
 `develop` is the development and staging branch and contains the most recent version of the app.
 
-- Trigger: on merge.
-- Pipeline: full test suite and code quality checks, including linting and at least 80% coverage.
+- Required before merge: full test suite and code quality checks pass, including linting and at least 80% coverage.
 - Protection: requires PR approval.
 
 ## Feature Branches
@@ -52,8 +51,7 @@ Agents and engineers must not commit directly to `main` or push directly to `mai
 - Merged to: `develop`.
 - Naming convention: `feature/<JIRA TICKET ID>`, such as `feature/SCRUM-18`.
 - Prerequisite: unit tests are written and passing locally before push.
-- Trigger: on push and PR creation.
-- Pipeline: full test suite and code quality checks, including linting and at least 80% coverage.
+- Required before merge: full test suite and code quality checks pass, including linting and at least 80% coverage.
 
 ## Release Branches
 
@@ -62,7 +60,7 @@ Agents and engineers must not commit directly to `main` or push directly to `mai
 - Branched from: `develop`.
 - Merged to: `develop` and `main`.
 - Naming convention: `release/<APP NAME>/v<VERSION_NUMBER>`, such as `release/expenseflow/v1.0.0`.
-- Pipeline: full test suite, security audit, QA testing window, and deployment to pre-production.
+- Required before merge: full test suite, security audit, QA testing window, and pre-production deployment are complete.
 
 ## Hotfix Branches
 
@@ -71,8 +69,8 @@ Agents and engineers must not commit directly to `main` or push directly to `mai
 - Branched from: `main` or the active `release/*` branch.
 - Merged to: `main` and `develop`.
 - Naming convention: `hotfix/<APP NAME>/v<VERSION_NUMBER>.<PATCH_NUMBER>` or `hotfix/<JIRA TICKET ID>`, such as `hotfix/expenseflow/v1.0.1` or `hotfix/SCRUM-18`.
-- Trigger: on push and PR creation.
-- Pipeline: targeted tests, regression suite, security check, and expedited deployment to staging.
+- Required before merge: targeted tests, regression suite, security check, and staging validation are complete.
+- Deployment: hotfixes may use an expedited deployment path to staging.
 - SLA: review within 6 hours of PR creation and make requested changes within 12 hours of review.
 - Escalation: if the 6-hour review window is missed, send a direct message reminder for PR review.
 
