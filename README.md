@@ -110,9 +110,14 @@ Future architecture decisions should be recorded as ADRs under `docs/adr/`. Name
 
 ADRs must use synthetic examples only and follow [AGENTS.md](AGENTS.md) plus the data classification posture.
 
+## PR Review Checklist
+
+Before merging any PR, reviewers must apply the baseline security checklist in [docs/pr-review-checklist.md](docs/pr-review-checklist.md). It covers tenant isolation, input validation, audit-trail impact, and prohibited plaintext logging for receipt and payment data.
+
 ## Governance Links
 
 - [Agent contract](AGENTS.md)
 - [Data classification posture](docs/data-classification.md)
+- [PR review checklist](docs/pr-review-checklist.md)
 - [Codex configuration](config.toml)
 - ADR convention: record future decisions under `docs/adr/` using `NNNN-short-title.md`
