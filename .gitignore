@@ -1,4 +1,16 @@
+# python
 .venv/
 __pycache__/
 .pytest_cache/
 *.py[cod]
+
+# node
+node_modules
+build/
+*.tsbuildinfo
+**/dist
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
