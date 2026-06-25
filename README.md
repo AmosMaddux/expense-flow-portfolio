@@ -112,11 +112,16 @@ ADRs must use synthetic examples only and follow [AGENTS.md](AGENTS.md) plus the
 
 ## PR Review Checklist
 
-Before merging any PR, reviewers must apply the baseline security checklist in [docs/pr-review-checklist.md](docs/pr-review-checklist.md). It covers tenant isolation, input validation, audit-trail impact, and prohibited plaintext logging for receipt and payment data.
+Before merging any PR, reviewers must apply the AI-augmented checklist in [docs/pr-review-checklist.md](docs/pr-review-checklist.md). It covers branch and PR conventions, ADR linkage, tenant isolation, authorization, workflow rules, input validation, audit-trail impact, and prohibited plaintext logging for receipt and payment data.
+
+## Contribution Workflow
+
+ExpenseFlow uses a protected `main`, a `develop` integration branch, and short-lived `feature/*`, `release/*`, and `hotfix/*` branches with pull-request review for every change. See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, CI/CD pipeline conventions, PR conventions, ADR requirements, and review expectations.
 
 ## Governance Links
 
 - [Agent contract](AGENTS.md)
+- [Contributing guide](CONTRIBUTING.md)
 - [Data classification posture](docs/data-classification.md)
 - [PR review checklist](docs/pr-review-checklist.md)
 - [Codex configuration](config.toml)
