@@ -13,6 +13,11 @@ def test_expense_line_item_accepts_non_negative_amount_and_currency() -> None:
     assert line_item.currency == "USD"
 
 
+def test_expense_line_item_flags_amounts_over_500_boundary() -> None:
+    assert ExpenseLineItem(amount="501.00", currency="USD").is_flagged is True
+    assert ExpenseLineItem(amount="500.00", currency="USD").is_flagged is False
+
+
 def test_expense_line_item_rejects_negative_amount() -> None:
     with pytest.raises(
         ValidationError, match="Expense amount cannot be negative. Got: -1.00"
