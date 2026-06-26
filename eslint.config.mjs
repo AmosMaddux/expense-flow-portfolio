@@ -14,13 +14,16 @@ export default [
         ],
     },
     js.configs.recommended,
-    ...tseslint.configs.recommended,
+    ...tseslint.configs.recommendedTypeChecked,
     {
         files: ["**/*.{js,mjs,cjs,ts}"],
         languageOptions: {
             globals: {
                 ...globals.node,
             },
+        },
+        rules: {
+            "@typescript-eslint/no-floating-promises": "error",    
         },
     },
     prettier,
