@@ -21,9 +21,22 @@ export default [
             globals: {
                 ...globals.node,
             },
+            parserOptions: {
+                projectService: true,
+            },
         },
         rules: {
-            "@typescript-eslint/no-floating-promises": "error",    
+            "@typescript-eslint/no-floating-promises": "error",
+        },
+    },
+    {
+        ...tseslint.configs.disableTypeChecked,
+        files: ["**/*.{js,mjs,cjs}"],
+        languageOptions: {
+            ...tseslint.configs.disableTypeChecked.languageOptions,
+            globals: {
+                ...globals.node,
+            },
         },
     },
     prettier,
