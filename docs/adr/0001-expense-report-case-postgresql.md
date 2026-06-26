@@ -1,8 +1,7 @@
 # 0001. Store Expense Report Case records in PostgreSQL
 
-## Date
-
-2026-06-26
+- Status: Proposed
+- Date: 2026-06-26
 
 ## Context
 
