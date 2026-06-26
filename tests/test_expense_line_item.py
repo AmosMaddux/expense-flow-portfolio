@@ -40,9 +40,10 @@ def test_flag_over_threshold_line_items_does_not_mutate_amounts() -> None:
     ]
     original_amounts = [line_item.amount for line_item in line_items]
 
-    flag_over_threshold_line_items(line_items)
+    flagged_line_items = flag_over_threshold_line_items(line_items)
 
     assert [line_item.amount for line_item in line_items] == original_amounts
+    assert [line_item.amount for line_item in flagged_line_items] == [Decimal("501.00")]
 
 
 def test_expense_line_item_rejects_negative_amount() -> None:
