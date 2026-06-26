@@ -1,13 +1,13 @@
 {
-  "name": "@expense-flow/core-case-service",
-  "version": "1.0.0",
-  "description": "",
-  "exports": "./index.ts",
-  "type": "module",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+    "name": "@expense-flow/core-case-service",
+    "version": "1.0.0",
+    "description": "",
+    "exports": "./index.ts",
+    "type": "module",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
 }

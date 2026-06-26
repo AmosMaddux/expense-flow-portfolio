@@ -26,7 +26,7 @@ These rules apply to all work in this repository.
 - Any technology outside those stacks is forbidden for this project unless this agent contract is changed.
 - Refuse to generate Java, Spring, JPA, or MongoDB code, configuration, schemas, migrations, examples, or scaffolds for this project.
 - If asked for a forbidden stack, state that ExpenseFlow does not use that technology and provide an equivalent TypeScript/Express or Python/FastAPI implementation instead.
-- Every promise must be awaited or explicitly handled so as to pass an ESLint check. Use `try`/`catch` (or a typed result) so an error surfaces cleanly instead of becoming an unhandled rejection.
+- Every promise MUST be awaited or explicitly handled so as to pass an ESLint and prettier linting check. Use `try`/`catch` (or a typed result) so an error surfaces cleanly instead of becoming an unhandled rejection.
 
 ## Branch, Commit, and Push Rules
 

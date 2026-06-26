@@ -1,5 +1,5 @@
-async function hello(): Promise<void> {
+function hello(): void {
     console.log("Hello World!");
 }
 
-await hello();
+hello();
