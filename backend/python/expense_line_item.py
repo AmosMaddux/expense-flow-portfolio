@@ -8,9 +8,16 @@ from backend.python.domain_exceptions import (
 )
 
 
+LINE_ITEM_FLAG_THRESHOLD = Decimal("500.00")
+
+
 class ExpenseLineItem(BaseModel):
     amount: Decimal
     currency: str = Field(..., min_length=3, max_length=3)
+
+    @property
+    def is_flagged(self) -> bool:
+        return self.amount > LINE_ITEM_FLAG_THRESHOLD
 
     @field_validator("amount")
     @classmethod
@@ -29,3 +36,9 @@ class ExpenseLineItem(BaseModel):
             raise MalformedCurrencyError(value)
 
         return value
+
+
+def flag_over_threshold_line_items(
+    line_items: list[ExpenseLineItem],
+) -> list[ExpenseLineItem]:
+    return [line_item for line_item in line_items if line_item.is_flagged]
