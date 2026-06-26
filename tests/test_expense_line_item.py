@@ -3,7 +3,10 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from backend.python.expense_line_item import ExpenseLineItem
+from backend.python.expense_line_item import (
+    ExpenseLineItem,
+    flag_over_threshold_line_items,
+)
 
 
 def test_expense_line_item_accepts_non_negative_amount_and_currency() -> None:
@@ -16,6 +19,31 @@ def test_expense_line_item_accepts_non_negative_amount_and_currency() -> None:
 def test_expense_line_item_flags_amounts_over_500_boundary() -> None:
     assert ExpenseLineItem(amount="501.00", currency="USD").is_flagged is True
     assert ExpenseLineItem(amount="500.00", currency="USD").is_flagged is False
+
+
+def test_flag_over_threshold_line_items_returns_one_flag_per_over_threshold_item() -> None:
+    line_items = [
+        ExpenseLineItem(amount="501.00", currency="USD"),
+        ExpenseLineItem(amount="500.00", currency="USD"),
+        ExpenseLineItem(amount="750.25", currency="USD"),
+    ]
+
+    flagged_line_items = flag_over_threshold_line_items(line_items)
+
+    assert flagged_line_items == [line_items[0], line_items[2]]
+
+
+def test_flag_over_threshold_line_items_does_not_mutate_amounts() -> None:
+    line_items = [
+        ExpenseLineItem(amount="501.00", currency="USD"),
+        ExpenseLineItem(amount="500.00", currency="USD"),
+    ]
+    original_amounts = [line_item.amount for line_item in line_items]
+
+    flagged_line_items = flag_over_threshold_line_items(line_items)
+
+    assert [line_item.amount for line_item in line_items] == original_amounts
+    assert [line_item.amount for line_item in flagged_line_items] == [Decimal("501.00")]
 
 
 def test_expense_line_item_rejects_negative_amount() -> None:
