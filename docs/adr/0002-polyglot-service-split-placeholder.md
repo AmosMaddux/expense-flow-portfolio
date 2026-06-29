@@ -24,3 +24,17 @@ Deferred to Sprint 2 design review. This record serves as an intentional placeho
 ## Consequences
 
 - **Traceability:** Linked directly from the storage architecture record to maintain a clear system timeline.
+
+### Positives (Pros)
+* **[Optimized Tooling/Ecosystem]:** Explain how separating boundaries lets you choose specialized languages or libraries optimized for that explicit context.
+* **[Granular Scalability]:** Explain how resource-heavy operations can be decoupled and scaled independently from light operational endpoints.
+* **[Isolated Fault Domains]:** Explain how separating these boundaries limits the runtime blast radius of a memory crash or a third-party outage.
+
+### Negatives (Cons)
+* **[Operational & Tooling Overhead]:** Detail the added friction of managing multiple package managers, code repositories, or linting configurations.
+* **[Network & Serialization Costs]:** Detail the serialization latency and network overhead introduced when moving from memory calls to network APIs.
+* **[Distributed Consistency Effort]:** Detail the engineering complexity required to maintain data integrity across split data stores or independent transaction lifecycles.
+
+## Alternatives Considered
+* **[Alternative Option A]:** Briefly explain option A, such as keeping a unified modular monolith.
+* **[Alternative Option B]:** Briefly explain option B, such as splitting services but forcing a single language/runtime engine.
