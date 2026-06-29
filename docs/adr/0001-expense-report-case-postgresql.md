@@ -2,6 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-06-26
+- Related: [ADR 0002: Polyglot Service Split Placeholder](./0002-polyglot-service-split-placeholder.md)
 
 ## Context
 
