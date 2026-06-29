@@ -11,7 +11,7 @@ As ExpenseFlow's domain capabilities expand, keeping all application responsibil
 This structural split targets the following distinct contexts:
 
 - **Core Case Context:** Handles central workflow states, compliance data boundaries, and case storage management.
-    - Ex: Saves the base record to the database with an initial state of STATUS = SUBMITTED.
+    - Ex: Saves the base record to the database with an initial current_stage of Submitted.
 - **Domain Compute Context:** Handles high-throughput processing, validation calculations, and line-item matrix computation.
     - Ex: Evaluates conditional threshold logic: if amount_usd > 500.00, trigger a data flag.
 - **Identity Context:** Handles tenant isolation, token handling, and authorization rules.
