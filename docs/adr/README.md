@@ -9,3 +9,4 @@ ADRs must use only synthetic examples and must not include customer data, tenant
 ## Records
 
 - [0001. Store Expense Report Case records in PostgreSQL](0001-expense-report-case-postgresql.md)
+- [0002. Polyglot Service Split Placeholder](0002-polyglot-service-split-placeholder.md)
