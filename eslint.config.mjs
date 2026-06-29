@@ -22,7 +22,11 @@ export default [
                 ...globals.node,
             },
             parserOptions: {
-                projectService: true,
+                projectService: {
+                    allowDefaultProject: [
+                        "backend/core-case-service/drizzle.config.ts",
+                    ],
+                },
             },
         },
         rules: {
