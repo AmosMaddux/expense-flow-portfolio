@@ -124,5 +124,6 @@ ExpenseFlow uses a protected `main`, a `develop` integration branch, and short-l
 - [Contributing guide](CONTRIBUTING.md)
 - [Data classification posture](docs/data-classification.md)
 - [PR review checklist](docs/pr-review-checklist.md)
+- [ADR 0001: Store Expense Report Case records in PostgreSQL](docs/adr/0001-expense-report-case-postgresql.md)
 - [Codex configuration](config.toml)
 - ADR convention: record future decisions under `docs/adr/` using `NNNN-short-title.md`
