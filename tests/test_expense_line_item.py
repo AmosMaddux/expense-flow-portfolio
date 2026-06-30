@@ -10,22 +10,22 @@ from backend.python.expense_line_item import (
 
 
 def test_expense_line_item_accepts_non_negative_amount_and_currency() -> None:
-    line_item = ExpenseLineItem(amount="42.50", currency="USD")
+    line_item = ExpenseLineItem(amount=Decimal("42.50"), currency="USD")
 
     assert line_item.amount == Decimal("42.50")
     assert line_item.currency == "USD"
 
 
 def test_expense_line_item_flags_amounts_over_500_boundary() -> None:
-    assert ExpenseLineItem(amount="501.00", currency="USD").is_flagged is True
-    assert ExpenseLineItem(amount="500.00", currency="USD").is_flagged is False
+    assert ExpenseLineItem(amount=Decimal("501.00"), currency="USD").is_flagged is True
+    assert ExpenseLineItem(amount=Decimal("500.00"), currency="USD").is_flagged is False
 
 
 def test_flag_over_threshold_line_items_returns_one_flag_per_over_threshold_item() -> None:
     line_items = [
-        ExpenseLineItem(amount="501.00", currency="USD"),
-        ExpenseLineItem(amount="500.00", currency="USD"),
-        ExpenseLineItem(amount="750.25", currency="USD"),
+        ExpenseLineItem(amount=Decimal("501.00"), currency="USD"),
+        ExpenseLineItem(amount=Decimal("500.00"), currency="USD"),
+        ExpenseLineItem(amount=Decimal("750.25"), currency="USD"),
     ]
 
     flagged_line_items = flag_over_threshold_line_items(line_items)
@@ -35,8 +35,8 @@ def test_flag_over_threshold_line_items_returns_one_flag_per_over_threshold_item
 
 def test_flag_over_threshold_line_items_does_not_mutate_amounts() -> None:
     line_items = [
-        ExpenseLineItem(amount="501.00", currency="USD"),
-        ExpenseLineItem(amount="500.00", currency="USD"),
+        ExpenseLineItem(amount=Decimal("501.00"), currency="USD"),
+        ExpenseLineItem(amount=Decimal("500.00"), currency="USD"),
     ]
     original_amounts = [line_item.amount for line_item in line_items]
 
@@ -50,7 +50,7 @@ def test_expense_line_item_rejects_negative_amount() -> None:
     with pytest.raises(
         ValidationError, match="Expense amount cannot be negative. Got: -1.00"
     ):
-        ExpenseLineItem(amount="-1.00", currency="USD")
+        ExpenseLineItem(amount=Decimal("-1.00"), currency="USD")
 
 
 @pytest.mark.parametrize("currency", ["usd", "US", "US3"])
@@ -59,4 +59,4 @@ def test_expense_line_item_rejects_malformed_currency(currency: str) -> None:
         ValidationError,
         match=f"Currency must be exactly 3 uppercase letters. Got: {currency}",
     ):
-        ExpenseLineItem(amount="42.50", currency=currency)
+        ExpenseLineItem(amount=Decimal("42.50"), currency=currency)
