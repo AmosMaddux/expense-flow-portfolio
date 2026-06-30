@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.138.0",
     "httpx>=0.28.1",
     "pydantic>=2",
+    "pytest-cov>=7.1.0",
     "uvicorn>=0.49.0",
 ]
 
@@ -22,6 +23,12 @@ dev = [
 testpaths = ["./tests"]
 pythonpath = ["."]
 addopts = "-q"
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
 
 [tool.mypy]
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
