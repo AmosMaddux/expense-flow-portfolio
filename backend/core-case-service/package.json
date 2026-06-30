@@ -2,7 +2,7 @@
     "name": "@expense-flow/core-case-service",
     "version": "1.0.0",
     "description": "",
-    "exports": "./index.ts",
+    "exports": "./src/index.ts",
     "type": "module",
     "scripts": {
         "build": "tsc --build",
