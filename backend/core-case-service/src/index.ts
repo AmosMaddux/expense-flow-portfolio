@@ -1,5 +1,13 @@
-function hello(): void {
-    console.log("Hello World!");
-}
+export type ReadExpenseReportSummary = () => Promise<string>;
 
-hello();
+export async function loadExpenseReportSummary(
+    readExpenseReportSummary: ReadExpenseReportSummary,
+): Promise<string> {
+    try {
+        return await readExpenseReportSummary();
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "unknown error";
+
+        throw new Error(`Unable to load Expense Report summary: ${message}`);
+    }
+}
