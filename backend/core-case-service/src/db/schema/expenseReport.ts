@@ -4,6 +4,7 @@ import {
     check,
     date,
     index,
+    numeric,
     pgTable,
     text,
     timestamp,
@@ -73,3 +74,33 @@ export const expenseReport = pgTable(
 
 export type ExpenseReport = InferSelectModel<typeof expenseReport>;
 export type NewExpenseReport = InferInsertModel<typeof expenseReport>;
+
+export const lineItem = pgTable(
+    "line_item",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        merchant: text("merchant").notNull(),
+        amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+        currency: text("currency").notNull(),
+        category: text("category").notNull(),
+        expenseReportId: uuid("expense_report_id")
+            .notNull()
+            .references(() => expenseReport.id),
+        tenantId: uuid("tenant_id").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        index("line_item_tenant_expense_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+    ],
+);
+
+export type LineItem = InferSelectModel<typeof lineItem>;
+export type NewLineItem = InferInsertModel<typeof lineItem>;
