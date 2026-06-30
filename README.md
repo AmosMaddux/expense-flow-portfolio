@@ -107,6 +107,11 @@ Run tests with:
 uv run pytest
 ```
 
+Utility function to run linter, typing, and test checks:
+```sh
+make
+```
+
 ## Posture and ADR Conventions
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.
