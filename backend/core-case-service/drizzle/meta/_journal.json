@@ -8,6 +8,20 @@
             "when": 1782827066662,
             "tag": "0000_strange_tyger_tiger",
             "breakpoints": true
+        },
+        {
+            "idx": 1,
+            "version": "7",
+            "when": 1782849962219,
+            "tag": "0001_parallel_doctor_faustus",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1782916190498,
+            "tag": "0002_moaning_wither",
+            "breakpoints": true
         }
     ]
 }
