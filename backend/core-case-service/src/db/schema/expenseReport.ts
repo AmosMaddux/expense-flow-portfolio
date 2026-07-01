@@ -3,10 +3,14 @@ import {
     boolean,
     check,
     date,
+    foreignKey,
     index,
+    jsonb,
+    numeric,
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
     uuid,
 } from "drizzle-orm/pg-core";
 
@@ -68,8 +72,75 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.priority,
         ),
+        uniqueIndex("expense_report_tenant_id_id_uidx").on(
+            table.tenantId,
+            table.id,
+        ),
+    ],
+);
+
+export const receiptMetadata = pgTable(
+    "receipt_metadata",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        merchant: text("merchant").notNull(),
+        receiptDate: date("receipt_date").notNull(),
+        amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+        blobReference: jsonb("blob_reference").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        foreignKey({
+            name: "receipt_metadata_expense_report_tenant_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("receipt_metadata_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+    ],
+);
+
+export const mileageEntry = pgTable(
+    "mileage_entry",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        route: text("route").notNull(),
+        distance: numeric("distance", { precision: 8, scale: 2 }).notNull(),
+        mileageDate: date("mileage_date").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        foreignKey({
+            name: "mileage_entry_expense_report_tenant_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("mileage_entry_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
     ],
 );
 
 export type ExpenseReport = InferSelectModel<typeof expenseReport>;
 export type NewExpenseReport = InferInsertModel<typeof expenseReport>;
+export type ReceiptMetadata = InferSelectModel<typeof receiptMetadata>;
+export type NewReceiptMetadata = InferInsertModel<typeof receiptMetadata>;
+export type MileageEntry = InferSelectModel<typeof mileageEntry>;
+export type NewMileageEntry = InferInsertModel<typeof mileageEntry>;
