@@ -2,20 +2,21 @@
     "name": "@expense-flow/core-case-service",
     "version": "1.0.0",
     "description": "",
-    "exports": "./src/index.ts",
+    "exports": "./index.ts",
     "type": "module",
     "scripts": {
         "build": "tsc --build",
-        "test": "npm run build --workspaces=false && node --test \"dist/**/*.test.js\""
+        "test": "npm run build --workspaces=false && node --test \"dist/db/**/*.test.js\" && vitest run src/index.test.ts"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
     "dependencies": {
         "drizzle-orm": "^0.45.2"
     },
     "devDependencies": {
-        "@types/node": "^26.0.1",
-        "drizzle-kit": "^0.31.10"
-    }
+        "vitest": "^3.2.4",
+        "drizzle-kit": "^0.31.10",
+        "@types/node": "^26.0.1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
 }
