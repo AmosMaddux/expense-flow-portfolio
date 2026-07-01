@@ -6,8 +6,11 @@ export async function loadExpenseReportSummary(
     try {
         return await readExpenseReportSummary();
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : "unknown error";
+        const message =
+            error instanceof Error ? error.message : "unknown error";
 
-        throw new Error(`Unable to load Expense Report summary: ${message}`);
+        throw new Error(`Unable to load Expense Report summary: ${message}`, {
+            cause: error,
+        });
     }
 }
