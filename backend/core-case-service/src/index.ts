@@ -1,5 +1,11 @@
+/**
+ * Reads the current Expense Report summary from the backing case store.
+ */
 export type ReadExpenseReportSummary = () => Promise<string>;
 
+/**
+ * Loads an Expense Report summary while preserving the original I/O failure as the cause.
+ */
 export async function loadExpenseReportSummary(
     readExpenseReportSummary: ReadExpenseReportSummary,
 ): Promise<string> {

@@ -72,6 +72,7 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.priority,
         ),
+        // Child tables use this key so their tenant_id must match the parent report.
         uniqueIndex("expense_report_tenant_id_unique_idx").on(
             table.tenantId,
             table.id,
@@ -106,6 +107,7 @@ export const lineItem = pgTable(
         ),
         foreignKey({
             name: "line_item_tenant_expense_report_fk",
+            // Tenant joins prevent line items from attaching to another tenant's report.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
@@ -121,6 +123,7 @@ export const receiptMetadata = pgTable(
         merchant: text("merchant").notNull(),
         receiptDate: date("receipt_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+        // Receipt storage needs structured blob metadata, not receipt binary content.
         blobReference: jsonb("blob_reference").notNull(),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -132,6 +135,7 @@ export const receiptMetadata = pgTable(
     (table) => [
         foreignKey({
             name: "receipt_metadata_expense_report_tenant_fk",
+            // Tenant joins prevent receipt metadata from attaching to another tenant's report.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
@@ -161,6 +165,7 @@ export const mileageEntry = pgTable(
     (table) => [
         foreignKey({
             name: "mileage_entry_expense_report_tenant_fk",
+            // Tenant joins prevent mileage entries from attaching to another tenant's report.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),

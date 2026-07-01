@@ -28,6 +28,138 @@ These rules apply to all work in this repository.
 - If asked for a forbidden stack, state that ExpenseFlow does not use that technology and provide an equivalent TypeScript/Express or Python/FastAPI implementation instead.
 - Every promise MUST be awaited or explicitly handled so as to pass an ESLint and prettier linting check. Use `try`/`catch` (or a typed result) so an error surfaces cleanly instead of becoming an unhandled rejection.
 
+## Commenting Policy
+
+Use comments to explain intent, constraints, and non-obvious decisions. Do not use comments to restate what the code already says.
+
+### Public Functions and Classes
+
+Add a short docstring or JSDoc comment to exported/public functions, public classes, and public methods.
+
+TypeScript:
+
+```ts
+/**
+ * Calculates the total reimbursable amount for an expense report.
+ */
+export function calculateReportTotal(report: ExpenseReport): Decimal {
+    ...
+}
+```
+
+Python:
+
+```python
+def calculate_report_total(report: ExpenseReport) -> Decimal:
+    """Calculate the total reimbursable amount for an expense report."""
+```
+
+Do not add long documentation blocks unless the behavior, inputs, return value, or errors are not obvious from the signature.
+
+### Inline Comments
+
+Write inline comments only when they answer "why is this code written this way?"
+
+Good:
+
+```python
+# Decimal is required because floating-point rounding can produce incorrect currency totals.
+amount = Decimal(raw_amount)
+```
+
+```ts
+// Never trust tenant IDs supplied by the client; derive tenant scope from auth context.
+const tenantId = authContext.tenantId;
+```
+
+```sql
+-- Supports case queue lookups by tenant and workflow stage, ordered by due date.
+CREATE INDEX expense_report_case_queue_idx
+ON expense_report (tenant_id, current_stage, due_date);
+```
+
+Avoid comments that simply repeat the code.
+
+Bad:
+
+```python
+# Add tax to total.
+total += tax
+```
+
+```ts
+// Get the first expense report.
+const report = reports[0];
+```
+
+```sql
+-- Create an index.
+CREATE INDEX expense_report_case_queue_idx
+ON expense_report (tenant_id, current_stage, due_date);
+```
+
+### When to Add Inline Comments
+
+Add a comment for:
+
+- Business rules that are not obvious from the code.
+- Security or tenant-isolation decisions.
+- Database transaction, locking, indexing, or row-level security assumptions.
+- Workarounds for external systems or known edge cases.
+- Performance-sensitive choices.
+- Surprising behavior that future maintainers may otherwise "simplify" incorrectly.
+
+Examples:
+
+```python
+# Finance review is required above $5,000 by company policy.
+if report.total > FINANCE_REVIEW_LIMIT:
+    ...
+```
+
+```ts
+// Use the authenticated tenant only; request bodies are not trusted for tenant isolation.
+where(eq(expenseReport.tenantId, authContext.tenantId));
+```
+
+```python
+# Use FOR UPDATE so two reviewers cannot approve the same report concurrently.
+...
+```
+
+### Section Comments
+
+Use section comments only as landmarks in longer functions, not every few lines.
+
+Good:
+
+```python
+# Validate request.
+
+# Calculate totals.
+
+# Persist changes.
+
+# Publish workflow events.
+```
+
+Avoid noisy section comments in short or obvious functions.
+
+### Comment Frequency
+
+Comments should be intentional and relatively rare.
+
+As a guideline:
+
+- Small functions often need no inline comments.
+- Medium functions may need one comment for a non-obvious decision.
+- Long functions may use a few section comments plus comments for important constraints.
+- If comments are needed every few lines, prefer refactoring into smaller functions with clearer names.
+
+### Maintenance Rule
+
+When code behavior changes, update or delete any related comment in the same change. Stale comments are considered incorrect code documentation.
+
 ## Branch, Commit, and Push Rules
 
 - Commit messages must be short, clear summaries of what changed or was accomplished.

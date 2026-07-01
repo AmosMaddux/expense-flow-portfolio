@@ -11,4 +11,5 @@ CREATE TABLE "line_item" (
 );
 --> statement-breakpoint
 ALTER TABLE "line_item" ADD CONSTRAINT "line_item_expense_report_id_expense_report_id_fk" FOREIGN KEY ("expense_report_id") REFERENCES "public"."expense_report"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+-- Supports tenant-scoped lookups of line items attached to an Expense Report.
 CREATE INDEX "line_item_tenant_expense_report_idx" ON "line_item" USING btree ("tenant_id","expense_report_id");

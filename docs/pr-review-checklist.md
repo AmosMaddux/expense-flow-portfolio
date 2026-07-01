@@ -33,7 +33,8 @@ Check the diff for:
 6. Plaintext logging or generated output containing controlled data, payment data, receipt data, credentials, tokens, API keys, secrets, or private identifiers.
 7. Use of forbidden stacks or forbidden MVP scope.
 8. Missing or weak tests for changed behavior.
-9. Architectural changes that need a linked ADR.
+9. Comments that restate code instead of explaining intent, constraints, security or tenant-isolation decisions, database assumptions, workarounds, or non-obvious behavior.
+10. Architectural changes that need a linked ADR.
 
 Return findings first, ordered by severity. Include file and line references when possible. If there are no blocking findings, say so and list any residual risks or test gaps.
 ```
@@ -70,6 +71,10 @@ Return findings first, ordered by severity. Include file and line references whe
   - Never log raw receipt data, payment data, bank-feed transaction data, or reimbursement references in plaintext.
   - Redact or tokenize controlled values before they reach logs, errors, traces, analytics events, queues, or webhooks.
   - Confirm screenshots, fixtures, tests, and examples also avoid controlled plaintext data.
+- [ ] Comments follow the repository policy in `AGENTS.md`.
+  - Confirm exported/public functions, public classes, and public methods have short docstrings or JSDoc comments where required.
+  - Confirm inline comments explain non-obvious intent, constraints, tenant-isolation decisions, database assumptions, workarounds, performance choices, or surprising behavior.
+  - Confirm stale or redundant comments were updated or removed.
 
 ## Review Notes
 

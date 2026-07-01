@@ -14,7 +14,11 @@ CREATE TABLE "expense_report" (
 	CONSTRAINT "expense_report_hold_reason_check" CHECK (("expense_report"."on_hold" = true and nullif(btrim("expense_report"."hold_reason"), '') is not null) or ("expense_report"."on_hold" = false and "expense_report"."hold_reason" is null))
 );
 --> statement-breakpoint
+-- Supports tenant-scoped case queue filtering by workflow stage.
 CREATE INDEX "expense_report_tenant_stage_idx" ON "expense_report" USING btree ("tenant_id","current_stage");--> statement-breakpoint
+-- Supports tenant-scoped overdue badge checks and due-date sorting.
 CREATE INDEX "expense_report_tenant_due_date_idx" ON "expense_report" USING btree ("tenant_id","due_date");--> statement-breakpoint
+-- Supports tenant-scoped owner work queues without scanning another tenant's cases.
 CREATE INDEX "expense_report_tenant_owner_idx" ON "expense_report" USING btree ("tenant_id","owner");--> statement-breakpoint
+-- Supports tenant-scoped queue filtering by finance review priority.
 CREATE INDEX "expense_report_tenant_priority_idx" ON "expense_report" USING btree ("tenant_id","priority");
