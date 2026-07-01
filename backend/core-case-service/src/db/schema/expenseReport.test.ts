@@ -1,6 +1,4 @@
-// import { describe, test } from "node:test";
 import { describe, expect, test } from "vitest";
-// import assert from "node:assert/strict";
 
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -122,7 +120,7 @@ void describe("expenseReport schema", () => {
         expect(tenantReportIndex).not.toBeUndefined();
 
         if (tenantReportIndex !== undefined) {
-            expect(tenantReportIndex).toBeTruthy();
+            expect(tenantReportIndex.config.unique).toBeTruthy();
         }
     });
 
@@ -328,7 +326,7 @@ void describe("receiptMetadata schema", () => {
             /"receipt_metadata".*"tenant_id" uuid not null/s,
         );
         expect(migrationSql).toMatch(
-            /"receipt_metadata".*"tenant_id" uuid not null/s,
+            /"receipt_metadata".*"expense_report_id" uuid not null/s,
         );
 
         expect(migrationSql).toContain(
