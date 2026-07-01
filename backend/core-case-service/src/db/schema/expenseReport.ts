@@ -72,10 +72,43 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.priority,
         ),
-        uniqueIndex("expense_report_tenant_id_id_uidx").on(
+        uniqueIndex("expense_report_tenant_id_unique_idx").on(
             table.tenantId,
             table.id,
         ),
+    ],
+);
+
+export type ExpenseReport = InferSelectModel<typeof expenseReport>;
+export type NewExpenseReport = InferInsertModel<typeof expenseReport>;
+
+export const lineItem = pgTable(
+    "line_item",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        merchant: text("merchant").notNull(),
+        amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+        currency: text("currency").notNull(),
+        category: text("category").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        index("line_item_tenant_expense_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+        foreignKey({
+            name: "line_item_tenant_expense_report_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
     ],
 );
 
@@ -138,8 +171,8 @@ export const mileageEntry = pgTable(
     ],
 );
 
-export type ExpenseReport = InferSelectModel<typeof expenseReport>;
-export type NewExpenseReport = InferInsertModel<typeof expenseReport>;
+export type LineItem = InferSelectModel<typeof lineItem>;
+export type NewLineItem = InferInsertModel<typeof lineItem>;
 export type ReceiptMetadata = InferSelectModel<typeof receiptMetadata>;
 export type NewReceiptMetadata = InferInsertModel<typeof receiptMetadata>;
 export type MileageEntry = InferSelectModel<typeof mileageEntry>;

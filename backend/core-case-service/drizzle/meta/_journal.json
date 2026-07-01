@@ -12,8 +12,22 @@
         {
             "idx": 1,
             "version": "7",
-            "when": 1782912153641,
-            "tag": "0001_cultured_greymalkin",
+            "when": 1782849962219,
+            "tag": "0001_parallel_doctor_faustus",
+            "breakpoints": true
+        },
+        {
+            "idx": 2,
+            "version": "7",
+            "when": 1782916190498,
+            "tag": "0002_moaning_wither",
+            "breakpoints": true
+        },
+        {
+            "idx": 3,
+            "version": "7",
+            "when": 1782918965889,
+            "tag": "0003_silky_nico_minoru",
             "breakpoints": true
         }
     ]
