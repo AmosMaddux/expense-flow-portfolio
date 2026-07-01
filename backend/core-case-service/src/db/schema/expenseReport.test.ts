@@ -9,7 +9,9 @@ import {
     approvedWorkflowStages,
     expenseReport,
     lineItem,
+    mileageEntry,
     priorityLevels,
+    receiptMetadata,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -29,6 +31,23 @@ const requiredLineItemColumnNames = [
     "category",
     "expense_report_id",
     "tenant_id",
+];
+
+const receiptMetadataRequiredColumnNames = [
+    "expense_report_id",
+    "tenant_id",
+    "merchant",
+    "receipt_date",
+    "amount",
+    "blob_reference",
+];
+
+const mileageEntryRequiredColumnNames = [
+    "expense_report_id",
+    "tenant_id",
+    "route",
+    "distance",
+    "mileage_date",
 ];
 
 void describe("expenseReport schema", () => {
@@ -89,15 +108,29 @@ void describe("expenseReport schema", () => {
                 "expense_report_tenant_id_unique_idx",
             ],
         );
+
+        const tenantReportIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "expense_report_tenant_id_unique_idx",
+        );
+
+        if (tenantReportIndex === undefined) {
+            assert.fail("expense_report tenant/id unique index is missing");
+        }
+
+        assert.equal(tenantReportIndex.config.unique, true);
     });
 
-    void test("generates SQL for the table, constraints, and indexes", async () => {
+    void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
         // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
         // treats this generated snapshot type as unsafe.
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const previousSnapshot = generateDrizzleJson({});
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const currentSnapshot = generateDrizzleJson({ expenseReport });
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+        });
         const migrationStatements = await generateMigration(
             previousSnapshot,
             currentSnapshot,
@@ -211,5 +244,173 @@ void describe("lineItem schema", () => {
             /foreign key \("tenant_id","expense_report_id"\) references "public"\."expense_report"\("tenant_id","id"\)/,
         );
         assert.match(migrationSql, /line_item_tenant_expense_report_idx/);
+    });
+});
+
+void describe("receiptMetadata schema", () => {
+    void test("defines the receipt_metadata child table", () => {
+        const receiptMetadataConfig = getTableConfig(receiptMetadata);
+        const receiptMetadataColumnNames = receiptMetadataConfig.columns.map(
+            (column) => column.name,
+        );
+
+        assert.equal(getTableName(receiptMetadata), "receipt_metadata");
+
+        for (const columnName of receiptMetadataRequiredColumnNames) {
+            assert.equal(receiptMetadataColumnNames.includes(columnName), true);
+        }
+
+        const receiptMetadataTenantId = receiptMetadataConfig.columns.find(
+            (column) => column.name === "tenant_id",
+        );
+        const receiptMetadataExpenseReportId =
+            receiptMetadataConfig.columns.find(
+                (column) => column.name === "expense_report_id",
+            );
+
+        if (
+            receiptMetadataTenantId === undefined ||
+            receiptMetadataExpenseReportId === undefined
+        ) {
+            assert.fail(
+                "receipt_metadata tenant_id and expense_report_id columns are required",
+            );
+        }
+
+        assert.equal(receiptMetadataTenantId.notNull, true);
+        assert.equal(receiptMetadataExpenseReportId.notNull, true);
+
+        assert.deepEqual(
+            receiptMetadataConfig.foreignKeys.map((foreignKey) =>
+                foreignKey.getName(),
+            ),
+            ["receipt_metadata_expense_report_tenant_fk"],
+        );
+
+        assert.deepEqual(
+            receiptMetadataConfig.indexes.map(
+                (indexConfig) => indexConfig.config.name,
+            ),
+            ["receipt_metadata_tenant_report_idx"],
+        );
+    });
+
+    void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({ expenseReport });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            receiptMetadata,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        assert.match(migrationSql, /create table "receipt_metadata"/);
+
+        for (const columnName of receiptMetadataRequiredColumnNames) {
+            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+        }
+
+        assert.match(migrationSql, /"amount" numeric\(12, 2\) not null/);
+        assert.match(migrationSql, /"blob_reference" jsonb not null/);
+        assert.match(
+            migrationSql,
+            /"receipt_metadata".*"tenant_id" uuid not null/s,
+        );
+        assert.match(
+            migrationSql,
+            /"receipt_metadata".*"expense_report_id" uuid not null/s,
+        );
+        assert.match(migrationSql, /receipt_metadata_expense_report_tenant_fk/);
+        assert.match(migrationSql, /receipt_metadata_tenant_report_idx/);
+    });
+});
+
+void describe("mileageEntry schema", () => {
+    void test("defines the mileage_entry child table", () => {
+        const mileageEntryConfig = getTableConfig(mileageEntry);
+        const mileageEntryColumnNames = mileageEntryConfig.columns.map(
+            (column) => column.name,
+        );
+
+        assert.equal(getTableName(mileageEntry), "mileage_entry");
+
+        for (const columnName of mileageEntryRequiredColumnNames) {
+            assert.equal(mileageEntryColumnNames.includes(columnName), true);
+        }
+
+        const mileageEntryTenantId = mileageEntryConfig.columns.find(
+            (column) => column.name === "tenant_id",
+        );
+        const mileageEntryExpenseReportId = mileageEntryConfig.columns.find(
+            (column) => column.name === "expense_report_id",
+        );
+
+        if (
+            mileageEntryTenantId === undefined ||
+            mileageEntryExpenseReportId === undefined
+        ) {
+            assert.fail(
+                "mileage_entry tenant_id and expense_report_id columns are required",
+            );
+        }
+
+        assert.equal(mileageEntryTenantId.notNull, true);
+        assert.equal(mileageEntryExpenseReportId.notNull, true);
+
+        assert.deepEqual(
+            mileageEntryConfig.foreignKeys.map((foreignKey) =>
+                foreignKey.getName(),
+            ),
+            ["mileage_entry_expense_report_tenant_fk"],
+        );
+
+        assert.deepEqual(
+            mileageEntryConfig.indexes.map(
+                (indexConfig) => indexConfig.config.name,
+            ),
+            ["mileage_entry_tenant_report_idx"],
+        );
+    });
+
+    void test("generates SQL for the mileage_entry table, constraints, and indexes", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({ expenseReport });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            mileageEntry,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        assert.match(migrationSql, /create table "mileage_entry"/);
+
+        for (const columnName of mileageEntryRequiredColumnNames) {
+            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+        }
+
+        assert.match(migrationSql, /"distance" numeric\(8, 2\) not null/);
+        assert.match(
+            migrationSql,
+            /"mileage_entry".*"tenant_id" uuid not null/s,
+        );
+        assert.match(
+            migrationSql,
+            /"mileage_entry".*"expense_report_id" uuid not null/s,
+        );
+        assert.match(migrationSql, /mileage_entry_expense_report_tenant_fk/);
+        assert.match(migrationSql, /mileage_entry_tenant_report_idx/);
     });
 });

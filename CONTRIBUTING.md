@@ -15,6 +15,7 @@ Pull requests must:
 - Include the service area, such as `Core Case Service`.
 - Include test evidence or a clear explanation when tests are not applicable.
 - Include data-handling notes when the change touches logs, fixtures, generated output, documents, receipts, payment data, tenant data, or private identifiers.
+- Follow the commenting policy in `AGENTS.md` for public docstrings/JSDoc and intentional inline comments.
 - Confirm the AI code-review checklist in [docs/pr-review-checklist.md](docs/pr-review-checklist.md) was completed.
 
 If a PR changes an architectural decision, tenant boundary, workflow contract, authorization model, data classification posture, or technology choice, it must link the relevant ADR under `docs/adr/`. New ADRs should use the filename pattern `NNNN-short-title.md`.
