@@ -97,9 +97,19 @@ Use ``uv run [command]`` to run commands using the Python virtual environment. E
 uv run backend/python/main.py
 ```
 
+To run the fastapi service use:
+```sh
+uv run uvicorn backend.python.main:app
+```
+
 Run tests with:
 ```sh
 uv run pytest
+```
+
+Utility function to run linter, typing, and test checks:
+```sh
+make
 ```
 
 ## Posture and ADR Conventions
