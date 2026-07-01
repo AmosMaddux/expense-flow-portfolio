@@ -62,7 +62,12 @@ void describe("expenseReport schema", () => {
             "Reconciled",
         ]);
 
-        expect(priorityLevels).toStrictEqual(["Low", "Normal", "High", "Urgent"]);
+        expect(priorityLevels).toStrictEqual([
+            "Low",
+            "Normal",
+            "High",
+            "Urgent",
+        ]);
     });
 
     void test("defines the expense_report table with required case columns", () => {
@@ -85,25 +90,28 @@ void describe("expenseReport schema", () => {
         if (tenantId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();
         }
-
     });
 
     void test("keeps check constraints and tenant-scoped indexes on the table", () => {
         const tableConfig = getTableConfig(expenseReport);
 
-        expect(tableConfig.checks.map((constraint) => constraint.name).sort()).toEqual([
-                "expense_report_current_stage_check",
-                "expense_report_hold_reason_check",
-                "expense_report_priority_check",
-            ]);
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "expense_report_current_stage_check",
+            "expense_report_hold_reason_check",
+            "expense_report_priority_check",
+        ]);
 
-        expect(tableConfig.indexes.map((indexConfig) => indexConfig.config.name)).toEqual([
-                "expense_report_tenant_stage_idx",
-                "expense_report_tenant_due_date_idx",
-                "expense_report_tenant_owner_idx",
-                "expense_report_tenant_priority_idx",
-                "expense_report_tenant_id_unique_idx",
-            ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "expense_report_tenant_stage_idx",
+            "expense_report_tenant_due_date_idx",
+            "expense_report_tenant_owner_idx",
+            "expense_report_tenant_priority_idx",
+            "expense_report_tenant_id_unique_idx",
+        ]);
 
         const tenantReportIndex = tableConfig.indexes.find(
             (indexConfig) =>
@@ -116,7 +124,6 @@ void describe("expenseReport schema", () => {
         if (tenantReportIndex !== undefined) {
             expect(tenantReportIndex).toBeTruthy();
         }
-
     });
 
     void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
@@ -136,7 +143,7 @@ void describe("expenseReport schema", () => {
 
         expect(migrationSql).toContain('create table "expense_report"');
         // assert.match(migrationSql, /create table "expense_report"/);
-        expect(migrationSql).not.toContain('status');
+        expect(migrationSql).not.toContain("status");
 
         // assert.doesNotMatch(migrationSql, /\bstatus\b/);
 
@@ -145,15 +152,14 @@ void describe("expenseReport schema", () => {
             // assert.match(migrationSql, new RegExp(`"${columnName}"`));
         }
         expect(migrationSql).toContain('"tenant_id" uuid not null');
-        expect(migrationSql).toContain('expense_report_current_stage_check');
+        expect(migrationSql).toContain("expense_report_current_stage_check");
         expect(migrationSql).toContain('expense_report_priority_check"');
-        expect(migrationSql).toContain('expense_report_hold_reason_check');
-        expect(migrationSql).toContain('expense_report_tenant_stage_idx');
-        expect(migrationSql).toContain('expense_report_tenant_due_date_idx');
-        expect(migrationSql).toContain('expense_report_tenant_owner_idx');
-        expect(migrationSql).toContain('expense_report_tenant_priority_idx');
-        expect(migrationSql).toContain('expense_report_tenant_id_unique_idx');
-
+        expect(migrationSql).toContain("expense_report_hold_reason_check");
+        expect(migrationSql).toContain("expense_report_tenant_stage_idx");
+        expect(migrationSql).toContain("expense_report_tenant_due_date_idx");
+        expect(migrationSql).toContain("expense_report_tenant_owner_idx");
+        expect(migrationSql).toContain("expense_report_tenant_priority_idx");
+        expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
     });
 });
 
@@ -187,8 +193,9 @@ void describe("lineItem schema", () => {
     void test("keeps tenant-scoped lookup indexes on line items", () => {
         const tableConfig = getTableConfig(lineItem);
 
-        expect(tableConfig.indexes.map((indexConfig) => indexConfig.config.name)).toEqual(["line_item_tenant_expense_report_idx"]);
-
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual(["line_item_tenant_expense_report_idx"]);
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -205,15 +212,13 @@ void describe("lineItem schema", () => {
             };
         });
 
-        expect(foreignKeys).toEqual(
-            [
-                {
-                    columns: ["tenant_id", "expense_report_id"],
-                    foreignColumns: ["tenant_id", "id"],
-                    name: "line_item_tenant_expense_report_fk",
-                },
-            ]
-        );
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "line_item_tenant_expense_report_fk",
+            },
+        ]);
     });
 
     void test("generates SQL for the table and expense report foreign key", async () => {
@@ -236,15 +241,16 @@ void describe("lineItem schema", () => {
 
         for (const columnName of requiredLineItemColumnNames) {
             expect(migrationSql).toContain(columnName);
-
         }
 
         expect(migrationSql).toContain('"amount" numeric(12, 2) not null');
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain('"expense_report_id" uuid not null');
-        expect(migrationSql).toContain('foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")');
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
 
-        expect(migrationSql).toContain('line_item_tenant_expense_report_idx');
+        expect(migrationSql).toContain("line_item_tenant_expense_report_idx");
     });
 });
 
@@ -255,7 +261,7 @@ void describe("receiptMetadata schema", () => {
             (column) => column.name,
         );
 
-        expect(getTableName(receiptMetadata)).toEqual("receipt_metadata")
+        expect(getTableName(receiptMetadata)).toEqual("receipt_metadata");
 
         for (const columnName of receiptMetadataRequiredColumnNames) {
             expect(receiptMetadataColumnNames).toContain(columnName);
@@ -280,14 +286,17 @@ void describe("receiptMetadata schema", () => {
             expect(receiptMetadataExpenseReportId.notNull).toBeTruthy();
         }
 
-        expect(receiptMetadataConfig.foreignKeys.map((foreignKey) =>
+        expect(
+            receiptMetadataConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
-            )).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
-        
-        expect(receiptMetadataConfig.indexes.map(
-                (indexConfig) => indexConfig.config.name,
-            )).toEqual(["receipt_metadata_tenant_report_idx"]);
+            ),
+        ).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
 
+        expect(
+            receiptMetadataConfig.indexes.map(
+                (indexConfig) => indexConfig.config.name,
+            ),
+        ).toEqual(["receipt_metadata_tenant_report_idx"]);
     });
 
     void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
@@ -306,23 +315,26 @@ void describe("receiptMetadata schema", () => {
         );
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
-        expect(migrationSql).toContain('create table "receipt_metadata"')
+        expect(migrationSql).toContain('create table "receipt_metadata"');
 
         for (const columnName of receiptMetadataRequiredColumnNames) {
-            expect(migrationSql).toContain(columnName)
-
+            expect(migrationSql).toContain(columnName);
         }
 
-        expect(migrationSql).toContain('"amount" numeric(12, 2) not null')
-        expect(migrationSql).toContain('"blob_reference" jsonb not null')
+        expect(migrationSql).toContain('"amount" numeric(12, 2) not null');
+        expect(migrationSql).toContain('"blob_reference" jsonb not null');
 
-        expect(migrationSql).toMatch(/"receipt_metadata".*"tenant_id" uuid not null/s)
-        expect(migrationSql).toMatch(/"receipt_metadata".*"tenant_id" uuid not null/s)
+        expect(migrationSql).toMatch(
+            /"receipt_metadata".*"tenant_id" uuid not null/s,
+        );
+        expect(migrationSql).toMatch(
+            /"receipt_metadata".*"tenant_id" uuid not null/s,
+        );
 
-
-        expect(migrationSql).toContain('receipt_metadata_expense_report_tenant_fk')
-        expect(migrationSql).toContain('receipt_metadata_tenant_report_idx')
-
+        expect(migrationSql).toContain(
+            "receipt_metadata_expense_report_tenant_fk",
+        );
+        expect(migrationSql).toContain("receipt_metadata_tenant_report_idx");
     });
 });
 
@@ -357,14 +369,17 @@ void describe("mileageEntry schema", () => {
             expect(mileageEntryExpenseReportId.notNull).toBeTruthy();
         }
 
-        expect(mileageEntryConfig.foreignKeys.map((foreignKey) =>
+        expect(
+            mileageEntryConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
-            )).toEqual(["mileage_entry_expense_report_tenant_fk"]);
+            ),
+        ).toEqual(["mileage_entry_expense_report_tenant_fk"]);
 
-        expect(mileageEntryConfig.indexes.map(
+        expect(
+            mileageEntryConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
-            )).toEqual(["mileage_entry_tenant_report_idx"]);
-
+            ),
+        ).toEqual(["mileage_entry_tenant_report_idx"]);
     });
 
     void test("generates SQL for the mileage_entry table, constraints, and indexes", async () => {
@@ -391,10 +406,16 @@ void describe("mileageEntry schema", () => {
 
         expect(migrationSql).toContain('"distance" numeric(8, 2) not null');
 
-        expect(migrationSql).toMatch(/"mileage_entry".*"tenant_id" uuid not null/s);
-        expect(migrationSql).toMatch(/"mileage_entry".*"expense_report_id" uuid not null/s);
+        expect(migrationSql).toMatch(
+            /"mileage_entry".*"tenant_id" uuid not null/s,
+        );
+        expect(migrationSql).toMatch(
+            /"mileage_entry".*"expense_report_id" uuid not null/s,
+        );
 
-        expect(migrationSql).toContain('mileage_entry_expense_report_tenant_fk');
-        expect(migrationSql).toContain('mileage_entry_tenant_report_idx');
+        expect(migrationSql).toContain(
+            "mileage_entry_expense_report_tenant_fk",
+        );
+        expect(migrationSql).toContain("mileage_entry_tenant_report_idx");
     });
 });
