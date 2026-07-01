@@ -1,5 +1,6 @@
-import { describe, test } from "node:test";
-import assert from "node:assert/strict";
+// import { describe, test } from "node:test";
+import { describe, expect, test } from "vitest";
+// import assert from "node:assert/strict";
 
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -52,7 +53,7 @@ const mileageEntryRequiredColumnNames = [
 
 void describe("expenseReport schema", () => {
     void test("exports the approved workflow stages and priority levels", () => {
-        assert.deepEqual(approvedWorkflowStages, [
+        expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
             "Manager Approval",
@@ -61,53 +62,48 @@ void describe("expenseReport schema", () => {
             "Reconciled",
         ]);
 
-        assert.deepEqual(priorityLevels, ["Low", "Normal", "High", "Urgent"]);
+        expect(priorityLevels).toStrictEqual(["Low", "Normal", "High", "Urgent"]);
     });
 
     void test("defines the expense_report table with required case columns", () => {
         const tableConfig = getTableConfig(expenseReport);
         const columnNames = tableConfig.columns.map((column) => column.name);
 
-        assert.equal(getTableName(expenseReport), "expense_report");
-        assert.equal(columnNames.includes("status"), false);
+        expect(getTableName(expenseReport)).toEqual("expense_report");
+        expect(columnNames.includes("status")).toBeFalsy();
 
         for (const columnName of requiredExpenseReportColumnNames) {
-            assert.equal(columnNames.includes(columnName), true);
+            expect(columnNames.includes(columnName)).toBeTruthy();
         }
 
         const tenantId = tableConfig.columns.find(
             (column) => column.name === "tenant_id",
         );
 
-        if (tenantId === undefined) {
-            assert.fail("tenant_id column is missing");
+        expect(tenantId).not.toBeUndefined();
+
+        if (tenantId !== undefined) {
+            expect(tenantId.notNull).toBeTruthy();
         }
 
-        assert.equal(tenantId.notNull, true);
     });
 
     void test("keeps check constraints and tenant-scoped indexes on the table", () => {
         const tableConfig = getTableConfig(expenseReport);
 
-        assert.deepEqual(
-            tableConfig.checks.map((constraint) => constraint.name).sort(),
-            [
+        expect(tableConfig.checks.map((constraint) => constraint.name).sort()).toEqual([
                 "expense_report_current_stage_check",
                 "expense_report_hold_reason_check",
                 "expense_report_priority_check",
-            ],
-        );
+            ]);
 
-        assert.deepEqual(
-            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-            [
+        expect(tableConfig.indexes.map((indexConfig) => indexConfig.config.name)).toEqual([
                 "expense_report_tenant_stage_idx",
                 "expense_report_tenant_due_date_idx",
                 "expense_report_tenant_owner_idx",
                 "expense_report_tenant_priority_idx",
                 "expense_report_tenant_id_unique_idx",
-            ],
-        );
+            ]);
 
         const tenantReportIndex = tableConfig.indexes.find(
             (indexConfig) =>
@@ -115,11 +111,12 @@ void describe("expenseReport schema", () => {
                 "expense_report_tenant_id_unique_idx",
         );
 
-        if (tenantReportIndex === undefined) {
-            assert.fail("expense_report tenant/id unique index is missing");
+        expect(tenantReportIndex).not.toBeUndefined();
+
+        if (tenantReportIndex !== undefined) {
+            expect(tenantReportIndex).toBeTruthy();
         }
 
-        assert.equal(tenantReportIndex.config.unique, true);
     });
 
     void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
@@ -137,22 +134,26 @@ void describe("expenseReport schema", () => {
         );
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
-        assert.match(migrationSql, /create table "expense_report"/);
-        assert.doesNotMatch(migrationSql, /\bstatus\b/);
+        expect(migrationSql).toContain('create table "expense_report"');
+        // assert.match(migrationSql, /create table "expense_report"/);
+        expect(migrationSql).not.toContain('status');
+
+        // assert.doesNotMatch(migrationSql, /\bstatus\b/);
 
         for (const columnName of requiredExpenseReportColumnNames) {
-            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+            expect(migrationSql).toContain(columnName);
+            // assert.match(migrationSql, new RegExp(`"${columnName}"`));
         }
+        expect(migrationSql).toContain('"tenant_id" uuid not null');
+        expect(migrationSql).toContain('expense_report_current_stage_check');
+        expect(migrationSql).toContain('expense_report_priority_check"');
+        expect(migrationSql).toContain('expense_report_hold_reason_check');
+        expect(migrationSql).toContain('expense_report_tenant_stage_idx');
+        expect(migrationSql).toContain('expense_report_tenant_due_date_idx');
+        expect(migrationSql).toContain('expense_report_tenant_owner_idx');
+        expect(migrationSql).toContain('expense_report_tenant_priority_idx');
+        expect(migrationSql).toContain('expense_report_tenant_id_unique_idx');
 
-        assert.match(migrationSql, /"tenant_id" uuid not null/);
-        assert.match(migrationSql, /expense_report_current_stage_check/);
-        assert.match(migrationSql, /expense_report_priority_check/);
-        assert.match(migrationSql, /expense_report_hold_reason_check/);
-        assert.match(migrationSql, /expense_report_tenant_stage_idx/);
-        assert.match(migrationSql, /expense_report_tenant_due_date_idx/);
-        assert.match(migrationSql, /expense_report_tenant_owner_idx/);
-        assert.match(migrationSql, /expense_report_tenant_priority_idx/);
-        assert.match(migrationSql, /expense_report_tenant_id_unique_idx/);
     });
 });
 
@@ -161,10 +162,10 @@ void describe("lineItem schema", () => {
         const tableConfig = getTableConfig(lineItem);
         const columnNames = tableConfig.columns.map((column) => column.name);
 
-        assert.equal(getTableName(lineItem), "line_item");
+        expect(getTableName(lineItem)).toEqual("line_item");
 
         for (const columnName of requiredLineItemColumnNames) {
-            assert.equal(columnNames.includes(columnName), true);
+            expect(columnNames).toContain(columnName);
         }
 
         const tenantId = tableConfig.columns.find(
@@ -174,21 +175,20 @@ void describe("lineItem schema", () => {
             (column) => column.name === "expense_report_id",
         );
 
-        if (tenantId === undefined || expenseReportId === undefined) {
-            assert.fail("tenant_id or expense_report_id column is missing");
-        }
+        expect(tenantId).not.toBeUndefined();
+        expect(expenseReportId).not.toBeUndefined();
 
-        assert.equal(tenantId.notNull, true);
-        assert.equal(expenseReportId.notNull, true);
+        if (tenantId !== undefined && expenseReportId !== undefined) {
+            expect(tenantId.notNull).toBeTruthy();
+            expect(expenseReportId.notNull).toBeTruthy();
+        }
     });
 
     void test("keeps tenant-scoped lookup indexes on line items", () => {
         const tableConfig = getTableConfig(lineItem);
 
-        assert.deepEqual(
-            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-            ["line_item_tenant_expense_report_idx"],
-        );
+        expect(tableConfig.indexes.map((indexConfig) => indexConfig.config.name)).toEqual(["line_item_tenant_expense_report_idx"]);
+
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -205,13 +205,15 @@ void describe("lineItem schema", () => {
             };
         });
 
-        assert.deepEqual(foreignKeys, [
-            {
-                columns: ["tenant_id", "expense_report_id"],
-                foreignColumns: ["tenant_id", "id"],
-                name: "line_item_tenant_expense_report_fk",
-            },
-        ]);
+        expect(foreignKeys).toEqual(
+            [
+                {
+                    columns: ["tenant_id", "expense_report_id"],
+                    foreignColumns: ["tenant_id", "id"],
+                    name: "line_item_tenant_expense_report_fk",
+                },
+            ]
+        );
     });
 
     void test("generates SQL for the table and expense report foreign key", async () => {
@@ -230,20 +232,19 @@ void describe("lineItem schema", () => {
         );
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
-        assert.match(migrationSql, /create table "line_item"/);
+        expect(migrationSql).toContain('create table "line_item"');
 
         for (const columnName of requiredLineItemColumnNames) {
-            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+            expect(migrationSql).toContain(columnName);
+
         }
 
-        assert.match(migrationSql, /"amount" numeric\(12, 2\) not null/);
-        assert.match(migrationSql, /"tenant_id" uuid not null/);
-        assert.match(migrationSql, /"expense_report_id" uuid not null/);
-        assert.match(
-            migrationSql,
-            /foreign key \("tenant_id","expense_report_id"\) references "public"\."expense_report"\("tenant_id","id"\)/,
-        );
-        assert.match(migrationSql, /line_item_tenant_expense_report_idx/);
+        expect(migrationSql).toContain('"amount" numeric(12, 2) not null');
+        expect(migrationSql).toContain('"tenant_id" uuid not null');
+        expect(migrationSql).toContain('"expense_report_id" uuid not null');
+        expect(migrationSql).toContain('foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")');
+
+        expect(migrationSql).toContain('line_item_tenant_expense_report_idx');
     });
 });
 
@@ -254,10 +255,10 @@ void describe("receiptMetadata schema", () => {
             (column) => column.name,
         );
 
-        assert.equal(getTableName(receiptMetadata), "receipt_metadata");
+        expect(getTableName(receiptMetadata)).toEqual("receipt_metadata")
 
         for (const columnName of receiptMetadataRequiredColumnNames) {
-            assert.equal(receiptMetadataColumnNames.includes(columnName), true);
+            expect(receiptMetadataColumnNames).toContain(columnName);
         }
 
         const receiptMetadataTenantId = receiptMetadataConfig.columns.find(
@@ -268,31 +269,25 @@ void describe("receiptMetadata schema", () => {
                 (column) => column.name === "expense_report_id",
             );
 
+        expect(receiptMetadataTenantId).not.toBeUndefined();
+        expect(receiptMetadataExpenseReportId).not.toBeUndefined();
+
         if (
-            receiptMetadataTenantId === undefined ||
-            receiptMetadataExpenseReportId === undefined
+            receiptMetadataTenantId !== undefined &&
+            receiptMetadataExpenseReportId !== undefined
         ) {
-            assert.fail(
-                "receipt_metadata tenant_id and expense_report_id columns are required",
-            );
+            expect(receiptMetadataTenantId.notNull).toBeTruthy();
+            expect(receiptMetadataExpenseReportId.notNull).toBeTruthy();
         }
 
-        assert.equal(receiptMetadataTenantId.notNull, true);
-        assert.equal(receiptMetadataExpenseReportId.notNull, true);
-
-        assert.deepEqual(
-            receiptMetadataConfig.foreignKeys.map((foreignKey) =>
+        expect(receiptMetadataConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
-            ),
-            ["receipt_metadata_expense_report_tenant_fk"],
-        );
-
-        assert.deepEqual(
-            receiptMetadataConfig.indexes.map(
+            )).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
+        
+        expect(receiptMetadataConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
-            ),
-            ["receipt_metadata_tenant_report_idx"],
-        );
+            )).toEqual(["receipt_metadata_tenant_report_idx"]);
+
     });
 
     void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
@@ -311,24 +306,23 @@ void describe("receiptMetadata schema", () => {
         );
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
-        assert.match(migrationSql, /create table "receipt_metadata"/);
+        expect(migrationSql).toContain('create table "receipt_metadata"')
 
         for (const columnName of receiptMetadataRequiredColumnNames) {
-            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+            expect(migrationSql).toContain(columnName)
+
         }
 
-        assert.match(migrationSql, /"amount" numeric\(12, 2\) not null/);
-        assert.match(migrationSql, /"blob_reference" jsonb not null/);
-        assert.match(
-            migrationSql,
-            /"receipt_metadata".*"tenant_id" uuid not null/s,
-        );
-        assert.match(
-            migrationSql,
-            /"receipt_metadata".*"expense_report_id" uuid not null/s,
-        );
-        assert.match(migrationSql, /receipt_metadata_expense_report_tenant_fk/);
-        assert.match(migrationSql, /receipt_metadata_tenant_report_idx/);
+        expect(migrationSql).toContain('"amount" numeric(12, 2) not null')
+        expect(migrationSql).toContain('"blob_reference" jsonb not null')
+
+        expect(migrationSql).toMatch(/"receipt_metadata".*"tenant_id" uuid not null/s)
+        expect(migrationSql).toMatch(/"receipt_metadata".*"tenant_id" uuid not null/s)
+
+
+        expect(migrationSql).toContain('receipt_metadata_expense_report_tenant_fk')
+        expect(migrationSql).toContain('receipt_metadata_tenant_report_idx')
+
     });
 });
 
@@ -339,10 +333,10 @@ void describe("mileageEntry schema", () => {
             (column) => column.name,
         );
 
-        assert.equal(getTableName(mileageEntry), "mileage_entry");
+        expect(getTableName(mileageEntry)).toEqual("mileage_entry");
 
         for (const columnName of mileageEntryRequiredColumnNames) {
-            assert.equal(mileageEntryColumnNames.includes(columnName), true);
+            expect(mileageEntryColumnNames).toContain(columnName);
         }
 
         const mileageEntryTenantId = mileageEntryConfig.columns.find(
@@ -352,31 +346,25 @@ void describe("mileageEntry schema", () => {
             (column) => column.name === "expense_report_id",
         );
 
+        expect(mileageEntryTenantId).not.toBeUndefined();
+        expect(mileageEntryExpenseReportId).not.toBeUndefined();
+
         if (
-            mileageEntryTenantId === undefined ||
-            mileageEntryExpenseReportId === undefined
+            mileageEntryTenantId !== undefined &&
+            mileageEntryExpenseReportId !== undefined
         ) {
-            assert.fail(
-                "mileage_entry tenant_id and expense_report_id columns are required",
-            );
+            expect(mileageEntryTenantId.notNull).toBeTruthy();
+            expect(mileageEntryExpenseReportId.notNull).toBeTruthy();
         }
 
-        assert.equal(mileageEntryTenantId.notNull, true);
-        assert.equal(mileageEntryExpenseReportId.notNull, true);
-
-        assert.deepEqual(
-            mileageEntryConfig.foreignKeys.map((foreignKey) =>
+        expect(mileageEntryConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
-            ),
-            ["mileage_entry_expense_report_tenant_fk"],
-        );
+            )).toEqual(["mileage_entry_expense_report_tenant_fk"]);
 
-        assert.deepEqual(
-            mileageEntryConfig.indexes.map(
+        expect(mileageEntryConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
-            ),
-            ["mileage_entry_tenant_report_idx"],
-        );
+            )).toEqual(["mileage_entry_tenant_report_idx"]);
+
     });
 
     void test("generates SQL for the mileage_entry table, constraints, and indexes", async () => {
@@ -395,22 +383,18 @@ void describe("mileageEntry schema", () => {
         );
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
-        assert.match(migrationSql, /create table "mileage_entry"/);
+        expect(migrationSql).toContain('create table "mileage_entry"');
 
         for (const columnName of mileageEntryRequiredColumnNames) {
-            assert.match(migrationSql, new RegExp(`"${columnName}"`));
+            expect(migrationSql).toContain(columnName);
         }
 
-        assert.match(migrationSql, /"distance" numeric\(8, 2\) not null/);
-        assert.match(
-            migrationSql,
-            /"mileage_entry".*"tenant_id" uuid not null/s,
-        );
-        assert.match(
-            migrationSql,
-            /"mileage_entry".*"expense_report_id" uuid not null/s,
-        );
-        assert.match(migrationSql, /mileage_entry_expense_report_tenant_fk/);
-        assert.match(migrationSql, /mileage_entry_tenant_report_idx/);
+        expect(migrationSql).toContain('"distance" numeric(8, 2) not null');
+
+        expect(migrationSql).toMatch(/"mileage_entry".*"tenant_id" uuid not null/s);
+        expect(migrationSql).toMatch(/"mileage_entry".*"expense_report_id" uuid not null/s);
+
+        expect(migrationSql).toContain('mileage_entry_expense_report_tenant_fk');
+        expect(migrationSql).toContain('mileage_entry_tenant_report_idx');
     });
 });

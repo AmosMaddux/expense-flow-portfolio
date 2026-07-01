@@ -7,7 +7,7 @@
         "doc": "docs"
     },
     "scripts": {
-        "test": "npm --workspace @expense-flow/core-case-service test && UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest",
+        "test": "npx vitest run && UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest",
         "build": "tsc --build",
         "start": "tsc --build && node backend/core-case-service/dist/index.js",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""

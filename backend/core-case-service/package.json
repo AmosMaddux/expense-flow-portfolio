@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "build": "tsc --build",
-        "test": "npm run build --workspaces=false && node --test \"dist/db/**/*.test.js\" && vitest run src/index.test.ts"
+        "test": "npm run build --workspaces=false && vitest run"
     },
     "dependencies": {
         "drizzle-orm": "^0.45.2"
