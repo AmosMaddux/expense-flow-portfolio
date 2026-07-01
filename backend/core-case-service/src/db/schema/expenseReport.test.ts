@@ -140,14 +140,12 @@ void describe("expenseReport schema", () => {
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
         expect(migrationSql).toContain('create table "expense_report"');
-        // assert.match(migrationSql, /create table "expense_report"/);
         expect(migrationSql).not.toContain("status");
 
-        // assert.doesNotMatch(migrationSql, /\bstatus\b/);
 
         for (const columnName of requiredExpenseReportColumnNames) {
             expect(migrationSql).toContain(columnName);
-            // assert.match(migrationSql, new RegExp(`"${columnName}"`));
+
         }
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain("expense_report_current_stage_check");
