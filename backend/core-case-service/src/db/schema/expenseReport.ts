@@ -3,11 +3,13 @@ import {
     boolean,
     check,
     date,
+    foreignKey,
     index,
     numeric,
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
     uuid,
 } from "drizzle-orm/pg-core";
 
@@ -69,6 +71,10 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.priority,
         ),
+        uniqueIndex("expense_report_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
     ],
 );
 
@@ -83,9 +89,7 @@ export const lineItem = pgTable(
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
         currency: text("currency").notNull(),
         category: text("category").notNull(),
-        expenseReportId: uuid("expense_report_id")
-            .notNull()
-            .references(() => expenseReport.id),
+        expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -99,6 +103,11 @@ export const lineItem = pgTable(
             table.tenantId,
             table.expenseReportId,
         ),
+        foreignKey({
+            name: "line_item_tenant_expense_report_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
     ],
 );
 

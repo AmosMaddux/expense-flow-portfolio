@@ -86,6 +86,7 @@ void describe("expenseReport schema", () => {
                 "expense_report_tenant_due_date_idx",
                 "expense_report_tenant_owner_idx",
                 "expense_report_tenant_priority_idx",
+                "expense_report_tenant_id_unique_idx",
             ],
         );
     });
@@ -118,6 +119,7 @@ void describe("expenseReport schema", () => {
         assert.match(migrationSql, /expense_report_tenant_due_date_idx/);
         assert.match(migrationSql, /expense_report_tenant_owner_idx/);
         assert.match(migrationSql, /expense_report_tenant_priority_idx/);
+        assert.match(migrationSql, /expense_report_tenant_id_unique_idx/);
     });
 });
 
@@ -156,6 +158,29 @@ void describe("lineItem schema", () => {
         );
     });
 
+    void test("locks line items to expense reports within the same tenant", () => {
+        const tableConfig = getTableConfig(lineItem);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        assert.deepEqual(foreignKeys, [
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "line_item_tenant_expense_report_fk",
+            },
+        ]);
+    });
+
     void test("generates SQL for the table and expense report foreign key", async () => {
         // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
         // treats this generated snapshot type as unsafe.
@@ -183,7 +208,7 @@ void describe("lineItem schema", () => {
         assert.match(migrationSql, /"expense_report_id" uuid not null/);
         assert.match(
             migrationSql,
-            /foreign key \("expense_report_id"\) references "public"\."expense_report"\("id"\)/,
+            /foreign key \("tenant_id","expense_report_id"\) references "public"\."expense_report"\("tenant_id","id"\)/,
         );
         assert.match(migrationSql, /line_item_tenant_expense_report_idx/);
     });
