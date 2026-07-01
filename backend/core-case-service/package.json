@@ -12,9 +12,8 @@
         "drizzle-orm": "^0.45.2"
     },
     "devDependencies": {
-        "vitest": "^3.2.4",
-        "drizzle-kit": "^0.31.10",
-        "@types/node": "^26.0.1"
+        "@types/node": "^26.0.1",
+        "drizzle-kit": "^0.31.10"
     },
     "keywords": [],
     "author": "",

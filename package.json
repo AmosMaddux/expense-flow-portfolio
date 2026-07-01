@@ -32,6 +32,10 @@
         "globals": "^17.7.0",
         "prettier": "^3.8.4",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.62.0"
+        "typescript-eslint": "^8.62.0",
+        "vitest": "^4.1.9"
+    },
+    "overrides": {
+        "@esbuild-kit/esm-loader": "npm:tsx@^4.22.4"
     }
 }
