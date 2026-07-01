@@ -32,6 +32,8 @@ These rules apply to all work in this repository.
 
 Use comments to explain intent, constraints, and non-obvious decisions. Do not use comments to restate what the code already says.
 
+Apply this policy only to hand-maintained source code and test code. Do not add comments to generated files, generated Drizzle migration or snapshot files under `backend/core-case-service/drizzle`, documentation files, configuration files, package metadata, or lockfiles unless the user explicitly requests that file itself be changed.
+
 ### Public Functions and Classes
 
 Add a short docstring or JSDoc comment to exported/public functions, public classes, and public methods.
@@ -72,12 +74,6 @@ amount = Decimal(raw_amount)
 const tenantId = authContext.tenantId;
 ```
 
-```sql
--- Supports case queue lookups by tenant and workflow stage, ordered by due date.
-CREATE INDEX expense_report_case_queue_idx
-ON expense_report (tenant_id, current_stage, due_date);
-```
-
 Avoid comments that simply repeat the code.
 
 Bad:
@@ -92,19 +88,13 @@ total += tax
 const report = reports[0];
 ```
 
-```sql
--- Create an index.
-CREATE INDEX expense_report_case_queue_idx
-ON expense_report (tenant_id, current_stage, due_date);
-```
-
 ### When to Add Inline Comments
 
 Add a comment for:
 
 - Business rules that are not obvious from the code.
 - Security or tenant-isolation decisions.
-- Database transaction, locking, indexing, or row-level security assumptions.
+- Database transaction, locking, indexing, or row-level security assumptions in hand-maintained source code.
 - Workarounds for external systems or known edge cases.
 - Performance-sensitive choices.
 - Surprising behavior that future maintainers may otherwise "simplify" incorrectly.
