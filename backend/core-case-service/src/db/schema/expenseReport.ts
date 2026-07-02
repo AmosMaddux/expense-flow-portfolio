@@ -164,6 +164,78 @@ export const lineItem = pgTable(
     ],
 );
 
+export const caseComment = pgTable(
+    "case_comment",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        authorId: uuid("author_id").notNull(),
+        body: text("body").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "case_comment_body_not_blank_check",
+            sql`nullif(btrim(${table.body}), '') is not null`,
+        ),
+        foreignKey({
+            name: "case_comment_expense_report_tenant_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("case_comment_tenant_report_created_at_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.createdAt,
+        ),
+        index("case_comment_tenant_author_created_at_idx").on(
+            table.tenantId,
+            table.authorId,
+            table.createdAt,
+        ),
+    ],
+);
+
+export const attachmentMetadata = pgTable(
+    "attachment_metadata",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        filename: text("filename").notNull(),
+        contentType: text("content_type").notNull(),
+        blobReference: jsonb("blob_reference").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "attachment_metadata_filename_not_blank_check",
+            sql`nullif(btrim(${table.filename}), '') is not null`,
+        ),
+        check(
+            "attachment_metadata_content_type_check",
+            sql`${table.contentType} in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')`,
+        ),
+        foreignKey({
+            name: "attachment_metadata_expense_report_tenant_fk",
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("attachment_metadata_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+    ],
+);
+
 export const receiptMetadata = pgTable(
     "receipt_metadata",
     {
@@ -228,6 +300,10 @@ export const mileageEntry = pgTable(
 
 export type LineItem = InferSelectModel<typeof lineItem>;
 export type NewLineItem = InferInsertModel<typeof lineItem>;
+export type CaseComment = InferSelectModel<typeof caseComment>;
+export type NewCaseComment = InferInsertModel<typeof caseComment>;
+export type AttachmentMetadata = InferSelectModel<typeof attachmentMetadata>;
+export type NewAttachmentMetadata = InferInsertModel<typeof attachmentMetadata>;
 export type ReceiptMetadata = InferSelectModel<typeof receiptMetadata>;
 export type NewReceiptMetadata = InferInsertModel<typeof receiptMetadata>;
 export type MileageEntry = InferSelectModel<typeof mileageEntry>;

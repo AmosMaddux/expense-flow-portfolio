@@ -1,14 +1,15 @@
 import { describe, expect, test } from "vitest";
-
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { getTableName } from "drizzle-orm";
 
 import {
+    attachmentMetadata,
     approvedWorkflowStages,
     auditEntry,
+    caseComment,
     expenseReport,
     lineItem,
     mileageEntry,
@@ -33,6 +34,24 @@ const requiredLineItemColumnNames = [
     "category",
     "expense_report_id",
     "tenant_id",
+];
+
+const caseCommentRequiredColumnNames = [
+    "tenant_id",
+    "expense_report_id",
+    "author_id",
+    "body",
+    "created_at",
+];
+
+const attachmentMetadataRequiredColumnNames = [
+    "tenant_id",
+    "expense_report_id",
+    "filename",
+    "content_type",
+    "blob_reference",
+    "created_at",
+    "updated_at",
 ];
 
 const receiptMetadataRequiredColumnNames = [
@@ -62,10 +81,26 @@ const auditEntryRequiredColumnNames = [
     "created_at",
 ];
 
+const coreCaseServiceDrizzleUrl = new URL("../../../drizzle/", import.meta.url);
 const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
     import.meta.url,
 );
+
+async function readLatestMigrationSql(): Promise<string> {
+    const migrationFiles = (await readdir(coreCaseServiceDrizzleUrl))
+        .filter((fileName) => /^0005_.*\.sql$/u.test(fileName))
+        .sort();
+
+    expect(migrationFiles.length).toBe(1);
+
+    const [migrationFile] = migrationFiles;
+    if (migrationFile === undefined) {
+        throw new Error("Expected a 0005 migration file");
+    }
+
+    return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
+}
 
 void describe("expenseReport schema", () => {
     void test("exports the approved workflow stages and priority levels", () => {
@@ -324,6 +359,263 @@ void describe("auditEntry schema", () => {
         expect(migrationSql).toContain(
             'before update or delete on "audit_entry"',
         );
+    });
+});
+
+void describe("caseComment schema", () => {
+    void test("defines the append-only case_comment table with required columns", () => {
+        const tableConfig = getTableConfig(caseComment);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(caseComment)).toEqual("case_comment");
+        expect(columnNames.includes("updated_at")).toBeFalsy();
+
+        for (const columnName of caseCommentRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+    });
+
+    void test("keeps comments tenant-scoped and queryable by report or author", () => {
+        const tableConfig = getTableConfig(caseComment);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "case_comment_expense_report_tenant_fk",
+            },
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "case_comment_tenant_report_created_at_idx",
+            "case_comment_tenant_author_created_at_idx",
+        ]);
+    });
+
+    void test("keeps comment validation explicit", () => {
+        const tableConfig = getTableConfig(caseComment);
+
+        expect(tableConfig.checks.map((constraint) => constraint.name)).toEqual(
+            ["case_comment_body_not_blank_check"],
+        );
+    });
+
+    void test("generates SQL for comments and the tenant-scoped report foreign key", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({
+            expenseReport,
+            lineItem,
+            receiptMetadata,
+            mileageEntry,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            lineItem,
+            caseComment,
+            receiptMetadata,
+            mileageEntry,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "case_comment"');
+        expect(migrationSql.includes('"updated_at"')).toBeFalsy();
+
+        for (const columnName of caseCommentRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain("case_comment_body_not_blank_check");
+        expect(migrationSql).toContain(
+            `nullif(btrim("case_comment"."body"), '') is not null`,
+        );
+        expect(migrationSql).toContain(
+            "case_comment_tenant_report_created_at_idx",
+        );
+        expect(migrationSql).toContain(
+            "case_comment_tenant_author_created_at_idx",
+        );
+    });
+});
+
+void describe("attachmentMetadata schema", () => {
+    void test("defines the attachment_metadata table with required columns", () => {
+        const tableConfig = getTableConfig(attachmentMetadata);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(attachmentMetadata)).toEqual("attachment_metadata");
+
+        for (const columnName of attachmentMetadataRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+    });
+
+    void test("keeps attachments tenant-scoped and queryable by report", () => {
+        const tableConfig = getTableConfig(attachmentMetadata);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "attachment_metadata_expense_report_tenant_fk",
+            },
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual(["attachment_metadata_tenant_report_idx"]);
+    });
+
+    void test("keeps attachment validation explicit", () => {
+        const tableConfig = getTableConfig(attachmentMetadata);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "attachment_metadata_content_type_check",
+            "attachment_metadata_filename_not_blank_check",
+        ]);
+    });
+
+    void test("generates SQL for attachments and the MIME type allowlist", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({
+            expenseReport,
+            lineItem,
+            receiptMetadata,
+            mileageEntry,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            lineItem,
+            attachmentMetadata,
+            receiptMetadata,
+            mileageEntry,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "attachment_metadata"');
+
+        for (const columnName of attachmentMetadataRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain('"blob_reference" jsonb not null');
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain(
+            "attachment_metadata_filename_not_blank_check",
+        );
+        expect(migrationSql).toContain(
+            "attachment_metadata_content_type_check",
+        );
+        expect(migrationSql).toContain("'application/pdf'");
+        expect(migrationSql).toContain("'image/png'");
+        expect(migrationSql).toContain("'image/jpeg'");
+        expect(migrationSql).toContain("'image/webp'");
+        expect(migrationSql).toContain("'text/plain'");
+        expect(migrationSql).toContain("'text/csv'");
+        expect(migrationSql).toContain("'application/json'");
+        expect(migrationSql).toContain("attachment_metadata_tenant_report_idx");
+    });
+});
+
+void describe("case comment and attachment migration SQL", () => {
+    void test("blocks comment mutation and attachment updates at the database level", async () => {
+        const migrationSql = (await readLatestMigrationSql()).toLowerCase();
+
+        expect(migrationSql).toContain(
+            "create or replace function prevent_case_comment_mutation()",
+        );
+        expect(migrationSql).toContain(
+            "raise exception 'case_comment rows are append-only'",
+        );
+        expect(migrationSql).toContain(
+            "create trigger case_comment_prevent_mutation_trigger",
+        );
+        expect(migrationSql).toContain(
+            'before update or delete on "case_comment"',
+        );
+
+        expect(migrationSql).toContain(
+            "create or replace function prevent_attachment_metadata_update()",
+        );
+        expect(migrationSql).toContain(
+            "raise exception 'attachment_metadata rows cannot be updated'",
+        );
+        expect(migrationSql).toContain(
+            "create trigger attachment_metadata_prevent_update_trigger",
+        );
+        expect(migrationSql).toContain(
+            'before update on "attachment_metadata"',
+        );
+        expect(
+            migrationSql.includes(
+                'before update or delete on "attachment_metadata"',
+            ),
+        ).toBeFalsy();
+        expect(
+            migrationSql.includes('before delete on "attachment_metadata"'),
+        ).toBeFalsy();
     });
 });
 
