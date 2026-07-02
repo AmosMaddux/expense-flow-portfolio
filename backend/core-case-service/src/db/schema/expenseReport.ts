@@ -161,6 +161,41 @@ export const stageTransition = pgTable(
             "stage_transition_reason_check",
             sql`nullif(btrim(${table.reason}), '') is not null`,
         ),
+        check(
+            "stage_transition_valid_edge_check",
+            sql`${table.fromStage} <> 'Reconciled' and (
+                (case ${table.toStage}
+                    when 'Drafted' then 0
+                    when 'Submitted' then 1
+                    when 'Manager Approval' then 2
+                    when 'AP Review' then 3
+                    when 'Paid' then 4
+                    when 'Reconciled' then 5
+                end) < (case ${table.fromStage}
+                    when 'Drafted' then 0
+                    when 'Submitted' then 1
+                    when 'Manager Approval' then 2
+                    when 'AP Review' then 3
+                    when 'Paid' then 4
+                    when 'Reconciled' then 5
+                end)
+                or (case ${table.toStage}
+                    when 'Drafted' then 0
+                    when 'Submitted' then 1
+                    when 'Manager Approval' then 2
+                    when 'AP Review' then 3
+                    when 'Paid' then 4
+                    when 'Reconciled' then 5
+                end) = (case ${table.fromStage}
+                    when 'Drafted' then 0
+                    when 'Submitted' then 1
+                    when 'Manager Approval' then 2
+                    when 'AP Review' then 3
+                    when 'Paid' then 4
+                    when 'Reconciled' then 5
+                end) + 1
+            )`,
+        ),
         foreignKey({
             name: "stage_transition_expense_report_tenant_fk",
             // Tenant joins prevent transitions from attaching to another tenant's report.

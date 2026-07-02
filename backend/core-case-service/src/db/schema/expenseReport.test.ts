@@ -786,6 +786,7 @@ void describe("stageTransition schema", () => {
             "stage_transition_from_stage_check",
             "stage_transition_reason_check",
             "stage_transition_to_stage_check",
+            "stage_transition_valid_edge_check",
         ]);
 
         expect(
@@ -816,26 +817,37 @@ void describe("stageTransition schema", () => {
         ]);
     });
 
-    void test("allows rejection transitions back to Drafted", () => {
-        const managerRejection = {
-            expenseReportId: "11111111-1111-4111-8111-111111111111",
-            tenantId: "22222222-2222-4222-8222-222222222222",
-            fromStage: "Manager Approval",
-            toStage: "Drafted",
-            actor: "33333333-3333-4333-8333-333333333333",
-            reason: "Rejected for synthetic receipt correction.",
-        };
-        const apRejection = {
-            expenseReportId: "44444444-4444-4444-8444-444444444444",
-            tenantId: "55555555-5555-4555-8555-555555555555",
-            fromStage: "AP Review",
-            toStage: "Drafted",
-            actor: "66666666-6666-4666-8666-666666666666",
-            reason: "Rejected for synthetic coding correction.",
+    void test("documents the valid workflow edge policy", () => {
+        const stageRank = new Map(
+            approvedWorkflowStages.map((stage, index) => [stage, index]),
+        );
+        const isValidTransition = (
+            fromStage: (typeof approvedWorkflowStages)[number],
+            toStage: (typeof approvedWorkflowStages)[number],
+        ) => {
+            const fromRank = stageRank.get(fromStage);
+            const toRank = stageRank.get(toStage);
+
+            if (fromRank === undefined || toRank === undefined) {
+                return false;
+            }
+
+            return (
+                fromStage !== "Reconciled" &&
+                (toRank < fromRank || toRank === fromRank + 1)
+            );
         };
 
-        expect(managerRejection.toStage).toEqual("Drafted");
-        expect(apRejection.toStage).toEqual("Drafted");
+        expect(isValidTransition("Drafted", "Submitted")).toBeTruthy();
+        expect(
+            isValidTransition("Manager Approval", "AP Review"),
+        ).toBeTruthy();
+        expect(isValidTransition("AP Review", "Drafted")).toBeTruthy();
+        expect(isValidTransition("Paid", "Manager Approval")).toBeTruthy();
+        expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
+        expect(isValidTransition("Submitted", "Paid")).toBeFalsy();
+        expect(isValidTransition("Reconciled", "Paid")).toBeFalsy();
+        expect(isValidTransition("Reconciled", "Reconciled")).toBeFalsy();
     });
 
     void test("generates SQL for the table, constraints, foreign key, and indexes", async () => {
@@ -867,6 +879,9 @@ void describe("stageTransition schema", () => {
         expect(migrationSql).toContain("stage_transition_from_stage_check");
         expect(migrationSql).toContain("stage_transition_to_stage_check");
         expect(migrationSql).toContain("stage_transition_reason_check");
+        expect(migrationSql).toContain("stage_transition_valid_edge_check");
+        expect(migrationSql).toContain("then 5");
+        expect(migrationSql).toContain("+ 1");
         expect(migrationSql).toContain(
             "stage_transition_expense_report_tenant_fk",
         );
