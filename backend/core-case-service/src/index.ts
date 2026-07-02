@@ -5,6 +5,12 @@ const PORT = process.env.PORT ?? 3000;
 
 app.use(express.json());
 
+export {
+    readCaseQueueStageRollups,
+    type CaseQueueStageRollup,
+    type ReadCaseQueueStageRollupsParams,
+} from "./db/queries/caseQueueRollups.js";
+
 /**
  * Returns process health information for local and deployment smoke checks.
  */
