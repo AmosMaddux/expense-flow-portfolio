@@ -3,6 +3,12 @@
  */
 export type ReadExpenseReportSummary = () => Promise<string>;
 
+export {
+    readCaseQueueStageRollups,
+    type CaseQueueStageRollup,
+    type ReadCaseQueueStageRollupsParams,
+} from "./db/queries/caseQueueRollups.js";
+
 /**
  * Loads an Expense Report summary while preserving the original I/O failure as the cause.
  */
