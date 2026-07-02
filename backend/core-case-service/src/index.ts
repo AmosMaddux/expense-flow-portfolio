@@ -1,28 +1,22 @@
-/**
- * Reads the current Expense Report summary from the backing case store.
- */
-export type ReadExpenseReportSummary = () => Promise<string>;
+import express, { type Request, type Response } from "express";
 
-export {
-    readCaseQueueStageRollups,
-    type CaseQueueStageRollup,
-    type ReadCaseQueueStageRollupsParams,
-} from "./db/queries/caseQueueRollups.js";
+const app = express();
+const PORT = process.env.PORT ?? 3000;
+
+app.use(express.json());
 
 /**
- * Loads an Expense Report summary while preserving the original I/O failure as the cause.
+ * Returns process health information for local and deployment smoke checks.
  */
-export async function loadExpenseReportSummary(
-    readExpenseReportSummary: ReadExpenseReportSummary,
-): Promise<string> {
-    try {
-        return await readExpenseReportSummary();
-    } catch (error: unknown) {
-        const message =
-            error instanceof Error ? error.message : "unknown error";
+app.get("/health", (_req: Request, res: Response) => {
+    res.status(200).json({
+        status: "UP",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+    });
+});
 
-        throw new Error(`Unable to load Expense Report summary: ${message}`, {
-            cause: error,
-        });
-    }
-}
+app.listen(PORT, () => {
+    console.log(`Server is running locally at http://localhost:${PORT}`);
+    console.log(`Health check available at http://localhost:${PORT}/health`);
+});
