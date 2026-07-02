@@ -63,6 +63,11 @@ const auditEntryRequiredColumnNames = [
     "created_at",
 ];
 
+const auditEntryMigrationSqlUrl = new URL(
+    "../../../drizzle/0004_fine_rocket_racer.sql",
+    import.meta.url,
+);
+
 void describe("expenseReport schema", () => {
     void test("exports the approved workflow stages, priority levels, and audit actions", () => {
         expect(approvedWorkflowStages).toStrictEqual([
@@ -310,7 +315,7 @@ void describe("auditEntry schema", () => {
 
     void test("keeps hand-authored migration SQL for audit entry immutability", async () => {
         const migrationSql = (
-            await readFile("drizzle/0004_fine_rocket_racer.sql", "utf8")
+            await readFile(auditEntryMigrationSqlUrl, "utf8")
         ).toLowerCase();
 
         expect(migrationSql).toContain(
