@@ -183,6 +183,7 @@ export const caseComment = pgTable(
         ),
         foreignKey({
             name: "case_comment_expense_report_tenant_fk",
+            // Tenant joins prevent comments from attaching to another tenant's case.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
@@ -207,6 +208,7 @@ export const attachmentMetadata = pgTable(
         expenseReportId: uuid("expense_report_id").notNull(),
         filename: text("filename").notNull(),
         contentType: text("content_type").notNull(),
+        // Store only object metadata here; attachment bytes stay in blob storage.
         blobReference: jsonb("blob_reference").notNull(),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
@@ -222,10 +224,12 @@ export const attachmentMetadata = pgTable(
         ),
         check(
             "attachment_metadata_content_type_check",
+            // Canonical MIME types keep attachment handling predictable downstream.
             sql`${table.contentType} in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')`,
         ),
         foreignKey({
             name: "attachment_metadata_expense_report_tenant_fk",
+            // Tenant joins prevent artifacts from attaching to another tenant's case.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),

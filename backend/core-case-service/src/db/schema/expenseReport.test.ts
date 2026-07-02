@@ -88,6 +88,7 @@ const auditEntryMigrationSqlUrl = new URL(
 );
 
 async function readLatestMigrationSql(): Promise<string> {
+    // Drizzle chooses a generated suffix, so pin this test to the next migration number.
     const migrationFiles = (await readdir(coreCaseServiceDrizzleUrl))
         .filter((fileName) => /^0005_.*\.sql$/u.test(fileName))
         .sort();
