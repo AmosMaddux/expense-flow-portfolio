@@ -163,37 +163,14 @@ export const stageTransition = pgTable(
         ),
         check(
             "stage_transition_valid_edge_check",
-            sql`${table.fromStage} <> 'Reconciled' and (
-                (case ${table.toStage}
-                    when 'Drafted' then 0
-                    when 'Submitted' then 1
-                    when 'Manager Approval' then 2
-                    when 'AP Review' then 3
-                    when 'Paid' then 4
-                    when 'Reconciled' then 5
-                end) < (case ${table.fromStage}
-                    when 'Drafted' then 0
-                    when 'Submitted' then 1
-                    when 'Manager Approval' then 2
-                    when 'AP Review' then 3
-                    when 'Paid' then 4
-                    when 'Reconciled' then 5
-                end)
-                or (case ${table.toStage}
-                    when 'Drafted' then 0
-                    when 'Submitted' then 1
-                    when 'Manager Approval' then 2
-                    when 'AP Review' then 3
-                    when 'Paid' then 4
-                    when 'Reconciled' then 5
-                end) = (case ${table.fromStage}
-                    when 'Drafted' then 0
-                    when 'Submitted' then 1
-                    when 'Manager Approval' then 2
-                    when 'AP Review' then 3
-                    when 'Paid' then 4
-                    when 'Reconciled' then 5
-                end) + 1
+            sql`(
+                (${table.fromStage} = 'Drafted' and ${table.toStage} = 'Submitted')
+                or (${table.fromStage} = 'Submitted' and ${table.toStage} = 'Manager Approval')
+                or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'AP Review')
+                or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Paid')
+                or (${table.fromStage} = 'Paid' and ${table.toStage} = 'Reconciled')
+                or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'Drafted')
+                or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Drafted')
             )`,
         ),
         foreignKey({

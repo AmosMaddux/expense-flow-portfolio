@@ -818,34 +818,31 @@ void describe("stageTransition schema", () => {
     });
 
     void test("documents the valid workflow edge policy", () => {
-        const stageRank = new Map(
-            approvedWorkflowStages.map((stage, index) => [stage, index]),
-        );
+        const validTransitions = new Set([
+            "Drafted->Submitted",
+            "Submitted->Manager Approval",
+            "Manager Approval->AP Review",
+            "AP Review->Paid",
+            "Paid->Reconciled",
+            "Manager Approval->Drafted",
+            "AP Review->Drafted",
+        ]);
         const isValidTransition = (
             fromStage: (typeof approvedWorkflowStages)[number],
             toStage: (typeof approvedWorkflowStages)[number],
-        ) => {
-            const fromRank = stageRank.get(fromStage);
-            const toRank = stageRank.get(toStage);
-
-            if (fromRank === undefined || toRank === undefined) {
-                return false;
-            }
-
-            return (
-                fromStage !== "Reconciled" &&
-                (toRank < fromRank || toRank === fromRank + 1)
-            );
-        };
+        ) => validTransitions.has(`${fromStage}->${toStage}`);
 
         expect(isValidTransition("Drafted", "Submitted")).toBeTruthy();
         expect(
             isValidTransition("Manager Approval", "AP Review"),
         ).toBeTruthy();
+        expect(isValidTransition("AP Review", "Paid")).toBeTruthy();
+        expect(isValidTransition("Paid", "Reconciled")).toBeTruthy();
+        expect(isValidTransition("Manager Approval", "Drafted")).toBeTruthy();
         expect(isValidTransition("AP Review", "Drafted")).toBeTruthy();
-        expect(isValidTransition("Paid", "Manager Approval")).toBeTruthy();
+        expect(isValidTransition("Paid", "Manager Approval")).toBeFalsy();
+        expect(isValidTransition("Submitted", "Drafted")).toBeFalsy();
         expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
-        expect(isValidTransition("Submitted", "Paid")).toBeFalsy();
         expect(isValidTransition("Reconciled", "Paid")).toBeFalsy();
         expect(isValidTransition("Reconciled", "Reconciled")).toBeFalsy();
     });
@@ -880,8 +877,8 @@ void describe("stageTransition schema", () => {
         expect(migrationSql).toContain("stage_transition_to_stage_check");
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
-        expect(migrationSql).toContain("then 5");
-        expect(migrationSql).toContain("+ 1");
+        expect(migrationSql).toContain("manager approval");
+        expect(migrationSql).toContain("ap review");
         expect(migrationSql).toContain(
             "stage_transition_expense_report_tenant_fk",
         );
