@@ -6,7 +6,6 @@ CREATE TABLE "attachment_metadata" (
 	"content_type" text NOT NULL,
 	"blob_reference" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "attachment_metadata_filename_not_blank_check" CHECK (nullif(btrim("attachment_metadata"."filename"), '') is not null),
 	CONSTRAINT "attachment_metadata_content_type_check" CHECK ("attachment_metadata"."content_type" in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json'))
 );
