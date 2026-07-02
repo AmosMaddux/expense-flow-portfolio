@@ -83,6 +83,56 @@ export const expenseReport = pgTable(
 export type ExpenseReport = InferSelectModel<typeof expenseReport>;
 export type NewExpenseReport = InferInsertModel<typeof expenseReport>;
 
+export const auditEntry = pgTable(
+    "audit_entry",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        actorId: uuid("actor_id").notNull(),
+        // Action is intentionally text for now because future audit events are not fully enumerated yet.
+        // Known initial values include transition_approved and transition_denied.
+        // Future stories such as SCRUM-108 may add more state-changing action names.
+        action: text("action").notNull(),
+        stageBeforeAction: text("stage_before_action").notNull(),
+        stageAfterProposedAction: text("stage_after_proposed_action").notNull(),
+        denialReason: text("denial_reason"),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "audit_entry_denial_reason_check",
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} <> 'transition_approved' or ${table.denialReason} is null)`,
+        ),
+        check(
+            "audit_entry_stage_before_action_check",
+            sql`${table.stageBeforeAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+        ),
+        check(
+            "audit_entry_stage_after_proposed_action_check",
+            sql`${table.stageAfterProposedAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+        ),
+        index("audit_entry_tenant_report_created_at_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.createdAt,
+        ),
+        index("audit_entry_tenant_actor_created_at_idx").on(
+            table.tenantId,
+            table.actorId,
+            table.createdAt,
+        ),
+        foreignKey({
+            name: "audit_entry_expense_report_tenant_fk",
+            // Tenant joins prevent audit entries from attaching to another tenant's report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+    ],
+);
+
 export const lineItem = pgTable(
     "line_item",
     {
@@ -182,3 +232,5 @@ export type ReceiptMetadata = InferSelectModel<typeof receiptMetadata>;
 export type NewReceiptMetadata = InferInsertModel<typeof receiptMetadata>;
 export type MileageEntry = InferSelectModel<typeof mileageEntry>;
 export type NewMileageEntry = InferInsertModel<typeof mileageEntry>;
+export type AuditEntry = InferSelectModel<typeof auditEntry>;
+export type NewAuditEntry = InferInsertModel<typeof auditEntry>;
