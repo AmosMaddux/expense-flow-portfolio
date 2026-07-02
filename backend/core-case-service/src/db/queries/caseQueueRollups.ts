@@ -26,6 +26,7 @@ const expectedStageValues = sql.join(
     sql`, `,
 );
 
+// Reads tenant-scoped Expense Report counts by workflow stage for the Case Queue.
 export async function readCaseQueueStageRollups(
     db: CaseQueueRollupDatabase,
     params: ReadCaseQueueStageRollupsParams,
