@@ -29,6 +29,13 @@
             "when": 1782918965889,
             "tag": "0003_silky_nico_minoru",
             "breakpoints": true
+        },
+        {
+            "idx": 4,
+            "version": "7",
+            "when": 1783006404756,
+            "tag": "0004_fine_rocket_racer",
+            "breakpoints": true
         }
     ]
 }

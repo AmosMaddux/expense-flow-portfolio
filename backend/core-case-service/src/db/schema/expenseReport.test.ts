@@ -1,11 +1,15 @@
 import { describe, expect, test } from "vitest";
 
+import { readFile } from "node:fs/promises";
+
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { getTableName } from "drizzle-orm";
 
 import {
+    approvedAuditActions,
     approvedWorkflowStages,
+    auditEntry,
     expenseReport,
     lineItem,
     mileageEntry,
@@ -49,8 +53,18 @@ const mileageEntryRequiredColumnNames = [
     "mileage_date",
 ];
 
+const auditEntryRequiredColumnNames = [
+    "tenant_id",
+    "expense_report_id",
+    "actor_id",
+    "action",
+    "stage_before_action",
+    "stage_after_proposed_action",
+    "created_at",
+];
+
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages and priority levels", () => {
+    void test("exports the approved workflow stages, priority levels, and audit actions", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -65,6 +79,11 @@ void describe("expenseReport schema", () => {
             "Normal",
             "High",
             "Urgent",
+        ]);
+
+        expect(approvedAuditActions).toStrictEqual([
+            "transition_approved",
+            "transition_denied",
         ]);
     });
 
@@ -83,7 +102,7 @@ void describe("expenseReport schema", () => {
             (column) => column.name === "tenant_id",
         );
 
-        expect(tenantId).not.toBeUndefined();
+        expect(tenantId).toBeDefined();
 
         if (tenantId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();
@@ -117,7 +136,7 @@ void describe("expenseReport schema", () => {
                 "expense_report_tenant_id_unique_idx",
         );
 
-        expect(tenantReportIndex).not.toBeUndefined();
+        expect(tenantReportIndex).toBeDefined();
 
         if (tenantReportIndex !== undefined) {
             expect(tenantReportIndex.config.unique).toBeTruthy();
@@ -140,7 +159,7 @@ void describe("expenseReport schema", () => {
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
         expect(migrationSql).toContain('create table "expense_report"');
-        expect(migrationSql).not.toContain("status");
+        expect(migrationSql.includes("status")).toBeFalsy();
 
         for (const columnName of requiredExpenseReportColumnNames) {
             expect(migrationSql).toContain(columnName);
@@ -154,6 +173,158 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");
         expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
+    });
+});
+
+void describe("auditEntry schema", () => {
+    void test("defines the append-only audit_entry table with required event columns", () => {
+        const tableConfig = getTableConfig(auditEntry);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(auditEntry)).toEqual("audit_entry");
+        expect(columnNames.includes("updated_at")).toBeFalsy();
+
+        for (const columnName of auditEntryRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        expect(columnNames).toContain("denial_reason");
+
+        for (const columnName of auditEntryRequiredColumnNames) {
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+    });
+
+    void test("keeps audit entries tenant-scoped and queryable by case or actor", () => {
+        const tableConfig = getTableConfig(auditEntry);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "audit_entry_expense_report_tenant_fk",
+            },
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "audit_entry_tenant_report_created_at_idx",
+            "audit_entry_tenant_actor_created_at_idx",
+        ]);
+    });
+
+    void test("keeps audit event constraints explicit", () => {
+        const tableConfig = getTableConfig(auditEntry);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "audit_entry_action_check",
+            "audit_entry_denial_reason_check",
+            "audit_entry_stage_after_proposed_action_check",
+            "audit_entry_stage_before_action_check",
+        ]);
+    });
+
+    void test("generates SQL for the audit_entry table, constraints, and indexes", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({
+            expenseReport,
+            lineItem,
+            receiptMetadata,
+            mileageEntry,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            auditEntry,
+            lineItem,
+            receiptMetadata,
+            mileageEntry,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "audit_entry"');
+        expect(migrationSql.includes('"updated_at"')).toBeFalsy();
+
+        for (const columnName of auditEntryRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain("denial_reason");
+
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain("audit_entry_action_check");
+        expect(migrationSql).toContain("audit_entry_denial_reason_check");
+        expect(migrationSql).toContain("transition_approved");
+        expect(migrationSql).toContain("transition_denied");
+        expect(migrationSql).toContain(
+            `"audit_entry"."action" = 'transition_denied' and nullif(btrim("audit_entry"."denial_reason"), '') is not null`,
+        );
+        expect(migrationSql).toContain(
+            `"audit_entry"."action" = 'transition_approved' and "audit_entry"."denial_reason" is null`,
+        );
+        expect(migrationSql).toContain('"stage_before_action" text not null');
+        expect(migrationSql).toContain(
+            '"stage_after_proposed_action" text not null',
+        );
+        expect(migrationSql).toContain("audit_entry_stage_before_action_check");
+        expect(migrationSql).toContain(
+            "audit_entry_stage_after_proposed_action_check",
+        );
+        expect(migrationSql).toContain(
+            "audit_entry_tenant_report_created_at_idx",
+        );
+        expect(migrationSql).toContain(
+            "audit_entry_tenant_actor_created_at_idx",
+        );
+    });
+
+    void test("keeps hand-authored migration SQL for audit entry immutability", async () => {
+        const migrationSql = (
+            await readFile("drizzle/0004_fine_rocket_racer.sql", "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            "create or replace function prevent_audit_entry_mutation()",
+        );
+        expect(migrationSql).toContain(
+            "raise exception 'audit_entry rows are append-only'",
+        );
+        expect(migrationSql).toContain(
+            "create trigger audit_entry_prevent_mutation_trigger",
+        );
+        expect(migrationSql).toContain(
+            'before update or delete on "audit_entry"',
+        );
     });
 });
 
@@ -175,8 +346,8 @@ void describe("lineItem schema", () => {
             (column) => column.name === "expense_report_id",
         );
 
-        expect(tenantId).not.toBeUndefined();
-        expect(expenseReportId).not.toBeUndefined();
+        expect(tenantId).toBeDefined();
+        expect(expenseReportId).toBeDefined();
 
         if (tenantId !== undefined && expenseReportId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();
@@ -269,8 +440,8 @@ void describe("receiptMetadata schema", () => {
                 (column) => column.name === "expense_report_id",
             );
 
-        expect(receiptMetadataTenantId).not.toBeUndefined();
-        expect(receiptMetadataExpenseReportId).not.toBeUndefined();
+        expect(receiptMetadataTenantId).toBeDefined();
+        expect(receiptMetadataExpenseReportId).toBeDefined();
 
         if (
             receiptMetadataTenantId !== undefined &&
@@ -352,8 +523,8 @@ void describe("mileageEntry schema", () => {
             (column) => column.name === "expense_report_id",
         );
 
-        expect(mileageEntryTenantId).not.toBeUndefined();
-        expect(mileageEntryExpenseReportId).not.toBeUndefined();
+        expect(mileageEntryTenantId).toBeDefined();
+        expect(mileageEntryExpenseReportId).toBeDefined();
 
         if (
             mileageEntryTenantId !== undefined &&
