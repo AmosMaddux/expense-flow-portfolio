@@ -142,10 +142,8 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain('create table "expense_report"');
         expect(migrationSql).not.toContain("status");
 
-
         for (const columnName of requiredExpenseReportColumnNames) {
             expect(migrationSql).toContain(columnName);
-
         }
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain("expense_report_current_stage_check");
