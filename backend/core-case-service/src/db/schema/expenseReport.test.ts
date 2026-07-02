@@ -7,7 +7,6 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { getTableName } from "drizzle-orm";
 
 import {
-    approvedAuditActions,
     approvedWorkflowStages,
     auditEntry,
     expenseReport,
@@ -69,7 +68,7 @@ const auditEntryMigrationSqlUrl = new URL(
 );
 
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages, priority levels, and audit actions", () => {
+    void test("exports the approved workflow stages and priority levels", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -84,11 +83,6 @@ void describe("expenseReport schema", () => {
             "Normal",
             "High",
             "Urgent",
-        ]);
-
-        expect(approvedAuditActions).toStrictEqual([
-            "transition_approved",
-            "transition_denied",
         ]);
     });
 
@@ -244,7 +238,6 @@ void describe("auditEntry schema", () => {
         expect(
             tableConfig.checks.map((constraint) => constraint.name).sort(),
         ).toEqual([
-            "audit_entry_action_check",
             "audit_entry_denial_reason_check",
             "audit_entry_stage_after_proposed_action_check",
             "audit_entry_stage_before_action_check",
@@ -287,15 +280,16 @@ void describe("auditEntry schema", () => {
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
         );
-        expect(migrationSql).toContain("audit_entry_action_check");
+        expect(migrationSql.includes("audit_entry_action_check")).toBeFalsy();
         expect(migrationSql).toContain("audit_entry_denial_reason_check");
+        expect(migrationSql).toContain('"action" text not null');
         expect(migrationSql).toContain("transition_approved");
         expect(migrationSql).toContain("transition_denied");
         expect(migrationSql).toContain(
-            `"audit_entry"."action" = 'transition_denied' and nullif(btrim("audit_entry"."denial_reason"), '') is not null`,
+            `"audit_entry"."action" <> 'transition_denied' or nullif(btrim("audit_entry"."denial_reason"), '') is not null`,
         );
         expect(migrationSql).toContain(
-            `"audit_entry"."action" = 'transition_approved' and "audit_entry"."denial_reason" is null`,
+            `"audit_entry"."action" <> 'transition_approved' or "audit_entry"."denial_reason" is null`,
         );
         expect(migrationSql).toContain('"stage_before_action" text not null');
         expect(migrationSql).toContain(

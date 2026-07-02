@@ -25,11 +25,6 @@ export const approvedWorkflowStages = [
 
 export const priorityLevels = ["Low", "Normal", "High", "Urgent"] as const;
 
-export const approvedAuditActions = [
-    "transition_approved",
-    "transition_denied",
-] as const;
-
 export const expenseReport = pgTable(
     "expense_report",
     {
@@ -95,6 +90,9 @@ export const auditEntry = pgTable(
         tenantId: uuid("tenant_id").notNull(),
         expenseReportId: uuid("expense_report_id").notNull(),
         actorId: uuid("actor_id").notNull(),
+        // Action is intentionally text for now because future audit events are not fully enumerated yet.
+        // Known initial values include transition_approved and transition_denied.
+        // Future stories such as SCRUM-108 may add more state-changing action names.
         action: text("action").notNull(),
         stageBeforeAction: text("stage_before_action").notNull(),
         stageAfterProposedAction: text("stage_after_proposed_action").notNull(),
@@ -105,12 +103,8 @@ export const auditEntry = pgTable(
     },
     (table) => [
         check(
-            "audit_entry_action_check",
-            sql`${table.action} in ('transition_approved', 'transition_denied')`,
-        ),
-        check(
             "audit_entry_denial_reason_check",
-            sql`(${table.action} = 'transition_denied' and nullif(btrim(${table.denialReason}), '') is not null) or (${table.action} = 'transition_approved' and ${table.denialReason} is null)`,
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} <> 'transition_approved' or ${table.denialReason} is null)`,
         ),
         check(
             "audit_entry_stage_before_action_check",
@@ -240,4 +234,3 @@ export type MileageEntry = InferSelectModel<typeof mileageEntry>;
 export type NewMileageEntry = InferInsertModel<typeof mileageEntry>;
 export type AuditEntry = InferSelectModel<typeof auditEntry>;
 export type NewAuditEntry = InferInsertModel<typeof auditEntry>;
-export type AuditAction = (typeof approvedAuditActions)[number];

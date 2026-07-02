@@ -8,8 +8,7 @@ CREATE TABLE "audit_entry" (
 	"stage_after_proposed_action" text NOT NULL,
 	"denial_reason" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "audit_entry_action_check" CHECK ("audit_entry"."action" in ('transition_approved', 'transition_denied')),
-	CONSTRAINT "audit_entry_denial_reason_check" CHECK (("audit_entry"."action" = 'transition_denied' and nullif(btrim("audit_entry"."denial_reason"), '') is not null) or ("audit_entry"."action" = 'transition_approved' and "audit_entry"."denial_reason" is null)),
+	CONSTRAINT "audit_entry_denial_reason_check" CHECK (("audit_entry"."action" <> 'transition_denied' or nullif(btrim("audit_entry"."denial_reason"), '') is not null) and ("audit_entry"."action" <> 'transition_approved' or "audit_entry"."denial_reason" is null)),
 	CONSTRAINT "audit_entry_stage_before_action_check" CHECK ("audit_entry"."stage_before_action" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')),
 	CONSTRAINT "audit_entry_stage_after_proposed_action_check" CHECK ("audit_entry"."stage_after_proposed_action" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled'))
 );

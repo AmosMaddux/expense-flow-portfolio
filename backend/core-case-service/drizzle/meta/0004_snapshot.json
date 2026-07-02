@@ -136,13 +136,9 @@
             "uniqueConstraints": {},
             "policies": {},
             "checkConstraints": {
-                "audit_entry_action_check": {
-                    "name": "audit_entry_action_check",
-                    "value": "\"audit_entry\".\"action\" in ('transition_approved', 'transition_denied')"
-                },
                 "audit_entry_denial_reason_check": {
                     "name": "audit_entry_denial_reason_check",
-                    "value": "(\"audit_entry\".\"action\" = 'transition_denied' and nullif(btrim(\"audit_entry\".\"denial_reason\"), '') is not null) or (\"audit_entry\".\"action\" = 'transition_approved' and \"audit_entry\".\"denial_reason\" is null)"
+                    "value": "(\"audit_entry\".\"action\" <> 'transition_denied' or nullif(btrim(\"audit_entry\".\"denial_reason\"), '') is not null) and (\"audit_entry\".\"action\" <> 'transition_approved' or \"audit_entry\".\"denial_reason\" is null)"
                 },
                 "audit_entry_stage_before_action_check": {
                     "name": "audit_entry_stage_before_action_check",
