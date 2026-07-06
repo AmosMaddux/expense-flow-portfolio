@@ -16,6 +16,7 @@ These rules apply to all work in this repository.
 - When realistic data is needed, substitute a synthetic fixture that cannot identify a real person, organization, account, transaction, vendor, card, or system secret.
 - If a request includes controlled data or secrets, refuse to repeat or transform those values and replace them with a clearly synthetic example.
 - For inbound and outbound request, you must use a zod schema request shape. Meaning, you must use a z.object defined request shape from zod to make sure the request is following in line with the accepted shape of a request from the backend.
+- Errors that are created within the backend of the application must use the format defined within core-case-service/src/errors
 
 ## Language Standards
 

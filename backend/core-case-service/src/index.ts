@@ -1,9 +1,4 @@
-import express, { type Request, type Response } from "express";
-
-const app = express();
-const PORT = process.env.PORT ?? 3000;
-
-app.use(express.json());
+import { app } from "./app.js";
 
 export {
     readCaseQueueReportsForStage,
@@ -14,16 +9,7 @@ export {
     type ReadCaseQueueStageRollupsParams,
 } from "./db/queries/caseQueueRollups.js";
 
-/**
- * Returns process health information for local and deployment smoke checks.
- */
-app.get("/health", (_req: Request, res: Response) => {
-    res.status(200).json({
-        status: "UP",
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-    });
-});
+const PORT = process.env.PORT ?? 3000;
 
 app.listen(PORT, () => {
     console.log(`Server is running locally at http://localhost:${PORT}`);
