@@ -10,7 +10,8 @@
     },
     "dependencies": {
         "drizzle-orm": "^0.45.2",
-        "express": "^5.1.0"
+        "express": "^5.1.0",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@electric-sql/pglite": "^0.5.3",
