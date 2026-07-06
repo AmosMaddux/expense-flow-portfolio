@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
-    createExpenseReportRequestSchema,
-    expenseReportResponseSchema,
+    CreateExpenseReportInboundRequestSchema,
+    ExpenseReportOutboundResponseSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
-} from "./expense-report.schema.js";
+} from "./expenseReport.dto.js";
 
 const validCreateExpenseReportRequest = {
     tenantId: "10000000-0000-4000-8000-000000000100",
@@ -26,10 +26,10 @@ const validExpenseReportResponse = {
     updatedAt: "2026-07-06T12:00:00.000Z",
 };
 
-void describe("createExpenseReportRequestSchema", () => {
-    void test("parses the fields needed to open a Drafted Expense Report", () => {
+void describe("CreateExpenseReportInboundRequestSchema", () => {
+    void test("parses the inbound fields needed to open a Drafted Expense Report", () => {
         const parsed: CreateExpenseReportRequest =
-            createExpenseReportRequestSchema.parse(
+            CreateExpenseReportInboundRequestSchema.parse(
                 validCreateExpenseReportRequest,
             );
 
@@ -39,8 +39,17 @@ void describe("createExpenseReportRequestSchema", () => {
         });
     });
 
+    void test("keeps workflow stage out of the inbound create request contract", () => {
+        const parsed = CreateExpenseReportInboundRequestSchema.parse({
+            ...validCreateExpenseReportRequest,
+            currentStage: "Submitted",
+        });
+
+        expect(parsed).not.toHaveProperty("currentStage");
+    });
+
     void test("accepts an explicit priority", () => {
-        const parsed = createExpenseReportRequestSchema.parse({
+        const parsed = CreateExpenseReportInboundRequestSchema.parse({
             ...validCreateExpenseReportRequest,
             priority: "High",
         });
@@ -50,7 +59,7 @@ void describe("createExpenseReportRequestSchema", () => {
 
     void test("rejects requests missing required Drafted-report fields", () => {
         expect(() =>
-            createExpenseReportRequestSchema.parse({
+            CreateExpenseReportInboundRequestSchema.parse({
                 tenantId: validCreateExpenseReportRequest.tenantId,
                 dueDate: validCreateExpenseReportRequest.dueDate,
             }),
@@ -59,7 +68,7 @@ void describe("createExpenseReportRequestSchema", () => {
 
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
-            createExpenseReportRequestSchema.parse({
+            CreateExpenseReportInboundRequestSchema.parse({
                 tenantId: "tenant-one",
                 owner: validCreateExpenseReportRequest.owner,
                 dueDate: "07/31/2026",
@@ -68,18 +77,19 @@ void describe("createExpenseReportRequestSchema", () => {
     });
 });
 
-void describe("expenseReportResponseSchema", () => {
-    void test("parses the API response report shape", () => {
-        const parsed: ExpenseReportResponse = expenseReportResponseSchema.parse(
-            validExpenseReportResponse,
-        );
+void describe("ExpenseReportOutboundResponseSchema", () => {
+    void test("parses the outbound API response report shape", () => {
+        const parsed: ExpenseReportResponse =
+            ExpenseReportOutboundResponseSchema.parse(
+                validExpenseReportResponse,
+            );
 
         expect(parsed).toStrictEqual(validExpenseReportResponse);
     });
 
     void test("rejects responses with an unknown workflow stage", () => {
         expect(() =>
-            expenseReportResponseSchema.parse({
+            ExpenseReportOutboundResponseSchema.parse({
                 ...validExpenseReportResponse,
                 currentStage: "Rejected",
             }),
@@ -88,7 +98,7 @@ void describe("expenseReportResponseSchema", () => {
 
     void test("rejects responses with invalid timestamp fields", () => {
         expect(() =>
-            expenseReportResponseSchema.parse({
+            ExpenseReportOutboundResponseSchema.parse({
                 ...validExpenseReportResponse,
                 createdAt: "2026-07-06",
             }),
