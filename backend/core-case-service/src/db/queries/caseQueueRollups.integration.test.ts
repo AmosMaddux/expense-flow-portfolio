@@ -1,38 +1,15 @@
-import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
-
-import { PGlite } from "@electric-sql/pglite";
-import { sql } from "drizzle-orm";
-import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { expenseReport } from "../schema/index.js";
 import { readCaseQueueStageRollups } from "./caseQueueRollups.js";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
 const tenantOneId = "10000000-0000-4000-8000-000000000100";
 const tenantTwoId = "99900000-0000-4000-8000-000000000999";
 const ownerId = "20000000-0000-4000-8000-000000000001";
 let syntheticReportSequence = 0;
-
-type TestDatabase = PgliteDatabase<Record<string, never>> & {
-    $client: PGlite;
-};
-
-async function createExpenseReportTable(db: TestDatabase): Promise<void> {
-    await db.execute(sql`
-        create table "expense_report" (
-            "id" uuid primary key not null,
-            "current_stage" text default 'Drafted' not null,
-            "on_hold" boolean default false not null,
-            "hold_reason" text,
-            "owner" uuid not null,
-            "priority" text default 'Normal' not null,
-            "due_date" date not null,
-            "tenant_id" uuid not null,
-            "created_at" timestamp with time zone default now() not null,
-            "updated_at" timestamp with time zone default now() not null
-        )
-    `);
-}
 
 function buildExpenseReportValues(
     tenantId: string,
@@ -54,11 +31,12 @@ function buildExpenseReportValues(
 }
 
 void describe("readCaseQueueStageRollups", () => {
-    const client = new PGlite();
-    const db = drizzle(client);
+    let pool: Pool;
+    let db: ReturnType<typeof drizzle>;
 
-    before(async () => {
-        await createExpenseReportTable(db);
+    beforeAll(async () => {
+        pool = new Pool({ connectionString: getCoreCaseTestDatabaseUrl() });
+        db = drizzle(pool);
 
         await db
             .insert(expenseReport)
@@ -96,8 +74,8 @@ void describe("readCaseQueueStageRollups", () => {
             ]);
     });
 
-    after(async () => {
-        await client.close();
+    afterAll(async () => {
+        await pool?.end();
     });
 
     void test("returns tenant-scoped counts for every workflow stage", async () => {
@@ -106,7 +84,7 @@ void describe("readCaseQueueStageRollups", () => {
             asOfDate: "2026-07-01",
         });
 
-        assert.deepEqual(rollups, [
+        expect(rollups).toEqual([
             {
                 currentStage: "Drafted",
                 reportCount: 2,

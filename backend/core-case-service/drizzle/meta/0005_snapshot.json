@@ -126,14 +126,8 @@
                     "name": "audit_entry_expense_report_tenant_fk",
                     "tableFrom": "audit_entry",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
@@ -234,14 +228,8 @@
                     "name": "attachment_metadata_expense_report_tenant_fk",
                     "tableFrom": "attachment_metadata",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
@@ -365,14 +353,8 @@
                     "name": "case_comment_expense_report_tenant_fk",
                     "tableFrom": "case_comment",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
@@ -676,14 +658,8 @@
                     "name": "line_item_tenant_expense_report_fk",
                     "tableFrom": "line_item",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
@@ -778,14 +754,8 @@
                     "name": "mileage_entry_expense_report_tenant_fk",
                     "tableFrom": "mileage_entry",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
@@ -886,14 +856,8 @@
                     "name": "receipt_metadata_expense_report_tenant_fk",
                     "tableFrom": "receipt_metadata",
                     "tableTo": "expense_report",
-                    "columnsFrom": [
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": [
-                        "tenant_id",
-                        "id"
-                    ],
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }
