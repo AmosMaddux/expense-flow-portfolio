@@ -43,6 +43,13 @@
             "when": 1783021718693,
             "tag": "0005_hot_lila_cheney",
             "breakpoints": true
+        },
+        {
+            "idx": 6,
+            "version": "7",
+            "when": 1783353194043,
+            "tag": "0006_burly_vision",
+            "breakpoints": true
         }
     ]
 }

@@ -133,6 +133,65 @@ export const auditEntry = pgTable(
     ],
 );
 
+export const stageTransition = pgTable(
+    "stage_transition",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        fromStage: text("from_stage").notNull(),
+        toStage: text("to_stage").notNull(),
+        actor: uuid("actor").notNull(),
+        reason: text("reason").notNull(),
+        occurredAt: timestamp("occurred_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "stage_transition_from_stage_check",
+            sql`${table.fromStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+        ),
+        check(
+            "stage_transition_to_stage_check",
+            sql`${table.toStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+        ),
+        check(
+            "stage_transition_reason_check",
+            sql`nullif(btrim(${table.reason}), '') is not null`,
+        ),
+        check(
+            "stage_transition_valid_edge_check",
+            sql`(
+                (${table.fromStage} = 'Drafted' and ${table.toStage} = 'Submitted')
+                or (${table.fromStage} = 'Submitted' and ${table.toStage} = 'Manager Approval')
+                or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'AP Review')
+                or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Paid')
+                or (${table.fromStage} = 'Paid' and ${table.toStage} = 'Reconciled')
+                or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'Drafted')
+                or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Drafted')
+            )`,
+        ),
+        foreignKey({
+            name: "stage_transition_expense_report_tenant_fk",
+            // Tenant joins prevent transitions from attaching to another tenant's report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("stage_transition_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+        index("stage_transition_tenant_occurred_at_idx").on(
+            table.tenantId,
+            table.occurredAt,
+        ),
+    ],
+);
+
+export type StageTransition = InferSelectModel<typeof stageTransition>;
+export type NewStageTransition = InferInsertModel<typeof stageTransition>;
+
 export const lineItem = pgTable(
     "line_item",
     {

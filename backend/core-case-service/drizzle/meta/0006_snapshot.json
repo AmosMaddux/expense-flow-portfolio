@@ -1,0 +1,1016 @@
+{
+    "id": "ab425211-8b28-4c95-9a93-16c4488062c2",
+    "prevId": "63043ee8-9f1d-4e31-bce5-d5649afc2e92",
+    "version": "7",
+    "dialect": "postgresql",
+    "tables": {
+        "public.attachment_metadata": {
+            "name": "attachment_metadata",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "filename": {
+                    "name": "filename",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "content_type": {
+                    "name": "content_type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "blob_reference": {
+                    "name": "blob_reference",
+                    "type": "jsonb",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "attachment_metadata_tenant_report_idx": {
+                    "name": "attachment_metadata_tenant_report_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "attachment_metadata_expense_report_tenant_fk": {
+                    "name": "attachment_metadata_expense_report_tenant_fk",
+                    "tableFrom": "attachment_metadata",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "attachment_metadata_filename_not_blank_check": {
+                    "name": "attachment_metadata_filename_not_blank_check",
+                    "value": "nullif(btrim(\"attachment_metadata\".\"filename\"), '') is not null"
+                },
+                "attachment_metadata_content_type_check": {
+                    "name": "attachment_metadata_content_type_check",
+                    "value": "\"attachment_metadata\".\"content_type\" in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.audit_entry": {
+            "name": "audit_entry",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "actor_id": {
+                    "name": "actor_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "action": {
+                    "name": "action",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "stage_before_action": {
+                    "name": "stage_before_action",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "stage_after_proposed_action": {
+                    "name": "stage_after_proposed_action",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "denial_reason": {
+                    "name": "denial_reason",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "audit_entry_tenant_report_created_at_idx": {
+                    "name": "audit_entry_tenant_report_created_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "audit_entry_tenant_actor_created_at_idx": {
+                    "name": "audit_entry_tenant_actor_created_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "actor_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "audit_entry_expense_report_tenant_fk": {
+                    "name": "audit_entry_expense_report_tenant_fk",
+                    "tableFrom": "audit_entry",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "audit_entry_denial_reason_check": {
+                    "name": "audit_entry_denial_reason_check",
+                    "value": "(\"audit_entry\".\"action\" <> 'transition_denied' or nullif(btrim(\"audit_entry\".\"denial_reason\"), '') is not null) and (\"audit_entry\".\"action\" <> 'transition_approved' or \"audit_entry\".\"denial_reason\" is null)"
+                },
+                "audit_entry_stage_before_action_check": {
+                    "name": "audit_entry_stage_before_action_check",
+                    "value": "\"audit_entry\".\"stage_before_action\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "audit_entry_stage_after_proposed_action_check": {
+                    "name": "audit_entry_stage_after_proposed_action_check",
+                    "value": "\"audit_entry\".\"stage_after_proposed_action\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.case_comment": {
+            "name": "case_comment",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "author_id": {
+                    "name": "author_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "body": {
+                    "name": "body",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "case_comment_tenant_report_created_at_idx": {
+                    "name": "case_comment_tenant_report_created_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "case_comment_tenant_author_created_at_idx": {
+                    "name": "case_comment_tenant_author_created_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "author_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "case_comment_expense_report_tenant_fk": {
+                    "name": "case_comment_expense_report_tenant_fk",
+                    "tableFrom": "case_comment",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "case_comment_body_not_blank_check": {
+                    "name": "case_comment_body_not_blank_check",
+                    "value": "nullif(btrim(\"case_comment\".\"body\"), '') is not null"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.expense_report": {
+            "name": "expense_report",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "current_stage": {
+                    "name": "current_stage",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "'Drafted'"
+                },
+                "on_hold": {
+                    "name": "on_hold",
+                    "type": "boolean",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": false
+                },
+                "hold_reason": {
+                    "name": "hold_reason",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "owner": {
+                    "name": "owner",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "priority": {
+                    "name": "priority",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "'Normal'"
+                },
+                "due_date": {
+                    "name": "due_date",
+                    "type": "date",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "expense_report_tenant_stage_idx": {
+                    "name": "expense_report_tenant_stage_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "current_stage",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "expense_report_tenant_due_date_idx": {
+                    "name": "expense_report_tenant_due_date_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "due_date",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "expense_report_tenant_owner_idx": {
+                    "name": "expense_report_tenant_owner_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "owner",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "expense_report_tenant_priority_idx": {
+                    "name": "expense_report_tenant_priority_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "priority",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "expense_report_tenant_id_unique_idx": {
+                    "name": "expense_report_tenant_id_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "expense_report_current_stage_check": {
+                    "name": "expense_report_current_stage_check",
+                    "value": "\"expense_report\".\"current_stage\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "expense_report_priority_check": {
+                    "name": "expense_report_priority_check",
+                    "value": "\"expense_report\".\"priority\" in ('Low', 'Normal', 'High', 'Urgent')"
+                },
+                "expense_report_hold_reason_check": {
+                    "name": "expense_report_hold_reason_check",
+                    "value": "(\"expense_report\".\"on_hold\" = true and nullif(btrim(\"expense_report\".\"hold_reason\"), '') is not null) or (\"expense_report\".\"on_hold\" = false and \"expense_report\".\"hold_reason\" is null)"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.line_item": {
+            "name": "line_item",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "merchant": {
+                    "name": "merchant",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "amount": {
+                    "name": "amount",
+                    "type": "numeric(12, 2)",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "currency": {
+                    "name": "currency",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "category": {
+                    "name": "category",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "line_item_tenant_expense_report_idx": {
+                    "name": "line_item_tenant_expense_report_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "line_item_tenant_expense_report_fk": {
+                    "name": "line_item_tenant_expense_report_fk",
+                    "tableFrom": "line_item",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {},
+            "isRLSEnabled": false
+        },
+        "public.mileage_entry": {
+            "name": "mileage_entry",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "route": {
+                    "name": "route",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "distance": {
+                    "name": "distance",
+                    "type": "numeric(8, 2)",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "mileage_date": {
+                    "name": "mileage_date",
+                    "type": "date",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "mileage_entry_tenant_report_idx": {
+                    "name": "mileage_entry_tenant_report_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "mileage_entry_expense_report_tenant_fk": {
+                    "name": "mileage_entry_expense_report_tenant_fk",
+                    "tableFrom": "mileage_entry",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {},
+            "isRLSEnabled": false
+        },
+        "public.receipt_metadata": {
+            "name": "receipt_metadata",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "merchant": {
+                    "name": "merchant",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "receipt_date": {
+                    "name": "receipt_date",
+                    "type": "date",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "amount": {
+                    "name": "amount",
+                    "type": "numeric(12, 2)",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "blob_reference": {
+                    "name": "blob_reference",
+                    "type": "jsonb",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "receipt_metadata_tenant_report_idx": {
+                    "name": "receipt_metadata_tenant_report_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "receipt_metadata_expense_report_tenant_fk": {
+                    "name": "receipt_metadata_expense_report_tenant_fk",
+                    "tableFrom": "receipt_metadata",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {},
+            "isRLSEnabled": false
+        },
+        "public.stage_transition": {
+            "name": "stage_transition",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "from_stage": {
+                    "name": "from_stage",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "to_stage": {
+                    "name": "to_stage",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "actor": {
+                    "name": "actor",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "reason": {
+                    "name": "reason",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "occurred_at": {
+                    "name": "occurred_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "stage_transition_tenant_report_idx": {
+                    "name": "stage_transition_tenant_report_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "stage_transition_tenant_occurred_at_idx": {
+                    "name": "stage_transition_tenant_occurred_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "occurred_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "stage_transition_expense_report_tenant_fk": {
+                    "name": "stage_transition_expense_report_tenant_fk",
+                    "tableFrom": "stage_transition",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "stage_transition_from_stage_check": {
+                    "name": "stage_transition_from_stage_check",
+                    "value": "\"stage_transition\".\"from_stage\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "stage_transition_to_stage_check": {
+                    "name": "stage_transition_to_stage_check",
+                    "value": "\"stage_transition\".\"to_stage\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "stage_transition_reason_check": {
+                    "name": "stage_transition_reason_check",
+                    "value": "nullif(btrim(\"stage_transition\".\"reason\"), '') is not null"
+                },
+                "stage_transition_valid_edge_check": {
+                    "name": "stage_transition_valid_edge_check",
+                    "value": "(\n                (\"stage_transition\".\"from_stage\" = 'Drafted' and \"stage_transition\".\"to_stage\" = 'Submitted')\n                or (\"stage_transition\".\"from_stage\" = 'Submitted' and \"stage_transition\".\"to_stage\" = 'Manager Approval')\n                or (\"stage_transition\".\"from_stage\" = 'Manager Approval' and \"stage_transition\".\"to_stage\" = 'AP Review')\n                or (\"stage_transition\".\"from_stage\" = 'AP Review' and \"stage_transition\".\"to_stage\" = 'Paid')\n                or (\"stage_transition\".\"from_stage\" = 'Paid' and \"stage_transition\".\"to_stage\" = 'Reconciled')\n                or (\"stage_transition\".\"from_stage\" = 'Manager Approval' and \"stage_transition\".\"to_stage\" = 'Drafted')\n                or (\"stage_transition\".\"from_stage\" = 'AP Review' and \"stage_transition\".\"to_stage\" = 'Drafted')\n            )"
+                }
+            },
+            "isRLSEnabled": false
+        }
+    },
+    "enums": {},
+    "schemas": {},
+    "sequences": {},
+    "roles": {},
+    "policies": {},
+    "views": {},
+    "_meta": {
+        "columns": {},
+        "schemas": {},
+        "tables": {}
+    }
+}
