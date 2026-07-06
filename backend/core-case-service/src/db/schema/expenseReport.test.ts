@@ -15,6 +15,7 @@ import {
     mileageEntry,
     priorityLevels,
     receiptMetadata,
+    stageTransition,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -25,6 +26,16 @@ const requiredExpenseReportColumnNames = [
     "priority",
     "due_date",
     "tenant_id",
+];
+
+const requiredStageTransitionColumnNames = [
+    "expense_report_id",
+    "tenant_id",
+    "from_stage",
+    "to_stage",
+    "actor",
+    "reason",
+    "occurred_at",
 ];
 
 const requiredLineItemColumnNames = [
@@ -618,6 +629,143 @@ void describe("case comment and attachment migration SQL", () => {
         expect(
             migrationSql.includes('before delete on "attachment_metadata"'),
         ).toBeFalsy();
+    });
+});
+
+void describe("stageTransition schema", () => {
+    void test("defines the stage_transition table with required audit columns", () => {
+        const tableConfig = getTableConfig(stageTransition);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(stageTransition)).toEqual("stage_transition");
+
+        for (const columnName of requiredStageTransitionColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        for (const columnName of requiredStageTransitionColumnNames) {
+            const column = tableConfig.columns.find(
+                (candidate) => candidate.name === columnName,
+            );
+
+            expect(column).not.toBeUndefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+    });
+
+    void test("keeps workflow checks, reason check, tenant indexes, and tenant-safe foreign key", () => {
+        const tableConfig = getTableConfig(stageTransition);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "stage_transition_from_stage_check",
+            "stage_transition_reason_check",
+            "stage_transition_to_stage_check",
+            "stage_transition_valid_edge_check",
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "stage_transition_tenant_report_idx",
+            "stage_transition_tenant_occurred_at_idx",
+        ]);
+
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "stage_transition_expense_report_tenant_fk",
+            },
+        ]);
+    });
+
+    void test("documents the valid workflow edge policy", () => {
+        const validTransitions = new Set([
+            "Drafted->Submitted",
+            "Submitted->Manager Approval",
+            "Manager Approval->AP Review",
+            "AP Review->Paid",
+            "Paid->Reconciled",
+            "Manager Approval->Drafted",
+            "AP Review->Drafted",
+        ]);
+        const isValidTransition = (
+            fromStage: (typeof approvedWorkflowStages)[number],
+            toStage: (typeof approvedWorkflowStages)[number],
+        ) => validTransitions.has(`${fromStage}->${toStage}`);
+
+        expect(isValidTransition("Drafted", "Submitted")).toBeTruthy();
+        expect(isValidTransition("Manager Approval", "AP Review")).toBeTruthy();
+        expect(isValidTransition("AP Review", "Paid")).toBeTruthy();
+        expect(isValidTransition("Paid", "Reconciled")).toBeTruthy();
+        expect(isValidTransition("Manager Approval", "Drafted")).toBeTruthy();
+        expect(isValidTransition("AP Review", "Drafted")).toBeTruthy();
+        expect(isValidTransition("Paid", "Manager Approval")).toBeFalsy();
+        expect(isValidTransition("Submitted", "Drafted")).toBeFalsy();
+        expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
+        expect(isValidTransition("Reconciled", "Paid")).toBeFalsy();
+        expect(isValidTransition("Reconciled", "Reconciled")).toBeFalsy();
+    });
+
+    void test("generates SQL for the table, constraints, foreign key, and indexes", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({ expenseReport });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            stageTransition,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "stage_transition"');
+
+        for (const columnName of requiredStageTransitionColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain('"tenant_id" uuid not null');
+        expect(migrationSql).toContain(
+            '"occurred_at" timestamp with time zone default now() not null',
+        );
+        expect(migrationSql).toContain("stage_transition_from_stage_check");
+        expect(migrationSql).toContain("stage_transition_to_stage_check");
+        expect(migrationSql).toContain("stage_transition_reason_check");
+        expect(migrationSql).toContain("stage_transition_valid_edge_check");
+        expect(migrationSql).toContain("manager approval");
+        expect(migrationSql).toContain("ap review");
+        expect(migrationSql).toContain(
+            "stage_transition_expense_report_tenant_fk",
+        );
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain("stage_transition_tenant_report_idx");
+        expect(migrationSql).toContain(
+            "stage_transition_tenant_occurred_at_idx",
+        );
     });
 });
 
