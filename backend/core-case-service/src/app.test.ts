@@ -68,13 +68,13 @@ void describe("app", () => {
         expect(body.paths).toHaveProperty("/expense-reports/{id}");
     });
 
-    void test("serves Swagger UI documentation for the OpenAPI document", async () => {
+    void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/docs/");
         const body = await response.text();
 
         expect(response.status).toBe(200);
         expect(response.headers.get("content-type")).toContain("text/html");
         expect(body).toContain("ExpenseFlow Core Case Service API Docs");
-        expect(body).toContain("swagger-ui-bundle.js");
+        expect(body).toContain("/openapi.json");
     });
 });

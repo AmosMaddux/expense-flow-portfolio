@@ -1,5 +1,5 @@
 import express, { type Request, type Response } from "express";
-import * as swaggerUi from "swagger-ui-express";
+import { apiReference } from "@scalar/express-api-reference";
 
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
@@ -28,9 +28,9 @@ app.get("/openapi.json", (_req: Request, res: Response) => {
 
 app.use(
     "/docs",
-    swaggerUi.serve,
-    swaggerUi.setup(coreCaseServiceOpenApiDocument as swaggerUi.JsonObject, {
-        customSiteTitle: "ExpenseFlow Core Case Service API Docs",
+    apiReference({
+        pageTitle: "ExpenseFlow Core Case Service API Docs",
+        sources: [{ url: "/openapi.json" }],
     }),
 );
 
