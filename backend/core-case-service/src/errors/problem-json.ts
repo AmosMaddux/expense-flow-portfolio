@@ -1,0 +1,80 @@
+import type { ErrorRequestHandler, NextFunction, Request } from "express";
+import { ZodError } from "zod";
+
+type ProblemJsonBody = {
+    type: string;
+    title: string;
+    status: number;
+    detail: string;
+    instance: string;
+};
+
+/**
+ * Represents a missing Core Case Service resource.
+ */
+export class NotFoundError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "NotFoundError";
+    }
+}
+
+/**
+ * Converts thrown application errors into RFC 9457 Problem+JSON responses.
+ */
+export const problemJsonErrorHandler: ErrorRequestHandler = (
+    error: unknown,
+    req: Request,
+    res,
+    next: NextFunction,
+) => {
+    if (res.headersSent) {
+        next(error);
+        return;
+    }
+
+    const problem = toProblemJson(error, req.originalUrl);
+
+    res.status(problem.status).type("application/problem+json").json(problem);
+};
+
+function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
+    if (error instanceof ZodError) {
+        return {
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: formatZodErrorDetail(error),
+            instance,
+        };
+    }
+
+    if (error instanceof NotFoundError) {
+        return {
+            type: "about:blank",
+            title: "Not Found",
+            status: 404,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    return {
+        type: "about:blank",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "An unexpected error occurred.",
+        instance,
+    };
+}
+
+function formatZodErrorDetail(error: ZodError): string {
+    return error.issues
+        .map((issue) => {
+            const fieldPath = issue.path.join(".");
+            const field = fieldPath.length > 0 ? fieldPath : "body";
+
+            return `${field}: ${issue.message}`;
+        })
+        .join("; ");
+}
