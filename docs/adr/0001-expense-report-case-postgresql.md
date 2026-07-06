@@ -28,6 +28,7 @@ The Core Case Service will store the `Expense Report` Case in PostgreSQL and acc
 The relational schema will model the case as the durable aggregate root for:
 
 <!-- Assumes future design, update if contrary -->
+
 - Case identity, tenant identity, `current_stage`, owner assignment, due date, priority, `on_hold`, and `hold_reason`.
 - Transactions, receipt metadata, mileage entries, submitter, approval chain, payment stub reference, comments, and attachment metadata.
 - Audit trail entries and stage-transition log records that preserve successful and denied workflow transition attempts.
