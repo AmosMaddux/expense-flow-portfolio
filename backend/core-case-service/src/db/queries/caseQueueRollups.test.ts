@@ -4,15 +4,11 @@ import { expenseReport } from "../schema/index.js";
 import { readCaseQueueStageRollups } from "./caseQueueRollups.js";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import {
-    startCoreCaseTestDatabase,
-    type CoreCaseTestDatabase,
-} from "../../testSupport/postgresTestHarness.js";
+import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
 const tenantOneId = "10000000-0000-4000-8000-000000000100";
 const tenantTwoId = "99900000-0000-4000-8000-000000000999";
 const ownerId = "20000000-0000-4000-8000-000000000001";
-const postgresContainerTimeoutMs = 60_000;
 let syntheticReportSequence = 0;
 
 function buildExpenseReportValues(
@@ -35,13 +31,11 @@ function buildExpenseReportValues(
 }
 
 void describe("readCaseQueueStageRollups", () => {
-    let testDatabase: CoreCaseTestDatabase;
     let pool: Pool;
     let db: ReturnType<typeof drizzle>;
 
     beforeAll(async () => {
-        testDatabase = await startCoreCaseTestDatabase();
-        pool = new Pool({ connectionString: testDatabase.connectionString });
+        pool = new Pool({ connectionString: getCoreCaseTestDatabaseUrl() });
         db = drizzle(pool);
 
         await db
@@ -78,11 +72,10 @@ void describe("readCaseQueueStageRollups", () => {
                     "2026-06-30",
                 ),
             ]);
-    }, postgresContainerTimeoutMs);
+    });
 
     afterAll(async () => {
         await pool?.end();
-        await testDatabase?.stop();
     });
 
     void test("returns tenant-scoped counts for every workflow stage", async () => {
