@@ -1,4 +1,3 @@
-
 import { describe, test, expect, vi, afterEach } from "vitest";
 import { Pool } from "pg";
 
@@ -7,34 +6,34 @@ import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.
 import { drizzle } from "drizzle-orm/node-postgres";
 
 // Position of this mock is important, needs to be done before any imports that use it
-vi.mock("../db/client.js", async (importOriginal) => {
-      const client = new Pool({
-            connectionString: getCoreCaseTestDatabaseUrl(),
-        });
-      const db = drizzle(client);
-      return {
-        db: db
-      };
+vi.mock("../db/client.js", () => {
+    const client = new Pool({
+        connectionString: getCoreCaseTestDatabaseUrl(),
     });
+    const db = drizzle(client);
+    return {
+        db: db,
+    };
+});
 
 import { getExpenseReport, newExpenseReport } from "./expense-report-repo.js";
-import { expenseReport, NewExpenseReport, ExpenseReport } from "../db/schema/expenseReport.js";
+import { expenseReport, NewExpenseReport } from "../db/schema/expenseReport.js";
 import { db } from "../db/client.js";
 
-
 describe("Test Expense Report Repository", () => {
-    
-
     afterEach(async () => {
         await db.delete(expenseReport);
-    })
+    });
 
-    function buildNewExpenseReport(tenantId?: string, ownerId?: string): NewExpenseReport {
+    function buildNewExpenseReport(
+        tenantId?: string,
+        ownerId?: string,
+    ): NewExpenseReport {
         return {
             tenantId: tenantId ?? "00000000-0000-0000-0000-000000000083",
             owner: ownerId ?? "20000000-0000-0000-0000-000000000083",
-            dueDate: '2026-07-02',
-        }
+            dueDate: "2026-07-02",
+        };
     }
 
     test("Can insert new report", async () => {
@@ -49,7 +48,7 @@ describe("Test Expense Report Repository", () => {
             expect(results.data.tenantId).toEqual(targetTenantId);
             expect(results.data.id).not.toBeUndefined();
         }
-    })
+    });
 
     test("Rejects mismatched tenant inserts", async () => {
         const reportTenantId = "00000000-0000-0000-0000-000000000083";
@@ -60,7 +59,7 @@ describe("Test Expense Report Repository", () => {
         const results = await newExpenseReport(sessionTenantId, newReport);
 
         expect(results.hasData).toBeFalsy();
-    })
+    });
 
     test("Test get report", async () => {
         const targetTenantId = "00000000-0000-0000-0000-000000000083";
@@ -79,7 +78,7 @@ describe("Test Expense Report Repository", () => {
             expect(getResults.data.id).toEqual(targetId);
             expect(getResults.data.tenantId).toEqual(targetTenantId);
         }
-    })
+    });
 
     test("Test get no reports", async () => {
         const targetTenantId = "00000000-0000-0000-0000-000000000083";
@@ -87,6 +86,5 @@ describe("Test Expense Report Repository", () => {
 
         const getResults = await getExpenseReport(targetId, targetTenantId);
         expect(getResults.hasData).toBeFalsy();
-    })
-
+    });
 });
