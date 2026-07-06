@@ -15,6 +15,7 @@ These rules apply to all work in this repository.
 - Never place controlled data, production data, customer data, credentials, tokens, API keys, secrets, or private identifiers in prompts, generated code, logs, tests, fixtures, documentation, or output.
 - When realistic data is needed, substitute a synthetic fixture that cannot identify a real person, organization, account, transaction, vendor, card, or system secret.
 - If a request includes controlled data or secrets, refuse to repeat or transform those values and replace them with a clearly synthetic example.
+- For inbound and outbound request, you must use a zod schema request shape. Meaning, you must use a z.object defined request shape from zod to make sure the request is following in line with the accepted shape of a request from the backend.
 
 ## Language Standards
 
