@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { None, Results, Some } from "./repo-common.js"
 
 
-async function get_expense_report(id:string, tenant_id: string): Promise<Results<ExpenseReport>> {
+export async function getExpenseReport(id:string, tenant_id: string): Promise<Results<ExpenseReport>> {
     const report : ExpenseReport[] = await db.select().from(expenseReport).where(
                         and(
                             eq(expenseReport.id, id),
@@ -18,7 +18,7 @@ async function get_expense_report(id:string, tenant_id: string): Promise<Results
     }
 }
 
-async function new_expense_report(tenant_id: string, new_report: NewExpenseReport): Promise<Results<ExpenseReport>> {
+export async function newExpenseReport(tenant_id: string, new_report: NewExpenseReport): Promise<Results<ExpenseReport>> {
     // require the submitted report to have the same tenant id
     if (new_report.tenantId != tenant_id) {
         return None();
