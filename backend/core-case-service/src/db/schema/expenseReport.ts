@@ -60,6 +60,11 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.currentStage,
         ),
+        index("expense_report_tenant_stage_due_date_idx").on(
+            table.tenantId,
+            table.currentStage,
+            table.dueDate,
+        ),
         index("expense_report_tenant_due_date_idx").on(
             table.tenantId,
             table.dueDate,
