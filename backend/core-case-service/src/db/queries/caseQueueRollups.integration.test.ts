@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { expenseReport } from "../schema/index.js";
-import { readCaseQueueStageRollups } from "./caseQueueRollups.js";
+import {
+    readCaseQueueReportsForStage,
+    readCaseQueueStageRollups,
+} from "./caseQueueRollups.js";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
@@ -116,5 +119,34 @@ void describe("readCaseQueueStageRollups", () => {
                 overdueCount: 0,
             },
         ]);
+    });
+
+    void test("returns tenant-scoped stage reports with a derived overdue flag", async () => {
+        const reports = await readCaseQueueReportsForStage(db, {
+            tenantId: tenantOneId,
+            currentStage: "Drafted",
+            asOfDate: "2026-07-01",
+        });
+
+        expect(
+            reports.map((report) => ({
+                currentStage: report.currentStage,
+                dueDate: report.dueDate,
+                isOverdue: report.isOverdue,
+            })),
+        ).toEqual([
+            {
+                currentStage: "Drafted",
+                dueDate: "2026-06-30",
+                isOverdue: true,
+            },
+            {
+                currentStage: "Drafted",
+                dueDate: "2026-07-02",
+                isOverdue: false,
+            },
+        ]);
+
+        expect(reports.every((report) => report.id.length > 0)).toBeTruthy();
     });
 });

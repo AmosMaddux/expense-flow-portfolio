@@ -6,8 +6,11 @@ const PORT = process.env.PORT ?? 3000;
 app.use(express.json());
 
 export {
+    readCaseQueueReportsForStage,
     readCaseQueueStageRollups,
+    type CaseQueueReport,
     type CaseQueueStageRollup,
+    type ReadCaseQueueReportsForStageParams,
     type ReadCaseQueueStageRollupsParams,
 } from "./db/queries/caseQueueRollups.js";
 
