@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { loadExpenseReportSummary } from "./index.js";
+import { loadExpenseReportSummary } from "./expenseReports/index.js";
 
 void describe("loadExpenseReportSummary", () => {
     void test("returns the summary when Promise-based I/O succeeds", async () => {
