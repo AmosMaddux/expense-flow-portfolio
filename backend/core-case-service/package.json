@@ -9,10 +9,12 @@
         "test": "npm run build --workspaces=false && vitest run"
     },
     "dependencies": {
-        "drizzle-orm": "^0.45.2"
+        "drizzle-orm": "^0.45.2",
+        "express": "^5.1.0"
     },
     "devDependencies": {
         "@electric-sql/pglite": "^0.5.3",
+        "@types/express": "^5.0.6",
         "@types/node": "^26.0.1",
         "drizzle-kit": "^0.31.10",
         "vitest": "^3.2.4"
