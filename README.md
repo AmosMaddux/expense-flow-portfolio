@@ -112,6 +112,12 @@ Utility function to run linter, typing, and test checks:
 make
 ```
 
+## PostgreSQL setup
+
+Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with ``drizzle-kit migrate``
+
+Rollbacks for each migration are located in [backend/core-case-service/drizzle/rollback](backend/core-case-service/drizzle/rollback). These are manually applied and maintained.
+
 ## Posture and ADR Conventions
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.

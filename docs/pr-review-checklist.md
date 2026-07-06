@@ -75,6 +75,7 @@ Return findings first, ordered by severity. Include file and line references whe
   - Confirm exported/public functions, public classes, and public methods have short docstrings or JSDoc comments where required.
   - Confirm inline comments explain non-obvious intent, constraints, tenant-isolation decisions, database assumptions, workarounds, performance choices, or surprising behavior.
   - Confirm stale or redundant comments were updated or removed.
+- [ ] All migrations have a matching rollback created
 
 ## Review Notes
 
