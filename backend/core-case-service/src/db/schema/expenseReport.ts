@@ -133,7 +133,6 @@ export const auditEntry = pgTable(
     ],
 );
 
-
 export const stageTransition = pgTable(
     "stage_transition",
     {
@@ -192,7 +191,6 @@ export const stageTransition = pgTable(
 
 export type StageTransition = InferSelectModel<typeof stageTransition>;
 export type NewStageTransition = InferInsertModel<typeof stageTransition>;
-
 
 export const lineItem = pgTable(
     "line_item",

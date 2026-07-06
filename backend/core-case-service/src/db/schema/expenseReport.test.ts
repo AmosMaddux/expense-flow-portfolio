@@ -833,9 +833,7 @@ void describe("stageTransition schema", () => {
         ) => validTransitions.has(`${fromStage}->${toStage}`);
 
         expect(isValidTransition("Drafted", "Submitted")).toBeTruthy();
-        expect(
-            isValidTransition("Manager Approval", "AP Review"),
-        ).toBeTruthy();
+        expect(isValidTransition("Manager Approval", "AP Review")).toBeTruthy();
         expect(isValidTransition("AP Review", "Paid")).toBeTruthy();
         expect(isValidTransition("Paid", "Reconciled")).toBeTruthy();
         expect(isValidTransition("Manager Approval", "Drafted")).toBeTruthy();
@@ -891,7 +889,6 @@ void describe("stageTransition schema", () => {
         );
     });
 });
-
 
 void describe("lineItem schema", () => {
     void test("defines the line_item table with normalized transaction columns", () => {
