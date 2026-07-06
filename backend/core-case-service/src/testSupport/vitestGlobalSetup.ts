@@ -1,20 +1,26 @@
 import type { TestProject } from "vitest/node";
 
-import { startCoreCaseTestDatabase } from "./postgresTestHarness.js";
+import {
+    startCoreCaseTestDatabase,
+    type CoreCaseTestDatabase,
+} from "./postgresTestHarness.js";
 
 const coreCaseTestDatabaseUrlKey = "coreCaseTestDatabaseUrl";
+let testDatabase: CoreCaseTestDatabase | undefined;
 
 /**
  * Start the shared PostgreSQL container used by Core Case integration tests.
  */
-export default async function setup(
-    project: TestProject,
-): Promise<() => Promise<void>> {
-    const testDatabase = await startCoreCaseTestDatabase();
+export async function setup(project: TestProject): Promise<void> {
+    testDatabase = await startCoreCaseTestDatabase();
 
     project.provide(coreCaseTestDatabaseUrlKey, testDatabase.connectionString);
+}
 
-    return async () => {
-        await testDatabase.stop();
-    };
+/**
+ * Stop the shared PostgreSQL container after Core Case integration tests finish.
+ */
+export async function teardown(): Promise<void> {
+    await testDatabase?.stop();
+    testDatabase = undefined;
 }
