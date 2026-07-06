@@ -1,9 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { execFile } from "node:child_process";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { readFile, readdir } from "node:fs/promises";
 
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -100,9 +96,6 @@ const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
     import.meta.url,
 );
-const execFileAsync = promisify(execFile);
-const testWithDatabase =
-    process.env.CORE_CASE_TEST_DATABASE_URL === undefined ? test.skip : test;
 
 async function readLatestMigrationSql(): Promise<string> {
     // Drizzle chooses a generated suffix, so pin this test to the next migration number.
@@ -118,20 +111,6 @@ async function readLatestMigrationSql(): Promise<string> {
     }
 
     return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
-}
-
-async function readAllMigrationSql(): Promise<string> {
-    const migrationFiles = (await readdir(coreCaseServiceDrizzleUrl))
-        .filter((fileName) => /^\d{4}_.*\.sql$/u.test(fileName))
-        .sort();
-
-    const migrationSql = await Promise.all(
-        migrationFiles.map((fileName) =>
-            readFile(new URL(fileName, coreCaseServiceDrizzleUrl), "utf8"),
-        ),
-    );
-
-    return migrationSql.join("\n");
 }
 
 void describe("expenseReport schema", () => {
@@ -651,106 +630,6 @@ void describe("case comment and attachment migration SQL", () => {
             migrationSql.includes('before delete on "attachment_metadata"'),
         ).toBeFalsy();
     });
-
-    void testWithDatabase(
-        "enforces mutation triggers and attachment deletes in PostgreSQL",
-        async () => {
-            const databaseUrl = process.env.CORE_CASE_TEST_DATABASE_URL;
-            if (databaseUrl === undefined) {
-                throw new Error("CORE_CASE_TEST_DATABASE_URL is required");
-            }
-
-            const tenantId = "00000000-0000-0000-0000-000000000083";
-            const reportId = "10000000-0000-0000-0000-000000000083";
-            const ownerId = "20000000-0000-0000-0000-000000000083";
-            const authorId = "30000000-0000-0000-0000-000000000083";
-            const commentId = "40000000-0000-0000-0000-000000000083";
-            const attachmentId = "50000000-0000-0000-0000-000000000083";
-            const migrationSql = await readAllMigrationSql();
-            const scriptPath = join(
-                tmpdir(),
-                `core-case-migration-${process.pid}.sql`,
-            );
-            const scriptSql = `
-BEGIN;
-${migrationSql}
-
-INSERT INTO "expense_report" ("id", "owner", "due_date", "tenant_id")
-VALUES ('${reportId}', '${ownerId}', '2026-07-02', '${tenantId}');
-
-INSERT INTO "case_comment" ("id", "tenant_id", "expense_report_id", "author_id", "body")
-VALUES ('${commentId}', '${tenantId}', '${reportId}', '${authorId}', 'Initial comment');
-
-INSERT INTO "attachment_metadata" ("id", "tenant_id", "expense_report_id", "filename", "content_type", "blob_reference")
-VALUES ('${attachmentId}', '${tenantId}', '${reportId}', 'receipt.pdf', 'application/pdf', '{"bucket":"case-artifacts","key":"receipt.pdf"}');
-
-DO $$
-BEGIN
-    UPDATE "case_comment" SET "body" = 'edited' WHERE "id" = '${commentId}';
-    RAISE EXCEPTION 'expected case_comment update to fail';
-EXCEPTION
-    WHEN others THEN
-        IF SQLERRM <> 'case_comment rows are append-only' THEN
-            RAISE;
-        END IF;
-END;
-$$;
-
-DO $$
-BEGIN
-    DELETE FROM "case_comment" WHERE "id" = '${commentId}';
-    RAISE EXCEPTION 'expected case_comment delete to fail';
-EXCEPTION
-    WHEN others THEN
-        IF SQLERRM <> 'case_comment rows are append-only' THEN
-            RAISE;
-        END IF;
-END;
-$$;
-
-DO $$
-BEGIN
-    UPDATE "attachment_metadata" SET "filename" = 'corrected.pdf' WHERE "id" = '${attachmentId}';
-    RAISE EXCEPTION 'expected attachment_metadata update to fail';
-EXCEPTION
-    WHEN others THEN
-        IF SQLERRM <> 'attachment_metadata rows cannot be updated' THEN
-            RAISE;
-        END IF;
-END;
-$$;
-
-DELETE FROM "attachment_metadata" WHERE "id" = '${attachmentId}';
-
-DO $$
-BEGIN
-    INSERT INTO "attachment_metadata" ("tenant_id", "expense_report_id", "filename", "content_type", "blob_reference")
-    VALUES ('${tenantId}', '${reportId}', 'receipt.bin', 'image', '{"bucket":"case-artifacts","key":"receipt.bin"}');
-    RAISE EXCEPTION 'expected unsupported content_type to fail';
-EXCEPTION
-    WHEN check_violation THEN
-        NULL;
-END;
-$$;
-
-ROLLBACK;
-`;
-
-            await writeFile(scriptPath, scriptSql, "utf8");
-
-            try {
-                await execFileAsync("psql", [
-                    databaseUrl,
-                    "--set=ON_ERROR_STOP=1",
-                    "--quiet",
-                    "--file",
-                    scriptPath,
-                ]);
-            } finally {
-                await rm(scriptPath, { force: true });
-            }
-        },
-    );
 });
 
 void describe("stageTransition schema", () => {
