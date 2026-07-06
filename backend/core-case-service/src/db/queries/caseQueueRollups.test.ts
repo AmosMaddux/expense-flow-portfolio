@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
@@ -57,7 +56,7 @@ void describe("readCaseQueueStageRollups", () => {
     const client = new PGlite();
     const db = drizzle(client);
 
-    before(async () => {
+    beforeAll(async () => {
         await createExpenseReportTable(db);
 
         await db
@@ -96,7 +95,7 @@ void describe("readCaseQueueStageRollups", () => {
             ]);
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.close();
     });
 
@@ -106,7 +105,7 @@ void describe("readCaseQueueStageRollups", () => {
             asOfDate: "2026-07-01",
         });
 
-        assert.deepEqual(rollups, [
+        expect(rollups).toStrictEqual([
             {
                 currentStage: "Drafted",
                 reportCount: 2,

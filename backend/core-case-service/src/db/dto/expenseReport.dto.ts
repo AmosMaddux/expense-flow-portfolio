@@ -1,6 +1,9 @@
+import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import { approvedWorkflowStages, priorityLevels } from "../schema/index.js";
+
+extendZodWithOpenApi(z);
 
 // Inbound request gatekeeper: client-created reports cannot supply currentStage.
 export const CreateExpenseReportInboundRequestSchema = z.object({
