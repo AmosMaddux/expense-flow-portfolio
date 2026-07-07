@@ -80,7 +80,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const serializedDocument = JSON.stringify(document).toLowerCase();
 
         expect(serializedDocument).toContain("records the initial audit");
-        expect(serializedDocument).toContain("expense report case by identifier");
+        expect(serializedDocument).toContain(
+            "expense report case by identifier",
+        );
         expect(serializedDocument).not.toContain("planned endpoint");
     });
 });

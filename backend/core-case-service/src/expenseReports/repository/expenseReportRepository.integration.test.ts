@@ -150,7 +150,6 @@ void describe("expenseReportRepository", () => {
     });
 
     void test("returns undefined when an Expense Report is absent", async () => {
-        const targetTenantId = "00000000-0000-4000-8000-000000000187";
         const targetId = "10000000-0000-4000-8000-000000000187";
 
         const foundReport = await findExpenseReportById(targetId);

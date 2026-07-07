@@ -20,12 +20,16 @@ async function startCoreCaseService(): Promise<void> {
 
     app.listen(PORT, () => {
         console.log(`Server is running locally at http://localhost:${PORT}`);
-        console.log(`Health check available at http://localhost:${PORT}/health`);
+        console.log(
+            `Health check available at http://localhost:${PORT}/health`,
+        );
     });
 }
 
 startCoreCaseService().catch((error: unknown) => {
     console.error("Core Case Service failed to start.");
-    console.error(error instanceof Error ? error.message : "Unknown startup error.");
+    console.error(
+        error instanceof Error ? error.message : "Unknown startup error.",
+    );
     process.exit(1);
 });
