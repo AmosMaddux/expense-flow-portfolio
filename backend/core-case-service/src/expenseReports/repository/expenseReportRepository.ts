@@ -12,7 +12,7 @@ import {
 export const expenseReportCreatedReason = "report_created";
 
 /**
- * Reads an Expense Report from the case store by its globally unique identifier.
+ * Reads an Expense Report from the case store within a tenant boundary.
  */
 export async function findExpenseReportById(
     id: string,

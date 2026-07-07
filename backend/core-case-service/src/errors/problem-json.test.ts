@@ -129,6 +129,7 @@ void describe("problemJsonErrorHandler", () => {
 
     void test("returns Problem+JSON when JSON request dates fail DTO validation", async () => {
         const invalidPayload = {
+            tenant_id: "10000000-0000-4000-8000-000000000100",
             owner: "20000000-0000-4000-8000-000000000001",
             dueDate: "July 31, 2026",
             priority: "High",
@@ -168,7 +169,7 @@ void describe("problemJsonErrorHandler", () => {
                 headers: {
                     "content-type": "application/json",
                 },
-                body: '{"tenantId": "10000000-0000-4000-8000-000000000100"',
+                body: '{"tenant_id": "10000000-0000-4000-8000-000000000100"',
             },
         );
         const body = (await response.json()) as ProblemJsonBody;

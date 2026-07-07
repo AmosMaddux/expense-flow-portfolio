@@ -8,11 +8,15 @@ import {
 
 extendZodWithOpenApi(z);
 
-// Tenant scope and workflow stage are server-controlled, not client-supplied.
 export const CreateExpenseReportInboundRequestSchema = z.object({
+    tenant_id: z.uuid(),
     owner: z.uuid(),
     dueDate: z.iso.date(),
     priority: z.enum(priorityLevels).default("Normal"),
+});
+
+export const TenantContextInboundRequestSchema = z.object({
+    tenantId: z.uuid(),
 });
 
 export const GetExpenseReportInboundRequestSchema = z.object({
@@ -43,6 +47,10 @@ export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
+>;
+
+export type TenantContextRequest = z.infer<
+    typeof TenantContextInboundRequestSchema
 >;
 
 export type GetExpenseReportRequest = z.infer<

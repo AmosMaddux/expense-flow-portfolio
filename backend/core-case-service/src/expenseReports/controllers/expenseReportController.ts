@@ -21,7 +21,12 @@ export async function postExpenseReport(
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const report = await createDraftExpenseReport(parsedRequest);
+        const report = await createDraftExpenseReport({
+            owner: parsedRequest.owner,
+            dueDate: parsedRequest.dueDate,
+            priority: parsedRequest.priority,
+            tenantId: parsedRequest.tenant_id,
+        });
 
         res.status(201).json(report);
     } catch (error: unknown) {

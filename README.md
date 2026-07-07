@@ -173,7 +173,7 @@ From another shell, create a synthetic Expense Report through the API:
 curl -sS -X POST http://127.0.0.1:3301/expense-reports \
   -H "content-type: application/json" \
   -d '{
-    "tenantId": "40000000-0000-4000-8000-000000000300",
+    "tenant_id": "40000000-0000-4000-8000-000000000300",
     "owner": "50000000-0000-4000-8000-000000000300",
     "dueDate": "2026-08-14",
     "priority": "High"

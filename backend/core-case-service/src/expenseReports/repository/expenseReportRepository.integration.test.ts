@@ -156,4 +156,23 @@ void describe("expenseReportRepository", () => {
 
         expect(foundReport).toBeUndefined();
     });
+
+    void test("finds a saved Expense Report by id without tenant context", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000188";
+        const targetId = "10000000-0000-4000-8000-000000000188";
+
+        const newReport = buildNewExpenseReport(targetTenantId);
+        newReport.id = targetId;
+
+        const insertedReport = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+        expect(insertedReport).toBeDefined();
+
+        const foundReport = await findExpenseReportById(targetId);
+
+        expect(foundReport?.id).toEqual(targetId);
+        expect(foundReport?.tenantId).toEqual(targetTenantId);
+    });
 });

@@ -73,7 +73,7 @@ void describe("Expense Report routes", () => {
                 "content-type": "application/json",
             },
             body: JSON.stringify({
-                tenantId,
+                tenant_id: tenantId,
                 owner,
                 dueDate,
                 priority: "Normal",
@@ -167,7 +167,7 @@ void describe("Expense Report routes", () => {
                 "content-type": "application/json",
             },
             body: JSON.stringify({
-                tenantId,
+                tenant_id: tenantId,
                 owner,
                 dueDate: "2026-07-31",
                 priority: "High",
@@ -192,7 +192,7 @@ void describe("Expense Report routes", () => {
                 "content-type": "application/json",
             },
             body: JSON.stringify({
-                tenantId: "tenant-one",
+                tenant_id: "40000000-0000-4000-8000-000000000105",
                 dueDate: "2026-07-31",
             }),
         });
@@ -221,7 +221,7 @@ void describe("Expense Report routes", () => {
                 "content-type": "application/json",
             },
             body: JSON.stringify({
-                tenantId,
+                tenant_id: tenantId,
                 owner,
                 dueDate: "2026-08-01",
             }),
@@ -245,6 +245,40 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("reads a recently saved Expense Report by id without tenant context", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000102";
+        const owner = "50000000-0000-4000-8000-000000000003";
+
+        const createResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                owner,
+                dueDate: "2026-08-02",
+            }),
+        });
+        const created = (await createResponse.json()) as {
+            id: string;
+        };
+
+        const readResponse = await requestApp(`/expense-reports/${created.id}`);
+        const body = (await readResponse.json()) as {
+            id?: string;
+            tenantId?: string;
+            currentStage?: string;
+        };
+
+        expect(readResponse.status).toBe(200);
+        expect(body).toMatchObject({
+            id: created.id,
+            tenantId,
+            currentStage: "Drafted",
+        });
+    });
+
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
             "/expense-reports/60000000-0000-4000-8000-000000000001",
@@ -261,6 +295,23 @@ void describe("Expense Report routes", () => {
         expect(body).toMatchObject({
             title: "Not Found",
             status: 404,
+        });
+    });
+
+    void test("returns Problem+JSON when the route id is invalid", async () => {
+        const response = await requestApp("/expense-reports/not-a-report-id");
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(400);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Bad Request",
+            status: 400,
         });
     });
 });
