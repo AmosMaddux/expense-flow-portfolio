@@ -55,7 +55,9 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
             validCreateExpenseReportRequest,
         );
 
-        expect(parsed.tenant_id).toBe(validCreateExpenseReportRequest.tenant_id);
+        expect(parsed.tenant_id).toBe(
+            validCreateExpenseReportRequest.tenant_id,
+        );
     });
 
     void test("keeps camelCase tenant scope out of the inbound create request contract", () => {
