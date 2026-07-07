@@ -14,7 +14,9 @@ export async function applyPendingCoreCaseMigrations(
     connectionString = process.env.DATABASE_URL,
 ): Promise<void> {
     if (connectionString === undefined || connectionString.length === 0) {
-        throw new Error("DATABASE_URL is required to apply database migrations.");
+        throw new Error(
+            "DATABASE_URL is required to apply database migrations.",
+        );
     }
 
     const pool = new Pool({ connectionString });
