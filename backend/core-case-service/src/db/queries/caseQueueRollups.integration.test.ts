@@ -13,13 +13,18 @@ const tenantOneId = "10000000-0000-4000-8000-000000000100";
 const tenantTwoId = "99900000-0000-4000-8000-000000000999";
 const ownerId = "20000000-0000-4000-8000-000000000001";
 let syntheticReportSequence = 0;
+let tenantTwoSubmittedReportIds: string[] = [];
+
+type SyntheticExpenseReportValues = typeof expenseReport.$inferInsert & {
+    id: string;
+};
 
 function buildExpenseReportValues(
     tenantId: string,
     currentStage: string,
     reportCount: number,
     dueDate: string,
-): Array<typeof expenseReport.$inferInsert> {
+): SyntheticExpenseReportValues[] {
     return Array.from({ length: reportCount }, () => {
         syntheticReportSequence += 1;
 
@@ -40,6 +45,16 @@ void describe("readCaseQueueStageRollups", () => {
     beforeAll(async () => {
         pool = new Pool({ connectionString: getCoreCaseTestDatabaseUrl() });
         db = drizzle(pool);
+
+        const tenantTwoSubmittedReports = buildExpenseReportValues(
+            tenantTwoId,
+            "Submitted",
+            3,
+            "2026-06-30",
+        );
+        tenantTwoSubmittedReportIds = tenantTwoSubmittedReports.map(
+            (report) => report.id,
+        );
 
         await db
             .insert(expenseReport)
@@ -68,12 +83,7 @@ void describe("readCaseQueueStageRollups", () => {
                     3,
                     "2026-07-02",
                 ),
-                ...buildExpenseReportValues(
-                    tenantTwoId,
-                    "Submitted",
-                    3,
-                    "2026-06-30",
-                ),
+                ...tenantTwoSubmittedReports,
             ]);
     });
 
@@ -148,5 +158,31 @@ void describe("readCaseQueueStageRollups", () => {
         ]);
 
         expect(reports.every((report) => report.id.length > 0)).toBeTruthy();
+    });
+
+    void test("excludes another tenant's reports from stage queries", async () => {
+        const tenantOneReports = await readCaseQueueReportsForStage(db, {
+            tenantId: tenantOneId,
+            currentStage: "Submitted",
+            asOfDate: "2026-07-01",
+        });
+        const tenantTwoReports = await readCaseQueueReportsForStage(db, {
+            tenantId: tenantTwoId,
+            currentStage: "Submitted",
+            asOfDate: "2026-07-01",
+        });
+
+        expect(tenantOneReports).toEqual([]);
+        expect(
+            tenantOneReports.some((report) =>
+                tenantTwoSubmittedReportIds.includes(report.id),
+            ),
+        ).toBe(false);
+        expect(tenantTwoReports).toHaveLength(3);
+        expect(
+            tenantTwoReports.every(
+                (report) => report.currentStage === "Submitted",
+            ),
+        ).toBeTruthy();
     });
 });
