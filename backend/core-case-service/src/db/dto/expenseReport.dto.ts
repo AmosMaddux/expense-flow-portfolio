@@ -1,10 +1,12 @@
+import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import { approvedWorkflowStages, priorityLevels } from "../schema/index.js";
 
-// Inbound request gatekeeper: client-created reports cannot supply currentStage.
+extendZodWithOpenApi(z);
+
+// Tenant scope and workflow stage are server-controlled, not client-supplied.
 export const CreateExpenseReportInboundRequestSchema = z.object({
-    tenantId: z.uuid(),
     owner: z.uuid(),
     dueDate: z.date(),
     priority: z.enum(priorityLevels).default("Normal"),
