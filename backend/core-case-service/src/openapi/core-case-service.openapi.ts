@@ -55,6 +55,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         description:
             "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
         request: {
+            headers: tenantContextHeadersSchema,
             body: {
                 required: true,
                 content: {

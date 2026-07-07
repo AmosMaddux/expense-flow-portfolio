@@ -5,9 +5,12 @@ import { approvedWorkflowStages, priorityLevels } from "../db/schema/index.js";
 
 extendZodWithOpenApi(z);
 
-// Inbound request gatekeeper: client-created reports cannot supply currentStage.
-export const CreateExpenseReportInboundRequestSchema = z.object({
+export const TenantContextInboundRequestSchema = z.object({
     tenantId: z.uuid(),
+});
+
+// Inbound request gatekeeper: client-created reports cannot supply tenant scope or currentStage.
+export const CreateExpenseReportInboundRequestSchema = z.object({
     owner: z.uuid(),
     dueDate: z.iso.date(),
     priority: z.enum(priorityLevels).default("Normal"),
@@ -42,6 +45,10 @@ export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
+>;
+
+export type TenantContextRequest = z.infer<
+    typeof TenantContextInboundRequestSchema
 >;
 
 export type GetExpenseReportRequest = z.infer<

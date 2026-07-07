@@ -100,7 +100,6 @@ void describe("problemJsonErrorHandler", () => {
                     "content-type": "application/json",
                 },
                 body: JSON.stringify({
-                    tenantId: "tenant-one",
                     dueDate: "07/31/2026",
                 }),
             },
@@ -124,14 +123,12 @@ void describe("problemJsonErrorHandler", () => {
             status: 400,
             instance: "/expense-reports",
         });
-        expect(body.detail).toContain("tenantId:");
         expect(body.detail).toContain("owner:");
         expect(body.detail).toContain("dueDate:");
     });
 
     void test("returns Problem+JSON when JSON request dates fail DTO validation", async () => {
         const invalidPayload = {
-            tenantId: "10000000-0000-4000-8000-000000000100",
             owner: "20000000-0000-4000-8000-000000000001",
             dueDate: "July 31, 2026",
             priority: "High",

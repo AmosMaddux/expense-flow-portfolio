@@ -66,9 +66,9 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id": tenantId,
             },
             body: JSON.stringify({
-                tenantId,
                 owner,
                 dueDate: "2026-07-31",
                 priority: "High",
@@ -91,9 +91,10 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id":
+                    "40000000-0000-4000-8000-000000000105",
             },
             body: JSON.stringify({
-                tenantId: "tenant-one",
                 dueDate: "2026-07-31",
             }),
         });
@@ -120,9 +121,9 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id": tenantId,
             },
             body: JSON.stringify({
-                tenantId,
                 owner,
                 dueDate: "2026-08-01",
             }),
@@ -162,9 +163,9 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id": otherTenantId,
             },
             body: JSON.stringify({
-                tenantId: otherTenantId,
                 owner,
                 dueDate: "2026-08-02",
             }),

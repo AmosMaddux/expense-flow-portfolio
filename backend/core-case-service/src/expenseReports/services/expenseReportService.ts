@@ -13,7 +13,7 @@ import type {
  * Creates a Drafted Expense Report and returns the public API response shape.
  */
 export async function createDraftExpenseReport(
-    request: CreateExpenseReportRequest,
+    request: CreateExpenseReportRequest & { tenantId: string },
 ): Promise<ExpenseReportResponse> {
     const report = await insertDraftExpenseReport(request.tenantId, {
         tenantId: request.tenantId,

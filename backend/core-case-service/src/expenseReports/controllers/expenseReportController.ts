@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
+    TenantContextInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import {
     createDraftExpenseReport,
@@ -21,7 +22,13 @@ export async function postExpenseReport(
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const report = await createDraftExpenseReport(parsedRequest);
+        const tenantContext = TenantContextInboundRequestSchema.parse({
+            tenantId: req.get("x-expenseflow-tenant-id"),
+        });
+        const report = await createDraftExpenseReport({
+            ...parsedRequest,
+            tenantId: tenantContext.tenantId,
+        });
 
         res.status(201).json(report);
     } catch (error: unknown) {

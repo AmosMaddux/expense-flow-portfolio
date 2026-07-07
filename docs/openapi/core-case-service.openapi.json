@@ -16,10 +16,6 @@
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
                     "owner": {
                         "type": "string",
                         "format": "uuid"
@@ -34,7 +30,7 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenantId", "owner", "dueDate"]
+                "required": ["owner", "dueDate"]
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -127,6 +123,18 @@
             "post": {
                 "summary": "Create an Expense Report",
                 "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "x-expenseflow-tenant-id",
+                        "in": "header",
+                        "description": "Tenant context for the walking skeleton until authenticated tenant context is available."
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
