@@ -95,7 +95,6 @@ void describe("problemJsonErrorHandler", () => {
                     "content-type": "application/json",
                 },
                 body: JSON.stringify({
-                    tenantId: "tenant-one",
                     dueDate: "07/31/2026",
                 }),
             },
@@ -119,14 +118,12 @@ void describe("problemJsonErrorHandler", () => {
             status: 400,
             instance: "/expense-reports",
         });
-        expect(body.detail).toContain("tenantId:");
         expect(body.detail).toContain("owner:");
         expect(body.detail).toContain("dueDate:");
     });
 
     void test("passes valid parsed payloads through to the handler unchanged", async () => {
         const validPayload = {
-            tenantId: "10000000-0000-4000-8000-000000000100",
             owner: "20000000-0000-4000-8000-000000000001",
             dueDate: "2026-07-31",
             priority: "High",

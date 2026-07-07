@@ -16,10 +16,6 @@
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
                     "owner": {
                         "type": "string",
                         "format": "uuid"
@@ -34,7 +30,7 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenantId", "owner", "dueDate"]
+                "required": ["owner", "dueDate"]
             },
             "ExpenseReportResponse": {
                 "type": "object",
