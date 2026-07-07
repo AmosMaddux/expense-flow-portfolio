@@ -70,7 +70,7 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Bad Request",
             status: 400,
-            detail: "Invalid JSON payload format. Please check your syntax syntax.",
+            detail: "Invalid JSON payload format. Please check your syntax.",
             instance,
         };
     }

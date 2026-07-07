@@ -1,8 +1,14 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, test } from "vitest";
 
 import { coreCaseServiceOpenApiDocument } from "./core-case-service.openapi.js";
 
 const document = coreCaseServiceOpenApiDocument;
+const committedOpenApiDocumentUrl = new URL(
+    "../../../../docs/openapi/core-case-service.openapi.json",
+    import.meta.url,
+);
 
 void describe("coreCaseServiceOpenApiDocument", () => {
     void test("documents the planned Expense Report collection and detail endpoints", () => {
@@ -74,6 +80,14 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(expenseReportByIdPath?.get?.responses?.[500]),
         ).toContain("#/components/schemas/ProblemJson");
+    });
+
+    void test("keeps the committed OpenAPI document in sync with the generated document", async () => {
+        const committedDocument = JSON.parse(
+            await readFile(committedOpenApiDocumentUrl, "utf8"),
+        ) as unknown;
+
+        expect(committedDocument).toStrictEqual(document);
     });
 
     void test("documents active Expense Report endpoint behavior", () => {
