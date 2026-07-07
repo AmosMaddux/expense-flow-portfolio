@@ -38,5 +38,8 @@
     },
     "overrides": {
         "@esbuild-kit/esm-loader": "npm:tsx@^4.22.4"
+    },
+    "dependencies": {
+        "@types/pg": "^8.20.0"
     }
 }
