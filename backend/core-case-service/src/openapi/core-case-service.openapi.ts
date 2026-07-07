@@ -22,17 +22,6 @@ const expenseReportIdPathParamsSchema = z.object({
     id: z.uuid(),
 });
 
-const tenantContextHeadersSchema = z.object({
-    "x-expenseflow-tenant-id": z.uuid().openapi({
-        param: {
-            name: "x-expenseflow-tenant-id",
-            in: "header",
-            description:
-                "Tenant context for the walking skeleton until authenticated tenant context is available.",
-        },
-    }),
-});
-
 /**
  * Generates the Core Case Service OpenAPI contract from shared Zod DTO schemas.
  */
@@ -55,7 +44,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         description:
             "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
         request: {
-            headers: tenantContextHeadersSchema,
             body: {
                 required: true,
                 content: {
@@ -85,7 +73,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         summary: "Get an Expense Report",
         description: "Loads an Expense Report case by identifier.",
         request: {
-            headers: tenantContextHeadersSchema,
             params: expenseReportIdPathParamsSchema,
         },
         responses: {
