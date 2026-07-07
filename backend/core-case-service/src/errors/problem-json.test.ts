@@ -76,7 +76,12 @@ function buildProblemJsonTestApp(): Express {
         throw new Error("database password was accidentally included");
     });
     app.get("/body-parser-parse-failure", () => {
-        throw { type: "entity.parse.failed" };
+        const parseError = new SyntaxError(
+            "Simulated body parser failure",
+        ) as SyntaxError & { type: string };
+        parseError.type = "entity.parse.failed";
+
+        throw parseError;
     });
     app.use(problemJsonErrorHandler);
 
@@ -184,7 +189,7 @@ void describe("problemJsonErrorHandler", () => {
             type: "about:blank",
             title: "Bad Request",
             status: 400,
-            detail: "Invalid JSON payload format. Please check your syntax syntax.",
+            detail: "Invalid JSON payload format. Please check your syntax.",
             instance: "/expense-reports",
         });
     });
