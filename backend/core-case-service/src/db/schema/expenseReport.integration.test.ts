@@ -1,7 +1,30 @@
-import { describe, test } from "vitest";
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
+import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
+
+import {
+    expenseReport,
+    auditEntry,
+    stageTransition,
+    lineItem,
+    caseComment,
+    attachmentMetadata,
+    receiptMetadata,
+    mileageEntry,
+} from "./expenseReport.js";
+
+const requiredTables = [
+    getTableConfig(expenseReport),
+    getTableConfig(auditEntry),
+    getTableConfig(stageTransition),
+    getTableConfig(lineItem),
+    getTableConfig(caseComment),
+    getTableConfig(attachmentMetadata),
+    getTableConfig(receiptMetadata),
+    getTableConfig(mileageEntry),
+];
 
 void describe("case comment and attachment PostgreSQL constraints", () => {
     void test("enforces mutation triggers and attachment deletes in PostgreSQL", async () => {
@@ -96,4 +119,67 @@ $$;
             await client.end().catch(() => undefined);
         }
     });
+});
+
+void describe("check migrations", () => {
+    let client: Client;
+
+    beforeAll(async () => {
+        client = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        await client.connect();
+    });
+
+    afterAll(async () => {
+        await client.end().catch(() => undefined);
+    });
+
+    test.each(requiredTables)(
+        "Check table, constraints, and indexes exist",
+        async (table) => {
+            const table_exists_query_result = await client.query(
+                "SELECT COUNT(*) as count FROM pg_catalog.pg_tables WHERE tablename = $1",
+                [table.name],
+            );
+
+            expect(table_exists_query_result.rowCount).toEqual(1);
+            expect(table_exists_query_result.rows[0]).toMatchObject({
+                count: "1",
+            });
+
+            const constraints = table.checks.map((check) => check.name);
+            const constraints_exist_query_result = await client.query(
+                `SELECT COUNT(*) as count
+            FROM pg_catalog.pg_constraint con
+                    INNER JOIN pg_catalog.pg_class rel
+                            ON rel.oid = con.conrelid
+                    INNER JOIN pg_catalog.pg_namespace nsp
+                            ON nsp.oid = connamespace
+            WHERE nsp.nspname = $1
+                    AND rel.relname = $2
+                    AND con.conname = ANY($3);`,
+                ["public", table.name, constraints],
+            );
+
+            expect(constraints_exist_query_result.rowCount).toEqual(1);
+            expect(constraints_exist_query_result.rows[0]).toMatchObject({
+                count: constraints.length.toString(),
+            });
+
+            const indexes = table.indexes
+                .map((index) => index.config.name)
+                .filter((index) => index !== undefined);
+            const indexes_exist_query_result = await client.query(
+                "SELECT COUNT(*) as count FROM pg_indexes WHERE tablename = $1 AND indexname = ANY($2)",
+                [table.name, indexes],
+            );
+
+            expect(indexes_exist_query_result.rowCount).toEqual(1);
+            expect(indexes_exist_query_result.rows[0]).toMatchObject({
+                count: indexes.length.toString(),
+            });
+        },
+    );
 });

@@ -80,6 +80,22 @@ describe("Test Expense Report Repository", () => {
         }
     });
 
+    test("Does not return a report for another tenant", async () => {
+        const reportTenantId = "00000000-0000-0000-0000-000000000083";
+        const callerTenantId = "00000000-0000-0000-0000-000000000093";
+        const targetId = "10000000-0000-0000-0000-000000000083";
+
+        const newReport = buildNewExpenseReport(reportTenantId);
+        newReport.id = targetId;
+
+        const results = await newExpenseReport(reportTenantId, newReport);
+        expect(results.hasData).toBeTruthy();
+
+        const getResults = await getExpenseReport(targetId, callerTenantId);
+
+        expect(getResults.hasData).toBeFalsy();
+    });
+
     test("Test get no reports", async () => {
         const targetTenantId = "00000000-0000-0000-0000-000000000083";
         const targetId = "10000000-0000-0000-0000-000000000083";

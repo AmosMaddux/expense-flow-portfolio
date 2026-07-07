@@ -117,6 +117,11 @@ Utility function to run linter, typing, and test checks:
 make
 ```
 
+## PostgreSQL setup
+
+Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with ``drizzle-kit migrate``
+
+Rollbacks for each migration are located in [backend/core-case-service/drizzle/rollback](backend/core-case-service/drizzle/rollback). These are manually applied and maintained.
 ## Core Case Service API Contract
 
 The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated from the service Zod DTO schemas and currently documents the planned `POST /expense-reports` and `GET /expense-reports/{id}` endpoints.
