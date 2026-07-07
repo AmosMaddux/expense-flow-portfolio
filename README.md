@@ -117,6 +117,25 @@ Utility function to run linter, typing, and test checks:
 make
 ```
 
+## Core Case Service API Contract
+
+The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated from the service Zod DTO schemas and currently documents the planned `POST /expense-reports` and `GET /expense-reports/{id}` endpoints.
+
+Generate the committed contract from the Core Case Service workspace with:
+```sh
+npm run openapi:generate --workspace backend/core-case-service
+```
+
+When the Express service is running, the same generated contract is served at:
+```text
+GET /openapi.json
+```
+
+Interactive OpenAPI documentation is served from the same contract at:
+```text
+GET /docs
+```
+
 ## Posture and ADR Conventions
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.

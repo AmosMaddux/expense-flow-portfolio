@@ -6,9 +6,12 @@
     "type": "module",
     "scripts": {
         "build": "tsc --build",
+        "openapi:generate": "npm run build --workspaces=false && node dist/openapi/write-openapi.js && prettier --write ../../docs/openapi/core-case-service.openapi.json",
         "test": "npm run build --workspaces=false && vitest run"
     },
     "dependencies": {
+        "@asteasolutions/zod-to-openapi": "^8.5.0",
+        "@scalar/express-api-reference": "^0.8.13",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
         "zod": "^4.4.3"

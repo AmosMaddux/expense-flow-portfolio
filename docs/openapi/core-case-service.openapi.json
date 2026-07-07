@@ -1,0 +1,221 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "ExpenseFlow Core Case Service API",
+        "version": "1.0.0",
+        "description": "Discoverable contract for Core Case Service Expense Report endpoints."
+    },
+    "servers": [
+        {
+            "url": "http://localhost:3000",
+            "description": "Local development server"
+        }
+    ],
+    "components": {
+        "schemas": {
+            "CreateExpenseReportRequest": {
+                "type": "object",
+                "properties": {
+                    "owner": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "dueDate": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["Low", "Normal", "High", "Urgent"],
+                        "default": "Normal"
+                    }
+                },
+                "required": ["owner", "dueDate"]
+            },
+            "ExpenseReportResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "owner": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "dueDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["Low", "Normal", "High", "Urgent"]
+                    },
+                    "currentStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "onHold": {
+                        "type": "boolean"
+                    },
+                    "holdReason": {
+                        "type": ["string", "null"]
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "tenantId",
+                    "owner",
+                    "dueDate",
+                    "priority",
+                    "currentStage",
+                    "onHold",
+                    "holdReason",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "ProblemJson": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "detail": {
+                        "type": "string"
+                    },
+                    "instance": {
+                        "type": "string"
+                    }
+                },
+                "required": ["type", "title", "status", "detail", "instance"]
+            }
+        },
+        "parameters": {}
+    },
+    "paths": {
+        "/expense-reports": {
+            "post": {
+                "summary": "Create an Expense Report",
+                "description": "Planned endpoint for creating an Expense Report case in Drafted stage.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateExpenseReportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Expense Report created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed create request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/expense-reports/{id}": {
+            "get": {
+                "summary": "Get an Expense Report",
+                "description": "Planned endpoint for loading a single Expense Report case by identifier.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Expense Report found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "webhooks": {}
+}

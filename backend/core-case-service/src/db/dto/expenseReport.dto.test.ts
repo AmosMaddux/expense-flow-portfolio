@@ -8,7 +8,6 @@ import {
 } from "./expenseReport.dto.js";
 
 const validCreateExpenseReportRequest = {
-    tenantId: "10000000-0000-4000-8000-000000000100",
     owner: "20000000-0000-4000-8000-000000000001",
     dueDate: new Date("2026-07-31T00:00:00.000Z"),
 };
@@ -48,6 +47,15 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         expect(parsed).not.toHaveProperty("currentStage");
     });
 
+    void test("keeps tenant scope out of the inbound create request contract", () => {
+        const parsed = CreateExpenseReportInboundRequestSchema.parse({
+            ...validCreateExpenseReportRequest,
+            tenantId: validExpenseReportResponse.tenantId,
+        });
+
+        expect(parsed).not.toHaveProperty("tenantId");
+    });
+
     void test("accepts an explicit priority", () => {
         const parsed = CreateExpenseReportInboundRequestSchema.parse({
             ...validCreateExpenseReportRequest,
@@ -60,7 +68,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects requests missing required Drafted-report fields", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenantId: validCreateExpenseReportRequest.tenantId,
                 dueDate: validCreateExpenseReportRequest.dueDate,
             }),
         ).toThrow();
@@ -69,7 +76,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenantId: "tenant-one",
                 owner: validCreateExpenseReportRequest.owner,
                 dueDate: "2026-07-31",
             }),
