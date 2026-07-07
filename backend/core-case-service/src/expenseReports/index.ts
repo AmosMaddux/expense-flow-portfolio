@@ -4,8 +4,11 @@
 export type ReadExpenseReportSummary = () => Promise<string>;
 
 export {
+    readCaseQueueReportsForStage,
     readCaseQueueStageRollups,
+    type CaseQueueReport,
     type CaseQueueStageRollup,
+    type ReadCaseQueueReportsForStageParams,
     type ReadCaseQueueStageRollupsParams,
 } from "../db/queries/caseQueueRollups.js";
 
