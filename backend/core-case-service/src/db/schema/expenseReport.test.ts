@@ -169,6 +169,7 @@ void describe("expenseReport schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "expense_report_tenant_stage_idx",
+            "expense_report_tenant_stage_due_date_idx",
             "expense_report_tenant_due_date_idx",
             "expense_report_tenant_owner_idx",
             "expense_report_tenant_priority_idx",
@@ -214,6 +215,9 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain('expense_report_priority_check"');
         expect(migrationSql).toContain("expense_report_hold_reason_check");
         expect(migrationSql).toContain("expense_report_tenant_stage_idx");
+        expect(migrationSql).toContain(
+            "expense_report_tenant_stage_due_date_idx",
+        );
         expect(migrationSql).toContain("expense_report_tenant_due_date_idx");
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");

@@ -75,6 +75,9 @@ function buildProblemJsonTestApp(): Express {
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
     });
+    app.get("/body-parser-parse-failure", () => {
+        throw { type: "entity.parse.failed" };
+    });
     app.use(problemJsonErrorHandler);
 
     return app;
@@ -124,8 +127,8 @@ void describe("problemJsonErrorHandler", () => {
         expect(body.detail).toContain("dueDate:");
     });
 
-    void test("passes valid parsed payloads through to the handler unchanged", async () => {
-        const validPayload = {
+    void test("returns Problem+JSON when JSON request dates fail DTO validation", async () => {
+        const invalidPayload = {
             tenantId: "10000000-0000-4000-8000-000000000100",
             owner: "20000000-0000-4000-8000-000000000001",
             dueDate: "2026-07-31",
@@ -139,12 +142,71 @@ void describe("problemJsonErrorHandler", () => {
                 headers: {
                     "content-type": "application/json",
                 },
-                body: JSON.stringify(validPayload),
+                body: JSON.stringify(invalidPayload),
             },
         );
+        const body = (await response.json()) as ProblemJsonBody;
 
-        await expect(response.json()).resolves.toStrictEqual(validPayload);
-        expect(response.status).toBe(201);
+        expect(response.status).toBe(400);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            instance: "/expense-reports",
+        });
+        expect(body.detail).toContain(
+            "dueDate: Invalid input: expected date, received string",
+        );
+    });
+
+    void test("maps malformed JSON request bodies to a 400 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/expense-reports",
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                },
+                body: '{"tenantId": "10000000-0000-4000-8000-000000000100"',
+            },
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(400);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: "Invalid JSON payload format. Please check your syntax syntax.",
+            instance: "/expense-reports",
+        });
+    });
+
+    void test("maps parser failure objects to a 400 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/body-parser-parse-failure",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(400);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: "Malformed JSON body could not be parsed.",
+            instance: "/body-parser-parse-failure",
+        });
     });
 
     void test("maps NotFoundError to a 404 Problem+JSON response", async () => {

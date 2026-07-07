@@ -59,6 +59,33 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
         };
     }
 
+    // New Check: Catch malformed JSON/body-parser syntax errors
+    if (
+        error instanceof SyntaxError && 
+        "status" in error && 
+        error.status === 400 && 
+        "body" in error
+    ) {
+        return {
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: "Invalid JSON payload format. Please check your syntax syntax.",
+            instance,
+        };
+    }
+
+    // Alternate structural check if you prefer checking body-parser's explicit error type property
+    if (error && typeof error === "object" && "type" in error && error.type === "entity.parse.failed") {
+        return {
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: "Malformed JSON body could not be parsed.",
+            instance,
+        };
+    }
+
     return {
         type: "about:blank",
         title: "Internal Server Error",
