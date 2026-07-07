@@ -12,6 +12,7 @@ export {
 
 const PORT = process.env.PORT ?? 3000;
 
+// On start, auto-apply any pending database migrations if the environment variable is set.
 async function startCoreCaseService(): Promise<void> {
     if (process.env.AUTO_APPLY_MIGRATIONS === "true") {
         await applyPendingCoreCaseMigrations();

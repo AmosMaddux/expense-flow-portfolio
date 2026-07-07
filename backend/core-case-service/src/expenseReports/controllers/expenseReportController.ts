@@ -30,7 +30,7 @@ export async function postExpenseReport(
 }
 
 /**
- * Handles tenant-scoped Expense Report read requests.
+ * Handles Expense Report read requests by case identifier.
  */
 export async function getExpenseReportById(
     req: Request,
@@ -40,7 +40,6 @@ export async function getExpenseReportById(
     try {
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
-            tenantId: req.query.tenantId,
         });
         const report = await readExpenseReport(parsedRequest);
 

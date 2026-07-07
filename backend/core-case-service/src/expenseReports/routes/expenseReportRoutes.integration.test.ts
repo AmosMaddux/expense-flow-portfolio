@@ -112,7 +112,7 @@ void describe("Expense Report routes", () => {
         });
     });
 
-    void test("reads a tenant-scoped Expense Report", async () => {
+    void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";
 
@@ -131,9 +131,7 @@ void describe("Expense Report routes", () => {
             id: string;
         };
 
-        const readResponse = await requestApp(
-            `/expense-reports/${created.id}?tenantId=${tenantId}`,
-        );
+        const readResponse = await requestApp(`/expense-reports/${created.id}`);
         const readBody = (await readResponse.json()) as {
             id?: string;
             tenantId?: string;
@@ -150,7 +148,7 @@ void describe("Expense Report routes", () => {
 
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
-            "/expense-reports/60000000-0000-4000-8000-000000000001?tenantId=40000000-0000-4000-8000-000000000199",
+            "/expense-reports/60000000-0000-4000-8000-000000000001",
         );
         const body = (await response.json()) as {
             title?: string;

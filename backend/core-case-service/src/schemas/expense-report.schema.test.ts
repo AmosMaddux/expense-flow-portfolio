@@ -80,23 +80,21 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
 });
 
 void describe("GetExpenseReportInboundRequestSchema", () => {
-    void test("parses the tenant-scoped read request shape", () => {
+    void test("parses the read request shape by id", () => {
         const parsed: GetExpenseReportRequest =
             GetExpenseReportInboundRequestSchema.parse({
                 id: "30000000-0000-4000-8000-000000000001",
-                tenantId: validCreateExpenseReportRequest.tenantId,
             });
 
         expect(parsed).toStrictEqual({
             id: "30000000-0000-4000-8000-000000000001",
-            tenantId: validCreateExpenseReportRequest.tenantId,
         });
     });
 
-    void test("rejects read requests without a tenant", () => {
+    void test("rejects read requests with an invalid id", () => {
         expect(() =>
             GetExpenseReportInboundRequestSchema.parse({
-                id: "30000000-0000-4000-8000-000000000001",
+                id: "expense-report-one",
             }),
         ).toThrow();
     });
