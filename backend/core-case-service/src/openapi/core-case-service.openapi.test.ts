@@ -43,6 +43,23 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
+    void test("documents the GET tenant query parameter as a required UUID", () => {
+        const expenseReportByIdPath = document.paths?.["/expense-reports/{id}"];
+        const parameter = expenseReportByIdPath?.get?.parameters?.find(
+            (candidate) => "name" in candidate && candidate.name === "tenantId",
+        );
+
+        expect(parameter).toMatchObject({
+            in: "query",
+            name: "tenantId",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
+    });
+
     void test("documents successful responses from the outbound Expense Report DTO", () => {
         const expenseReportsPath = document.paths?.["/expense-reports"];
         const expenseReportByIdPath = document.paths?.["/expense-reports/{id}"];
@@ -79,5 +96,13 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         ) as unknown;
 
         expect(committedDocument).toStrictEqual(document);
+    });
+
+    void test("documents active Expense Report endpoint behavior", () => {
+        const serializedDocument = JSON.stringify(document).toLowerCase();
+
+        expect(serializedDocument).toContain("records the initial audit");
+        expect(serializedDocument).toContain("tenant-scoped expense report");
+        expect(serializedDocument).not.toContain("planned endpoint");
     });
 });

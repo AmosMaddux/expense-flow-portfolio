@@ -2,11 +2,14 @@ import express, { type Request, type Response } from "express";
 import { apiReference } from "@scalar/express-api-reference";
 
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
+import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 
 export const app = express();
 
 app.use(express.json());
+
+app.use("/", expenseReportRouter);
 
 /**
  * Returns process health information for local and deployment smoke checks.

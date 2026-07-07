@@ -8,7 +8,7 @@ import { z } from "zod";
 import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
-} from "../db/dto/expenseReport.dto.js";
+} from "../schemas/expense-report.schema.js";
 
 const problemJsonSchema = z.object({
     type: z.string(),
@@ -20,6 +20,10 @@ const problemJsonSchema = z.object({
 
 const expenseReportIdPathParamsSchema = z.object({
     id: z.uuid(),
+});
+
+const expenseReportTenantQuerySchema = z.object({
+    tenantId: z.uuid(),
 });
 
 /**
@@ -42,7 +46,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/expense-reports",
         summary: "Create an Expense Report",
         description:
-            "Planned endpoint for creating an Expense Report case in Drafted stage.",
+            "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
         request: {
             body: {
                 required: true,
@@ -71,10 +75,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         method: "get",
         path: "/expense-reports/{id}",
         summary: "Get an Expense Report",
-        description:
-            "Planned endpoint for loading a single Expense Report case by identifier.",
+        description: "Loads a tenant-scoped Expense Report case by identifier.",
         request: {
             params: expenseReportIdPathParamsSchema,
+            query: expenseReportTenantQuerySchema,
         },
         responses: {
             200: {

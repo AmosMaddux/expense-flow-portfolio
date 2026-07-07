@@ -124,7 +124,7 @@ Migrations are located in [backend/core-case-service/drizzle](backend/core-case-
 Rollbacks for each migration are located in [backend/core-case-service/drizzle/rollback](backend/core-case-service/drizzle/rollback). These are manually applied and maintained.
 ## Core Case Service API Contract
 
-The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated from the service Zod DTO schemas and currently documents the planned `POST /expense-reports` and `GET /expense-reports/{id}` endpoints.
+The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated with `OpenApiGeneratorV31` from the service Zod DTO schemas and documents the active `POST /expense-reports` and `GET /expense-reports/{id}` endpoints.
 
 Generate the committed contract from the Core Case Service workspace with:
 ```sh
@@ -136,9 +136,62 @@ When the Express service is running, the same generated contract is served at:
 GET /openapi.json
 ```
 
-Interactive OpenAPI documentation is served from the same contract at:
+Interactive OpenAPI documentation is rendered with `@scalar/express-api-reference` from the same contract at:
 ```text
 GET /docs
+```
+
+## Core Case Persistence Smoke Test
+
+Use these commands to verify that `POST /expense-reports` persists an Expense Report, audit entry, and initial stage transition in a local Docker PostgreSQL database. Use only synthetic IDs and dates.
+
+The local `.env` file is ignored by Git and contains synthetic Docker PostgreSQL values plus `AUTO_APPLY_MIGRATIONS=true` for this smoke test.
+
+```sh
+test -f .env
+```
+
+Start PostgreSQL:
+
+```sh
+docker run -d \
+  --name expenseflow-postgres-dev \
+  --env-file .env \
+  -p 55432:5432 \
+  postgres:17-alpine
+```
+
+Run the Core Case Service against the Docker database. This command builds the TypeScript service, loads `.env`, applies the checked-in Drizzle migrations, and starts the API:
+
+```sh
+npm start
+```
+
+From another shell, create a synthetic Expense Report through the API:
+
+```sh
+curl -sS -X POST http://127.0.0.1:3301/expense-reports \
+  -H "content-type: application/json" \
+  -d '{
+    "tenantId": "40000000-0000-4000-8000-000000000300",
+    "owner": "50000000-0000-4000-8000-000000000300",
+    "dueDate": "2026-08-14",
+    "priority": "High"
+  }'
+```
+
+Set `EXPENSEFLOW_REPORT_ID` to the returned `id`, then verify the persisted rows:
+
+```sh
+export EXPENSEFLOW_REPORT_ID="<returned-report-id>"
+node --env-file=.env --input-type=module -e "import { Pool } from 'pg'; const pool = new Pool({ connectionString: process.env.DATABASE_URL }); try { const report = await pool.query('select id, tenant_id, owner, due_date, priority, current_stage, on_hold from expense_report where id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); const audit = await pool.query('select action, stage_before_action, stage_after_proposed_action from audit_entry where expense_report_id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); const transition = await pool.query('select from_stage, to_stage, actor, reason from stage_transition where expense_report_id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); console.log(JSON.stringify({ report: report.rows, audit: audit.rows, transition: transition.rows }, null, 2)); } finally { await pool.end(); }"
+```
+
+Stop the local database when finished:
+
+```sh
+docker stop expenseflow-postgres-dev
+docker rm expenseflow-postgres-dev
 ```
 
 ## Posture and ADR Conventions
