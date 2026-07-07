@@ -43,13 +43,23 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
-    void test("does not require a tenant query parameter for GET", () => {
+    void test("documents GET tenant context as a required header", () => {
         const expenseReportByIdPath = document.paths?.["/expense-reports/{id}"];
         const parameter = expenseReportByIdPath?.get?.parameters?.find(
-            (candidate) => "name" in candidate && candidate.name === "tenantId",
+            (candidate) =>
+                "name" in candidate &&
+                candidate.name === "x-expenseflow-tenant-id",
         );
 
-        expect(parameter).toBeUndefined();
+        expect(parameter).toMatchObject({
+            in: "header",
+            name: "x-expenseflow-tenant-id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
     });
 
     void test("documents successful responses from the outbound Expense Report DTO", () => {
@@ -82,12 +92,26 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         ).toContain("#/components/schemas/ProblemJson");
     });
 
+<<<<<<< HEAD
+=======
+    void test("documents active Expense Report endpoint behavior", () => {
+        const serializedDocument = JSON.stringify(document).toLowerCase();
+
+        expect(serializedDocument).toContain("records the initial audit");
+        expect(serializedDocument).toContain(
+            "expense report case by identifier",
+        );
+        expect(serializedDocument).not.toContain("planned endpoint");
+    });
+
+>>>>>>> f7c79487b90669aa4779ab53f8f398a21dd19b7e
     void test("keeps the committed OpenAPI document in sync with the generated document", async () => {
         const committedDocument = JSON.parse(
             await readFile(committedOpenApiDocumentUrl, "utf8"),
         ) as unknown;
 
         expect(committedDocument).toStrictEqual(document);
+<<<<<<< HEAD
     });
 
     void test("documents active Expense Report endpoint behavior", () => {
@@ -96,5 +120,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(serializedDocument).toContain("records the initial audit");
         expect(serializedDocument).toContain("expense report case by identifier");
         expect(serializedDocument).not.toContain("planned endpoint");
+=======
+>>>>>>> f7c79487b90669aa4779ab53f8f398a21dd19b7e
     });
 });

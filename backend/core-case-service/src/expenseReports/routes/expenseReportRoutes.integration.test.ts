@@ -66,9 +66,9 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id": tenantId,
             },
             body: JSON.stringify({
-                tenantId,
                 owner,
                 dueDate: "2026-07-31",
                 priority: "High",
@@ -91,9 +91,10 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id":
+                    "40000000-0000-4000-8000-000000000105",
             },
             body: JSON.stringify({
-                tenantId: "tenant-one",
                 dueDate: "2026-07-31",
             }),
         });
@@ -120,9 +121,9 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "x-expenseflow-tenant-id": tenantId,
             },
             body: JSON.stringify({
-                tenantId,
                 owner,
                 dueDate: "2026-08-01",
             }),
@@ -131,7 +132,14 @@ void describe("Expense Report routes", () => {
             id: string;
         };
 
-        const readResponse = await requestApp(`/expense-reports/${created.id}`);
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    "x-expenseflow-tenant-id": tenantId,
+                },
+            },
+        );
         const readBody = (await readResponse.json()) as {
             id?: string;
             tenantId?: string;
@@ -146,9 +154,55 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns scoped not found for another tenant's Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000102";
+        const otherTenantId = "40000000-0000-4000-8000-000000000103";
+        const owner = "50000000-0000-4000-8000-000000000003";
+
+        const createResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-expenseflow-tenant-id": otherTenantId,
+            },
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-02",
+            }),
+        });
+        const created = (await createResponse.json()) as {
+            id: string;
+        };
+
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    "x-expenseflow-tenant-id": tenantId,
+                },
+            },
+        );
+        const body = (await readResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(readResponse.status).toBe(404);
+        expect(body).toMatchObject({
+            title: "Not Found",
+            status: 404,
+        });
+    });
+
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
             "/expense-reports/60000000-0000-4000-8000-000000000001",
+            {
+                headers: {
+                    "x-expenseflow-tenant-id":
+                        "40000000-0000-4000-8000-000000000104",
+                },
+            },
         );
         const body = (await response.json()) as {
             title?: string;
@@ -162,6 +216,25 @@ void describe("Expense Report routes", () => {
         expect(body).toMatchObject({
             title: "Not Found",
             status: 404,
+        });
+    });
+
+    void test("returns Problem+JSON when tenant context is missing", async () => {
+        const response = await requestApp(
+            "/expense-reports/60000000-0000-4000-8000-000000000002",
+        );
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(400);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Bad Request",
+            status: 400,
         });
     });
 });
