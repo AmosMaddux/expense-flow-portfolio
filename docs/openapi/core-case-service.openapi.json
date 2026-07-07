@@ -126,7 +126,7 @@
         "/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",
-                "description": "Planned endpoint for creating an Expense Report case in Drafted stage.",
+                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -174,7 +174,7 @@
         "/expense-reports/{id}": {
             "get": {
                 "summary": "Get an Expense Report",
-                "description": "Planned endpoint for loading a single Expense Report case by identifier.",
+                "description": "Loads a tenant-scoped Expense Report case by identifier.",
                 "parameters": [
                     {
                         "schema": {
@@ -184,6 +184,15 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "tenantId",
+                        "in": "query"
                     }
                 ],
                 "responses": {

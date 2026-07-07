@@ -1,7 +1,10 @@
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
-import { approvedWorkflowStages, priorityLevels } from "../schema/index.js";
+import {
+    approvedWorkflowStages,
+    priorityLevels,
+} from "../../db/schema/index.js";
 
 extendZodWithOpenApi(z);
 
@@ -9,8 +12,13 @@ extendZodWithOpenApi(z);
 export const CreateExpenseReportInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     owner: z.uuid(),
-    dueDate: z.date(),
+    dueDate: z.iso.date(),
     priority: z.enum(priorityLevels).default("Normal"),
+});
+
+export const GetExpenseReportInboundRequestSchema = z.object({
+    id: z.uuid(),
+    tenantId: z.uuid(),
 });
 
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
@@ -30,10 +38,17 @@ export const ExpenseReportOutboundResponseSchema = z.object({
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
+export const getExpenseReportRequestSchema =
+    GetExpenseReportInboundRequestSchema;
+
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
+>;
+
+export type GetExpenseReportRequest = z.infer<
+    typeof GetExpenseReportInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<

@@ -168,7 +168,8 @@ export const stageTransition = pgTable(
         check(
             "stage_transition_valid_edge_check",
             sql`(
-                (${table.fromStage} = 'Drafted' and ${table.toStage} = 'Submitted')
+                (${table.fromStage} = 'Drafted' and ${table.toStage} = 'Drafted' and ${table.reason} = 'report_created')
+                or (${table.fromStage} = 'Drafted' and ${table.toStage} = 'Submitted')
                 or (${table.fromStage} = 'Submitted' and ${table.toStage} = 'Manager Approval')
                 or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'AP Review')
                 or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Paid')

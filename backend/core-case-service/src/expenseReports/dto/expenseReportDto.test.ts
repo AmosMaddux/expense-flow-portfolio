@@ -3,14 +3,16 @@ import { describe, expect, test } from "vitest";
 import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    GetExpenseReportInboundRequestSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
-} from "./expenseReport.dto.js";
+    type GetExpenseReportRequest,
+} from "./expenseReportDto.js";
 
 const validCreateExpenseReportRequest = {
     tenantId: "10000000-0000-4000-8000-000000000100",
     owner: "20000000-0000-4000-8000-000000000001",
-    dueDate: new Date("2026-07-31T00:00:00.000Z"),
+    dueDate: "2026-07-31",
 };
 
 const validExpenseReportResponse = {
@@ -71,7 +73,30 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
             CreateExpenseReportInboundRequestSchema.parse({
                 tenantId: "tenant-one",
                 owner: validCreateExpenseReportRequest.owner,
-                dueDate: "2026-07-31",
+                dueDate: "July 31, 2026",
+            }),
+        ).toThrow();
+    });
+});
+
+void describe("GetExpenseReportInboundRequestSchema", () => {
+    void test("parses the tenant-scoped read request shape", () => {
+        const parsed: GetExpenseReportRequest =
+            GetExpenseReportInboundRequestSchema.parse({
+                id: "30000000-0000-4000-8000-000000000001",
+                tenantId: validCreateExpenseReportRequest.tenantId,
+            });
+
+        expect(parsed).toStrictEqual({
+            id: "30000000-0000-4000-8000-000000000001",
+            tenantId: validCreateExpenseReportRequest.tenantId,
+        });
+    });
+
+    void test("rejects read requests without a tenant", () => {
+        expect(() =>
+            GetExpenseReportInboundRequestSchema.parse({
+                id: "30000000-0000-4000-8000-000000000001",
             }),
         ).toThrow();
     });

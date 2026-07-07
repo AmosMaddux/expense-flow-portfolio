@@ -2,7 +2,7 @@ import express, { type Express } from "express";
 import { type Server } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { CreateExpenseReportInboundRequestSchema } from "../db/dto/expenseReport.dto.js";
+import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
 import { NotFoundError, problemJsonErrorHandler } from "./problem-json.js";
 
 let activeServer: Server | undefined;
@@ -76,7 +76,9 @@ function buildProblemJsonTestApp(): Express {
         throw new Error("database password was accidentally included");
     });
     app.get("/body-parser-parse-failure", () => {
-        throw { type: "entity.parse.failed" };
+        throw Object.assign(new Error("parser failed"), {
+            type: "entity.parse.failed",
+        });
     });
     app.use(problemJsonErrorHandler);
 
@@ -131,7 +133,7 @@ void describe("problemJsonErrorHandler", () => {
         const invalidPayload = {
             tenantId: "10000000-0000-4000-8000-000000000100",
             owner: "20000000-0000-4000-8000-000000000001",
-            dueDate: "2026-07-31",
+            dueDate: "July 31, 2026",
             priority: "High",
         };
         const response = await requestTestApp(
@@ -157,9 +159,7 @@ void describe("problemJsonErrorHandler", () => {
             status: 400,
             instance: "/expense-reports",
         });
-        expect(body.detail).toContain(
-            "dueDate: Invalid input: expected date, received string",
-        );
+        expect(body.detail).toContain("dueDate:");
     });
 
     void test("maps malformed JSON request bodies to a 400 Problem+JSON response", async () => {

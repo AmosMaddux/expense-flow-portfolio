@@ -702,6 +702,7 @@ void describe("stageTransition schema", () => {
 
     void test("documents the valid workflow edge policy", () => {
         const validTransitions = new Set([
+            "Drafted->Drafted:report_created",
             "Drafted->Submitted",
             "Submitted->Manager Approval",
             "Manager Approval->AP Review",
@@ -713,8 +714,19 @@ void describe("stageTransition schema", () => {
         const isValidTransition = (
             fromStage: (typeof approvedWorkflowStages)[number],
             toStage: (typeof approvedWorkflowStages)[number],
-        ) => validTransitions.has(`${fromStage}->${toStage}`);
+            reason?: string,
+        ) => {
+            const transitionKey =
+                reason === undefined
+                    ? `${fromStage}->${toStage}`
+                    : `${fromStage}->${toStage}:${reason}`;
 
+            return validTransitions.has(transitionKey);
+        };
+
+        expect(
+            isValidTransition("Drafted", "Drafted", "report_created"),
+        ).toBeTruthy();
         expect(isValidTransition("Drafted", "Submitted")).toBeTruthy();
         expect(isValidTransition("Manager Approval", "AP Review")).toBeTruthy();
         expect(isValidTransition("AP Review", "Paid")).toBeTruthy();
@@ -726,6 +738,10 @@ void describe("stageTransition schema", () => {
         expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
         expect(isValidTransition("Reconciled", "Paid")).toBeFalsy();
         expect(isValidTransition("Reconciled", "Reconciled")).toBeFalsy();
+        expect(isValidTransition("Drafted", "Drafted")).toBeFalsy();
+        expect(
+            isValidTransition("Drafted", "Drafted", "manual_update"),
+        ).toBeFalsy();
     });
 
     void test("generates SQL for the table, constraints, foreign key, and indexes", async () => {
@@ -758,6 +774,7 @@ void describe("stageTransition schema", () => {
         expect(migrationSql).toContain("stage_transition_to_stage_check");
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
+        expect(migrationSql).toContain("report_created");
         expect(migrationSql).toContain("manager approval");
         expect(migrationSql).toContain("ap review");
         expect(migrationSql).toContain(
