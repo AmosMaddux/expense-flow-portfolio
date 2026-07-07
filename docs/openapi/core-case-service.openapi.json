@@ -22,7 +22,7 @@
                     },
                     "dueDate": {
                         "type": "string",
-                        "format": "date"
+                        "format": "date-time"
                     },
                     "priority": {
                         "type": "string",

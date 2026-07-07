@@ -10,10 +10,26 @@ export type CaseQueueStageRollup = {
     overdueCount: number;
 };
 
+export type CaseQueueReport = {
+    id: string;
+    currentStage: ExpenseReportStage;
+    dueDate: string;
+    owner: string;
+    priority: string;
+    onHold: boolean;
+    holdReason: string | null;
+    isOverdue: boolean;
+};
+
 export type ReadCaseQueueStageRollupsParams = {
     tenantId: string;
     asOfDate: string;
 };
+
+export type ReadCaseQueueReportsForStageParams =
+    ReadCaseQueueStageRollupsParams & {
+        currentStage: ExpenseReportStage;
+    };
 
 type CaseQueueRollupDatabase = {
     execute(query: SQLWrapper | string): PromiseLike<{
@@ -26,7 +42,9 @@ const expectedStageValues = sql.join(
     sql`, `,
 );
 
-// Reads tenant-scoped Expense Report counts by workflow stage for the Case Queue.
+/**
+ * Read tenant-scoped Expense Report counts by workflow stage for the Case Queue.
+ */
 export async function readCaseQueueStageRollups(
     db: CaseQueueRollupDatabase,
     params: ReadCaseQueueStageRollupsParams,
@@ -39,7 +57,7 @@ export async function readCaseQueueStageRollups(
             es.stage_name as "currentStage",
             count(${expenseReport.id})::int as "reportCount",
             count(${expenseReport.id}) filter (
-                where ${expenseReport.dueDate} < ${params.asOfDate}
+                where ${expenseReport.dueDate} < cast(${params.asOfDate} as date)
             )::int as "overdueCount"
         from expected_stages es
         left join ${expenseReport}
@@ -50,6 +68,32 @@ export async function readCaseQueueStageRollups(
     `);
 
     return result.rows.map(toCaseQueueStageRollup);
+}
+
+/**
+ * Read tenant-scoped Expense Reports in one workflow stage with a derived overdue flag.
+ */
+export async function readCaseQueueReportsForStage(
+    db: CaseQueueRollupDatabase,
+    params: ReadCaseQueueReportsForStageParams,
+): Promise<CaseQueueReport[]> {
+    const result = await db.execute(sql`
+        select
+            ${expenseReport.id} as "id",
+            ${expenseReport.currentStage} as "currentStage",
+            ${expenseReport.dueDate} as "dueDate",
+            ${expenseReport.owner} as "owner",
+            ${expenseReport.priority} as "priority",
+            ${expenseReport.onHold} as "onHold",
+            ${expenseReport.holdReason} as "holdReason",
+            (${expenseReport.dueDate} < cast(${params.asOfDate} as date)) as "isOverdue"
+        from ${expenseReport}
+        where ${expenseReport.tenantId} = ${params.tenantId}
+            and ${expenseReport.currentStage} = ${params.currentStage}
+        order by ${expenseReport.dueDate} asc, ${expenseReport.id} asc
+    `);
+
+    return result.rows.map(toCaseQueueReport);
 }
 
 function toCaseQueueStageRollup(
@@ -68,5 +112,27 @@ function toCaseQueueStageRollup(
         currentStage: currentStage as ExpenseReportStage,
         reportCount: Number(row.reportCount),
         overdueCount: Number(row.overdueCount),
+    };
+}
+
+function toCaseQueueReport(row: Record<string, unknown>): CaseQueueReport {
+    const currentStage = row.currentStage;
+
+    if (
+        typeof currentStage !== "string" ||
+        !approvedWorkflowStages.includes(currentStage as ExpenseReportStage)
+    ) {
+        throw new Error("Case Queue report query returned an unknown stage");
+    }
+
+    return {
+        id: String(row.id),
+        currentStage: currentStage as ExpenseReportStage,
+        dueDate: String(row.dueDate),
+        owner: String(row.owner),
+        priority: String(row.priority),
+        onHold: Boolean(row.onHold),
+        holdReason: typeof row.holdReason === "string" ? row.holdReason : null,
+        isOverdue: Boolean(row.isOverdue),
     };
 }

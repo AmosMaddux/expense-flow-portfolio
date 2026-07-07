@@ -8,7 +8,7 @@ extendZodWithOpenApi(z);
 // Tenant scope and workflow stage are server-controlled, not client-supplied.
 export const CreateExpenseReportInboundRequestSchema = z.object({
     owner: z.uuid(),
-    dueDate: z.iso.date(),
+    dueDate: z.date(),
     priority: z.enum(priorityLevels).default("Normal"),
 });
 
@@ -22,8 +22,8 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     currentStage: z.enum(approvedWorkflowStages),
     onHold: z.boolean(),
     holdReason: z.string().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
 });
 
 export const createExpenseReportRequestSchema =

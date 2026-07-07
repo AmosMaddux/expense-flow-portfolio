@@ -9,7 +9,7 @@ import {
 
 const validCreateExpenseReportRequest = {
     owner: "20000000-0000-4000-8000-000000000001",
-    dueDate: "2026-07-31",
+    dueDate: new Date("2026-07-31T00:00:00.000Z"),
 };
 
 const validExpenseReportResponse = {
@@ -21,8 +21,8 @@ const validExpenseReportResponse = {
     currentStage: "Drafted",
     onHold: false,
     holdReason: null,
-    createdAt: "2026-07-06T12:00:00.000Z",
-    updatedAt: "2026-07-06T12:00:00.000Z",
+    createdAt: new Date("2026-07-06T12:00:00.000Z"),
+    updatedAt: new Date("2026-07-06T12:00:00.000Z"),
 };
 
 void describe("CreateExpenseReportInboundRequestSchema", () => {
@@ -76,8 +76,8 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                owner: "owner-one",
-                dueDate: "07/31/2026",
+                owner: validCreateExpenseReportRequest.owner,
+                dueDate: "2026-07-31",
             }),
         ).toThrow();
     });
