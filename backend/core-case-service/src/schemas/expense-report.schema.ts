@@ -15,6 +15,7 @@ export const CreateExpenseReportInboundRequestSchema = z.object({
 
 export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
+    tenantId: z.uuid(),
 });
 
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.

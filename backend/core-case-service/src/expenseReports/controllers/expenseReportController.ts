@@ -40,6 +40,7 @@ export async function getExpenseReportById(
     try {
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
+            tenantId: req.get("x-expenseflow-tenant-id"),
         });
         const report = await readExpenseReport(parsedRequest);
 

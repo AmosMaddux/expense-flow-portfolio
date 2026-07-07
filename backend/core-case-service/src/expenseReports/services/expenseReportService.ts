@@ -36,7 +36,7 @@ export async function createDraftExpenseReport(
 export async function readExpenseReport(
     request: GetExpenseReportRequest,
 ): Promise<ExpenseReportResponse> {
-    const report = await findExpenseReportById(request.id);
+    const report = await findExpenseReportById(request.tenantId, request.id);
 
     if (report === undefined) {
         throw new NotFoundError("Expense Report not found.");

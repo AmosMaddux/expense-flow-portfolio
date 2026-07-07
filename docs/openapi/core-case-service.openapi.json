@@ -184,6 +184,16 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "x-expenseflow-tenant-id",
+                        "in": "header",
+                        "description": "Tenant context for the walking skeleton until authenticated tenant context is available."
                     }
                 ],
                 "responses": {

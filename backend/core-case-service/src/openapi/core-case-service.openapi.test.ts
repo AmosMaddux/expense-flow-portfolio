@@ -37,13 +37,23 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
-    void test("does not require a tenant query parameter for GET", () => {
+    void test("documents GET tenant context as a required header", () => {
         const expenseReportByIdPath = document.paths?.["/expense-reports/{id}"];
         const parameter = expenseReportByIdPath?.get?.parameters?.find(
-            (candidate) => "name" in candidate && candidate.name === "tenantId",
+            (candidate) =>
+                "name" in candidate &&
+                candidate.name === "x-expenseflow-tenant-id",
         );
 
-        expect(parameter).toBeUndefined();
+        expect(parameter).toMatchObject({
+            in: "header",
+            name: "x-expenseflow-tenant-id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
     });
 
     void test("documents successful responses from the outbound Expense Report DTO", () => {
@@ -80,7 +90,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const serializedDocument = JSON.stringify(document).toLowerCase();
 
         expect(serializedDocument).toContain("records the initial audit");
-        expect(serializedDocument).toContain("expense report case by identifier");
+        expect(serializedDocument).toContain(
+            "expense report case by identifier",
+        );
         expect(serializedDocument).not.toContain("planned endpoint");
     });
 });

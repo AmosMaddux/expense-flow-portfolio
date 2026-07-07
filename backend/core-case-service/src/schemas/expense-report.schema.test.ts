@@ -84,10 +84,12 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
         const parsed: GetExpenseReportRequest =
             GetExpenseReportInboundRequestSchema.parse({
                 id: "30000000-0000-4000-8000-000000000001",
+                tenantId: "10000000-0000-4000-8000-000000000100",
             });
 
         expect(parsed).toStrictEqual({
             id: "30000000-0000-4000-8000-000000000001",
+            tenantId: "10000000-0000-4000-8000-000000000100",
         });
     });
 
@@ -95,6 +97,15 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
         expect(() =>
             GetExpenseReportInboundRequestSchema.parse({
                 id: "expense-report-one",
+                tenantId: "10000000-0000-4000-8000-000000000100",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects read requests without tenant context", () => {
+        expect(() =>
+            GetExpenseReportInboundRequestSchema.parse({
+                id: "30000000-0000-4000-8000-000000000001",
             }),
         ).toThrow();
     });
