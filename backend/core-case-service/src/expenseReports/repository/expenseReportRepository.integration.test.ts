@@ -130,7 +130,7 @@ void describe("expenseReportRepository", () => {
         expect(transitionRows).toHaveLength(0);
     });
 
-    void test("finds an Expense Report by id and tenant", async () => {
+    void test("finds an Expense Report by id", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000186";
         const targetId = "10000000-0000-4000-8000-000000000186";
 
@@ -143,24 +143,36 @@ void describe("expenseReportRepository", () => {
         );
         expect(insertedReport).toBeDefined();
 
-        const foundReport = await findExpenseReportById(
-            targetId,
-            targetTenantId,
-        );
+        const foundReport = await findExpenseReportById(targetId);
 
         expect(foundReport?.id).toEqual(targetId);
         expect(foundReport?.tenantId).toEqual(targetTenantId);
     });
 
     void test("returns undefined when an Expense Report is absent", async () => {
-        const targetTenantId = "00000000-0000-4000-8000-000000000187";
         const targetId = "10000000-0000-4000-8000-000000000187";
 
-        const foundReport = await findExpenseReportById(
-            targetId,
-            targetTenantId,
-        );
+        const foundReport = await findExpenseReportById(targetId);
 
         expect(foundReport).toBeUndefined();
+    });
+
+    void test("finds a saved Expense Report by id without tenant context", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000188";
+        const targetId = "10000000-0000-4000-8000-000000000188";
+
+        const newReport = buildNewExpenseReport(targetTenantId);
+        newReport.id = targetId;
+
+        const insertedReport = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+        expect(insertedReport).toBeDefined();
+
+        const foundReport = await findExpenseReportById(targetId);
+
+        expect(foundReport?.id).toEqual(targetId);
+        expect(foundReport?.tenantId).toEqual(targetTenantId);
     });
 });

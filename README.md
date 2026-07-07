@@ -173,7 +173,7 @@ From another shell, create a synthetic Expense Report through the API:
 curl -sS -X POST http://127.0.0.1:3301/expense-reports \
   -H "content-type: application/json" \
   -d '{
-    "tenantId": "40000000-0000-4000-8000-000000000300",
+    "tenant_id": "40000000-0000-4000-8000-000000000300",
     "owner": "50000000-0000-4000-8000-000000000300",
     "dueDate": "2026-08-14",
     "priority": "High"
@@ -184,6 +184,10 @@ Set `EXPENSEFLOW_REPORT_ID` to the returned `id`, then verify the persisted rows
 
 ```sh
 export EXPENSEFLOW_REPORT_ID="<returned-report-id>"
+curl -sS "http://127.0.0.1:3301/expense-reports/${EXPENSEFLOW_REPORT_ID}"
+```
+
+```sh
 node --env-file=.env --input-type=module -e "import { Pool } from 'pg'; const pool = new Pool({ connectionString: process.env.DATABASE_URL }); try { const report = await pool.query('select id, tenant_id, owner, due_date, priority, current_stage, on_hold from expense_report where id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); const audit = await pool.query('select action, stage_before_action, stage_after_proposed_action from audit_entry where expense_report_id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); const transition = await pool.query('select from_stage, to_stage, actor, reason from stage_transition where expense_report_id = \$1', [process.env.EXPENSEFLOW_REPORT_ID]); console.log(JSON.stringify({ report: report.rows, audit: audit.rows, transition: transition.rows }, null, 2)); } finally { await pool.end(); }"
 ```
 

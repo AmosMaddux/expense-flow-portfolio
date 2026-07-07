@@ -16,7 +16,7 @@
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
-                    "tenantId": {
+                    "tenant_id": {
                         "type": "string",
                         "format": "uuid"
                     },
@@ -34,7 +34,7 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenantId", "owner", "dueDate"]
+                "required": ["tenant_id", "owner", "dueDate"]
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -174,7 +174,7 @@
         "/expense-reports/{id}": {
             "get": {
                 "summary": "Get an Expense Report",
-                "description": "Loads a tenant-scoped Expense Report case by identifier.",
+                "description": "Loads an Expense Report case by identifier.",
                 "parameters": [
                     {
                         "schema": {
@@ -184,15 +184,6 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
-                    },
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "tenantId",
-                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -22,10 +22,6 @@ const expenseReportIdPathParamsSchema = z.object({
     id: z.uuid(),
 });
 
-const expenseReportTenantQuerySchema = z.object({
-    tenantId: z.uuid(),
-});
-
 /**
  * Generates the Core Case Service OpenAPI contract from shared Zod DTO schemas.
  */
@@ -75,10 +71,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         method: "get",
         path: "/expense-reports/{id}",
         summary: "Get an Expense Report",
-        description: "Loads a tenant-scoped Expense Report case by identifier.",
+        description: "Loads an Expense Report case by identifier.",
         request: {
             params: expenseReportIdPathParamsSchema,
-            query: expenseReportTenantQuerySchema,
         },
         responses: {
             200: {

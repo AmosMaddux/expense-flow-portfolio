@@ -8,7 +8,10 @@ These rules apply to all work in this repository.
 - The target buyer is a corporate finance team at an organization with roughly 500 to 25,000 employees.
 - ExpenseFlow turns employee expenses into clean GL entries and audit-defensible reimbursement records.
 - The product is centered on case management, a multi-step workflow, and a split between internal staff workspaces and an external employee portal.
+<<<<<<< HEAD
 - Routes defined within
+=======
+>>>>>>> f7c79487b90669aa4779ab53f8f398a21dd19b7e
 
 ## Data Handling
 

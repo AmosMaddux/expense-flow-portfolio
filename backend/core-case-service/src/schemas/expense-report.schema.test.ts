@@ -10,7 +10,7 @@ import {
 } from "./expense-report.schema.js";
 
 const validCreateExpenseReportRequest = {
-    tenantId: "10000000-0000-4000-8000-000000000100",
+    tenant_id: "10000000-0000-4000-8000-000000000100",
     owner: "20000000-0000-4000-8000-000000000001",
     dueDate: "2026-07-31",
 };
@@ -50,6 +50,23 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         expect(parsed).not.toHaveProperty("currentStage");
     });
 
+    void test("requires tenant scope using the database-backed tenant_id field", () => {
+        const parsed = CreateExpenseReportInboundRequestSchema.parse(
+            validCreateExpenseReportRequest,
+        );
+
+        expect(parsed.tenant_id).toBe(validCreateExpenseReportRequest.tenant_id);
+    });
+
+    void test("keeps camelCase tenant scope out of the inbound create request contract", () => {
+        const parsed = CreateExpenseReportInboundRequestSchema.parse({
+            ...validCreateExpenseReportRequest,
+            tenantId: validExpenseReportResponse.tenantId,
+        });
+
+        expect(parsed).not.toHaveProperty("tenantId");
+    });
+
     void test("accepts an explicit priority", () => {
         const parsed = CreateExpenseReportInboundRequestSchema.parse({
             ...validCreateExpenseReportRequest,
@@ -62,8 +79,8 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects requests missing required Drafted-report fields", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenantId: validCreateExpenseReportRequest.tenantId,
                 dueDate: validCreateExpenseReportRequest.dueDate,
+                tenant_id: validCreateExpenseReportRequest.tenant_id,
             }),
         ).toThrow();
     });
@@ -71,7 +88,7 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenantId: "tenant-one",
+                tenant_id: validCreateExpenseReportRequest.tenant_id,
                 owner: validCreateExpenseReportRequest.owner,
                 dueDate: "July 31, 2026",
             }),
@@ -80,23 +97,21 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
 });
 
 void describe("GetExpenseReportInboundRequestSchema", () => {
-    void test("parses the tenant-scoped read request shape", () => {
+    void test("parses the read request shape by id", () => {
         const parsed: GetExpenseReportRequest =
             GetExpenseReportInboundRequestSchema.parse({
                 id: "30000000-0000-4000-8000-000000000001",
-                tenantId: validCreateExpenseReportRequest.tenantId,
             });
 
         expect(parsed).toStrictEqual({
             id: "30000000-0000-4000-8000-000000000001",
-            tenantId: validCreateExpenseReportRequest.tenantId,
         });
     });
 
-    void test("rejects read requests without a tenant", () => {
+    void test("rejects read requests with an invalid id", () => {
         expect(() =>
             GetExpenseReportInboundRequestSchema.parse({
-                id: "30000000-0000-4000-8000-000000000001",
+                id: "expense-report-one",
             }),
         ).toThrow();
     });

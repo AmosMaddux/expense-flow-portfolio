@@ -13,7 +13,9 @@ import type {
  * Creates a Drafted Expense Report and returns the public API response shape.
  */
 export async function createDraftExpenseReport(
-    request: CreateExpenseReportRequest,
+    request: Omit<CreateExpenseReportRequest, "tenant_id"> & {
+        tenantId: string;
+    },
 ): Promise<ExpenseReportResponse> {
     const report = await insertDraftExpenseReport(request.tenantId, {
         tenantId: request.tenantId,
@@ -31,12 +33,12 @@ export async function createDraftExpenseReport(
 }
 
 /**
- * Reads a tenant-scoped Expense Report and returns the public API response shape.
+ * Reads an Expense Report by case identifier and returns the public API response shape.
  */
 export async function readExpenseReport(
     request: GetExpenseReportRequest,
 ): Promise<ExpenseReportResponse> {
-    const report = await findExpenseReportById(request.id, request.tenantId);
+    const report = await findExpenseReportById(request.id);
 
     if (report === undefined) {
         throw new NotFoundError("Expense Report not found.");
