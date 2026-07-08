@@ -1,0 +1,478 @@
+{
+    "id": "421a45d2-1de1-496d-a7b2-77bcc2b4a0af",
+    "prevId": "00000000-0000-0000-0000-000000000000",
+    "version": "7",
+    "dialect": "postgresql",
+    "tables": {
+        "public.credential": {
+            "name": "credential",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "user_id": {
+                    "name": "user_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "password_hash": {
+                    "name": "password_hash",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "password_hash_algorithm": {
+                    "name": "password_hash_algorithm",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "credential_tenant_user_unique_idx": {
+                    "name": "credential_tenant_user_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "user_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "credential_tenant_user_idx": {
+                    "name": "credential_tenant_user_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "user_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "credential_user_tenant_fk": {
+                    "name": "credential_user_tenant_fk",
+                    "tableFrom": "credential",
+                    "tableTo": "user",
+                    "columnsFrom": ["tenant_id", "user_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "credential_password_hash_not_blank_check": {
+                    "name": "credential_password_hash_not_blank_check",
+                    "value": "nullif(btrim(\"credential\".\"password_hash\"), '') is not null"
+                },
+                "credential_password_hash_algorithm_not_blank_check": {
+                    "name": "credential_password_hash_algorithm_not_blank_check",
+                    "value": "nullif(btrim(\"credential\".\"password_hash_algorithm\"), '') is not null"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.refresh_token": {
+            "name": "refresh_token",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "user_id": {
+                    "name": "user_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "token_hash": {
+                    "name": "token_hash",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expires_at": {
+                    "name": "expires_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "revoked_at": {
+                    "name": "revoked_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "refresh_token_tenant_user_idx": {
+                    "name": "refresh_token_tenant_user_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "user_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "refresh_token_tenant_expires_at_idx": {
+                    "name": "refresh_token_tenant_expires_at_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expires_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "refresh_token_user_tenant_fk": {
+                    "name": "refresh_token_user_tenant_fk",
+                    "tableFrom": "refresh_token",
+                    "tableTo": "user",
+                    "columnsFrom": ["tenant_id", "user_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "refresh_token_token_hash_not_blank_check": {
+                    "name": "refresh_token_token_hash_not_blank_check",
+                    "value": "nullif(btrim(\"refresh_token\".\"token_hash\"), '') is not null"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.role": {
+            "name": "role",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "user_id": {
+                    "name": "user_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "name": {
+                    "name": "name",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "role_tenant_user_name_unique_idx": {
+                    "name": "role_tenant_user_name_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "user_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "name",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "role_tenant_name_idx": {
+                    "name": "role_tenant_name_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "name",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "role_tenant_user_idx": {
+                    "name": "role_tenant_user_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "user_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "role_user_tenant_fk": {
+                    "name": "role_user_tenant_fk",
+                    "tableFrom": "role",
+                    "tableTo": "user",
+                    "columnsFrom": ["tenant_id", "user_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "role_name_check": {
+                    "name": "role_name_check",
+                    "value": "\"role\".\"name\" in ('Finance Admin', 'Department Manager', 'Employee', 'Admin')"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.user": {
+            "name": "user",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "email": {
+                    "name": "email",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "updated_at": {
+                    "name": "updated_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "user_tenant_email_unique_idx": {
+                    "name": "user_tenant_email_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "email",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "user_tenant_id_unique_idx": {
+                    "name": "user_tenant_id_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "user_email_not_blank_check": {
+                    "name": "user_email_not_blank_check",
+                    "value": "nullif(btrim(\"user\".\"email\"), '') is not null"
+                }
+            },
+            "isRLSEnabled": false
+        }
+    },
+    "enums": {},
+    "schemas": {},
+    "sequences": {},
+    "roles": {},
+    "policies": {},
+    "views": {},
+    "_meta": {
+        "columns": {},
+        "schemas": {},
+        "tables": {}
+    }
+}

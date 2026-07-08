@@ -23,7 +23,8 @@
     "author": "",
     "license": "ISC",
     "workspaces": [
-        "backend/core-case-service"
+        "backend/core-case-service",
+        "backend/identity-auth-service"
     ],
     "devDependencies": {
         "@eslint/js": "^10.0.1",
