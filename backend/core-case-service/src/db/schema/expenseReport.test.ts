@@ -7,6 +7,7 @@ import { getTableName } from "drizzle-orm";
 
 import {
     attachmentMetadata,
+    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     auditEntry,
     caseComment,
@@ -114,7 +115,7 @@ async function readLatestMigrationSql(): Promise<string> {
 }
 
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages and priority levels", () => {
+    void test("exports the approved workflow stages, priority levels, and attachment content types", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -129,6 +130,16 @@ void describe("expenseReport schema", () => {
             "Normal",
             "High",
             "Urgent",
+        ]);
+
+        expect(approvedAttachmentContentTypes).toStrictEqual([
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "text/plain",
+            "text/csv",
+            "application/json",
         ]);
     });
 

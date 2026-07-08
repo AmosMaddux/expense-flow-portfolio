@@ -25,6 +25,29 @@ export const approvedWorkflowStages = [
 
 export const priorityLevels = ["Low", "Normal", "High", "Urgent"] as const;
 
+export const approvedAttachmentContentTypes = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "text/plain",
+    "text/csv",
+    "application/json",
+] as const;
+
+function buildInListSql(values: readonly string[]) {
+    return sql.join(
+        values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`)),
+        sql`, `,
+    );
+}
+
+const approvedWorkflowStageCheckSql = buildInListSql(approvedWorkflowStages);
+const priorityLevelCheckSql = buildInListSql(priorityLevels);
+const approvedAttachmentContentTypeCheckSql = buildInListSql(
+    approvedAttachmentContentTypes,
+);
+
 export const expenseReport = pgTable(
     "expense_report",
     {
@@ -46,11 +69,11 @@ export const expenseReport = pgTable(
     (table) => [
         check(
             "expense_report_current_stage_check",
-            sql`${table.currentStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.currentStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "expense_report_priority_check",
-            sql`${table.priority} in ('Low', 'Normal', 'High', 'Urgent')`,
+            sql`${table.priority} in (${priorityLevelCheckSql})`,
         ),
         check(
             "expense_report_hold_reason_check",
@@ -113,11 +136,11 @@ export const auditEntry = pgTable(
         ),
         check(
             "audit_entry_stage_before_action_check",
-            sql`${table.stageBeforeAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageBeforeAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "audit_entry_stage_after_proposed_action_check",
-            sql`${table.stageAfterProposedAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageAfterProposedAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         index("audit_entry_tenant_report_created_at_idx").on(
             table.tenantId,
@@ -155,11 +178,11 @@ export const stageTransition = pgTable(
     (table) => [
         check(
             "stage_transition_from_stage_check",
-            sql`${table.fromStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.fromStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_to_stage_check",
-            sql`${table.toStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.toStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_reason_check",
@@ -287,7 +310,7 @@ export const attachmentMetadata = pgTable(
         check(
             "attachment_metadata_content_type_check",
             // Canonical MIME types keep attachment handling predictable downstream.
-            sql`${table.contentType} in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')`,
+            sql`${table.contentType} in (${approvedAttachmentContentTypeCheckSql})`,
         ),
         foreignKey({
             name: "attachment_metadata_expense_report_tenant_fk",
