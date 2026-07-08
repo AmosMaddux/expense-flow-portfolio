@@ -35,16 +35,25 @@ export const approvedAttachmentContentTypes = [
     "application/json",
 ] as const;
 
-function buildInListSql(values: readonly string[]) {
+function buildStaticStringInListSql(values: readonly string[]) {
+    if (values.length === 0) {
+        throw new Error(
+            "Static SQL allowlists must contain at least one value.",
+        );
+    }
+
+    // sql.raw preserves literal migration SQL; use only with hard-coded schema allowlists.
     return sql.join(
         values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`)),
         sql`, `,
     );
 }
 
-const approvedWorkflowStageCheckSql = buildInListSql(approvedWorkflowStages);
-const priorityLevelCheckSql = buildInListSql(priorityLevels);
-const approvedAttachmentContentTypeCheckSql = buildInListSql(
+const approvedWorkflowStageCheckSql = buildStaticStringInListSql(
+    approvedWorkflowStages,
+);
+const priorityLevelCheckSql = buildStaticStringInListSql(priorityLevels);
+const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
     approvedAttachmentContentTypes,
 );
 

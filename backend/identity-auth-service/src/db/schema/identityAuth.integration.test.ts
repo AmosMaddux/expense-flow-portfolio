@@ -13,6 +13,10 @@ const requiredTables = [
     getTableConfig(refreshToken),
 ];
 
+const tenantAId = "00000000-0000-0000-0000-000000000221";
+const tenantBId = "00000000-0000-0000-0000-000000000222";
+const userAId = "10000000-0000-0000-0000-000000000221";
+
 void describe("identity auth PostgreSQL schema", () => {
     let client: Client;
 
@@ -114,6 +118,141 @@ VALUES ($1, $2, $3);
             ).rejects.toMatchObject({
                 code: "23514",
                 constraint: "role_name_check",
+            });
+        } finally {
+            await client.query("ROLLBACK");
+        }
+    });
+
+    test.each([
+        {
+            childTableName: "credential",
+            insertSql: `
+INSERT INTO "credential" ("tenant_id", "user_id", "password_hash", "password_hash_algorithm")
+VALUES ($1, $2, $3, $4);
+`,
+            params: [tenantBId, userAId, "synthetic-password-hash", "argon2id"],
+            constraint: "credential_user_tenant_fk",
+        },
+        {
+            childTableName: "role",
+            insertSql: `
+INSERT INTO "role" ("tenant_id", "user_id", "name")
+VALUES ($1, $2, $3);
+`,
+            params: [tenantBId, userAId, "Admin"],
+            constraint: "role_user_tenant_fk",
+        },
+        {
+            childTableName: "refresh_token",
+            insertSql: `
+INSERT INTO "refresh_token" ("tenant_id", "user_id", "token_hash", "expires_at")
+VALUES ($1, $2, $3, $4);
+`,
+            params: [
+                tenantBId,
+                userAId,
+                "synthetic-refresh-token-hash",
+                "2026-07-09T00:00:00.000Z",
+            ],
+            constraint: "refresh_token_user_tenant_fk",
+        },
+    ])(
+        "rejects $childTableName rows whose tenant_id does not match the parent user",
+        async ({ insertSql, params, constraint }) => {
+            await client.query("BEGIN");
+
+            try {
+                await client.query(
+                    `
+INSERT INTO "user" ("id", "tenant_id", "email")
+VALUES ($1, $2, $3);
+`,
+                    [userAId, tenantAId, "tenant-a-user@example.invalid"],
+                );
+
+                await expect(
+                    client.query(insertSql, params),
+                ).rejects.toMatchObject({
+                    code: "23503",
+                    constraint,
+                });
+            } finally {
+                await client.query("ROLLBACK");
+            }
+        },
+    );
+
+    void test("rejects same-tenant email duplicates that differ only by case", async () => {
+        await client.query("BEGIN");
+
+        try {
+            await client.query(
+                `
+INSERT INTO "user" ("tenant_id", "email")
+VALUES ($1, $2);
+`,
+                [tenantAId, "case-test@example.invalid"],
+            );
+
+            await expect(
+                client.query(
+                    `
+INSERT INTO "user" ("tenant_id", "email")
+VALUES ($1, $2);
+`,
+                    [tenantAId, "CASE-TEST@example.invalid"],
+                ),
+            ).rejects.toMatchObject({
+                code: "23505",
+                constraint: "user_tenant_email_unique_idx",
+            });
+        } finally {
+            await client.query("ROLLBACK");
+        }
+    });
+
+    void test("rejects duplicate refresh token hashes", async () => {
+        await client.query("BEGIN");
+
+        try {
+            await client.query(
+                `
+INSERT INTO "user" ("id", "tenant_id", "email")
+VALUES ($1, $2, $3);
+`,
+                [userAId, tenantAId, "refresh-token-user@example.invalid"],
+            );
+
+            await client.query(
+                `
+INSERT INTO "refresh_token" ("tenant_id", "user_id", "token_hash", "expires_at")
+VALUES ($1, $2, $3, $4);
+`,
+                [
+                    tenantAId,
+                    userAId,
+                    "duplicate-refresh-token-hash",
+                    "2026-07-09T00:00:00.000Z",
+                ],
+            );
+
+            await expect(
+                client.query(
+                    `
+INSERT INTO "refresh_token" ("tenant_id", "user_id", "token_hash", "expires_at")
+VALUES ($1, $2, $3, $4);
+`,
+                    [
+                        tenantAId,
+                        userAId,
+                        "duplicate-refresh-token-hash",
+                        "2026-07-10T00:00:00.000Z",
+                    ],
+                ),
+            ).rejects.toMatchObject({
+                code: "23505",
+                constraint: "refresh_token_token_hash_unique_idx",
             });
         } finally {
             await client.query("ROLLBACK");

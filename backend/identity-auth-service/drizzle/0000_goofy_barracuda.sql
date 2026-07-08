@@ -39,13 +39,14 @@ CREATE TABLE "user" (
 	CONSTRAINT "user_email_not_blank_check" CHECK (nullif(btrim("user"."email"), '') is not null)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "user_tenant_email_unique_idx" ON "user" USING btree ("tenant_id","email");--> statement-breakpoint
+CREATE UNIQUE INDEX "user_tenant_email_unique_idx" ON "user" USING btree ("tenant_id",lower("email"));--> statement-breakpoint
 CREATE UNIQUE INDEX "user_tenant_id_unique_idx" ON "user" USING btree ("tenant_id","id");--> statement-breakpoint
 ALTER TABLE "credential" ADD CONSTRAINT "credential_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "refresh_token" ADD CONSTRAINT "refresh_token_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "role" ADD CONSTRAINT "role_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "credential_tenant_user_unique_idx" ON "credential" USING btree ("tenant_id","user_id");--> statement-breakpoint
 CREATE INDEX "credential_tenant_user_idx" ON "credential" USING btree ("tenant_id","user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "refresh_token_token_hash_unique_idx" ON "refresh_token" USING btree ("token_hash");--> statement-breakpoint
 CREATE INDEX "refresh_token_tenant_user_idx" ON "refresh_token" USING btree ("tenant_id","user_id");--> statement-breakpoint
 CREATE INDEX "refresh_token_tenant_expires_at_idx" ON "refresh_token" USING btree ("tenant_id","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "role_tenant_user_name_unique_idx" ON "role" USING btree ("tenant_id","user_id","name");--> statement-breakpoint

@@ -17,10 +17,21 @@ export const roleValues = [
     "Admin",
 ] as const;
 
-const roleValueCheckSql = sql.join(
-    roleValues.map((roleValue) => sql`${roleValue}`),
-    sql`, `,
-);
+function buildStaticStringInListSql(values: readonly string[]) {
+    if (values.length === 0) {
+        throw new Error(
+            "Static SQL allowlists must contain at least one value.",
+        );
+    }
+
+    // sql.raw preserves literal migration SQL; use only with hard-coded schema allowlists.
+    return sql.join(
+        values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`)),
+        sql`, `,
+    );
+}
+
+const roleValueCheckSql = buildStaticStringInListSql(roleValues);
 
 export const user = pgTable(
     "user",
@@ -42,7 +53,7 @@ export const user = pgTable(
         ),
         uniqueIndex("user_tenant_email_unique_idx").on(
             table.tenantId,
-            table.email,
+            sql`lower(${table.email})`,
         ),
         // Child tables use this key so their tenant_id must match the parent user.
         uniqueIndex("user_tenant_id_unique_idx").on(table.tenantId, table.id),
@@ -140,6 +151,7 @@ export const refreshToken = pgTable(
             columns: [table.tenantId, table.userId],
             foreignColumns: [user.tenantId, user.id],
         }),
+        uniqueIndex("refresh_token_token_hash_unique_idx").on(table.tokenHash),
         index("refresh_token_tenant_user_idx").on(table.tenantId, table.userId),
         index("refresh_token_tenant_expires_at_idx").on(
             table.tenantId,

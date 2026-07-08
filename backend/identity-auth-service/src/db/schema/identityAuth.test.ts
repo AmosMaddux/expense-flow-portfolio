@@ -16,6 +16,22 @@ function columnNamesFor(table: (typeof tables)[number]): string[] {
     return getTableConfig(table).columns.map((column) => column.name);
 }
 
+function foreignKeyReferencesFor(
+    table: typeof credential | typeof role | typeof refreshToken,
+) {
+    return getTableConfig(table).foreignKeys.map((foreignKeyConfig) => {
+        const reference = foreignKeyConfig.reference();
+
+        return {
+            columns: reference.columns.map((column) => column.name),
+            foreignColumns: reference.foreignColumns.map(
+                (column) => column.name,
+            ),
+            name: foreignKeyConfig.getName(),
+        };
+    });
+}
+
 void describe("identityAuth schema", () => {
     void test("exports the approved repository role values", () => {
         expect(roleValues).toStrictEqual([
@@ -67,28 +83,64 @@ void describe("identityAuth schema", () => {
     });
 
     void test("keeps tenant-scoped constraints and indexes on child tables", () => {
+        const userIndexes = getTableConfig(user).indexes;
+        const userEmailIndex = userIndexes.find(
+            (indexConfig) =>
+                indexConfig.config.name === "user_tenant_email_unique_idx",
+        );
+        const userTenantIdIndex = userIndexes.find(
+            (indexConfig) =>
+                indexConfig.config.name === "user_tenant_id_unique_idx",
+        );
+
         expect(
-            getTableConfig(user).indexes.map(
-                (indexConfig) => indexConfig.config.name,
-            ),
+            userIndexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "user_tenant_email_unique_idx",
             "user_tenant_id_unique_idx",
         ]);
+        expect(userEmailIndex?.config.unique).toBeTruthy();
+        expect(userTenantIdIndex?.config.unique).toBeTruthy();
 
-        expect(
-            getTableConfig(credential).foreignKeys.map((key) => key.getName()),
-        ).toEqual(["credential_user_tenant_fk"]);
+        expect(foreignKeyReferencesFor(credential)).toEqual([
+            {
+                columns: ["tenant_id", "user_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "credential_user_tenant_fk",
+            },
+        ]);
         expect(
             getTableConfig(role).checks.map((constraint) => constraint.name),
         ).toEqual(["role_name_check"]);
+        expect(foreignKeyReferencesFor(role)).toEqual([
+            {
+                columns: ["tenant_id", "user_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "role_user_tenant_fk",
+            },
+        ]);
+
+        const refreshTokenIndexes = getTableConfig(refreshToken).indexes;
+        const refreshTokenHashIndex = refreshTokenIndexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "refresh_token_token_hash_unique_idx",
+        );
+
+        expect(foreignKeyReferencesFor(refreshToken)).toEqual([
+            {
+                columns: ["tenant_id", "user_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "refresh_token_user_tenant_fk",
+            },
+        ]);
         expect(
-            getTableConfig(role).foreignKeys.map((key) => key.getName()),
-        ).toEqual(["role_user_tenant_fk"]);
-        expect(
-            getTableConfig(refreshToken).foreignKeys.map((key) =>
-                key.getName(),
-            ),
-        ).toEqual(["refresh_token_user_tenant_fk"]);
+            refreshTokenIndexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "refresh_token_token_hash_unique_idx",
+            "refresh_token_tenant_user_idx",
+            "refresh_token_tenant_expires_at_idx",
+        ]);
+        expect(refreshTokenHashIndex?.config.unique).toBeTruthy();
     });
 });
