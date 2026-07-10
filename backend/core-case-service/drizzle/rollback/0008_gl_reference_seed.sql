@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS "gl_mapping";
+DROP TABLE IF EXISTS "gl_code";

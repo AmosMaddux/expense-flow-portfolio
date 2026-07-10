@@ -11,6 +11,8 @@ import {
     auditEntry,
     caseComment,
     expenseReport,
+    glCode,
+    glMapping,
     lineItem,
     mileageEntry,
     priorityLevels,
@@ -45,6 +47,21 @@ const requiredLineItemColumnNames = [
     "category",
     "expense_report_id",
     "tenant_id",
+];
+const glCodeRequiredColumnNames = [
+    "tenant_id",
+    "account_code",
+    "account_name",
+    "created_at",
+    "updated_at",
+];
+
+const glMappingRequiredColumnNames = [
+    "tenant_id",
+    "category",
+    "gl_code_id",
+    "created_at",
+    "updated_at",
 ];
 
 const caseCommentRequiredColumnNames = [
@@ -94,6 +111,10 @@ const auditEntryRequiredColumnNames = [
 const coreCaseServiceDrizzleUrl = new URL("../../../drizzle/", import.meta.url);
 const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
+    import.meta.url,
+);
+const glReferenceMigrationSqlUrl = new URL(
+    "../../../drizzle/0008_gl_reference_seed.sql",
     import.meta.url,
 );
 
@@ -881,6 +902,172 @@ void describe("lineItem schema", () => {
     });
 });
 
+void describe("gl reference schema", () => {
+    void test("defines tenant-scoped GL account reference data", () => {
+        const tableConfig = getTableConfig(glCode);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glCode)).toEqual("gl_code");
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(columnNames).toContain("description");
+        expect(tableConfig.checks.map((check) => check.name).sort()).toEqual([
+            "gl_code_account_code_not_blank_check",
+            "gl_code_account_name_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_code_tenant_account_code_unique_idx",
+            "gl_code_tenant_id_unique_idx",
+        ]);
+
+        for (const indexConfig of tableConfig.indexes) {
+            expect(indexConfig.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("defines category-to-account mappings with tenant uniqueness", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glMapping)).toEqual("gl_mapping");
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(tableConfig.checks.map((check) => check.name)).toEqual([
+            "gl_mapping_category_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_mapping_tenant_category_unique_idx",
+            "gl_mapping_tenant_gl_code_idx",
+        ]);
+
+        const categoryIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "gl_mapping_tenant_category_unique_idx",
+        );
+
+        expect(categoryIndex).toBeDefined();
+
+        if (categoryIndex !== undefined) {
+            expect(categoryIndex.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("locks GL mappings to accounts within the same tenant", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "gl_code_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "gl_mapping_gl_code_tenant_fk",
+            },
+        ]);
+    });
+
+    void test("generates SQL for GL accounts and category mappings", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({ glCode, glMapping });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "gl_code"');
+        expect(migrationSql).toContain('create table "gl_mapping"');
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain(
+            "gl_code_tenant_account_code_unique_idx",
+        );
+        expect(migrationSql).toContain("gl_code_tenant_id_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_category_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_gl_code_idx");
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","gl_code_id") references "public"."gl_code"("tenant_id","id")',
+        );
+    });
+
+    void test("seeds baseline GL category mappings in the checked-in migration", async () => {
+        const migrationSql = (
+            await readFile(glReferenceMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain('insert into "gl_code"');
+        expect(migrationSql).toContain('insert into "gl_mapping"');
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "account_code") do nothing',
+        );
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "category") do nothing',
+        );
+
+        for (const category of [
+            "travel",
+            "meals",
+            "lodging",
+            "mileage",
+            "office supplies",
+            "software",
+            "other",
+        ]) {
+            expect(migrationSql).toContain(`'${category}'`);
+        }
+    });
+});
 void describe("receiptMetadata schema", () => {
     void test("defines the receipt_metadata child table", () => {
         const receiptMetadataConfig = getTableConfig(receiptMetadata);
