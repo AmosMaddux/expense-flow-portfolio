@@ -114,7 +114,7 @@ const auditEntryMigrationSqlUrl = new URL(
     import.meta.url,
 );
 const glReferenceMigrationSqlUrl = new URL(
-    "../../../drizzle/0008_gl_reference_seed.sql",
+    "../../../drizzle/0009_gl_reference_seed.sql",
     import.meta.url,
 );
 
