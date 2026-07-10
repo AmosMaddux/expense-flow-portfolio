@@ -113,6 +113,7 @@ async function readLatestMigrationSql(): Promise<string> {
     return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
 }
 
+// MUST be strictly equal. If outside, checks FAILED
 void describe("expenseReport schema", () => {
     void test("exports the approved workflow stages and priority levels", () => {
         expect(approvedWorkflowStages).toStrictEqual([
