@@ -7,6 +7,7 @@ import { getTableName } from "drizzle-orm";
 
 import {
     attachmentMetadata,
+    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     auditEntry,
     caseComment,
@@ -134,8 +135,17 @@ async function readLatestMigrationSql(): Promise<string> {
     return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
 }
 
+function expectMigrationSqlToContainValues(
+    migrationSql: string,
+    values: readonly string[],
+): void {
+    for (const value of values) {
+        expect(migrationSql).toContain(`'${value.toLowerCase()}'`);
+    }
+}
+
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages and priority levels", () => {
+    void test("exports the approved workflow stages", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -144,12 +154,26 @@ void describe("expenseReport schema", () => {
             "Paid",
             "Reconciled",
         ]);
+    });
 
+    void test("exports the priority levels", () => {
         expect(priorityLevels).toStrictEqual([
             "Low",
             "Normal",
             "High",
             "Urgent",
+        ]);
+    });
+
+    void test("exports the approved attachment content types", () => {
+        expect(approvedAttachmentContentTypes).toStrictEqual([
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "text/plain",
+            "text/csv",
+            "application/json",
         ]);
     });
 
@@ -234,6 +258,8 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain("expense_report_current_stage_check");
         expect(migrationSql).toContain('expense_report_priority_check"');
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
+        expectMigrationSqlToContainValues(migrationSql, priorityLevels);
         expect(migrationSql).toContain("expense_report_hold_reason_check");
         expect(migrationSql).toContain("expense_report_tenant_stage_idx");
         expect(migrationSql).toContain(
@@ -370,6 +396,7 @@ void describe("auditEntry schema", () => {
         expect(migrationSql).toContain(
             "audit_entry_stage_after_proposed_action_check",
         );
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain(
             "audit_entry_tenant_report_created_at_idx",
         );
@@ -606,13 +633,10 @@ void describe("attachmentMetadata schema", () => {
         expect(migrationSql).toContain(
             "attachment_metadata_content_type_check",
         );
-        expect(migrationSql).toContain("'application/pdf'");
-        expect(migrationSql).toContain("'image/png'");
-        expect(migrationSql).toContain("'image/jpeg'");
-        expect(migrationSql).toContain("'image/webp'");
-        expect(migrationSql).toContain("'text/plain'");
-        expect(migrationSql).toContain("'text/csv'");
-        expect(migrationSql).toContain("'application/json'");
+        expectMigrationSqlToContainValues(
+            migrationSql,
+            approvedAttachmentContentTypes,
+        );
         expect(migrationSql).toContain("attachment_metadata_tenant_report_idx");
     });
 });
@@ -793,6 +817,7 @@ void describe("stageTransition schema", () => {
         );
         expect(migrationSql).toContain("stage_transition_from_stage_check");
         expect(migrationSql).toContain("stage_transition_to_stage_check");
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
         expect(migrationSql).toContain("report_created");

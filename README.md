@@ -121,7 +121,7 @@ make
 
 Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with ``drizzle-kit migrate``
 
-Rollbacks for each migration are located in [backend/core-case-service/drizzle/rollback](backend/core-case-service/drizzle/rollback). These are manually applied and maintained.
+If a migration needs to be undone, write and apply a new corrective migration rather than reverse-applying — this repo does not maintain manual down-migration scripts.
 ## Core Case Service API Contract
 
 The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated with `OpenApiGeneratorV31` from the service Zod DTO schemas and documents the active `POST /expense-reports` and `GET /expense-reports/{id}` endpoints.
