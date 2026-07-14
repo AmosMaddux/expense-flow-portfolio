@@ -1,6 +1,12 @@
 import express, { type Request, type Response } from "express";
 import { apiReference } from "@scalar/express-api-reference";
 
+import { createAuthRouter } from "./auth/loginRoutes.js";
+import { createLoginService } from "./auth/loginService.js";
+import { createDrizzleLoginCredentialRepository } from "./auth/loginRepository.js";
+import { createPasswordHasher } from "./auth/passwordHasher.js";
+import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
+import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
@@ -9,6 +15,15 @@ export const app = express();
 
 app.use(express.json());
 
+app.use(
+    "/",
+    createAuthRouter(
+        createLoginService(
+            createDrizzleLoginCredentialRepository(db),
+            createPasswordHasher(loadPasswordHashConfig()),
+        ),
+    ),
+);
 app.use("/", expenseReportRouter);
 
 /**

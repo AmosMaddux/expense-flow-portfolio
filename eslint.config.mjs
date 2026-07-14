@@ -25,7 +25,6 @@ export default [
                 projectService: {
                     allowDefaultProject: [
                         "backend/core-case-service/drizzle.config.ts",
-                        "backend/identity-auth-service/drizzle.config.ts",
                         "vitest.config.ts",
                     ],
                 },

@@ -2,15 +2,22 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
-import { getIdentityAuthTestDatabaseUrl } from "../../testSupport/identityAuthTestDatabase.js";
+import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
-import { credential, refreshToken, role, user } from "./identityAuth.js";
+import {
+    authenticationAuditEntry,
+    credential,
+    refreshToken,
+    role,
+    user,
+} from "./identityAuth.js";
 
 const requiredTables = [
     getTableConfig(user),
     getTableConfig(credential),
     getTableConfig(role),
     getTableConfig(refreshToken),
+    getTableConfig(authenticationAuditEntry),
 ];
 
 const tenantAId = "00000000-0000-0000-0000-000000000221";
@@ -22,7 +29,7 @@ void describe("identity auth PostgreSQL schema", () => {
 
     beforeAll(async () => {
         client = new Client({
-            connectionString: getIdentityAuthTestDatabaseUrl(),
+            connectionString: getCoreCaseTestDatabaseUrl(),
         });
 
         await client.connect();
@@ -253,6 +260,31 @@ VALUES ($1, $2, $3, $4);
             ).rejects.toMatchObject({
                 code: "23505",
                 constraint: "refresh_token_token_hash_unique_idx",
+            });
+        } finally {
+            await client.query("ROLLBACK");
+        }
+    });
+
+    void test("rejects unsupported audit entry actions", async () => {
+        await client.query("BEGIN");
+
+        try {
+            await expect(
+                client.query(
+                    `
+INSERT INTO "authentication_audit_entry" ("tenant_id", "action", "email")
+VALUES ($1, $2, $3);
+`,
+                    [
+                        tenantAId,
+                        "synthetic_unsupported_action",
+                        "audit-entry-action@example.invalid",
+                    ],
+                ),
+            ).rejects.toMatchObject({
+                code: "23514",
+                constraint: "authentication_audit_entry_action_check",
             });
         } finally {
             await client.query("ROLLBACK");

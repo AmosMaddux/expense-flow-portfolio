@@ -3,6 +3,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, test } from "vitest";
 
 import {
+    authenticationAuditEntry,
     credential,
     refreshToken,
     role,
@@ -10,14 +11,18 @@ import {
     user,
 } from "./identityAuth.js";
 
-const tables = [user, credential, role, refreshToken];
+const tables = [user, credential, role, refreshToken, authenticationAuditEntry];
 
 function columnNamesFor(table: (typeof tables)[number]): string[] {
     return getTableConfig(table).columns.map((column) => column.name);
 }
 
 function foreignKeyReferencesFor(
-    table: typeof credential | typeof role | typeof refreshToken,
+    table:
+        | typeof credential
+        | typeof role
+        | typeof refreshToken
+        | typeof authenticationAuditEntry,
 ) {
     return getTableConfig(table).foreignKeys.map((foreignKeyConfig) => {
         const reference = foreignKeyConfig.reference();
@@ -42,11 +47,14 @@ void describe("identityAuth schema", () => {
         ]);
     });
 
-    void test("defines user, credential, role, and refresh_token tables", () => {
+    void test("defines user, credential, role, refresh_token, and authentication_audit_entry tables", () => {
         expect(getTableName(user)).toEqual("user");
         expect(getTableName(credential)).toEqual("credential");
         expect(getTableName(role)).toEqual("role");
         expect(getTableName(refreshToken)).toEqual("refresh_token");
+        expect(getTableName(authenticationAuditEntry)).toEqual(
+            "authentication_audit_entry",
+        );
     });
 
     void test("requires tenant_id on every identity table", () => {
@@ -142,5 +150,37 @@ void describe("identityAuth schema", () => {
             "refresh_token_tenant_expires_at_idx",
         ]);
         expect(refreshTokenHashIndex?.config.unique).toBeTruthy();
+    });
+
+    void test("keeps failed login audit entries tenant-scoped and queryable", () => {
+        const tableConfig = getTableConfig(authenticationAuditEntry);
+
+        expect(columnNamesFor(authenticationAuditEntry)).toEqual([
+            "id",
+            "tenant_id",
+            "user_id",
+            "action",
+            "email",
+            "created_at",
+        ]);
+        expect(tableConfig.checks.map((constraint) => constraint.name)).toEqual(
+            [
+                "authentication_audit_entry_action_check",
+                "authentication_audit_entry_email_not_blank_check",
+            ],
+        );
+        expect(foreignKeyReferencesFor(authenticationAuditEntry)).toEqual([
+            {
+                columns: ["tenant_id", "user_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "authentication_audit_entry_user_tenant_fk",
+            },
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "authentication_audit_entry_tenant_created_at_idx",
+            "authentication_audit_entry_tenant_user_created_at_idx",
+        ]);
     });
 });
