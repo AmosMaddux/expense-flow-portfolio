@@ -4,7 +4,11 @@ import { InvalidCredentialsError } from "./authenticationErrors.js";
 import {
     createLoginService,
     type FailedLoginAuditEntry,
+    LoginInboundRequestSchema,
+    LoginOutboundResponseSchema,
+    type LoginRequest,
     type LoginCredentialRepository,
+    type LoginResult,
     type StoredLoginCredential,
 } from "./loginService.js";
 import type { PasswordHasher } from "./passwordHasher.js";
@@ -13,6 +17,16 @@ const tenantId = "00000000-0000-4000-8000-000000000401";
 const userId = "10000000-0000-4000-8000-000000000401";
 const password = "synthetic-login-password";
 const passwordHash = "$argon2id$v=19$m=8192,t=1,p=1$synthetic$hash";
+const validLoginRequest = {
+    tenantId,
+    email: "employee@example.invalid",
+    password,
+};
+const validLoginResponse = {
+    tenantId,
+    userId,
+    mfaRequired: true,
+};
 const storedCredential: StoredLoginCredential = {
     tenantId,
     userId,
@@ -61,6 +75,69 @@ function createRepository(
     };
 }
 
+void describe("LoginInboundRequestSchema", () => {
+    void test("parses the inbound login credential request shape", () => {
+        const parsed: LoginRequest =
+            LoginInboundRequestSchema.parse(validLoginRequest);
+
+        expect(parsed).toStrictEqual(validLoginRequest);
+    });
+
+    void test("rejects login requests with invalid identifiers", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                ...validLoginRequest,
+                tenantId: "tenant-one",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects login requests missing a password", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                tenantId,
+                email: "employee@example.invalid",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects login requests with invalid email addresses", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                ...validLoginRequest,
+                email: "not-an-email-address",
+            }),
+        ).toThrow();
+    });
+});
+
+void describe("LoginOutboundResponseSchema", () => {
+    void test("parses the outbound MFA continuation response shape", () => {
+        const parsed: LoginResult =
+            LoginOutboundResponseSchema.parse(validLoginResponse);
+
+        expect(parsed).toStrictEqual(validLoginResponse);
+    });
+
+    void test("rejects responses with invalid identifiers", () => {
+        expect(() =>
+            LoginOutboundResponseSchema.parse({
+                ...validLoginResponse,
+                userId: "user-one",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects responses that do not require MFA", () => {
+        expect(() =>
+            LoginOutboundResponseSchema.parse({
+                ...validLoginResponse,
+                mfaRequired: false,
+            }),
+        ).toThrow();
+    });
+});
+
 void describe("login service", () => {
     void test("returns an MFA continuation after valid email and password", async () => {
         const repository = createRepository(storedCredential);
@@ -78,6 +155,7 @@ void describe("login service", () => {
             userId,
             mfaRequired: true,
         });
+        expect(LoginOutboundResponseSchema.parse(result)).toEqual(result);
         expect(repository.findByTenantAndEmailMock).toHaveBeenCalledWith(
             tenantId,
             "employee@example.invalid",
@@ -102,7 +180,10 @@ void describe("login service", () => {
             }),
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
-        expect(passwordHasher.verifyPasswordMock).not.toHaveBeenCalled();
+        expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
+            expect.stringMatching(/^\$argon2id\$/),
+            password,
+        );
         expect(repository.failedAuditEntries).toEqual([
             {
                 tenantId,
@@ -155,7 +236,10 @@ void describe("login service", () => {
             }),
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
-        expect(passwordHasher.verifyPasswordMock).not.toHaveBeenCalled();
+        expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
+            expect.stringMatching(/^\$argon2id\$/),
+            password,
+        );
         expect(repository.failedAuditEntries).toHaveLength(1);
     });
 });
