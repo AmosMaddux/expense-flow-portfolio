@@ -64,6 +64,7 @@ void describe("app", () => {
             "application/json",
         );
         expect(body.openapi).toBe("3.1.0");
+        expect(body.paths).toHaveProperty("/auth/mfa/enroll");
         expect(body.paths).toHaveProperty("/expense-reports");
         expect(body.paths).toHaveProperty("/expense-reports/{id}");
     });

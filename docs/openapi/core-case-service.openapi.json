@@ -98,6 +98,33 @@
                     "updatedAt"
                 ]
             },
+            "MfaEnrollmentRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    }
+                },
+                "required": ["tenantId", "userId", "email"]
+            },
+            "MfaEnrollmentResponse": {
+                "type": "object",
+                "properties": {
+                    "provisioningUri": {
+                        "type": "string"
+                    }
+                },
+                "required": ["provisioningUri"]
+            },
             "ProblemJson": {
                 "type": "object",
                 "properties": {
@@ -123,6 +150,54 @@
         "parameters": {}
     },
     "paths": {
+        "/auth/mfa/enroll": {
+            "post": {
+                "summary": "Enroll TOTP MFA",
+                "description": "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MfaEnrollmentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "TOTP MFA enrollment created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MfaEnrollmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed MFA enrollment request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",

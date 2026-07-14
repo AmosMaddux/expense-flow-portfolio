@@ -3,6 +3,7 @@ import {
     check,
     foreignKey,
     index,
+    integer,
     pgTable,
     text,
     timestamp,
@@ -160,6 +161,69 @@ export const refreshToken = pgTable(
     ],
 );
 
+export const mfaEnrollment = pgTable(
+    "mfa_enrollment",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        userId: uuid("user_id").notNull(),
+        secretCiphertext: text("secret_ciphertext").notNull(),
+        secretIv: text("secret_iv").notNull(),
+        secretAuthTag: text("secret_auth_tag").notNull(),
+        secretKeyVersion: text("secret_key_version").notNull(),
+        algorithm: text("algorithm").notNull(),
+        digits: integer("digits").notNull(),
+        periodSeconds: integer("period_seconds").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "mfa_enrollment_secret_ciphertext_not_blank_check",
+            sql`nullif(btrim(${table.secretCiphertext}), '') is not null`,
+        ),
+        check(
+            "mfa_enrollment_secret_iv_not_blank_check",
+            sql`nullif(btrim(${table.secretIv}), '') is not null`,
+        ),
+        check(
+            "mfa_enrollment_secret_auth_tag_not_blank_check",
+            sql`nullif(btrim(${table.secretAuthTag}), '') is not null`,
+        ),
+        check(
+            "mfa_enrollment_secret_key_version_not_blank_check",
+            sql`nullif(btrim(${table.secretKeyVersion}), '') is not null`,
+        ),
+        check(
+            "mfa_enrollment_algorithm_check",
+            sql`${table.algorithm} in ('SHA1')`,
+        ),
+        check("mfa_enrollment_digits_check", sql`${table.digits} in (6, 8)`),
+        check(
+            "mfa_enrollment_period_seconds_positive_check",
+            sql`${table.periodSeconds} > 0`,
+        ),
+        foreignKey({
+            name: "mfa_enrollment_user_tenant_fk",
+            // Tenant joins prevent MFA factors from attaching to another tenant's user.
+            columns: [table.tenantId, table.userId],
+            foreignColumns: [user.tenantId, user.id],
+        }),
+        uniqueIndex("mfa_enrollment_tenant_user_unique_idx").on(
+            table.tenantId,
+            table.userId,
+        ),
+        index("mfa_enrollment_tenant_user_idx").on(
+            table.tenantId,
+            table.userId,
+        ),
+    ],
+);
+
 export const authenticationAuditEntry = pgTable(
     "authentication_audit_entry",
     {
@@ -207,6 +271,8 @@ export type Role = InferSelectModel<typeof role>;
 export type NewRole = InferInsertModel<typeof role>;
 export type RefreshToken = InferSelectModel<typeof refreshToken>;
 export type NewRefreshToken = InferInsertModel<typeof refreshToken>;
+export type MfaEnrollment = InferSelectModel<typeof mfaEnrollment>;
+export type NewMfaEnrollment = InferInsertModel<typeof mfaEnrollment>;
 export type AuthenticationAuditEntry = InferSelectModel<
     typeof authenticationAuditEntry
 >;

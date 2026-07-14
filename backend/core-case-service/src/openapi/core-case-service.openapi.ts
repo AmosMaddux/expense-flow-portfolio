@@ -9,6 +9,10 @@ import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
 } from "../schemas/expense-report.schema.js";
+import {
+    mfaEnrollmentRequestSchema,
+    mfaEnrollmentResponseSchema,
+} from "../auth/mfaEnrollmentService.js";
 
 const problemJsonSchema = z.object({
     type: z.string(),
@@ -35,7 +39,45 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
     );
+    const mfaEnrollmentRequest = registry.register(
+        "MfaEnrollmentRequest",
+        mfaEnrollmentRequestSchema,
+    );
+    const mfaEnrollmentResponse = registry.register(
+        "MfaEnrollmentResponse",
+        mfaEnrollmentResponseSchema,
+    );
     const problemJson = registry.register("ProblemJson", problemJsonSchema);
+
+    registry.registerPath({
+        method: "post",
+        path: "/auth/mfa/enroll",
+        summary: "Enroll TOTP MFA",
+        description:
+            "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
+        request: {
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: mfaEnrollmentRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "TOTP MFA enrollment created.",
+                content: {
+                    "application/json": {
+                        schema: mfaEnrollmentResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed MFA enrollment request."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
 
     registry.registerPath({
         method: "post",

@@ -4,7 +4,10 @@ import { apiReference } from "@scalar/express-api-reference";
 import { createAuthRouter } from "./auth/loginRoutes.js";
 import { createLoginService } from "./auth/loginService.js";
 import { createDrizzleLoginCredentialRepository } from "./auth/loginRepository.js";
+import { createMfaEnrollmentService } from "./auth/mfaEnrollmentService.js";
+import { createDrizzleMfaEnrollmentRepository } from "./auth/mfaEnrollmentRepository.js";
 import { createPasswordHasher } from "./auth/passwordHasher.js";
+import { createTotpSecretProtector } from "./auth/totpSecretProtector.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
@@ -21,6 +24,10 @@ app.use(
         createLoginService(
             createDrizzleLoginCredentialRepository(db),
             createPasswordHasher(loadPasswordHashConfig()),
+        ),
+        createMfaEnrollmentService(
+            createDrizzleMfaEnrollmentRepository(db),
+            createTotpSecretProtector(),
         ),
     ),
 );
