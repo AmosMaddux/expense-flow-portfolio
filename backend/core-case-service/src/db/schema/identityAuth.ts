@@ -160,6 +160,45 @@ export const refreshToken = pgTable(
     ],
 );
 
+export const authenticationAuditEntry = pgTable(
+    "authentication_audit_entry",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        userId: uuid("user_id"),
+        action: text("action").notNull(),
+        email: text("email").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "authentication_audit_entry_action_check",
+            sql`${table.action} in ('login_failed')`,
+        ),
+        check(
+            "authentication_audit_entry_email_not_blank_check",
+            sql`nullif(btrim(${table.email}), '') is not null`,
+        ),
+        foreignKey({
+            name: "authentication_audit_entry_user_tenant_fk",
+            // Known-user audit rows must remain attached to a user in the same tenant.
+            columns: [table.tenantId, table.userId],
+            foreignColumns: [user.tenantId, user.id],
+        }),
+        index("authentication_audit_entry_tenant_created_at_idx").on(
+            table.tenantId,
+            table.createdAt,
+        ),
+        index("authentication_audit_entry_tenant_user_created_at_idx").on(
+            table.tenantId,
+            table.userId,
+            table.createdAt,
+        ),
+    ],
+);
+
 export type User = InferSelectModel<typeof user>;
 export type NewUser = InferInsertModel<typeof user>;
 export type Credential = InferSelectModel<typeof credential>;
@@ -168,3 +207,9 @@ export type Role = InferSelectModel<typeof role>;
 export type NewRole = InferInsertModel<typeof role>;
 export type RefreshToken = InferSelectModel<typeof refreshToken>;
 export type NewRefreshToken = InferInsertModel<typeof refreshToken>;
+export type AuthenticationAuditEntry = InferSelectModel<
+    typeof authenticationAuditEntry
+>;
+export type NewAuthenticationAuditEntry = InferInsertModel<
+    typeof authenticationAuditEntry
+>;

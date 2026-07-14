@@ -1,7 +1,4 @@
 {
     "files": [],
-    "references": [
-        { "path": "backend/core-case-service" },
-        { "path": "backend/identity-auth-service" }
-    ]
+    "references": [{ "path": "backend/core-case-service" }]
 }

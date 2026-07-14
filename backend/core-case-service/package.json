@@ -12,6 +12,7 @@
     "dependencies": {
         "@asteasolutions/zod-to-openapi": "^8.5.0",
         "@scalar/express-api-reference": "^0.8.13",
+        "argon2": "^0.44.0",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
         "pg": "^8.22.0",

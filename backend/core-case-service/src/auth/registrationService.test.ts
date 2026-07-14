@@ -19,8 +19,9 @@ void describe("registration service", () => {
         const plaintextPassword = "synthetic-registration-password";
         let storedCredential: StoredCredential | undefined;
         const credentialRepository: CredentialRepository = {
-            create: vi.fn(async (credential: StoredCredential) => {
+            create: vi.fn((credential: StoredCredential) => {
                 storedCredential = credential;
+                return Promise.resolve();
             }),
         };
         const passwordHasher = createPasswordHasher(testHashConfig);
