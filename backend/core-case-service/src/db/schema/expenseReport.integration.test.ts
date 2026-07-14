@@ -9,6 +9,8 @@ import {
     auditEntry,
     stageTransition,
     lineItem,
+    glCode,
+    glMapping,
     caseComment,
     attachmentMetadata,
     receiptMetadata,
@@ -20,6 +22,8 @@ const requiredTables = [
     getTableConfig(auditEntry),
     getTableConfig(stageTransition),
     getTableConfig(lineItem),
+    getTableConfig(glCode),
+    getTableConfig(glMapping),
     getTableConfig(caseComment),
     getTableConfig(attachmentMetadata),
     getTableConfig(receiptMetadata),
@@ -114,6 +118,159 @@ EXCEPTION
 END;
 $$;
 `);
+            await client.query("ROLLBACK");
+        } finally {
+            await client.end().catch(() => undefined);
+        }
+    });
+});
+
+void describe("GL reference PostgreSQL constraints", () => {
+    void test("seeds baseline mappings and enforces tenant-scoped uniqueness", async () => {
+        const defaultTenantId = "40000000-0000-4000-8000-000000000300";
+        const otherTenantId = "40000000-0000-4000-8000-000000000301";
+        const otherGlCodeId = "10000000-0000-4000-8000-000000000981";
+        const client = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        try {
+            await client.connect();
+            await client.query("BEGIN");
+
+            const seededMappings = await client.query(
+                `SELECT mapping.category, code.account_code
+                 FROM "gl_mapping" mapping
+                 INNER JOIN "gl_code" code
+                    ON code.tenant_id = mapping.tenant_id
+                   AND code.id = mapping.gl_code_id
+                 WHERE mapping.tenant_id = $1
+                 ORDER BY mapping.category`,
+                [defaultTenantId],
+            );
+
+            expect(seededMappings.rows).toEqual([
+                { account_code: "6200", category: "Lodging" },
+                { account_code: "6100", category: "Meals" },
+                { account_code: "6300", category: "Mileage" },
+                { account_code: "6400", category: "Office Supplies" },
+                { account_code: "6999", category: "Other" },
+                { account_code: "6500", category: "Software" },
+                { account_code: "6000", category: "Travel" },
+            ]);
+
+            await client.query(`
+DO $$
+BEGIN
+    INSERT INTO "gl_mapping" ("tenant_id", "category", "gl_code_id")
+    VALUES ('${defaultTenantId}', 'Travel', '10000000-0000-4000-8000-000000000901');
+    RAISE EXCEPTION 'expected duplicate tenant category mapping to fail';
+EXCEPTION
+    WHEN unique_violation THEN
+        NULL;
+END;
+$$;
+`);
+
+            await client.query(
+                `INSERT INTO "gl_code" ("id", "tenant_id", "account_code", "account_name")
+                 VALUES ($1, $2, '6000', 'Travel Expense')`,
+                [otherGlCodeId, otherTenantId],
+            );
+            await client.query(
+                `INSERT INTO "gl_mapping" ("tenant_id", "category", "gl_code_id")
+                 VALUES ($1, 'Travel', $2)`,
+                [otherTenantId, otherGlCodeId],
+            );
+
+            const otherTenantMapping = await client.query(
+                `SELECT COUNT(*) as count
+                 FROM "gl_mapping"
+                 WHERE "tenant_id" = $1 AND "category" = 'Travel'`,
+                [otherTenantId],
+            );
+
+            expect(otherTenantMapping.rows[0]).toMatchObject({ count: "1" });
+
+            await client.query(`
+DO $$
+BEGIN
+    INSERT INTO "gl_mapping" ("tenant_id", "category", "gl_code_id")
+    VALUES ('${otherTenantId}', 'Meals', '10000000-0000-4000-8000-000000000902');
+    RAISE EXCEPTION 'expected cross-tenant GL code mapping to fail';
+EXCEPTION
+    WHEN foreign_key_violation THEN
+        NULL;
+END;
+$$;
+`);
+
+            await client.query("ROLLBACK");
+        } finally {
+            await client.end().catch(() => undefined);
+        }
+    });
+
+    void test("rejects malformed GL reference rows without persisting them", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000300";
+        const blankAccountCodeId = "10000000-0000-4000-8000-000000000982";
+        const blankAccountNameId = "10000000-0000-4000-8000-000000000983";
+        const blankCategoryMappingId = "20000000-0000-4000-8000-000000000982";
+        const seededTravelGlCodeId = "10000000-0000-4000-8000-000000000901";
+        const client = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        try {
+            await client.connect();
+            await client.query("BEGIN");
+
+            await client.query("SAVEPOINT blank_account_code");
+            await expect(
+                client.query(
+                    `INSERT INTO "gl_code" ("id", "tenant_id", "account_code", "account_name")
+                     VALUES ($1, $2, '   ', 'Temporary Expense')`,
+                    [blankAccountCodeId, tenantId],
+                ),
+            ).rejects.toMatchObject({ code: "23514" });
+            await client.query("ROLLBACK TO SAVEPOINT blank_account_code");
+
+            await client.query("SAVEPOINT blank_account_name");
+            await expect(
+                client.query(
+                    `INSERT INTO "gl_code" ("id", "tenant_id", "account_code", "account_name")
+                     VALUES ($1, $2, '6901', '   ')`,
+                    [blankAccountNameId, tenantId],
+                ),
+            ).rejects.toMatchObject({ code: "23514" });
+            await client.query("ROLLBACK TO SAVEPOINT blank_account_name");
+
+            await client.query("SAVEPOINT blank_mapping_category");
+            await expect(
+                client.query(
+                    `INSERT INTO "gl_mapping" ("id", "tenant_id", "category", "gl_code_id")
+                     VALUES ($1, $2, '   ', $3)`,
+                    [blankCategoryMappingId, tenantId, seededTravelGlCodeId],
+                ),
+            ).rejects.toMatchObject({ code: "23514" });
+            await client.query("ROLLBACK TO SAVEPOINT blank_mapping_category");
+
+            const rejectedGlCodes = await client.query(
+                `SELECT COUNT(*) as count
+                 FROM "gl_code"
+                 WHERE "id" = ANY($1::uuid[])`,
+                [[blankAccountCodeId, blankAccountNameId]],
+            );
+            const rejectedMappings = await client.query(
+                `SELECT COUNT(*) as count
+                 FROM "gl_mapping"
+                 WHERE "id" = $1`,
+                [blankCategoryMappingId],
+            );
+
+            expect(rejectedGlCodes.rows[0]).toMatchObject({ count: "0" });
+            expect(rejectedMappings.rows[0]).toMatchObject({ count: "0" });
+
             await client.query("ROLLBACK");
         } finally {
             await client.end().catch(() => undefined);

@@ -261,6 +261,77 @@ export const lineItem = pgTable(
     ],
 );
 
+export const glCode = pgTable(
+    "gl_code",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        accountCode: text("account_code").notNull(),
+        accountName: text("account_name").notNull(),
+        description: text("description"),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_code_account_code_not_blank_check",
+            sql`nullif(btrim(${table.accountCode}), '') is not null`,
+        ),
+        check(
+            "gl_code_account_name_not_blank_check",
+            sql`nullif(btrim(${table.accountName}), '') is not null`,
+        ),
+        uniqueIndex("gl_code_tenant_account_code_unique_idx").on(
+            table.tenantId,
+            table.accountCode,
+        ),
+        // Mapping rows use this key so their tenant_id must match the referenced GL code.
+        uniqueIndex("gl_code_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
+    ],
+);
+
+export const glMapping = pgTable(
+    "gl_mapping",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        category: text("category").notNull(),
+        glCodeId: uuid("gl_code_id").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_mapping_category_not_blank_check",
+            sql`nullif(btrim(${table.category}), '') is not null`,
+        ),
+        uniqueIndex("gl_mapping_tenant_category_unique_idx").on(
+            table.tenantId,
+            table.category,
+        ),
+        index("gl_mapping_tenant_gl_code_idx").on(
+            table.tenantId,
+            table.glCodeId,
+        ),
+        foreignKey({
+            name: "gl_mapping_gl_code_tenant_fk",
+            // Tenant joins prevent category mappings from pointing to another tenant's GL code.
+            columns: [table.tenantId, table.glCodeId],
+            foreignColumns: [glCode.tenantId, glCode.id],
+        }),
+    ],
+);
 export const caseComment = pgTable(
     "case_comment",
     {
@@ -398,6 +469,10 @@ export const mileageEntry = pgTable(
 
 export type LineItem = InferSelectModel<typeof lineItem>;
 export type NewLineItem = InferInsertModel<typeof lineItem>;
+export type GlCode = InferSelectModel<typeof glCode>;
+export type NewGlCode = InferInsertModel<typeof glCode>;
+export type GlMapping = InferSelectModel<typeof glMapping>;
+export type NewGlMapping = InferInsertModel<typeof glMapping>;
 export type CaseComment = InferSelectModel<typeof caseComment>;
 export type NewCaseComment = InferInsertModel<typeof caseComment>;
 export type AttachmentMetadata = InferSelectModel<typeof attachmentMetadata>;
