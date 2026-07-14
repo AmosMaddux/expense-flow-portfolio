@@ -1,10 +1,16 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-import { InvalidCredentialsError } from "./authenticationErrors.js";
+import {
+    InvalidCredentialsError,
+    InvalidMfaCodeError,
+} from "./authenticationErrors.js";
 import { loginRequestSchema, type LoginService } from "./loginService.js";
 
 const invalidCredentialsResponse = {
     message: "Invalid email or password.",
+};
+const invalidMfaCodeResponse = {
+    message: "Invalid or expired MFA code.",
 };
 
 /**
@@ -24,6 +30,11 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
                 res.status(401).json(invalidCredentialsResponse);
+                return;
+            }
+
+            if (error instanceof InvalidMfaCodeError) {
+                res.status(401).json(invalidMfaCodeResponse);
                 return;
             }
 

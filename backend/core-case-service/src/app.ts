@@ -24,6 +24,7 @@ app.use(
         createLoginService(
             createDrizzleLoginCredentialRepository(db),
             createPasswordHasher(loadPasswordHashConfig()),
+            createTotpSecretProtector(),
         ),
         createMfaEnrollmentService(
             createDrizzleMfaEnrollmentRepository(db),

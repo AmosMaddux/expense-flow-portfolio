@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { createPasswordHasher } from "./passwordHasher.js";
 import { createLoginService } from "./loginService.js";
+import type { TotpSecretProtector } from "./totpSecretProtector.js";
 import {
     createDrizzleLoginCredentialRepository,
     type IdentityAuthDatabase,
@@ -22,6 +23,14 @@ const testHashConfig = {
     timeCost: 1,
     parallelism: 1,
     hashLength: 32,
+};
+const unusedTotpSecretProtector: TotpSecretProtector = {
+    protect: () => {
+        throw new Error("Not needed for failed password integration tests.");
+    },
+    reveal: () => {
+        throw new Error("Not needed for failed password integration tests.");
+    },
 };
 
 void describe("login repository", () => {
@@ -82,6 +91,7 @@ void describe("login repository", () => {
         const loginService = createLoginService(
             createDrizzleLoginCredentialRepository(db),
             passwordHasher,
+            unusedTotpSecretProtector,
         );
         const passwordHash = await passwordHasher.hashPassword(
             "synthetic-correct-password",
@@ -104,6 +114,7 @@ void describe("login repository", () => {
                 tenantId,
                 email: "audit-login@example.invalid",
                 password: "synthetic-wrong-password",
+                totpCode: "123456",
             }),
         ).rejects.toMatchObject({
             name: "InvalidCredentialsError",
