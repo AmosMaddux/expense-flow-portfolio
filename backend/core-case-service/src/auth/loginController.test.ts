@@ -24,12 +24,13 @@ function createResponse(): TestResponse {
 }
 
 void describe("login controller", () => {
-    void test("returns MFA continuation after primary credentials pass", async () => {
+    void test("returns refresh token after primary credentials and MFA pass", async () => {
         const loginMock = vi.fn(() =>
             Promise.resolve({
                 tenantId: "00000000-0000-4000-8000-000000000601",
                 userId: "10000000-0000-4000-8000-000000000601",
-                mfaRequired: true as const,
+                refreshToken: "synthetic-refresh-token",
+                refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
             }),
         );
         const loginService: LoginService = {
@@ -43,6 +44,7 @@ void describe("login controller", () => {
                 tenantId: "00000000-0000-4000-8000-000000000601",
                 email: "employee@example.invalid",
                 password: "synthetic-login-password",
+                totpCode: "123456",
             },
         } as Request;
 
@@ -53,7 +55,8 @@ void describe("login controller", () => {
         expect(response.jsonMock).toHaveBeenCalledWith({
             tenantId: "00000000-0000-4000-8000-000000000601",
             userId: "10000000-0000-4000-8000-000000000601",
-            mfaRequired: true,
+            refreshToken: "synthetic-refresh-token",
+            refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
         });
         expect(next).not.toHaveBeenCalled();
     });
@@ -70,6 +73,7 @@ void describe("login controller", () => {
                 tenantId: "00000000-0000-4000-8000-000000000602",
                 email: "missing@example.invalid",
                 password: "synthetic-login-password",
+                totpCode: "123456",
             },
         } as Request;
 

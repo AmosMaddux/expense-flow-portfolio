@@ -9,6 +9,16 @@ export class InvalidCredentialsError extends Error {
 }
 
 /**
+ * Represents a generic second-factor authentication failure.
+ */
+export class InvalidMfaCodeError extends Error {
+    public constructor() {
+        super("Invalid or expired MFA code.");
+        this.name = "InvalidMfaCodeError";
+    }
+}
+
+/**
  * Represents an attempt to create a second MFA enrollment for one user.
  */
 export class MfaAlreadyEnrolledError extends Error {

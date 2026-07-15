@@ -85,6 +85,13 @@
             "when": 1784043656144,
             "tag": "0011_mfa_enrollment",
             "breakpoints": true
+        },
+        {
+            "idx": 12,
+            "version": "7",
+            "when": 1784073600000,
+            "tag": "0012_mfa_failed_audit",
+            "breakpoints": true
         }
     ]
 }

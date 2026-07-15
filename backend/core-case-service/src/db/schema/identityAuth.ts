@@ -239,7 +239,7 @@ export const authenticationAuditEntry = pgTable(
     (table) => [
         check(
             "authentication_audit_entry_action_check",
-            sql`${table.action} in ('login_failed')`,
+            sql`${table.action} in ('login_failed', 'mfa_failed')`,
         ),
         check(
             "authentication_audit_entry_email_not_blank_check",
