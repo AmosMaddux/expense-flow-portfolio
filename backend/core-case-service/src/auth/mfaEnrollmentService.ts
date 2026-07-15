@@ -94,7 +94,10 @@ function buildProvisioningUri(email: string, secret: string): string {
     return `otpauth://totp/${label}?${params.toString()}`;
 }
 
-function encodeBase32(bytes: Buffer): string {
+/**
+ * Encodes bytes as unpadded RFC 4648 base32 for TOTP secrets.
+ */
+export function encodeBase32(bytes: Buffer): string {
     let bits = 0;
     let value = 0;
     let output = "";

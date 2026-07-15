@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
     createMfaEnrollmentService,
+    encodeBase32,
     type MfaEnrollmentRepository,
     type StoredMfaEnrollment,
 } from "./mfaEnrollmentService.js";
@@ -54,6 +55,18 @@ function createProtector(): TotpSecretProtector & {
 }
 
 void describe("MFA enrollment service", () => {
+    void test.each([
+        ["", ""],
+        ["f", "MY"],
+        ["fo", "MZXQ"],
+        ["foo", "MZXW6"],
+        ["foob", "MZXW6YQ"],
+        ["fooba", "MZXW6YTB"],
+        ["foobar", "MZXW6YTBOI"],
+    ])("encodes %s with the RFC 4648 base32 vector", (input, expected) => {
+        expect(encodeBase32(Buffer.from(input, "ascii"))).toBe(expected);
+    });
+
     void test("provisions a TOTP URI and persists only protected secret fields", async () => {
         const repository = createRepository();
         const protector = createProtector();
