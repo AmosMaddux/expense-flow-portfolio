@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, test, vi } from "vitest";
 
-import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
+import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
 import { createPostMfaEnrollment } from "./mfaEnrollmentController.js";
 import type { MfaEnrollmentService } from "./mfaEnrollmentService.js";
 

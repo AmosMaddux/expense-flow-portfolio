@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, test, vi } from "vitest";
 
-import { InvalidCredentialsError } from "./authenticationErrors.js";
+import { InvalidCredentialsError } from "../shared/authenticationErrors.js";
 import { createPostLogin } from "./loginController.js";
 import type { LoginService } from "./loginService.js";
 
@@ -29,6 +29,8 @@ void describe("login controller", () => {
             Promise.resolve({
                 tenantId: "00000000-0000-4000-8000-000000000601",
                 userId: "10000000-0000-4000-8000-000000000601",
+                accessToken: "synthetic-access-token",
+                accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
                 refreshToken: "synthetic-refresh-token",
                 refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
             }),
@@ -55,6 +57,8 @@ void describe("login controller", () => {
         expect(response.jsonMock).toHaveBeenCalledWith({
             tenantId: "00000000-0000-4000-8000-000000000601",
             userId: "10000000-0000-4000-8000-000000000601",
+            accessToken: "synthetic-access-token",
+            accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
             refreshToken: "synthetic-refresh-token",
             refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
         });

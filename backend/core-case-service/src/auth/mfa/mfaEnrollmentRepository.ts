@@ -1,12 +1,12 @@
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
-import { mfaEnrollment, type NewMfaEnrollment } from "../db/schema/index.js";
+import { mfaEnrollment, type NewMfaEnrollment } from "../../db/schema/index.js";
 import type {
     MfaEnrollmentRepository,
     StoredMfaEnrollment,
 } from "./mfaEnrollmentService.js";
-import * as schema from "../db/schema/index.js";
-import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
+import * as schema from "../../db/schema/index.js";
+import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
 
 export type MfaEnrollmentDatabase = NodePgDatabase<typeof schema>;
 

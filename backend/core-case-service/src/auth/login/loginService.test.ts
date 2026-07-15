@@ -1,6 +1,8 @@
+import { createPrivateKey, createPublicKey, createVerify } from "node:crypto";
+
 import { describe, expect, test, vi } from "vitest";
 
-import { InvalidCredentialsError } from "./authenticationErrors.js";
+import { InvalidCredentialsError } from "../shared/authenticationErrors.js";
 import {
     createLoginService,
     type FailedLoginAuditEntry,
@@ -12,8 +14,10 @@ import {
     type StoredMfaLoginEnrollment,
     type StoredLoginCredential,
 } from "./loginService.js";
-import type { PasswordHasher } from "./passwordHasher.js";
-import type { TotpSecretProtector } from "./totpSecretProtector.js";
+import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
+import type { PasswordHasher } from "../shared/passwordHasher.js";
+import type { TotpSecretProtector } from "../shared/totpSecretProtector.js";
 
 const tenantId = "00000000-0000-4000-8000-000000000401";
 const userId = "10000000-0000-4000-8000-000000000401";
@@ -30,15 +34,32 @@ const validLoginRequest = {
 const validLoginResponse = {
     tenantId,
     userId,
+    accessToken: "synthetic-access-token",
+    accessTokenExpiresAt: "1970-01-01T00:15:59.000Z",
     refreshToken: "synthetic-refresh-token",
     refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
 };
+const syntheticPrivateKeyPem = Buffer.from(
+    syntheticRsaPrivateKeyBase64,
+    "base64",
+).toString("utf8");
+const testAuthJwtConfig: AuthJwtConfig = {
+    issuer: "expenseflow-core-case-service-test",
+    privateKey: createPrivateKey(syntheticPrivateKeyPem),
+    keyId: "synthetic-key-v1",
+    accessTokenTtlSeconds: 900,
+};
+const syntheticPublicKeyPem = createPublicKey(syntheticPrivateKeyPem).export({
+    type: "spki",
+    format: "pem",
+});
 const storedCredential: StoredLoginCredential = {
     tenantId,
     userId,
     email: "employee@example.invalid",
     passwordHash,
     passwordHashAlgorithm: "argon2id",
+    roles: ["Employee"],
 };
 const storedMfaEnrollment: StoredMfaLoginEnrollment = {
     secretCiphertext: "synthetic-ciphertext",
@@ -123,6 +144,7 @@ function createTestLoginService(
         repository,
         passwordHasher,
         createTotpSecretProtector(),
+        testAuthJwtConfig,
         now,
     );
 }
@@ -185,6 +207,19 @@ void describe("LoginOutboundResponseSchema", () => {
             LoginOutboundResponseSchema.parse({
                 tenantId,
                 userId,
+                accessToken: "synthetic-access-token",
+                accessTokenExpiresAt: "1970-01-01T00:15:59.000Z",
+                refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects responses missing an access token", () => {
+        expect(() =>
+            LoginOutboundResponseSchema.parse({
+                tenantId,
+                userId,
+                refreshToken: "synthetic-refresh-token",
                 refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
             }),
         ).toThrow();
@@ -192,7 +227,7 @@ void describe("LoginOutboundResponseSchema", () => {
 });
 
 void describe("login service", () => {
-    void test("issues a refresh token after valid email, password, and TOTP", async () => {
+    void test("issues signed access and refresh JWTs after valid email, password, and TOTP", async () => {
         const repository = createRepository(storedCredential);
         const passwordHasher = createPasswordHasher(true);
         const loginService = createTestLoginService(repository, passwordHasher);
@@ -207,10 +242,43 @@ void describe("login service", () => {
         expect(result).toMatchObject({
             tenantId,
             userId,
+            accessTokenExpiresAt: "1970-01-01T00:15:59.000Z",
             refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
         });
-        expect(result.refreshToken).toHaveLength(43);
+        expect(result.accessToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+        expect(result.refreshToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
         expect(LoginOutboundResponseSchema.parse(result)).toEqual(result);
+        const decodedAccessToken = decodeVerifiedJwt(result.accessToken);
+        const decodedRefreshToken = decodeVerifiedJwt(result.refreshToken);
+
+        expect(decodedAccessToken.header).toMatchObject({
+            alg: "RS256",
+            typ: "JWT",
+            kid: "synthetic-key-v1",
+        });
+        expect(decodedAccessToken.payload).toMatchObject({
+            iss: testAuthJwtConfig.issuer,
+            sub: userId,
+            tenant_id: tenantId,
+            roles: ["Employee"],
+            iat: 59,
+            exp: 959,
+        });
+        expect(decodedRefreshToken.header).toMatchObject({
+            alg: "RS256",
+            typ: "JWT",
+            kid: "synthetic-key-v1",
+        });
+        expect(decodedRefreshToken.payload).toMatchObject({
+            iss: testAuthJwtConfig.issuer,
+            sub: userId,
+            tenant_id: tenantId,
+            roles: ["Employee"],
+            token_use: "refresh",
+            iat: 59,
+            exp: 2592059,
+        });
+        expect(decodedRefreshToken.payload.jti).toEqual(expect.any(String));
         expect(repository.findByTenantAndEmailMock).toHaveBeenCalledWith(
             tenantId,
             "employee@example.invalid",
@@ -223,6 +291,14 @@ void describe("login service", () => {
             repository.findMfaEnrollmentByTenantAndUserMock,
         ).toHaveBeenCalledWith(tenantId, userId);
         expect(repository.refreshTokens).toHaveLength(1);
+        expect(repository.refreshTokens[0]).toMatchObject({
+            tenantId,
+            userId,
+            expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+        });
+        expect(repository.refreshTokens[0]).not.toMatchObject({
+            tokenHash: result.refreshToken,
+        });
         expect(repository.failedAuditEntries).toEqual([]);
     });
 
@@ -343,7 +419,7 @@ void describe("login service", () => {
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 
-    void test("issues a refresh token without TOTP when no MFA factor is enrolled", async () => {
+    void test("intentionally issues tokens without TOTP while MFA enrollment remains optional", async () => {
         const repository = createRepository(storedCredential, null);
         const passwordHasher = createPasswordHasher(true);
         const loginService = createTestLoginService(repository, passwordHasher);
@@ -355,7 +431,42 @@ void describe("login service", () => {
         });
 
         expect(result).toMatchObject({ tenantId, userId });
+        expect(decodeVerifiedJwt(result.accessToken).payload).toMatchObject({
+            roles: ["Employee"],
+        });
         expect(repository.failedAuditEntries).toEqual([]);
         expect(repository.createRefreshTokenMock).toHaveBeenCalledOnce();
     });
 });
+
+function decodeVerifiedJwt(token: string): {
+    header: Record<string, unknown>;
+    payload: Record<string, unknown>;
+} {
+    const tokenParts = token.split(".");
+    const [encodedHeader, encodedPayload, signature] = tokenParts;
+
+    expect(tokenParts).toHaveLength(3);
+    expect(encodedHeader).toBeDefined();
+    expect(encodedPayload).toBeDefined();
+    expect(signature).toBeDefined();
+
+    const signatureIsValid = createVerify("RSA-SHA256")
+        .update(`${encodedHeader}.${encodedPayload}`)
+        .end()
+        .verify(
+            syntheticPublicKeyPem,
+            Buffer.from(signature ?? "", "base64url"),
+        );
+
+    expect(signatureIsValid).toBe(true);
+
+    return {
+        header: JSON.parse(
+            Buffer.from(encodedHeader ?? "", "base64url").toString("utf8"),
+        ) as Record<string, unknown>,
+        payload: JSON.parse(
+            Buffer.from(encodedPayload ?? "", "base64url").toString("utf8"),
+        ) as Record<string, unknown>,
+    };
+}

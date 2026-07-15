@@ -6,17 +6,20 @@ import {
     credential,
     mfaEnrollment,
     refreshToken,
+    role,
+    roleValues,
     user,
     type NewAuthenticationAuditEntry,
     type NewRefreshToken,
-} from "../db/schema/index.js";
+    type RoleName,
+} from "../../db/schema/index.js";
 import type {
     FailedLoginAuditEntry,
     LoginCredentialRepository,
     StoredMfaLoginEnrollment,
     StoredLoginCredential,
 } from "./loginService.js";
-import * as schema from "../db/schema/index.js";
+import * as schema from "../../db/schema/index.js";
 
 export type IdentityAuthDatabase = NodePgDatabase<typeof schema>;
 
@@ -38,6 +41,7 @@ export function createDrizzleLoginCredentialRepository(
                     email: user.email,
                     passwordHash: credential.passwordHash,
                     passwordHashAlgorithm: credential.passwordHashAlgorithm,
+                    role: role.name,
                 })
                 .from(user)
                 .innerJoin(
@@ -47,15 +51,35 @@ export function createDrizzleLoginCredentialRepository(
                         eq(credential.userId, user.id),
                     ),
                 )
+                .innerJoin(
+                    role,
+                    and(
+                        eq(role.tenantId, user.tenantId),
+                        eq(role.userId, user.id),
+                    ),
+                )
                 .where(
                     and(
                         eq(user.tenantId, tenantId),
                         sql`lower(${user.email}) = ${email}`,
                     ),
-                )
-                .limit(1);
+                );
 
-            return rows[0];
+            const row = rows[0];
+            const roles = rows.map((result) => result.role).filter(isRoleName);
+
+            if (row === undefined || roles.length === 0) {
+                return undefined;
+            }
+
+            return {
+                tenantId: row.tenantId,
+                userId: row.userId,
+                email: row.email,
+                passwordHash: row.passwordHash,
+                passwordHashAlgorithm: row.passwordHashAlgorithm,
+                roles: roles.sort(compareRoles),
+            };
         },
         async findMfaEnrollmentByTenantAndUser(
             tenantId: string,
@@ -116,4 +140,12 @@ export function createDrizzleLoginCredentialRepository(
             await db.insert(authenticationAuditEntry).values(auditRow);
         },
     };
+}
+
+function isRoleName(value: string): value is RoleName {
+    return (roleValues as readonly string[]).includes(value);
+}
+
+function compareRoles(firstRole: RoleName, secondRole: RoleName): number {
+    return roleValues.indexOf(firstRole) - roleValues.indexOf(secondRole);
 }

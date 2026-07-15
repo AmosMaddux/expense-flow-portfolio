@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
     passwordHashAlgorithm,
     type PasswordHasher,
-} from "./passwordHasher.js";
+} from "../shared/passwordHasher.js";
 
 export const registrationRequestSchema = z.object({
     tenantId: z.uuid(),

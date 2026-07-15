@@ -7,10 +7,10 @@ import {
     createDrizzleMfaEnrollmentRepository,
     type MfaEnrollmentDatabase,
 } from "./mfaEnrollmentRepository.js";
-import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
-import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
-import { mfaEnrollment, user } from "../db/schema/index.js";
-import * as schema from "../db/schema/index.js";
+import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
+import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
+import { mfaEnrollment, user } from "../../db/schema/index.js";
+import * as schema from "../../db/schema/index.js";
 
 void describe("MFA enrollment repository", () => {
     let pool: Pool;

@@ -9,7 +9,7 @@ import {
 import type {
     ProtectedTotpSecret,
     TotpSecretProtector,
-} from "./totpSecretProtector.js";
+} from "../shared/totpSecretProtector.js";
 
 const tenantId = "00000000-0000-4000-8000-000000000701";
 const userId = "10000000-0000-4000-8000-000000000701";

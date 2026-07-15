@@ -17,6 +17,7 @@ export const roleValues = [
     "Employee",
     "Admin",
 ] as const;
+export type RoleName = (typeof roleValues)[number];
 
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
