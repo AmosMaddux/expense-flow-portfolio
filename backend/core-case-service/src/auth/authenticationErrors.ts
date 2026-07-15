@@ -7,3 +7,13 @@ export class InvalidCredentialsError extends Error {
         this.name = "InvalidCredentialsError";
     }
 }
+
+/**
+ * Represents an attempt to create a second MFA enrollment for one user.
+ */
+export class MfaAlreadyEnrolledError extends Error {
+    public constructor() {
+        super("MFA is already enrolled for this user.");
+        this.name = "MfaAlreadyEnrolledError";
+    }
+}

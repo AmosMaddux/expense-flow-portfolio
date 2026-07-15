@@ -6,8 +6,18 @@ import type {
     StoredMfaEnrollment,
 } from "./mfaEnrollmentService.js";
 import * as schema from "../db/schema/index.js";
+import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
 
 export type MfaEnrollmentDatabase = NodePgDatabase<typeof schema>;
+
+type PostgresError = {
+    code?: string;
+    constraint?: string;
+};
+
+const uniqueViolationCode = "23505";
+const mfaEnrollmentTenantUserConstraint =
+    "mfa_enrollment_tenant_user_unique_idx";
 
 /**
  * Creates a Drizzle-backed repository for MFA enrollment records.
@@ -29,7 +39,28 @@ export function createDrizzleMfaEnrollmentRepository(
                 periodSeconds: enrollment.periodSeconds,
             };
 
-            await db.insert(mfaEnrollment).values(enrollmentRow);
+            try {
+                await db.insert(mfaEnrollment).values(enrollmentRow);
+            } catch (error) {
+                if (isDuplicateMfaEnrollmentError(error)) {
+                    throw new MfaAlreadyEnrolledError();
+                }
+
+                throw error;
+            }
         },
     };
+}
+
+function isDuplicateMfaEnrollmentError(error: unknown): boolean {
+    if (error === null || typeof error !== "object") {
+        return false;
+    }
+
+    const postgresError = error as PostgresError;
+
+    return (
+        postgresError.code === uniqueViolationCode &&
+        postgresError.constraint === mfaEnrollmentTenantUserConstraint
+    );
 }

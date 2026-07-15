@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, test, vi } from "vitest";
 
+import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
 import { createPostMfaEnrollment } from "./mfaEnrollmentController.js";
 import type { MfaEnrollmentService } from "./mfaEnrollmentService.js";
 
@@ -75,5 +76,29 @@ void describe("MFA enrollment controller", () => {
 
         expect(enrollMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledOnce();
+    });
+
+    void test("returns 409 when the user already has an MFA enrollment", async () => {
+        const service: MfaEnrollmentService = {
+            enroll: vi.fn(() => Promise.reject(new MfaAlreadyEnrolledError())),
+        };
+        const handler = createPostMfaEnrollment(service);
+        const response = createResponse();
+        const next = vi.fn() as NextFunction;
+        const request = {
+            body: {
+                tenantId: "00000000-0000-4000-8000-000000000803",
+                userId: "10000000-0000-4000-8000-000000000803",
+                email: "employee@example.invalid",
+            },
+        } as Request;
+
+        await handler(request, response, next);
+
+        expect(response.statusMock).toHaveBeenCalledWith(409);
+        expect(response.jsonMock).toHaveBeenCalledWith({
+            message: "MFA is already enrolled for this user.",
+        });
+        expect(next).not.toHaveBeenCalled();
     });
 });
