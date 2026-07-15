@@ -17,3 +17,13 @@ export class MfaAlreadyEnrolledError extends Error {
         this.name = "MfaAlreadyEnrolledError";
     }
 }
+
+/**
+ * Represents an MFA enrollment row that cannot be used for authentication.
+ */
+export class InvalidMfaEnrollmentConfigurationError extends Error {
+    public constructor() {
+        super("MFA enrollment configuration is invalid.");
+        this.name = "InvalidMfaEnrollmentConfigurationError";
+    }
+}
