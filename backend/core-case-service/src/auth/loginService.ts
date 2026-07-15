@@ -209,10 +209,15 @@ function verifyTotpCode(
     const counter = Math.floor(
         currentTime.getTime() / 1000 / enrollment.periodSeconds,
     );
+    const secretBytes = decodeBase32(secret);
 
     for (let offset = -1; offset <= 1; offset += 1) {
         if (
-            generateTotpCode(secret, counter + offset, enrollment.digits) ===
+            generateTotpCode(
+                secretBytes,
+                counter + offset,
+                enrollment.digits,
+            ) ===
             code
         ) {
             return true;
@@ -222,10 +227,14 @@ function verifyTotpCode(
     return false;
 }
 
-function generateTotpCode(secret: string, counter: number, digits: 6 | 8) {
+function generateTotpCode(
+    secretBytes: Buffer,
+    counter: number,
+    digits: 6 | 8,
+): string {
     const counterBuffer = Buffer.alloc(8);
     counterBuffer.writeBigUInt64BE(BigInt(counter));
-    const hmac = createHmac("sha1", decodeBase32(secret))
+    const hmac = createHmac("sha1", secretBytes)
         .update(counterBuffer)
         .digest();
     const offset = readByte(hmac, hmac.length - 1) & 0x0f;
