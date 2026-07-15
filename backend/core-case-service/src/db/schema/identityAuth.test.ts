@@ -5,13 +5,21 @@ import { describe, expect, test } from "vitest";
 import {
     authenticationAuditEntry,
     credential,
+    mfaEnrollment,
     refreshToken,
     role,
     roleValues,
     user,
 } from "./identityAuth.js";
 
-const tables = [user, credential, role, refreshToken, authenticationAuditEntry];
+const tables = [
+    user,
+    credential,
+    role,
+    refreshToken,
+    mfaEnrollment,
+    authenticationAuditEntry,
+];
 
 function columnNamesFor(table: (typeof tables)[number]): string[] {
     return getTableConfig(table).columns.map((column) => column.name);
@@ -22,6 +30,7 @@ function foreignKeyReferencesFor(
         | typeof credential
         | typeof role
         | typeof refreshToken
+        | typeof mfaEnrollment
         | typeof authenticationAuditEntry,
 ) {
     return getTableConfig(table).foreignKeys.map((foreignKeyConfig) => {
@@ -47,11 +56,12 @@ void describe("identityAuth schema", () => {
         ]);
     });
 
-    void test("defines user, credential, role, refresh_token, and authentication_audit_entry tables", () => {
+    void test("defines identity auth tables", () => {
         expect(getTableName(user)).toEqual("user");
         expect(getTableName(credential)).toEqual("credential");
         expect(getTableName(role)).toEqual("role");
         expect(getTableName(refreshToken)).toEqual("refresh_token");
+        expect(getTableName(mfaEnrollment)).toEqual("mfa_enrollment");
         expect(getTableName(authenticationAuditEntry)).toEqual(
             "authentication_audit_entry",
         );
@@ -88,6 +98,53 @@ void describe("identityAuth schema", () => {
         expect(columnNames).not.toContain("token");
         expect(columnNames).not.toContain("refresh_token");
         expect(columnNames).not.toContain("plaintext_token");
+    });
+
+    void test("stores protected TOTP secrets in MFA enrollment rows", () => {
+        const columnNames = columnNamesFor(mfaEnrollment);
+        const tableConfig = getTableConfig(mfaEnrollment);
+
+        expect(columnNames).toEqual([
+            "id",
+            "tenant_id",
+            "user_id",
+            "secret_ciphertext",
+            "secret_iv",
+            "secret_auth_tag",
+            "secret_key_version",
+            "algorithm",
+            "digits",
+            "period_seconds",
+            "created_at",
+            "updated_at",
+        ]);
+        expect(columnNames).not.toContain("secret");
+        expect(columnNames).not.toContain("totp_secret");
+        expect(columnNames).not.toContain("plain_secret");
+        expect(tableConfig.checks.map((constraint) => constraint.name)).toEqual(
+            [
+                "mfa_enrollment_secret_ciphertext_not_blank_check",
+                "mfa_enrollment_secret_iv_not_blank_check",
+                "mfa_enrollment_secret_auth_tag_not_blank_check",
+                "mfa_enrollment_secret_key_version_not_blank_check",
+                "mfa_enrollment_algorithm_check",
+                "mfa_enrollment_digits_check",
+                "mfa_enrollment_period_seconds_positive_check",
+            ],
+        );
+        expect(foreignKeyReferencesFor(mfaEnrollment)).toEqual([
+            {
+                columns: ["tenant_id", "user_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "mfa_enrollment_user_tenant_fk",
+            },
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "mfa_enrollment_tenant_user_unique_idx",
+            "mfa_enrollment_tenant_user_idx",
+        ]);
     });
 
     void test("keeps tenant-scoped constraints and indexes on child tables", () => {

@@ -78,6 +78,13 @@
             "when": 1783979445674,
             "tag": "0010_hard_loki",
             "breakpoints": true
+        },
+        {
+            "idx": 11,
+            "version": "7",
+            "when": 1784043656144,
+            "tag": "0011_mfa_enrollment",
+            "breakpoints": true
         }
     ]
 }
