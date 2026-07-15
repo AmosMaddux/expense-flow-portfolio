@@ -64,9 +64,10 @@ export function loadMfaTotpSecretEncryptionConfig(
 export function createTotpSecretProtector(
     configProvider: () => MfaTotpSecretEncryptionConfig = loadMfaTotpSecretEncryptionConfig,
 ): TotpSecretProtector {
+    const { key, keyVersion } = configProvider();
+
     return {
         protect(secret: Buffer | string): ProtectedTotpSecret {
-            const { key, keyVersion } = configProvider();
             const iv = randomBytes(ivBytes);
             const cipher = createCipheriv(encryptionAlgorithm, key, iv);
             const ciphertext = Buffer.concat([
@@ -82,7 +83,6 @@ export function createTotpSecretProtector(
             };
         },
         reveal(protectedSecret: ProtectedTotpSecret): Buffer {
-            const { key } = configProvider();
             const decipher = createDecipheriv(
                 encryptionAlgorithm,
                 key,

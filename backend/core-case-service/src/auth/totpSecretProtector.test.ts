@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
     createTotpSecretProtector,
@@ -22,6 +22,29 @@ void describe("TOTP secret protector", () => {
         expect(protectedSecret.secretCiphertext).not.toEqual(secret);
         expect(protectedSecret.secretKeyVersion).toBe("synthetic-v1");
         expect(protector.reveal(protectedSecret).toString("utf8")).toBe(secret);
+    });
+
+    void test("loads encryption config when the protector is created", () => {
+        expect(() =>
+            createTotpSecretProtector(() =>
+                loadMfaTotpSecretEncryptionConfig({}),
+            ),
+        ).toThrow("MFA_TOTP_SECRET_ENCRYPTION_KEY is required.");
+    });
+
+    void test("reuses the resolved encryption config for protect and reveal", () => {
+        const configProvider = vi.fn(() =>
+            loadMfaTotpSecretEncryptionConfig({
+                MFA_TOTP_SECRET_ENCRYPTION_KEY: key,
+                MFA_TOTP_SECRET_KEY_VERSION: "synthetic-v1",
+            }),
+        );
+        const protector = createTotpSecretProtector(configProvider);
+        const protectedSecret = protector.protect("SYNTHETICTOTPSECRET");
+
+        protector.reveal(protectedSecret);
+
+        expect(configProvider).toHaveBeenCalledOnce();
     });
 
     void test("rejects a missing encryption key", () => {
