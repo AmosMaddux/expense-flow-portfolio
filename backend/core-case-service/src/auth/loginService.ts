@@ -15,14 +15,24 @@ import type {
     TotpSecretProtector,
 } from "./totpSecretProtector.js";
 
-export const loginRequestSchema = z.object({
+export const LoginInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     email: z.email(),
     password: z.string().min(1),
     totpCode: z.string().optional(),
 });
 
-export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export const LoginOutboundResponseSchema = z.object({
+    tenantId: z.uuid(),
+    userId: z.uuid(),
+    refreshToken: z.string().min(1),
+    refreshTokenExpiresAt: z.string().min(1),
+});
+
+export const loginRequestSchema = LoginInboundRequestSchema;
+export const loginResponseSchema = LoginOutboundResponseSchema;
+
+export type LoginRequest = z.infer<typeof LoginInboundRequestSchema>;
 
 export type StoredLoginCredential = {
     tenantId: string;
@@ -63,16 +73,14 @@ export type LoginCredentialRepository = {
     recordFailedLogin(entry: FailedLoginAuditEntry): Promise<void>;
 };
 
-export type LoginResult = {
-    tenantId: string;
-    userId: string;
-    refreshToken: string;
-    refreshTokenExpiresAt: string;
-};
+export type LoginResult = z.infer<typeof LoginOutboundResponseSchema>;
 
 export type LoginService = {
     login(request: LoginRequest): Promise<LoginResult>;
 };
+
+const missingCredentialPasswordHash =
+    "$argon2id$v=19$m=8192,t=1,p=1$Wa0FFWwch77sS6ipFg2HTQ$In6nZwlC0DltjYKUVVtpL4cg2i8GnqrnEYGfHnlWCdw";
 
 /**
  * Creates a login service that verifies primary credentials before MFA.
@@ -93,28 +101,28 @@ export function createLoginService(
                     normalizedEmail,
                 );
 
-            if (storedCredential === undefined) {
-                await recordFailedLogin(loginCredentialRepository, {
-                    tenantId: validatedRequest.tenantId,
-                    userId: null,
-                    email: normalizedEmail,
-                    action: "login_failed",
-                });
-                throw new InvalidCredentialsError();
-            }
-
+            const passwordHashToVerify =
+                storedCredential?.passwordHashAlgorithm ===
+                passwordHashAlgorithm
+                    ? storedCredential.passwordHash
+                    : missingCredentialPasswordHash;
+            // Always perform one Argon2 verification so unknown emails and bad passwords have similar timing.
+            const verifiedPassword = await passwordHasher.verifyPassword(
+                passwordHashToVerify,
+                validatedRequest.password,
+            );
             const passwordMatches =
+                storedCredential !== undefined &&
                 storedCredential.passwordHashAlgorithm ===
                     passwordHashAlgorithm &&
-                (await passwordHasher.verifyPassword(
-                    storedCredential.passwordHash,
-                    validatedRequest.password,
-                ));
+                verifiedPassword;
 
             if (!passwordMatches) {
                 await recordFailedLogin(loginCredentialRepository, {
-                    tenantId: storedCredential.tenantId,
-                    userId: storedCredential.userId,
+                    tenantId:
+                        storedCredential?.tenantId ??
+                        validatedRequest.tenantId,
+                    userId: storedCredential?.userId ?? null,
                     email: normalizedEmail,
                     action: "login_failed",
                 });
@@ -192,12 +200,12 @@ async function issueRefreshToken(
         expiresAt: refreshTokenExpiresAt,
     });
 
-    return {
+    return LoginOutboundResponseSchema.parse({
         tenantId: storedCredential.tenantId,
         userId: storedCredential.userId,
         refreshToken,
         refreshTokenExpiresAt: refreshTokenExpiresAt.toISOString(),
-    };
+    });
 }
 
 function verifyTotpCode(

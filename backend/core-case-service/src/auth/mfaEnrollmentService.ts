@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
+import { base32 } from "rfc4648";
 import { z } from "zod";
 
 import type {
@@ -13,7 +14,6 @@ const totpAlgorithm = "SHA1";
 const totpDigits = 6;
 const totpPeriodSeconds = 30;
 const secretBytes = 20;
-const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 extendZodWithOpenApi(z);
 
@@ -94,26 +94,11 @@ function buildProvisioningUri(email: string, secret: string): string {
     return `otpauth://totp/${label}?${params.toString()}`;
 }
 
-function encodeBase32(bytes: Buffer): string {
-    let bits = 0;
-    let value = 0;
-    let output = "";
-
-    for (const byte of bytes) {
-        value = (value << 8) | byte;
-        bits += 8;
-
-        while (bits >= 5) {
-            output += base32Alphabet[(value >>> (bits - 5)) & 31];
-            bits -= 5;
-        }
-    }
-
-    if (bits > 0) {
-        output += base32Alphabet[(value << (5 - bits)) & 31];
-    }
-
-    return output;
+/**
+ * Encodes bytes as unpadded RFC 4648 base32 for TOTP secrets.
+ */
+export function encodeBase32(bytes: Buffer): string {
+    return base32.stringify(bytes, { pad: false });
 }
 
 function normalizeEmail(email: string): string {

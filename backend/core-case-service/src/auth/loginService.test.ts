@@ -4,7 +4,11 @@ import { InvalidCredentialsError } from "./authenticationErrors.js";
 import {
     createLoginService,
     type FailedLoginAuditEntry,
+    LoginInboundRequestSchema,
+    LoginOutboundResponseSchema,
     type LoginCredentialRepository,
+    type LoginRequest,
+    type LoginResult,
     type StoredMfaLoginEnrollment,
     type StoredLoginCredential,
 } from "./loginService.js";
@@ -17,6 +21,18 @@ const password = "synthetic-login-password";
 const passwordHash = "$argon2id$v=19$m=8192,t=1,p=1$synthetic$hash";
 const validTotpCode = "94287082";
 const rfc6238Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+const validLoginRequest = {
+    tenantId,
+    email: "employee@example.invalid",
+    password,
+    totpCode: validTotpCode,
+};
+const validLoginResponse = {
+    tenantId,
+    userId,
+    refreshToken: "synthetic-refresh-token",
+    refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
+};
 const storedCredential: StoredLoginCredential = {
     tenantId,
     userId,
@@ -111,6 +127,70 @@ function createTestLoginService(
     );
 }
 
+void describe("LoginInboundRequestSchema", () => {
+    void test("parses the inbound login credential request shape", () => {
+        const parsed: LoginRequest =
+            LoginInboundRequestSchema.parse(validLoginRequest);
+
+        expect(parsed).toStrictEqual(validLoginRequest);
+    });
+
+    void test("rejects login requests with invalid identifiers", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                ...validLoginRequest,
+                tenantId: "tenant-one",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects login requests missing a password", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                tenantId,
+                email: "employee@example.invalid",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects login requests with invalid email addresses", () => {
+        expect(() =>
+            LoginInboundRequestSchema.parse({
+                ...validLoginRequest,
+                email: "not-an-email-address",
+            }),
+        ).toThrow();
+    });
+});
+
+void describe("LoginOutboundResponseSchema", () => {
+    void test("parses the outbound refresh token response shape", () => {
+        const parsed: LoginResult =
+            LoginOutboundResponseSchema.parse(validLoginResponse);
+
+        expect(parsed).toStrictEqual(validLoginResponse);
+    });
+
+    void test("rejects responses with invalid identifiers", () => {
+        expect(() =>
+            LoginOutboundResponseSchema.parse({
+                ...validLoginResponse,
+                userId: "user-one",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects responses missing a refresh token", () => {
+        expect(() =>
+            LoginOutboundResponseSchema.parse({
+                tenantId,
+                userId,
+                refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
+            }),
+        ).toThrow();
+    });
+});
+
 void describe("login service", () => {
     void test("issues a refresh token after valid email, password, and TOTP", async () => {
         const repository = createRepository(storedCredential);
@@ -130,6 +210,7 @@ void describe("login service", () => {
             refreshTokenExpiresAt: "1970-01-31T00:00:59.000Z",
         });
         expect(result.refreshToken).toHaveLength(43);
+        expect(LoginOutboundResponseSchema.parse(result)).toEqual(result);
         expect(repository.findByTenantAndEmailMock).toHaveBeenCalledWith(
             tenantId,
             "employee@example.invalid",
@@ -159,7 +240,10 @@ void describe("login service", () => {
             }),
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
-        expect(passwordHasher.verifyPasswordMock).not.toHaveBeenCalled();
+        expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
+            expect.stringMatching(/^\$argon2id\$/),
+            password,
+        );
         expect(
             repository.findMfaEnrollmentByTenantAndUserMock,
         ).not.toHaveBeenCalled();
@@ -222,7 +306,10 @@ void describe("login service", () => {
             }),
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
-        expect(passwordHasher.verifyPasswordMock).not.toHaveBeenCalled();
+        expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
+            expect.stringMatching(/^\$argon2id\$/),
+            password,
+        );
         expect(repository.failedAuditEntries).toHaveLength(1);
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
