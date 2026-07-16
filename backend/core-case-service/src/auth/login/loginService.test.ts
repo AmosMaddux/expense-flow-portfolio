@@ -419,23 +419,28 @@ void describe("login service", () => {
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 
-    void test("intentionally issues tokens without TOTP while MFA enrollment remains optional", async () => {
+    void test("records MFA audit and rejects login when no MFA factor is enrolled", async () => {
         const repository = createRepository(storedCredential, null);
         const passwordHasher = createPasswordHasher(true);
         const loginService = createTestLoginService(repository, passwordHasher);
 
-        const result = await loginService.login({
-            tenantId,
-            email: "employee@example.invalid",
-            password,
-        });
+        await expect(
+            loginService.login({
+                tenantId,
+                email: "employee@example.invalid",
+                password,
+            }),
+        ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
 
-        expect(result).toMatchObject({ tenantId, userId });
-        expect(decodeVerifiedJwt(result.accessToken).payload).toMatchObject({
-            roles: ["Employee"],
-        });
-        expect(repository.failedAuditEntries).toEqual([]);
-        expect(repository.createRefreshTokenMock).toHaveBeenCalledOnce();
+        expect(repository.failedAuditEntries).toEqual([
+            {
+                tenantId,
+                userId,
+                email: "employee@example.invalid",
+                action: "mfa_failed",
+            },
+        ]);
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 });
 
