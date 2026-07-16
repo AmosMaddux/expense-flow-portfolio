@@ -92,7 +92,7 @@ void describe("app", () => {
     void test("rejects unsupported SSO, SAML, and OIDC auth paths", async () => {
         const requests = [
             {
-                path: "/auth/sso/login",
+                path: "/v1/auth/sso/login",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
                     tenantId: "00000000-0000-4000-8000-000000000605",
@@ -100,12 +100,12 @@ void describe("app", () => {
                 }),
             },
             {
-                path: "/auth/saml/login",
+                path: "/v1/auth/saml/login",
                 headers: { "content-type": "application/xml" },
                 body: "<SyntheticSamlRequest />",
             },
             {
-                path: "/auth/oidc/login",
+                path: "/v1/auth/oidc/login",
                 headers: { "content-type": "text/plain" },
                 body: "synthetic-oidc-request",
             },
@@ -151,6 +151,9 @@ void describe("app", () => {
         ["POST", "/expense-reports"],
         ["POST", "/auth/login"],
         ["POST", "/auth/mfa/enroll"],
+        ["POST", "/auth/sso/login"],
+        ["POST", "/auth/saml/login"],
+        ["POST", "/auth/oidc/login"],
         ["GET", "/openapi.json"],
         ["GET", "/docs/"],
         [
