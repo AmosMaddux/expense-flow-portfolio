@@ -8,7 +8,10 @@ import {
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
+    IdempotentSubmissionHeaderSchema,
 } from "../../schemas/expense-report.schema.js";
+import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
+import { runIdempotentSubmission } from "../../idempotency/idempotencyService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -34,15 +37,30 @@ export async function postExpenseReport(
             );
         }
 
-        const report = await createDraftExpenseReport({
-            owner: parsedRequest.owner,
-            dueDate: parsedRequest.dueDate,
-            priority: parsedRequest.priority,
+        const createReport = async () =>
+            createDraftExpenseReport({
+                owner: parsedRequest.owner,
+                dueDate: parsedRequest.dueDate,
+                priority: parsedRequest.priority,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+            });
+        const idempotencyKey = parseIdempotencyKey(req);
+        if (idempotencyKey === undefined) {
+            const report = await createReport();
+
+            res.status(201).json(report);
+            return;
+        }
+
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: createReport,
+            store: getDefaultIdempotencyStore(),
             tenantId: auth.tenantId,
-            actorId: auth.userId,
         });
 
-        res.status(201).json(report);
+        res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
         next(error);
     }
@@ -100,4 +118,15 @@ function getAuthorizedOwnerScope(
     }
 
     throw new ForbiddenError();
+}
+
+function parseIdempotencyKey(req: Request): string | undefined {
+    const header = req.get("idempotency-key");
+    if (header === undefined) {
+        return undefined;
+    }
+
+    return IdempotentSubmissionHeaderSchema.parse({
+        idempotencyKey: header,
+    }).idempotencyKey;
 }

@@ -11,11 +11,14 @@
     },
     "dependencies": {
         "@asteasolutions/zod-to-openapi": "^8.5.0",
+        "@aws-sdk/client-dynamodb": "^3.1088.0",
+        "@aws-sdk/lib-dynamodb": "^3.1088.0",
         "@scalar/express-api-reference": "^0.8.13",
         "argon2": "^0.44.0",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
         "pg": "^8.22.0",
+        "redis": "^6.1.0",
         "rfc4648": "^1.5.4",
         "zod": "^4.4.3"
     },
