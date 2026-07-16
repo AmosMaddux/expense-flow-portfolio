@@ -1,19 +1,23 @@
-import { createHmac, createHash, randomBytes } from "node:crypto";
+import { createHmac, createHash, randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
+import { signAccessToken } from "../shared/accessTokenSigner.js";
 import {
     InvalidCredentialsError,
     InvalidMfaCodeError,
-} from "./authenticationErrors.js";
+} from "../shared/authenticationErrors.js";
+import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { RoleName } from "../../db/schema/index.js";
+import { signRefreshToken } from "../shared/refreshTokenSigner.js";
 import {
     passwordHashAlgorithm,
     type PasswordHasher,
-} from "./passwordHasher.js";
+} from "../shared/passwordHasher.js";
 import type {
     ProtectedTotpSecret,
     TotpSecretProtector,
-} from "./totpSecretProtector.js";
+} from "../shared/totpSecretProtector.js";
 
 export const LoginInboundRequestSchema = z.object({
     tenantId: z.uuid(),
@@ -25,6 +29,8 @@ export const LoginInboundRequestSchema = z.object({
 export const LoginOutboundResponseSchema = z.object({
     tenantId: z.uuid(),
     userId: z.uuid(),
+    accessToken: z.string().min(1),
+    accessTokenExpiresAt: z.string().min(1),
     refreshToken: z.string().min(1),
     refreshTokenExpiresAt: z.string().min(1),
 });
@@ -40,6 +46,7 @@ export type StoredLoginCredential = {
     email: string;
     passwordHash: string;
     passwordHashAlgorithm: string;
+    roles: RoleName[];
 };
 
 export type FailedLoginAuditEntry = {
@@ -89,6 +96,7 @@ export function createLoginService(
     loginCredentialRepository: LoginCredentialRepository,
     passwordHasher: PasswordHasher,
     totpSecretProtector: TotpSecretProtector,
+    authJwtConfig: AuthJwtConfig,
     now: () => Date = () => new Date(),
 ): LoginService {
     return {
@@ -120,8 +128,7 @@ export function createLoginService(
             if (!passwordMatches) {
                 await recordFailedLogin(loginCredentialRepository, {
                     tenantId:
-                        storedCredential?.tenantId ??
-                        validatedRequest.tenantId,
+                        storedCredential?.tenantId ?? validatedRequest.tenantId,
                     userId: storedCredential?.userId ?? null,
                     email: normalizedEmail,
                     action: "login_failed",
@@ -136,9 +143,10 @@ export function createLoginService(
                 );
 
             if (storedEnrollment === undefined) {
-                return issueRefreshToken(
+                return issueTokens(
                     loginCredentialRepository,
                     storedCredential,
+                    authJwtConfig,
                     now(),
                 );
             }
@@ -164,9 +172,10 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
-            return issueRefreshToken(
+            return issueTokens(
                 loginCredentialRepository,
                 storedCredential,
+                authJwtConfig,
                 now(),
             );
         },
@@ -184,27 +193,52 @@ async function recordFailedLogin(
     await loginCredentialRepository.recordFailedLogin(entry);
 }
 
-async function issueRefreshToken(
+async function issueTokens(
     loginCredentialRepository: LoginCredentialRepository,
     storedCredential: StoredLoginCredential,
+    authJwtConfig: AuthJwtConfig,
     currentTime: Date,
 ): Promise<LoginResult> {
-    const refreshToken = randomBytes(32).toString("base64url");
     const refreshTokenExpiresAt = new Date(
         currentTime.getTime() + 30 * 24 * 60 * 60 * 1000,
     );
+    const issuedAccessToken = signAccessToken(
+        {
+            tenantId: storedCredential.tenantId,
+            userId: storedCredential.userId,
+            roles: storedCredential.roles,
+        },
+        authJwtConfig,
+        currentTime,
+    );
+    const issuedRefreshToken = signRefreshToken(
+        {
+            tenantId: storedCredential.tenantId,
+            userId: storedCredential.userId,
+            roles: storedCredential.roles,
+            jwtId: randomUUID(),
+        },
+        authJwtConfig,
+        currentTime,
+        refreshTokenExpiresAt,
+    );
+
     await loginCredentialRepository.createRefreshToken({
         tenantId: storedCredential.tenantId,
         userId: storedCredential.userId,
-        tokenHash: hashToken(refreshToken),
-        expiresAt: refreshTokenExpiresAt,
+        tokenHash: hashToken(issuedRefreshToken.refreshToken),
+        expiresAt: issuedRefreshToken.refreshTokenExpiresAt,
     });
 
     return LoginOutboundResponseSchema.parse({
         tenantId: storedCredential.tenantId,
         userId: storedCredential.userId,
-        refreshToken,
-        refreshTokenExpiresAt: refreshTokenExpiresAt.toISOString(),
+        accessToken: issuedAccessToken.accessToken,
+        accessTokenExpiresAt:
+            issuedAccessToken.accessTokenExpiresAt.toISOString(),
+        refreshToken: issuedRefreshToken.refreshToken,
+        refreshTokenExpiresAt:
+            issuedRefreshToken.refreshTokenExpiresAt.toISOString(),
     });
 }
 
@@ -225,8 +259,7 @@ function verifyTotpCode(
                 secretBytes,
                 counter + offset,
                 enrollment.digits,
-            ) ===
-            code
+            ) === code
         ) {
             return true;
         }
@@ -242,9 +275,7 @@ function generateTotpCode(
 ): string {
     const counterBuffer = Buffer.alloc(8);
     counterBuffer.writeBigUInt64BE(BigInt(counter));
-    const hmac = createHmac("sha1", secretBytes)
-        .update(counterBuffer)
-        .digest();
+    const hmac = createHmac("sha1", secretBytes).update(counterBuffer).digest();
     const offset = readByte(hmac, hmac.length - 1) & 0x0f;
     const binary =
         ((readByte(hmac, offset) & 0x7f) << 24) |

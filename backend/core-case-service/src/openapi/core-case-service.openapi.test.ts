@@ -19,6 +19,25 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportByIdPath?.get).toBeDefined();
     });
 
+    void test("documents the login endpoint and token response fields", () => {
+        const loginPath = document.paths?.["/auth/login"];
+        const requestBody = loginPath?.post?.requestBody;
+        const loginResponse = document.components?.schemas?.LoginResponse;
+
+        expect(loginPath?.post).toBeDefined();
+        expect(JSON.stringify(requestBody)).toContain(
+            "#/components/schemas/LoginRequest",
+        );
+        expect(JSON.stringify(loginPath?.post?.responses?.[200])).toContain(
+            "#/components/schemas/LoginResponse",
+        );
+        expect(JSON.stringify(loginPath?.post?.responses?.[401])).toContain(
+            "Invalid credentials or MFA code",
+        );
+        expect(JSON.stringify(loginResponse)).toContain("accessToken");
+        expect(JSON.stringify(loginResponse)).toContain("refreshToken");
+    });
+
     void test("documents the POST request body from the create Expense Report DTO", () => {
         const expenseReportsPath = document.paths?.["/expense-reports"];
         const requestBody = expenseReportsPath?.post?.requestBody;

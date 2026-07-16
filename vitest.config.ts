@@ -1,5 +1,7 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
+import { syntheticRsaPrivateKeyBase64 } from "./backend/core-case-service/src/testSupport/jwtTestKeys.js";
+
 const repositoryRoot = new URL(".", import.meta.url).pathname;
 const coreCaseVitestGlobalSetup = new URL(
     "./backend/core-case-service/src/testSupport/vitestGlobalSetup.ts",
@@ -14,6 +16,10 @@ const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
 
 export default defineConfig({
     test: {
+        env: {
+            AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
+            AUTH_JWT_KEY_ID: "synthetic-vitest-key",
+        },
         exclude: [...configDefaults.exclude, "**/dist"],
         projects: [
             {

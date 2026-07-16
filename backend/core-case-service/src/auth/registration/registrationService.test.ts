@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { createPasswordHasher } from "./passwordHasher.js";
+import { createPasswordHasher } from "../shared/passwordHasher.js";
 import {
     createRegistrationService,
     type CredentialRepository,

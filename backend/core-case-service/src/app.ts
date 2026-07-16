@@ -1,13 +1,14 @@
 import express, { type Request, type Response } from "express";
 import { apiReference } from "@scalar/express-api-reference";
 
-import { createAuthRouter } from "./auth/loginRoutes.js";
-import { createLoginService } from "./auth/loginService.js";
-import { createDrizzleLoginCredentialRepository } from "./auth/loginRepository.js";
-import { createMfaEnrollmentService } from "./auth/mfaEnrollmentService.js";
-import { createDrizzleMfaEnrollmentRepository } from "./auth/mfaEnrollmentRepository.js";
-import { createPasswordHasher } from "./auth/passwordHasher.js";
-import { createTotpSecretProtector } from "./auth/totpSecretProtector.js";
+import { createAuthRouter } from "./auth/login/loginRoutes.js";
+import { createLoginService } from "./auth/login/loginService.js";
+import { createDrizzleLoginCredentialRepository } from "./auth/login/loginRepository.js";
+import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
+import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
+import { loadAuthJwtConfig } from "./config/authJwtConfig.js";
+import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
+import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
@@ -25,6 +26,7 @@ app.use(
             createDrizzleLoginCredentialRepository(db),
             createPasswordHasher(loadPasswordHashConfig()),
             createTotpSecretProtector(),
+            loadAuthJwtConfig(),
         ),
         createMfaEnrollmentService(
             createDrizzleMfaEnrollmentRepository(db),

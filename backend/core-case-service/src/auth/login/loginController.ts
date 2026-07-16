@@ -3,7 +3,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import {
     InvalidCredentialsError,
     InvalidMfaCodeError,
-} from "./authenticationErrors.js";
+} from "../shared/authenticationErrors.js";
 import {
     loginRequestSchema,
     loginResponseSchema,

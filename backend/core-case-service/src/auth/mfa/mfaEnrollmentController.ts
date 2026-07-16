@@ -1,6 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-import { MfaAlreadyEnrolledError } from "./authenticationErrors.js";
+import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
 import {
     mfaEnrollmentRequestSchema,
     type MfaEnrollmentService,

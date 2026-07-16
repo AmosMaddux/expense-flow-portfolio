@@ -98,6 +98,64 @@
                     "updatedAt"
                 ]
             },
+            "LoginRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "totpCode": {
+                        "type": "string"
+                    }
+                },
+                "required": ["tenantId", "email", "password"]
+            },
+            "LoginResponse": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "accessToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "accessTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "tenantId",
+                    "userId",
+                    "accessToken",
+                    "accessTokenExpiresAt",
+                    "refreshToken",
+                    "refreshTokenExpiresAt"
+                ]
+            },
             "MfaEnrollmentRequest": {
                 "type": "object",
                 "properties": {
@@ -150,6 +208,57 @@
         "parameters": {}
     },
     "paths": {
+        "/auth/login": {
+            "post": {
+                "summary": "Authenticate with email, password, and optional TOTP MFA",
+                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login succeeded and tokens were issued.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed login request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials or MFA code."
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/auth/mfa/enroll": {
             "post": {
                 "summary": "Enroll TOTP MFA",

@@ -7,7 +7,7 @@ import { z } from "zod";
 import type {
     ProtectedTotpSecret,
     TotpSecretProtector,
-} from "./totpSecretProtector.js";
+} from "../shared/totpSecretProtector.js";
 
 const issuer = "ExpenseFlow";
 const totpAlgorithm = "SHA1";

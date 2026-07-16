@@ -10,9 +10,13 @@ import {
     ExpenseReportOutboundResponseSchema,
 } from "../schemas/expense-report.schema.js";
 import {
+    loginRequestSchema,
+    loginResponseSchema,
+} from "../auth/login/loginService.js";
+import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
-} from "../auth/mfaEnrollmentService.js";
+} from "../auth/mfa/mfaEnrollmentService.js";
 
 const problemJsonSchema = z.object({
     type: z.string(),
@@ -48,6 +52,44 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         mfaEnrollmentResponseSchema,
     );
     const problemJson = registry.register("ProblemJson", problemJsonSchema);
+    const loginRequest = registry.register("LoginRequest", loginRequestSchema);
+    const loginResponse = registry.register(
+        "LoginResponse",
+        loginResponseSchema,
+    );
+
+    registry.registerPath({
+        method: "post",
+        path: "/auth/login",
+        summary: "Authenticate with email, password, and optional TOTP MFA",
+        description:
+            "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+        request: {
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: loginRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Login succeeded and tokens were issued.",
+                content: {
+                    "application/json": {
+                        schema: loginResponse,
+                    },
+                },
+            },
+            401: {
+                description: "Invalid credentials or MFA code.",
+            },
+            400: problemJsonResponse("Malformed login request."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
 
     registry.registerPath({
         method: "post",

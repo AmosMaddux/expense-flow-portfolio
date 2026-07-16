@@ -1,6 +1,6 @@
 import { argon2id, hash, verify } from "argon2";
 
-import type { PasswordHashConfig } from "../config/passwordHashConfig.js";
+import type { PasswordHashConfig } from "../../config/passwordHashConfig.js";
 
 export const passwordHashAlgorithm = "argon2id";
 

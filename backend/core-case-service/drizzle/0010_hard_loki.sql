@@ -50,6 +50,7 @@ CREATE TABLE "user" (
 	CONSTRAINT "user_email_not_blank_check" CHECK (nullif(btrim("user"."email"), '') is not null)
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "user_tenant_id_unique_idx" ON "user" USING btree ("tenant_id","id");--> statement-breakpoint
 ALTER TABLE "authentication_audit_entry" ADD CONSTRAINT "authentication_audit_entry_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credential" ADD CONSTRAINT "credential_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "refresh_token" ADD CONSTRAINT "refresh_token_user_tenant_fk" FOREIGN KEY ("tenant_id","user_id") REFERENCES "public"."user"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -64,5 +65,4 @@ CREATE INDEX "refresh_token_tenant_expires_at_idx" ON "refresh_token" USING btre
 CREATE UNIQUE INDEX "role_tenant_user_name_unique_idx" ON "role" USING btree ("tenant_id","user_id","name");--> statement-breakpoint
 CREATE INDEX "role_tenant_name_idx" ON "role" USING btree ("tenant_id","name");--> statement-breakpoint
 CREATE INDEX "role_tenant_user_idx" ON "role" USING btree ("tenant_id","user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "user_tenant_email_unique_idx" ON "user" USING btree ("tenant_id",lower("email"));--> statement-breakpoint
-CREATE UNIQUE INDEX "user_tenant_id_unique_idx" ON "user" USING btree ("tenant_id","id");
+CREATE UNIQUE INDEX "user_tenant_email_unique_idx" ON "user" USING btree ("tenant_id",lower("email"));
