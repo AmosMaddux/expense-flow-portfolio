@@ -40,6 +40,18 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Represents an authenticated tenant exceeding its configured request limit.
+ */
+export class RateLimitExceededError extends Error {
+    public constructor(public readonly retryAfterSeconds: number) {
+        super(
+            "The tenant request limit was exceeded. Retry after the indicated delay.",
+        );
+        this.name = "RateLimitExceededError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -54,6 +66,10 @@ export const problemJsonErrorHandler: ErrorRequestHandler = (
     }
 
     const problem = toProblemJson(error, req.originalUrl);
+
+    if (error instanceof RateLimitExceededError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+    }
 
     res.status(problem.status).type("application/problem+json").json(problem);
 };
@@ -94,6 +110,16 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Forbidden",
             status: 403,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof RateLimitExceededError) {
+        return {
+            type: "about:blank",
+            title: "Too Many Requests",
+            status: 429,
             detail: error.message,
             instance,
         };

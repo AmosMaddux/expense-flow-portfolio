@@ -11,10 +11,12 @@ import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import { createAccessTokenMiddleware } from "./auth/shared/accessTokenMiddleware.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
+import { loadRateLimitConfig } from "./config/rateLimitConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
+import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
@@ -37,6 +39,10 @@ app.use(
     ),
 );
 app.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
+app.use(
+    "/expense-reports",
+    createTenantRateLimitMiddleware(loadRateLimitConfig()),
+);
 app.use("/", expenseReportRouter);
 
 /**
