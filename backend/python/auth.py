@@ -42,6 +42,13 @@ class AuthenticatedIdentity(BaseModel):
     token_use: Literal["access"]
 
 
+class AuthenticatedRequestContext(BaseModel):
+    """Represent the trusted tenant and role context for request handlers."""
+
+    tenant_id: UUID
+    role: RoleName
+
+
 @dataclass(frozen=True)
 class AuthJwtVerifierConfig:
     """Hold validated shared JWT verifier settings."""
@@ -262,6 +269,16 @@ async def require_authenticated_identity(
         raise unauthorized()
 
     return verifier.verify(token)
+
+
+async def require_request_context(
+    identity: Annotated[AuthenticatedIdentity, Depends(require_authenticated_identity)],
+) -> AuthenticatedRequestContext:
+    """Require a valid JWT and expose tenant and primary role context."""
+    return AuthenticatedRequestContext(
+        tenant_id=identity.tenant_id,
+        role=identity.roles[0],
+    )
 
 
 def claims_to_identity(claims: dict[str, Any]) -> AuthenticatedIdentity:

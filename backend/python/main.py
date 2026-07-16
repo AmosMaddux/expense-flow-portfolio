@@ -7,7 +7,9 @@ from fastapi import Depends, FastAPI
 from .auth import (
     AuthJwtVerifier,
     AuthenticatedIdentity,
+    AuthenticatedRequestContext,
     require_authenticated_identity,
+    require_request_context,
 )
 from .service_health import ServiceHealth
 
@@ -38,6 +40,18 @@ async def auth_me(
 ) -> AuthenticatedIdentity:
     """Return the identity context from a validated shared JWT."""
     return identity
+
+
+@app.get(
+    "/auth/context",
+    response_model=AuthenticatedRequestContext,
+    response_model_by_alias=False,
+)
+async def auth_context(
+    context: Annotated[AuthenticatedRequestContext, Depends(require_request_context)],
+) -> AuthenticatedRequestContext:
+    """Return the trusted tenant and primary role request context."""
+    return context
 
 
 def main():

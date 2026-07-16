@@ -85,6 +85,47 @@ async def test_auth_me_accepts_login_service_minted_access_token_over_http(
     assert isinstance(response.json()["iat"], int)
 
 
+@pytest.mark.anyio
+async def test_auth_context_exposes_tenant_and_primary_role_over_http(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/auth/context", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tenant_id": TENANT_ID,
+        "role": "Employee",
+    }
+
+
+@pytest.mark.anyio
+async def test_auth_context_rejects_missing_token_before_handler_context(
+    generated_jwt_environment: dict[str, str],
+) -> None:
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/auth/context")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or missing bearer token."}
+
+
 def test_auth_verifier_accepts_single_key_fallback(
     generated_jwt_environment: dict[str, str],
     node_build: None,
