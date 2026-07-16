@@ -14,7 +14,6 @@ type PostgresError = {
     cause?: unknown;
     code?: string;
     constraint?: string;
-    cause?: unknown;
 };
 
 const uniqueViolationCode = "23505";
@@ -77,9 +76,5 @@ function isDuplicateMfaEnrollmentError(error: unknown): boolean {
         currentError = postgresError.cause;
     }
 
-    return (
-        (postgresError.code === uniqueViolationCode &&
-            postgresError.constraint === mfaEnrollmentTenantUserConstraint) ||
-        isDuplicateMfaEnrollmentError(postgresError.cause)
-    );
+    return false;
 }

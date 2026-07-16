@@ -2,7 +2,7 @@ import base64
 import json
 import os
 from dataclasses import dataclass
-from typing import Annotated, Any, Mapping
+from typing import Annotated, Any, Literal, Mapping
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -29,6 +29,7 @@ class AuthenticatedIdentity(BaseModel):
     roles: list[str]
     iss: str
     exp: int
+    token_use: Literal["access"]
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,16 @@ class AuthJwtVerifier:
                 algorithms=["RS256"],
                 issuer=self._config.issuer,
                 leeway=self._config.clock_skew_seconds,
-                options={"require": ["exp", "iss", "sub", "tenant_id", "roles"]},
+                options={
+                    "require": [
+                        "exp",
+                        "iss",
+                        "sub",
+                        "tenant_id",
+                        "roles",
+                        "token_use",
+                    ]
+                },
             )
             return AuthenticatedIdentity.model_validate(payload)
         except (InvalidTokenError, ValidationError) as error:

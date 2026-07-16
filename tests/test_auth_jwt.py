@@ -77,6 +77,7 @@ async def test_auth_me_accepts_login_service_minted_access_token_over_http(
         "roles": ["Employee"],
         "iss": AUTH_JWT_ISSUER,
         "exp": response.json()["exp"],
+        "token_use": "access",
     }
     assert isinstance(response.json()["exp"], int)
 
@@ -186,6 +187,18 @@ def test_auth_me_rejects_expired_node_minted_access_token(
     token = mint_node_access_token(
         generated_jwt_environment, issued_at_offset_seconds=-120, ttl_seconds=1
     )
+
+    with pytest.raises(HTTPException) as error:
+        require_identity(generated_jwt_environment, f"Bearer {token}")
+
+    assert error.value.status_code == 401
+
+
+def test_auth_verifier_rejects_node_minted_refresh_token(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_refresh_token(generated_jwt_environment, ttl_seconds=300)
 
     with pytest.raises(HTTPException) as error:
         require_identity(generated_jwt_environment, f"Bearer {token}")
@@ -361,6 +374,37 @@ def mint_node_access_token(
     ttl_seconds: int,
 ) -> str:
     script = ROOT_DIR / "tests" / "support" / "mint-node-access-token.mjs"
+    resolved_key_id = key_id if key_id is not None else environment.get(
+        "AUTH_JWT_KEY_ID", "default"
+    )
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
+        subprocess.run(
+            [
+                "node",
+                str(script),
+                environment["AUTH_JWT_PRIVATE_KEY_BASE64"],
+                resolved_key_id,
+                AUTH_JWT_ISSUER,
+                str(issued_at_offset_seconds),
+                str(ttl_seconds),
+            ],
+            cwd=ROOT_DIR,
+            check=True,
+            stdout=token_file,
+            timeout=10,
+        )
+        token_file.seek(0)
+        return token_file.read().strip()
+
+
+def mint_node_refresh_token(
+    environment: dict[str, str],
+    *,
+    issued_at_offset_seconds: int = -30,
+    key_id: str | None = None,
+    ttl_seconds: int,
+) -> str:
+    script = ROOT_DIR / "tests" / "support" / "mint-node-refresh-token.mjs"
     resolved_key_id = key_id if key_id is not None else environment.get(
         "AUTH_JWT_KEY_ID", "default"
     )
