@@ -107,6 +107,35 @@ async def test_auth_context_exposes_tenant_and_primary_role_over_http(
     assert response.json() == {
         "tenant_id": TENANT_ID,
         "role": "Employee",
+        "roles": ["Employee"],
+    }
+
+
+@pytest.mark.anyio
+async def test_auth_context_preserves_multi_role_assignments_over_http(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_raw_access_token(
+        generated_jwt_environment,
+        {"roles": ["Employee", "Finance Admin"]},
+    )
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/auth/context", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tenant_id": TENANT_ID,
+        "role": "Finance Admin",
+        "roles": ["Employee", "Finance Admin"],
     }
 
 

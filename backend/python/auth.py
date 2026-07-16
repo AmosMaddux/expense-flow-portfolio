@@ -22,6 +22,12 @@ RoleName = Literal[
     "Employee",
     "Admin",
 ]
+ROLE_PRECEDENCE: tuple[RoleName, ...] = (
+    "Finance Admin",
+    "Department Manager",
+    "Employee",
+    "Admin",
+)
 
 
 class AuthJwtConfigurationError(RuntimeError):
@@ -47,6 +53,7 @@ class AuthenticatedRequestContext(BaseModel):
 
     tenant_id: UUID
     role: RoleName
+    roles: list[RoleName] = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -274,13 +281,19 @@ async def require_authenticated_identity(
 async def require_request_context(
     identity: Annotated[AuthenticatedIdentity, Depends(require_authenticated_identity)],
 ) -> AuthenticatedRequestContext:
-    """Require a valid JWT and expose tenant and primary role context."""
+    """Require a valid JWT and expose tenant, primary role, and all roles."""
     return AuthenticatedRequestContext(
         tenant_id=identity.tenant_id,
-        role=identity.roles[0],
+        role=select_primary_role(identity.roles),
+        roles=identity.roles,
     )
 
 
 def claims_to_identity(claims: dict[str, Any]) -> AuthenticatedIdentity:
     """Validate JWT claims that have already passed cryptographic checks."""
     return AuthenticatedIdentity.model_validate(claims)
+
+
+def select_primary_role(roles: list[RoleName]) -> RoleName:
+    """Select the deterministic compatibility role for legacy single-role checks."""
+    return min(roles, key=ROLE_PRECEDENCE.index)

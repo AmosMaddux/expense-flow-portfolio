@@ -49,7 +49,7 @@ async def auth_me(
 async def auth_context(
     context: Annotated[AuthenticatedRequestContext, Depends(require_request_context)],
 ) -> AuthenticatedRequestContext:
-    """Return the trusted tenant and primary role request context."""
+    """Return the trusted tenant and role request context."""
     return context
 
 
