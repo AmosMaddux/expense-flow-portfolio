@@ -2,6 +2,7 @@ import { sql, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 import {
     check,
     foreignKey,
+    bigint,
     index,
     integer,
     pgTable,
@@ -175,6 +176,9 @@ export const mfaEnrollment = pgTable(
         algorithm: text("algorithm").notNull(),
         digits: integer("digits").notNull(),
         periodSeconds: integer("period_seconds").notNull(),
+        lastAcceptedTotpCounter: bigint("last_accepted_totp_counter", {
+            mode: "number",
+        }),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),

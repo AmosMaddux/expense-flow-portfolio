@@ -65,6 +65,48 @@ void describe("login controller", () => {
         expect(next).not.toHaveBeenCalled();
     });
 
+    void test("returns the same generic 401 for unknown email and wrong password failures", async () => {
+        const loginService: LoginService = {
+            login: vi.fn(() => Promise.reject(new InvalidCredentialsError())),
+        };
+        const handler = createPostLogin(loginService);
+        const next = vi.fn() as NextFunction;
+        const unknownEmailResponse = createResponse();
+        const wrongPasswordResponse = createResponse();
+
+        await handler(
+            {
+                body: {
+                    tenantId: "00000000-0000-4000-8000-000000000603",
+                    email: "missing@example.invalid",
+                    password: "synthetic-login-password",
+                    totpCode: "123456",
+                },
+            } as Request,
+            unknownEmailResponse,
+            next,
+        );
+        await handler(
+            {
+                body: {
+                    tenantId: "00000000-0000-4000-8000-000000000603",
+                    email: "employee@example.invalid",
+                    password: "synthetic-wrong-password",
+                    totpCode: "123456",
+                },
+            } as Request,
+            wrongPasswordResponse,
+            next,
+        );
+
+        expect(unknownEmailResponse.statusMock).toHaveBeenCalledWith(401);
+        expect(wrongPasswordResponse.statusMock).toHaveBeenCalledWith(401);
+        expect(unknownEmailResponse.jsonMock.mock.calls[0]?.[0]).toStrictEqual(
+            wrongPasswordResponse.jsonMock.mock.calls[0]?.[0],
+        );
+        expect(next).not.toHaveBeenCalled();
+    });
+
     void test("returns the same generic 401 for invalid credentials", async () => {
         const loginService: LoginService = {
             login: vi.fn(() => Promise.reject(new InvalidCredentialsError())),

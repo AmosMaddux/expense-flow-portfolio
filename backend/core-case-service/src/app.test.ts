@@ -1,10 +1,12 @@
 import { type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { afterEach, describe, expect, test } from "vitest";
+import type { Express } from "express";
+import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { app } from "./app.js";
+import { syntheticRsaPrivateKeyBase64 } from "./testSupport/jwtTestKeys.js";
 
+let app: Express;
 let activeServer: Server | undefined;
 
 async function requestApp(path: string, init?: RequestInit): Promise<Response> {
@@ -50,6 +52,17 @@ async function closeActiveServer(): Promise<void> {
 }
 
 void describe("app", () => {
+    beforeAll(async () => {
+        process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
+        process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
+        process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(
+            32,
+            1,
+        ).toString("base64");
+        process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        app = (await import("./app.js")).app;
+    });
+
     afterEach(async () => {
         await closeActiveServer();
     });
@@ -76,6 +89,26 @@ void describe("app", () => {
         );
     });
 
+    void test("rejects unsupported SSO, SAML, and OIDC auth paths", async () => {
+        for (const path of [
+            "/auth/sso/login",
+            "/auth/saml/login",
+            "/auth/oidc/login",
+        ]) {
+            const response = await requestApp(path, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    tenantId: "00000000-0000-4000-8000-000000000605",
+                    email: "employee@example.invalid",
+                }),
+            });
+            const body = await response.text();
+
+            expect(response.status).toBe(404);
+            expect(body).not.toContain("employee@example.invalid");
+        }
+    });
     void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/v1/docs/");
         const body = await response.text();

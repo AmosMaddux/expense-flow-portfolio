@@ -17,6 +17,7 @@ import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 import {
     authenticationAuditEntry,
     credential,
+    mfaEnrollment,
     role,
     user,
 } from "../../db/schema/index.js";
@@ -220,6 +221,50 @@ void describe("login repository", () => {
         });
     });
 
+    void test("records each accepted TOTP counter only once", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000506";
+        const userId = "10000000-0000-4000-8000-000000000506";
+        const repository = createDrizzleLoginCredentialRepository(db);
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "totp-replay@example.invalid",
+        });
+        await db.insert(mfaEnrollment).values({
+            tenantId,
+            userId,
+            secretCiphertext: "synthetic-ciphertext",
+            secretIv: "synthetic-iv",
+            secretAuthTag: "synthetic-auth-tag",
+            secretKeyVersion: "synthetic-v1",
+            algorithm: "SHA1",
+            digits: 6,
+            periodSeconds: 30,
+        });
+
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 10,
+            }),
+        ).resolves.toBe(true);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 10,
+            }),
+        ).resolves.toBe(false);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 11,
+            }),
+        ).resolves.toBe(true);
+    });
     void test("writes an audit entry after failed login", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000502";
         const userId = "10000000-0000-4000-8000-000000000502";

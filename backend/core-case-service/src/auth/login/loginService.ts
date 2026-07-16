@@ -63,6 +63,7 @@ export type StoredMfaLoginEnrollment = ProtectedTotpSecret & {
     algorithm: "SHA1";
     digits: 6 | 8;
     periodSeconds: number;
+    lastAcceptedTotpCounter: number | null;
 };
 
 export type LoginCredentialRepository = {
@@ -80,6 +81,11 @@ export type LoginCredentialRepository = {
         tokenHash: string;
         expiresAt: Date;
     }): Promise<void>;
+    recordAcceptedTotpCounter(input: {
+        tenantId: string;
+        userId: string;
+        counter: number;
+    }): Promise<boolean>;
     recordFailedLogin(entry: FailedLoginAuditEntry): Promise<void>;
 };
 
@@ -155,18 +161,37 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
-            if (
+            const acceptedTotpCounter =
                 validatedRequest.totpCode === undefined ||
-                !/^\d{6,8}$/.test(validatedRequest.totpCode) ||
-                !verifyTotpCode(
-                    totpSecretProtector
-                        .reveal(storedEnrollment)
-                        .toString("utf8"),
-                    validatedRequest.totpCode,
-                    storedEnrollment,
-                    now(),
-                )
-            ) {
+                !/^\d{6,8}$/.test(validatedRequest.totpCode)
+                    ? undefined
+                    : verifyTotpCode(
+                          totpSecretProtector
+                              .reveal(storedEnrollment)
+                              .toString("utf8"),
+                          validatedRequest.totpCode,
+                          storedEnrollment,
+                          now(),
+                      );
+
+            if (acceptedTotpCounter === undefined) {
+                await recordFailedLogin(loginCredentialRepository, {
+                    tenantId: storedCredential.tenantId,
+                    userId: storedCredential.userId,
+                    email: normalizedEmail,
+                    action: "mfa_failed",
+                });
+                throw new InvalidMfaCodeError();
+            }
+
+            const totpCounterWasAccepted =
+                await loginCredentialRepository.recordAcceptedTotpCounter({
+                    tenantId: storedCredential.tenantId,
+                    userId: storedCredential.userId,
+                    counter: acceptedTotpCounter,
+                });
+
+            if (!totpCounterWasAccepted) {
                 await recordFailedLogin(loginCredentialRepository, {
                     tenantId: storedCredential.tenantId,
                     userId: storedCredential.userId,
@@ -251,7 +276,7 @@ function verifyTotpCode(
     code: string,
     enrollment: StoredMfaLoginEnrollment,
     currentTime: Date,
-): boolean {
+): number | undefined {
     const counter = Math.floor(
         currentTime.getTime() / 1000 / enrollment.periodSeconds,
     );
@@ -265,11 +290,11 @@ function verifyTotpCode(
                 enrollment.digits,
             ) === code
         ) {
-            return true;
+            return counter + offset;
         }
     }
 
-    return false;
+    return undefined;
 }
 
 function generateTotpCode(

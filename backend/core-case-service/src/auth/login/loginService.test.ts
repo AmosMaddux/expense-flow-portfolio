@@ -69,6 +69,7 @@ const storedMfaEnrollment: StoredMfaLoginEnrollment = {
     algorithm: "SHA1",
     digits: 8,
     periodSeconds: 30,
+    lastAcceptedTotpCounter: null,
 };
 
 function createPasswordHasher(passwordMatches: boolean): PasswordHasher & {
@@ -97,6 +98,7 @@ function createRepository(
     findByTenantAndEmailMock: ReturnType<typeof vi.fn>;
     findMfaEnrollmentByTenantAndUserMock: ReturnType<typeof vi.fn>;
     createRefreshTokenMock: ReturnType<typeof vi.fn>;
+    recordAcceptedTotpCounterMock: ReturnType<typeof vi.fn>;
     recordFailedLoginMock: ReturnType<typeof vi.fn>;
 } {
     const failedAuditEntries: FailedLoginAuditEntry[] = [];
@@ -109,6 +111,7 @@ function createRepository(
         refreshTokens.push(token);
         return Promise.resolve();
     });
+    const recordAcceptedTotpCounterMock = vi.fn(() => Promise.resolve(true));
     const recordFailedLoginMock = vi.fn((entry: FailedLoginAuditEntry) => {
         failedAuditEntries.push(entry);
         return Promise.resolve();
@@ -123,6 +126,8 @@ function createRepository(
         findMfaEnrollmentByTenantAndUserMock,
         createRefreshToken: createRefreshTokenMock,
         createRefreshTokenMock,
+        recordAcceptedTotpCounter: recordAcceptedTotpCounterMock,
+        recordAcceptedTotpCounterMock,
         recordFailedLogin: recordFailedLoginMock,
         recordFailedLoginMock,
     };
@@ -291,6 +296,11 @@ void describe("login service", () => {
         expect(
             repository.findMfaEnrollmentByTenantAndUserMock,
         ).toHaveBeenCalledWith(tenantId, userId);
+        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
+            tenantId,
+            userId,
+            counter: 1,
+        });
         expect(repository.refreshTokens).toHaveLength(1);
         expect(repository.refreshTokens[0]).toMatchObject({
             tenantId,
@@ -409,6 +419,38 @@ void describe("login service", () => {
             }),
         ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
 
+        expect(repository.failedAuditEntries).toEqual([
+            {
+                tenantId,
+                userId,
+                email: "employee@example.invalid",
+                action: "mfa_failed",
+            },
+        ]);
+        expect(repository.recordAcceptedTotpCounterMock).not.toHaveBeenCalled();
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
+    });
+
+    void test("records MFA audit and rejects a replayed TOTP", async () => {
+        const repository = createRepository(storedCredential);
+        repository.recordAcceptedTotpCounterMock.mockResolvedValue(false);
+        const passwordHasher = createPasswordHasher(true);
+        const loginService = createTestLoginService(repository, passwordHasher);
+
+        await expect(
+            loginService.login({
+                tenantId,
+                email: "employee@example.invalid",
+                password,
+                totpCode: validTotpCode,
+            }),
+        ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
+
+        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
+            tenantId,
+            userId,
+            counter: 1,
+        });
         expect(repository.failedAuditEntries).toEqual([
             {
                 tenantId,
