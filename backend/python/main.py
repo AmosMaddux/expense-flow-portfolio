@@ -1,11 +1,25 @@
+from contextlib import asynccontextmanager
 from typing import Annotated
+from collections.abc import AsyncIterator
 
 from fastapi import Depends, FastAPI
 
-from .auth import AuthenticatedIdentity, require_authenticated_identity
+from .auth import (
+    AuthJwtVerifier,
+    AuthenticatedIdentity,
+    require_authenticated_identity,
+)
 from .service_health import ServiceHealth
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Validate shared JWT verifier configuration at application startup."""
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")

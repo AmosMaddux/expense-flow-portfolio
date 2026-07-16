@@ -8,9 +8,15 @@ from typing import Any
 import anyio
 import pytest
 from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
 from starlette.requests import Request
 
-from backend.python.auth import AuthJwtVerifier, require_authenticated_identity
+from backend.python.auth import (
+    AuthJwtConfigurationError,
+    AuthJwtVerifier,
+    require_authenticated_identity,
+)
+from backend.python.main import app, lifespan
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 AUTH_JWT_ISSUER = "expenseflow-core-case-service"
@@ -35,21 +41,142 @@ def generated_jwt_environment(tmp_path: Path) -> dict[str, str]:
     return parse_env_file(env_file)
 
 
-def test_auth_me_accepts_node_minted_access_token(
+@pytest.fixture()
+def generated_next_jwt_environment(tmp_path: Path) -> dict[str, str]:
+    env_file = tmp_path / "next-jwt.env"
+    subprocess.run(
+        ["./scripts/generate-dev-jwt-keys.sh", str(env_file)],
+        cwd=ROOT_DIR,
+        check=True,
+    )
+
+    return parse_env_file(env_file)
+
+
+@pytest.mark.anyio
+async def test_auth_me_accepts_login_service_minted_access_token_over_http(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/auth/me", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "user_id": USER_ID,
+        "tenant_id": TENANT_ID,
+        "roles": ["Employee"],
+        "iss": AUTH_JWT_ISSUER,
+        "exp": response.json()["exp"],
+    }
+    assert isinstance(response.json()["exp"], int)
+
+
+def test_auth_verifier_accepts_single_key_fallback(
     generated_jwt_environment: dict[str, str],
     node_build: None,
 ) -> None:
     token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
     identity = require_identity(generated_jwt_environment, f"Bearer {token}")
 
-    assert identity.model_dump() == {
-        "user_id": USER_ID,
-        "tenant_id": TENANT_ID,
-        "roles": ["Employee"],
-        "iss": AUTH_JWT_ISSUER,
-        "exp": identity.exp,
+    assert identity.user_id == USER_ID
+    assert identity.tenant_id == TENANT_ID
+
+
+def test_auth_verifier_accepts_matching_kid_from_rotation_key_map(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    key_map_environment = create_key_map_environment(
+        generated_jwt_environment, generated_next_jwt_environment
+    )
+    token = mint_node_access_token(
+        generated_jwt_environment, key_id="old-key", ttl_seconds=300
+    )
+    identity = require_identity(key_map_environment, f"Bearer {token}")
+
+    assert identity.user_id == USER_ID
+    assert identity.tenant_id == TENANT_ID
+
+
+def test_auth_verifier_rejects_unknown_kid_from_rotation_key_map(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    key_map_environment = create_key_map_environment(
+        generated_jwt_environment, generated_next_jwt_environment
+    )
+    token = mint_node_access_token(
+        generated_jwt_environment, key_id="unknown-key", ttl_seconds=300
+    )
+
+    with pytest.raises(HTTPException) as error:
+        require_identity(key_map_environment, f"Bearer {token}")
+
+    assert error.value.status_code == 401
+
+
+def test_auth_verifier_rejects_missing_kid_when_rotating_keys(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    key_map_environment = create_key_map_environment(
+        generated_jwt_environment, generated_next_jwt_environment
+    )
+    token = mint_node_access_token(
+        generated_jwt_environment, key_id="__none__", ttl_seconds=300
+    )
+
+    with pytest.raises(HTTPException) as error:
+        require_identity(key_map_environment, f"Bearer {token}")
+
+    assert error.value.status_code == 401
+
+
+def test_auth_verifier_accepts_token_expired_within_clock_skew(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    environment = {
+        **generated_jwt_environment,
+        "AUTH_JWT_CLOCK_SKEW_SECONDS": "10",
     }
-    assert isinstance(identity.exp, int)
+    token = mint_node_access_token(
+        environment, issued_at_offset_seconds=-5, ttl_seconds=1
+    )
+    identity = require_identity(environment, f"Bearer {token}")
+
+    assert identity.user_id == USER_ID
+
+
+def test_auth_verifier_rejects_token_expired_beyond_clock_skew(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    environment = {
+        **generated_jwt_environment,
+        "AUTH_JWT_CLOCK_SKEW_SECONDS": "10",
+    }
+    token = mint_node_access_token(
+        environment, issued_at_offset_seconds=-20, ttl_seconds=1
+    )
+
+    with pytest.raises(HTTPException) as error:
+        require_identity(environment, f"Bearer {token}")
+
+    assert error.value.status_code == 401
 
 
 def test_auth_me_rejects_expired_node_minted_access_token(
@@ -88,6 +215,38 @@ def test_auth_me_rejects_missing_or_non_bearer_authorization(
         require_identity(generated_jwt_environment, authorization)
 
     assert error.value.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {},
+        {"AUTH_JWT_PUBLIC_KEYS_JSON": "not-json"},
+        {"AUTH_JWT_PUBLIC_KEYS_JSON": "{}"},
+        {"AUTH_JWT_PUBLIC_KEY_BASE64": "not-base64"},
+        {
+            "AUTH_JWT_PUBLIC_KEY_BASE64": "not-base64",
+            "AUTH_JWT_CLOCK_SKEW_SECONDS": "-1",
+        },
+    ],
+)
+def test_auth_verifier_configuration_errors_are_not_401(
+    environment: dict[str, str],
+) -> None:
+    with pytest.raises(AuthJwtConfigurationError):
+        AuthJwtVerifier.from_environment(environment)
+
+
+def test_auth_verifier_configuration_is_validated_at_startup(monkeypatch) -> None:
+    monkeypatch.delenv("AUTH_JWT_PUBLIC_KEYS_JSON", raising=False)
+    monkeypatch.delenv("AUTH_JWT_PUBLIC_KEY_BASE64", raising=False)
+
+    async def start_app_without_auth_config() -> None:
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(AuthJwtConfigurationError):
+        anyio.run(start_app_without_auth_config)
 
 
 def test_tracked_test_sources_do_not_commit_jwt_secrets_or_tokens() -> None:
@@ -150,12 +309,28 @@ def parse_env_file(env_file: Path) -> dict[str, str]:
     return environment
 
 
+def create_key_map_environment(
+    old_environment: dict[str, str],
+    next_environment: dict[str, str],
+) -> dict[str, str]:
+    return {
+        "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+        "AUTH_JWT_PUBLIC_KEYS_JSON": json.dumps(
+            {
+                "old-key": old_environment["AUTH_JWT_PUBLIC_KEY_BASE64"],
+                "next-key": next_environment["AUTH_JWT_PUBLIC_KEY_BASE64"],
+            },
+            separators=(",", ":"),
+        ),
+    }
+
+
 def require_identity(
     environment: dict[str, str],
     authorization: str | None,
 ):
     request = make_request(authorization)
-    verifier = AuthJwtVerifier(environment)
+    verifier = AuthJwtVerifier.from_environment(environment)
     return anyio.run(require_authenticated_identity, request, verifier)
 
 
@@ -182,15 +357,20 @@ def mint_node_access_token(
     environment: dict[str, str],
     *,
     issued_at_offset_seconds: int = -30,
+    key_id: str | None = None,
     ttl_seconds: int,
 ) -> str:
     script = ROOT_DIR / "tests" / "support" / "mint-node-access-token.mjs"
+    resolved_key_id = key_id if key_id is not None else environment.get(
+        "AUTH_JWT_KEY_ID", "default"
+    )
     with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
         subprocess.run(
             [
                 "node",
                 str(script),
                 environment["AUTH_JWT_PRIVATE_KEY_BASE64"],
+                resolved_key_id,
                 AUTH_JWT_ISSUER,
                 str(issued_at_offset_seconds),
                 str(ttl_seconds),

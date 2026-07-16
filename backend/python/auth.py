@@ -1,13 +1,22 @@
 import base64
+import json
 import os
-from typing import Annotated, Any
+from dataclasses import dataclass
+from typing import Annotated, Any, Mapping
 
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, HTTPException, Request
 from jwt import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 AUTH_JWT_ISSUER_DEFAULT = "expenseflow-core-case-service"
+AUTH_JWT_CLOCK_SKEW_SECONDS_DEFAULT = 10
+
+
+class AuthJwtConfigurationError(RuntimeError):
+    """Report invalid shared JWT verifier configuration."""
 
 
 class AuthenticatedIdentity(BaseModel):
@@ -22,44 +31,183 @@ class AuthenticatedIdentity(BaseModel):
     exp: int
 
 
+@dataclass(frozen=True)
+class AuthJwtVerifierConfig:
+    """Hold validated shared JWT verifier settings."""
+
+    issuer: str
+    public_keys_by_id: dict[str, str]
+    single_key_id: str | None
+    clock_skew_seconds: int
+
+
 class AuthJwtVerifier:
     """Verify shared RS256 JWTs issued by the Node service."""
 
-    def __init__(self, environment: dict[str, str] | None = None) -> None:
-        self._environment = environment if environment is not None else os.environ
+    def __init__(self, config: AuthJwtVerifierConfig) -> None:
+        self._config = config
+
+    @classmethod
+    def from_environment(
+        cls, environment: Mapping[str, str] | None = None
+    ) -> "AuthJwtVerifier":
+        """Create a verifier from validated process environment settings."""
+        return cls(load_auth_jwt_verifier_config(environment))
 
     def verify(self, token: str) -> AuthenticatedIdentity:
         """Return identity claims after signature, issuer, and expiry validation."""
         try:
+            key = self._select_public_key(token)
             payload = jwt.decode(
                 token,
-                self._load_public_key(),
+                key,
                 algorithms=["RS256"],
-                issuer=self._issuer,
+                issuer=self._config.issuer,
+                leeway=self._config.clock_skew_seconds,
                 options={"require": ["exp", "iss", "sub", "tenant_id", "roles"]},
             )
             return AuthenticatedIdentity.model_validate(payload)
-        except (InvalidTokenError, ValidationError, ValueError) as error:
+        except (InvalidTokenError, ValidationError) as error:
             raise unauthorized() from error
 
-    @property
-    def _issuer(self) -> str:
-        issuer = self._environment.get("AUTH_JWT_ISSUER", AUTH_JWT_ISSUER_DEFAULT)
-        if issuer.strip() == "":
-            raise ValueError("AUTH_JWT_ISSUER cannot be blank.")
-        return issuer
+    def _select_public_key(self, token: str) -> str:
+        header = jwt.get_unverified_header(token)
+        key_id = header.get("kid")
 
-    def _load_public_key(self) -> str:
-        encoded_public_key = self._environment.get("AUTH_JWT_PUBLIC_KEY_BASE64")
-        if encoded_public_key is None or encoded_public_key.strip() == "":
-            raise ValueError("AUTH_JWT_PUBLIC_KEY_BASE64 is required.")
+        if not isinstance(key_id, str) or key_id.strip() == "":
+            if self._config.single_key_id is not None:
+                return self._config.public_keys_by_id[self._config.single_key_id]
+            raise unauthorized()
 
-        try:
-            return base64.b64decode(encoded_public_key, validate=True).decode("utf-8")
-        except (ValueError, UnicodeDecodeError) as error:
-            raise ValueError(
-                "AUTH_JWT_PUBLIC_KEY_BASE64 must be a base64 PEM RSA public key."
-            ) from error
+        public_key = self._config.public_keys_by_id.get(key_id)
+        if public_key is None:
+            raise unauthorized()
+
+        return public_key
+
+
+def load_auth_jwt_verifier_config(
+    environment: Mapping[str, str] | None = None,
+) -> AuthJwtVerifierConfig:
+    """Read and validate shared JWT verifier settings."""
+    env = environment if environment is not None else os.environ
+    issuer = read_issuer(env)
+    clock_skew_seconds = read_clock_skew_seconds(env)
+    public_keys_by_id = read_public_keys_by_id(env)
+    single_key_id = (
+        next(iter(public_keys_by_id)) if len(public_keys_by_id) == 1 else None
+    )
+
+    return AuthJwtVerifierConfig(
+        issuer=issuer,
+        public_keys_by_id=public_keys_by_id,
+        single_key_id=single_key_id,
+        clock_skew_seconds=clock_skew_seconds,
+    )
+
+
+def read_issuer(env: Mapping[str, str]) -> str:
+    """Read the expected shared JWT issuer."""
+    issuer = env.get("AUTH_JWT_ISSUER", AUTH_JWT_ISSUER_DEFAULT)
+    if issuer.strip() == "":
+        raise AuthJwtConfigurationError("AUTH_JWT_ISSUER cannot be blank.")
+    return issuer
+
+
+def read_clock_skew_seconds(env: Mapping[str, str]) -> int:
+    """Read the accepted shared JWT clock skew in seconds."""
+    raw_clock_skew = env.get(
+        "AUTH_JWT_CLOCK_SKEW_SECONDS",
+        str(AUTH_JWT_CLOCK_SKEW_SECONDS_DEFAULT),
+    )
+
+    try:
+        clock_skew_seconds = int(raw_clock_skew)
+    except ValueError as error:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_CLOCK_SKEW_SECONDS must be a non-negative integer."
+        ) from error
+
+    if clock_skew_seconds < 0:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_CLOCK_SKEW_SECONDS must be a non-negative integer."
+        )
+
+    return clock_skew_seconds
+
+
+def read_public_keys_by_id(env: Mapping[str, str]) -> dict[str, str]:
+    """Read shared JWT public keys by key identifier."""
+    encoded_public_keys = env.get("AUTH_JWT_PUBLIC_KEYS_JSON")
+    if encoded_public_keys is not None and encoded_public_keys.strip() != "":
+        return decode_public_keys_json(encoded_public_keys)
+
+    encoded_public_key = env.get("AUTH_JWT_PUBLIC_KEY_BASE64")
+    if encoded_public_key is None or encoded_public_key.strip() == "":
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_PUBLIC_KEYS_JSON or AUTH_JWT_PUBLIC_KEY_BASE64 is required."
+        )
+
+    key_id = env.get("AUTH_JWT_KEY_ID", "default")
+    if key_id.strip() == "":
+        raise AuthJwtConfigurationError("AUTH_JWT_KEY_ID cannot be blank.")
+
+    return {key_id: decode_public_key(encoded_public_key)}
+
+
+def decode_public_keys_json(encoded_public_keys: str) -> dict[str, str]:
+    """Decode a JSON object mapping JWT key IDs to base64 PEM public keys."""
+    try:
+        raw_public_keys = json.loads(encoded_public_keys)
+    except json.JSONDecodeError as error:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_PUBLIC_KEYS_JSON must be a JSON object."
+        ) from error
+
+    if not isinstance(raw_public_keys, dict) or len(raw_public_keys) == 0:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_PUBLIC_KEYS_JSON must be a non-empty JSON object."
+        )
+
+    public_keys_by_id: dict[str, str] = {}
+    for key_id, encoded_public_key in raw_public_keys.items():
+        if not isinstance(key_id, str) or key_id.strip() == "":
+            raise AuthJwtConfigurationError(
+                "AUTH_JWT_PUBLIC_KEYS_JSON key IDs must be non-empty strings."
+            )
+        if not isinstance(encoded_public_key, str):
+            raise AuthJwtConfigurationError(
+                "AUTH_JWT_PUBLIC_KEYS_JSON values must be base64 PEM public keys."
+            )
+        public_keys_by_id[key_id] = decode_public_key(encoded_public_key)
+
+    return public_keys_by_id
+
+
+def decode_public_key(encoded_public_key: str) -> str:
+    """Decode one base64 PEM RSA public key."""
+    try:
+        decoded_key = base64.b64decode(encoded_public_key, validate=True).decode(
+            "utf-8"
+        )
+    except (ValueError, UnicodeDecodeError) as error:
+        raise AuthJwtConfigurationError(
+            "JWT public keys must be base64 PEM RSA public keys."
+        ) from error
+
+    try:
+        public_key = load_pem_public_key(decoded_key.encode("utf-8"))
+    except ValueError as error:
+        raise AuthJwtConfigurationError(
+            "JWT public keys must be base64 PEM RSA public keys."
+        ) from error
+
+    if not isinstance(public_key, RSAPublicKey):
+        raise AuthJwtConfigurationError(
+            "JWT public keys must be base64 PEM RSA public keys."
+        )
+
+    return decoded_key
 
 
 def unauthorized() -> HTTPException:
@@ -71,9 +219,12 @@ def unauthorized() -> HTTPException:
     )
 
 
-def get_auth_jwt_verifier() -> AuthJwtVerifier:
-    """Create a JWT verifier from the process environment."""
-    return AuthJwtVerifier()
+async def get_auth_jwt_verifier(request: Request) -> AuthJwtVerifier:
+    """Return the startup-validated shared JWT verifier."""
+    verifier = getattr(request.app.state, "auth_jwt_verifier", None)
+    if not isinstance(verifier, AuthJwtVerifier):
+        raise AuthJwtConfigurationError("Shared JWT verifier is not configured.")
+    return verifier
 
 
 async def require_authenticated_identity(
