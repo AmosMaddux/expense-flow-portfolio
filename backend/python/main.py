@@ -45,7 +45,6 @@ async def auth_me(
 @app.get(
     "/auth/context",
     response_model=AuthenticatedRequestContext,
-    response_model_by_alias=False,
 )
 async def auth_context(
     context: Annotated[AuthenticatedRequestContext, Depends(require_request_context)],
