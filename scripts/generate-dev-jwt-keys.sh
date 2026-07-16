@@ -2,7 +2,8 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-env_file="${root_dir}/.env"
+env_file="${1:-"${root_dir}/.env"}"
+temp_dir="$(realpath "${TMPDIR:-/tmp}")"
 private_key_file="$(mktemp)"
 public_key_file="$(mktemp)"
 
@@ -10,6 +11,14 @@ cleanup() {
     rm -f "${private_key_file}" "${public_key_file}"
 }
 trap cleanup EXIT
+
+mkdir -p "$(dirname "${env_file}")"
+env_file="$(realpath -m "${env_file}")"
+
+if [[ "${env_file}" != "${root_dir}/.env" && "${env_file}" != "${temp_dir}"/* ]]; then
+    echo "Refusing to write generated JWT keys outside ${root_dir}/.env or ${temp_dir}." >&2
+    exit 1
+fi
 
 if [[ ! -f "${env_file}" ]]; then
     cp "${root_dir}/.env.example" "${env_file}"

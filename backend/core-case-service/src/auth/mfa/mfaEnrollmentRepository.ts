@@ -11,6 +11,7 @@ import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
 export type MfaEnrollmentDatabase = NodePgDatabase<typeof schema>;
 
 type PostgresError = {
+    cause?: unknown;
     code?: string;
     constraint?: string;
 };
@@ -60,7 +61,8 @@ function isDuplicateMfaEnrollmentError(error: unknown): boolean {
     const postgresError = error as PostgresError;
 
     return (
-        postgresError.code === uniqueViolationCode &&
-        postgresError.constraint === mfaEnrollmentTenantUserConstraint
+        (postgresError.code === uniqueViolationCode &&
+            postgresError.constraint === mfaEnrollmentTenantUserConstraint) ||
+        isDuplicateMfaEnrollmentError(postgresError.cause)
     );
 }
