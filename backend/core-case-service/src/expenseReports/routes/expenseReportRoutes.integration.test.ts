@@ -105,7 +105,7 @@ void describe("Expense Report routes", () => {
         const owner = "71000000-0000-4000-8000-000000000001";
         const dueDate = "2026-09-03";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -136,7 +136,7 @@ void describe("Expense Report routes", () => {
         }
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
@@ -207,7 +207,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000100";
         const owner = "50000000-0000-4000-8000-000000000001";
 
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -235,7 +235,7 @@ void describe("Expense Report routes", () => {
     void test("returns Problem+JSON for an invalid create request", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000105";
         const userId = "50000000-0000-4000-8000-000000000005";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, userId),
@@ -264,7 +264,7 @@ void describe("Expense Report routes", () => {
     void test("returns 403 when an Employee creates for another owner", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000108";
         const employeeId = "50000000-0000-4000-8000-000000000008";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, employeeId),
@@ -288,7 +288,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000109";
         const financeAdminId = "50000000-0000-4000-8000-000000000010";
         const ownerId = "50000000-0000-4000-8000-000000000011";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, financeAdminId, [
@@ -314,7 +314,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -331,7 +331,7 @@ void describe("Expense Report routes", () => {
         };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
@@ -356,7 +356,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000102";
         const owner = "50000000-0000-4000-8000-000000000003";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -373,7 +373,7 @@ void describe("Expense Report routes", () => {
         };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -399,7 +399,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000110";
         const ownerId = "50000000-0000-4000-8000-000000000012";
         const otherEmployeeId = "50000000-0000-4000-8000-000000000013";
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, ownerId),
@@ -410,7 +410,7 @@ void describe("Expense Report routes", () => {
         const created = (await createResponse.json()) as { id: string };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -431,7 +431,7 @@ void describe("Expense Report routes", () => {
 
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
-            "/expense-reports/60000000-0000-4000-8000-000000000001",
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000001",
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -457,14 +457,17 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns Problem+JSON when the route id is invalid", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id", {
-            headers: {
-                authorization: authorizationHeader(
-                    "40000000-0000-4000-8000-000000000106",
-                    "50000000-0000-4000-8000-000000000006",
-                ),
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000106",
+                        "50000000-0000-4000-8000-000000000006",
+                    ),
+                },
             },
-        });
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;
@@ -481,7 +484,9 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns 401 before handling a request without a token", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id");
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;
@@ -498,14 +503,17 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns 401 when a refresh token is used as a bearer token", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id", {
-            headers: {
-                authorization: refreshAuthorizationHeader(
-                    "40000000-0000-4000-8000-000000000107",
-                    "50000000-0000-4000-8000-000000000007",
-                ),
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+            {
+                headers: {
+                    authorization: refreshAuthorizationHeader(
+                        "40000000-0000-4000-8000-000000000107",
+                        "50000000-0000-4000-8000-000000000007",
+                    ),
+                },
             },
-        });
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;

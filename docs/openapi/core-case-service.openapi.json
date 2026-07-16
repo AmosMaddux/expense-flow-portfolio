@@ -1,9 +1,9 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "ExpenseFlow Core Case Service API",
+        "title": "ExpenseFlow Core Case Service API v1",
         "version": "1.0.0",
-        "description": "Discoverable contract for Core Case Service Expense Report endpoints."
+        "description": "Version 1 contract for Core Case Service endpoints. Fields are never removed or changed silently within v1: a field is first marked deprecated with a migration note and remains supported until a future API version."
     },
     "servers": [
         {
@@ -211,7 +211,7 @@
         "parameters": {}
     },
     "paths": {
-        "/auth/login": {
+        "/v1/auth/login": {
             "post": {
                 "summary": "Authenticate with email, password, and optional TOTP MFA",
                 "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
@@ -262,7 +262,7 @@
                 }
             }
         },
-        "/auth/mfa/enroll": {
+        "/v1/auth/mfa/enroll": {
             "post": {
                 "summary": "Enroll TOTP MFA",
                 "description": "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
@@ -310,7 +310,7 @@
                 }
             }
         },
-        "/expense-reports": {
+        "/v1/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",
                 "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
@@ -383,7 +383,7 @@
                 }
             }
         },
-        "/expense-reports/{id}": {
+        "/v1/expense-reports/{id}": {
             "get": {
                 "summary": "Get an Expense Report",
                 "description": "Loads an Expense Report case by identifier within the authenticated tenant.",

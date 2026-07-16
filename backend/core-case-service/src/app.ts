@@ -18,10 +18,11 @@ import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.open
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
+const v1Router = express.Router();
 
 app.use(express.json());
 
-app.use(
+v1Router.use(
     "/",
     createAuthRouter(
         createLoginService(
@@ -36,8 +37,8 @@ app.use(
         ),
     ),
 );
-app.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
-app.use("/", expenseReportRouter);
+v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use("/", expenseReportRouter);
 
 /**
  * Returns process health information for local and deployment smoke checks.
@@ -53,16 +54,17 @@ app.get("/health", (_req: Request, res: Response) => {
 /**
  * Returns the generated OpenAPI contract for discoverability in local service runs.
  */
-app.get("/openapi.json", (_req: Request, res: Response) => {
+v1Router.get("/openapi.json", (_req: Request, res: Response) => {
     res.status(200).json(coreCaseServiceOpenApiDocument);
 });
 
-app.use(
+v1Router.use(
     "/docs",
     apiReference({
-        pageTitle: "ExpenseFlow Core Case Service API Docs",
-        sources: [{ url: "/openapi.json" }],
+        pageTitle: "ExpenseFlow Core Case Service v1 API Docs",
+        sources: [{ url: "/v1/openapi.json" }],
     }),
 );
 
+app.use("/v1", v1Router);
 app.use(problemJsonErrorHandler);
