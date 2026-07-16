@@ -3,6 +3,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Mapping
+from uuid import UUID
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -10,7 +11,6 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, HTTPException, Request
 from jwt import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pydantic.types import UUID4
 
 AUTH_JWT_ISSUER_DEFAULT = "expenseflow-core-case-service"
 AUTH_JWT_CLOCK_SKEW_SECONDS_DEFAULT = 10
@@ -33,8 +33,8 @@ class AuthenticatedIdentity(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    user_id: UUID4 = Field(alias="sub")
-    tenant_id: UUID4
+    user_id: UUID = Field(alias="sub")
+    tenant_id: UUID
     roles: list[RoleName] = Field(min_length=1)
     iss: str
     iat: int
