@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -76,10 +77,12 @@ async def test_auth_me_accepts_login_service_minted_access_token_over_http(
         "tenant_id": TENANT_ID,
         "roles": ["Employee"],
         "iss": AUTH_JWT_ISSUER,
+        "iat": response.json()["iat"],
         "exp": response.json()["exp"],
         "token_use": "access",
     }
     assert isinstance(response.json()["exp"], int)
+    assert isinstance(response.json()["iat"], int)
 
 
 def test_auth_verifier_accepts_single_key_fallback(
@@ -89,8 +92,8 @@ def test_auth_verifier_accepts_single_key_fallback(
     token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
     identity = require_identity(generated_jwt_environment, f"Bearer {token}")
 
-    assert identity.user_id == USER_ID
-    assert identity.tenant_id == TENANT_ID
+    assert str(identity.user_id) == USER_ID
+    assert str(identity.tenant_id) == TENANT_ID
 
 
 def test_auth_verifier_accepts_matching_kid_from_rotation_key_map(
@@ -106,8 +109,8 @@ def test_auth_verifier_accepts_matching_kid_from_rotation_key_map(
     )
     identity = require_identity(key_map_environment, f"Bearer {token}")
 
-    assert identity.user_id == USER_ID
-    assert identity.tenant_id == TENANT_ID
+    assert str(identity.user_id) == USER_ID
+    assert str(identity.tenant_id) == TENANT_ID
 
 
 def test_auth_verifier_rejects_unknown_kid_from_rotation_key_map(
@@ -159,7 +162,7 @@ def test_auth_verifier_accepts_token_expired_within_clock_skew(
     )
     identity = require_identity(environment, f"Bearer {token}")
 
-    assert identity.user_id == USER_ID
+    assert str(identity.user_id) == USER_ID
 
 
 def test_auth_verifier_rejects_token_expired_beyond_clock_skew(
@@ -199,6 +202,34 @@ def test_auth_verifier_rejects_node_minted_refresh_token(
     node_build: None,
 ) -> None:
     token = mint_node_refresh_token(generated_jwt_environment, ttl_seconds=300)
+
+    with pytest.raises(HTTPException) as error:
+        require_identity(generated_jwt_environment, f"Bearer {token}")
+
+    assert error.value.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "claim_overrides",
+    [
+        {"sub": "not-a-uuid"},
+        {"tenant_id": "not-a-uuid"},
+        {"roles": []},
+        {"roles": ["Superuser"]},
+    ],
+    ids=[
+        "non_uuid_sub",
+        "non_uuid_tenant_id",
+        "empty_roles",
+        "unknown_role",
+    ],
+)
+def test_auth_verifier_rejects_validly_signed_token_with_malformed_claims(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+    claim_overrides: dict[str, Any],
+) -> None:
+    token = mint_raw_access_token(generated_jwt_environment, claim_overrides)
 
     with pytest.raises(HTTPException) as error:
         require_identity(generated_jwt_environment, f"Bearer {token}")
@@ -387,6 +418,47 @@ def mint_node_access_token(
                 AUTH_JWT_ISSUER,
                 str(issued_at_offset_seconds),
                 str(ttl_seconds),
+            ],
+            cwd=ROOT_DIR,
+            check=True,
+            stdout=token_file,
+            timeout=10,
+        )
+        token_file.seek(0)
+        return token_file.read().strip()
+
+
+def mint_raw_access_token(
+    environment: dict[str, str],
+    claim_overrides: dict[str, Any],
+    *,
+    key_id: str | None = None,
+    issued_at_offset_seconds: int = -30,
+    ttl_seconds: int = 300,
+) -> str:
+    issued_at = int(time.time()) + issued_at_offset_seconds
+    payload = {
+        "iss": AUTH_JWT_ISSUER,
+        "sub": USER_ID,
+        "tenant_id": TENANT_ID,
+        "roles": ["Employee"],
+        "token_use": "access",
+        "iat": issued_at,
+        "exp": issued_at + ttl_seconds,
+        **claim_overrides,
+    }
+    resolved_key_id = key_id if key_id is not None else environment.get(
+        "AUTH_JWT_KEY_ID", "default"
+    )
+    script = ROOT_DIR / "tests" / "support" / "mint-raw-access-token.mjs"
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
+        subprocess.run(
+            [
+                "node",
+                str(script),
+                environment["AUTH_JWT_PRIVATE_KEY_BASE64"],
+                resolved_key_id,
+                json.dumps(payload),
             ],
             cwd=ROOT_DIR,
             check=True,

@@ -10,9 +10,18 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, HTTPException, Request
 from jwt import InvalidTokenError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic.types import UUID4
 
 AUTH_JWT_ISSUER_DEFAULT = "expenseflow-core-case-service"
 AUTH_JWT_CLOCK_SKEW_SECONDS_DEFAULT = 10
+
+# Mirrors backend/core-case-service/src/db/schema/identityAuth.ts roleValues.
+RoleName = Literal[
+    "Finance Admin",
+    "Department Manager",
+    "Employee",
+    "Admin",
+]
 
 
 class AuthJwtConfigurationError(RuntimeError):
@@ -24,10 +33,11 @@ class AuthenticatedIdentity(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    user_id: str = Field(alias="sub")
-    tenant_id: str
-    roles: list[str]
+    user_id: UUID4 = Field(alias="sub")
+    tenant_id: UUID4
+    roles: list[RoleName] = Field(min_length=1)
     iss: str
+    iat: int
     exp: int
     token_use: Literal["access"]
 
@@ -68,6 +78,7 @@ class AuthJwtVerifier:
                 options={
                     "require": [
                         "exp",
+                        "iat",
                         "iss",
                         "sub",
                         "tenant_id",
