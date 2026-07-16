@@ -20,6 +20,16 @@ export class NotFoundError extends Error {
 }
 
 /**
+ * Represents a request that lacks valid authentication credentials.
+ */
+export class UnauthorizedError extends Error {
+    public constructor(message = "A valid access token is required.") {
+        super(message);
+        this.name = "UnauthorizedError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -54,6 +64,16 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Not Found",
             status: 404,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof UnauthorizedError) {
+        return {
+            type: "about:blank",
+            title: "Unauthorized",
+            status: 401,
             detail: error.message,
             instance,
         };

@@ -18,6 +18,7 @@ export async function postExpenseReport(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
@@ -25,7 +26,7 @@ export async function postExpenseReport(
             owner: parsedRequest.owner,
             dueDate: parsedRequest.dueDate,
             priority: parsedRequest.priority,
-            tenantId: parsedRequest.tenant_id,
+            tenantId: auth.tenantId,
         });
 
         res.status(201).json(report);
@@ -43,13 +44,27 @@ export async function getExpenseReportById(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        const report = await readExpenseReport(parsedRequest);
+        const report = await readExpenseReport({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+        });
 
         res.status(200).json(report);
     } catch (error: unknown) {
         next(error);
     }
+}
+
+function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
+    if (req.auth === undefined) {
+        throw new Error(
+            "Expense Report route is missing authentication middleware.",
+        );
+    }
+
+    return req.auth;
 }

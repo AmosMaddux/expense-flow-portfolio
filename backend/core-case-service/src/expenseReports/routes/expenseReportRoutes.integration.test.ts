@@ -5,6 +5,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { describe, expect, test, vi } from "vitest";
 
+import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
+import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import { auditEntry, stageTransition } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
@@ -61,6 +63,16 @@ async function closeServer(server: Server): Promise<void> {
     });
 }
 
+function authorizationHeader(tenantId: string, userId: string): string {
+    const { accessToken } = signAccessToken(
+        { tenantId, userId, roles: ["Employee"] },
+        loadAuthJwtConfig(),
+        new Date(),
+    );
+
+    return `Bearer ${accessToken}`;
+}
+
 void describe("Expense Report routes", () => {
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
@@ -70,6 +82,7 @@ void describe("Expense Report routes", () => {
         const createResponse = await requestApp("/expense-reports", {
             method: "POST",
             headers: {
+                authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
             },
             body: JSON.stringify({
@@ -96,7 +109,14 @@ void describe("Expense Report routes", () => {
             throw new Error("Expected created Expense Report id");
         }
 
-        const readResponse = await requestApp(`/expense-reports/${created.id}`);
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
         const readBody = (await readResponse.json()) as {
             id?: string;
             tenantId?: string;
@@ -164,10 +184,11 @@ void describe("Expense Report routes", () => {
         const response = await requestApp("/expense-reports", {
             method: "POST",
             headers: {
+                authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
             },
             body: JSON.stringify({
-                tenant_id: tenantId,
+                tenant_id: "40000000-0000-4000-8000-000000000999",
                 owner,
                 dueDate: "2026-07-31",
                 priority: "High",
@@ -186,9 +207,12 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns Problem+JSON for an invalid create request", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000105";
+        const userId = "50000000-0000-4000-8000-000000000005";
         const response = await requestApp("/expense-reports", {
             method: "POST",
             headers: {
+                authorization: authorizationHeader(tenantId, userId),
                 "content-type": "application/json",
             },
             body: JSON.stringify({
@@ -218,6 +242,7 @@ void describe("Expense Report routes", () => {
         const createResponse = await requestApp("/expense-reports", {
             method: "POST",
             headers: {
+                authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
             },
             body: JSON.stringify({
@@ -230,7 +255,14 @@ void describe("Expense Report routes", () => {
             id: string;
         };
 
-        const readResponse = await requestApp(`/expense-reports/${created.id}`);
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
         const readBody = (await readResponse.json()) as {
             id?: string;
             tenantId?: string;
@@ -245,13 +277,14 @@ void describe("Expense Report routes", () => {
         });
     });
 
-    void test("reads a recently saved Expense Report by id without tenant context", async () => {
+    void test("does not read an Expense Report from another tenant", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000102";
         const owner = "50000000-0000-4000-8000-000000000003";
 
         const createResponse = await requestApp("/expense-reports", {
             method: "POST",
             headers: {
+                authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
             },
             body: JSON.stringify({
@@ -264,24 +297,40 @@ void describe("Expense Report routes", () => {
             id: string;
         };
 
-        const readResponse = await requestApp(`/expense-reports/${created.id}`);
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000103",
+                        owner,
+                    ),
+                },
+            },
+        );
         const body = (await readResponse.json()) as {
-            id?: string;
-            tenantId?: string;
-            currentStage?: string;
+            title?: string;
+            status?: number;
         };
 
-        expect(readResponse.status).toBe(200);
+        expect(readResponse.status).toBe(404);
         expect(body).toMatchObject({
-            id: created.id,
-            tenantId,
-            currentStage: "Drafted",
+            title: "Not Found",
+            status: 404,
         });
     });
 
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
             "/expense-reports/60000000-0000-4000-8000-000000000001",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000104",
+                        "50000000-0000-4000-8000-000000000004",
+                    ),
+                },
+            },
         );
         const body = (await response.json()) as {
             title?: string;
@@ -299,7 +348,14 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns Problem+JSON when the route id is invalid", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id");
+        const response = await requestApp("/expense-reports/not-a-report-id", {
+            headers: {
+                authorization: authorizationHeader(
+                    "40000000-0000-4000-8000-000000000106",
+                    "50000000-0000-4000-8000-000000000006",
+                ),
+            },
+        });
         const body = (await response.json()) as {
             title?: string;
             status?: number;
@@ -312,6 +368,23 @@ void describe("Expense Report routes", () => {
         expect(body).toMatchObject({
             title: "Bad Request",
             status: 400,
+        });
+    });
+
+    void test("returns 401 before handling a request without a token", async () => {
+        const response = await requestApp("/expense-reports/not-a-report-id");
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
         });
     });
 });

@@ -47,7 +47,26 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(requestBody)).toContain(
             "#/components/schemas/CreateExpenseReportRequest",
         );
-        expect(JSON.stringify(createRequestSchema)).toContain("tenant_id");
+        expect(JSON.stringify(createRequestSchema)).not.toContain("tenant_id");
+    });
+
+    void test("documents bearer authentication for every Expense Report route", () => {
+        const expenseReportsPath = document.paths?.["/expense-reports"];
+        const expenseReportByIdPath = document.paths?.["/expense-reports/{id}"];
+
+        expect(document.components?.securitySchemes?.bearerAuth).toMatchObject({
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+        });
+        expect(expenseReportsPath?.post?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
+        expect(expenseReportByIdPath?.get?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
+        expect(expenseReportsPath?.post?.responses?.[401]).toBeDefined();
+        expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
     });
 
     void test("documents the GET id path parameter as a required UUID", () => {

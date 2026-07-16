@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -15,12 +15,16 @@ export const expenseReportCreatedReason = "report_created";
  * Reads an Expense Report from the case store within a tenant boundary.
  */
 export async function findExpenseReportById(
+    tenantId: string,
     id: string,
 ): Promise<ExpenseReport | undefined> {
     const report: ExpenseReport[] = await db
         .select()
         .from(expenseReport)
-        .where(eq(expenseReport.id, id));
+        // The authenticated tenant is part of every lookup to prevent cross-tenant reads.
+        .where(
+            and(eq(expenseReport.tenantId, tenantId), eq(expenseReport.id, id)),
+        );
 
     if (report.length === 1 && report[0] !== undefined) {
         return report[0];
