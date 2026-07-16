@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
     CaseQueueStageRollupListSchema,
+    AuditEntryListOutboundResponseSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     ReadCaseQueueStageRollupsQuerySchema,
@@ -65,6 +66,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
+    );
+    const auditEntryListResponse = registry.register(
+        "AuditEntryListResponse",
+        AuditEntryListOutboundResponseSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -332,6 +337,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             ),
             429: rateLimitExceededResponse.ref,
             502: problemJsonResponse("GL-coding service request failed."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/expense-reports/{id}/audit-entries",
+        summary: "List Expense Report audit entries",
+        description:
+            "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Audit entries found for the Expense Report.",
+                content: {
+                    "application/json": {
+                        schema: auditEntryListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

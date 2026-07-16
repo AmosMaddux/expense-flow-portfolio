@@ -15,6 +15,7 @@ import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
+    findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
     insertDeniedSubmissionAuditEntry,
@@ -22,6 +23,7 @@ import {
     submitDraftExpenseReport,
 } from "../repository/expenseReportRepository.js";
 import type {
+    AuditEntryResponse,
     CreateExpenseReportRequest,
     ExpenseReportResponse,
     GetExpenseReportRequest,
@@ -182,6 +184,45 @@ export async function submitExpenseReport(request: {
 
         throw error;
     }
+}
+
+/**
+ * Reads the tenant-scoped audit trail entries for an Expense Report case.
+ */
+export async function readExpenseReportAuditEntries(
+    request: GetExpenseReportRequest & {
+        tenantId: string;
+        ownerId?: string;
+    },
+): Promise<AuditEntryResponse[]> {
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    const auditEntries = await findAuditEntriesByExpenseReportId(
+        request.tenantId,
+        request.id,
+    );
+
+    return auditEntries.map((entry) => ({
+        id: entry.id,
+        tenantId: entry.tenantId,
+        expenseReportId: entry.expenseReportId,
+        actorId: entry.actorId,
+        action: entry.action,
+        stageBeforeAction:
+            entry.stageBeforeAction as AuditEntryResponse["stageBeforeAction"],
+        stageAfterProposedAction:
+            entry.stageAfterProposedAction as AuditEntryResponse["stageAfterProposedAction"],
+        denialReason: entry.denialReason,
+        createdAt: entry.createdAt,
+    }));
 }
 
 function toExpenseReportResponse(report: {

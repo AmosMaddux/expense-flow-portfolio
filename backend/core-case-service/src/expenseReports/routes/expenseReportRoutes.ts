@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
     getCaseQueueStageRollups,
+    getExpenseReportAuditEntries,
     getExpenseReportById,
     postExpenseReportSubmission,
     postExpenseReport,
@@ -14,5 +15,9 @@ expenseReportRouter.post("/expense-reports", postExpenseReport);
 expenseReportRouter.post(
     "/expense-reports/:id/submit",
     postExpenseReportSubmission,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/audit-entries",
+    getExpenseReportAuditEntries,
 );
 expenseReportRouter.get("/expense-reports/:id", getExpenseReportById);

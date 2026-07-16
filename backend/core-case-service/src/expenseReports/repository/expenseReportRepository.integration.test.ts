@@ -31,6 +31,7 @@ import { db } from "../../db/client.js";
 import {
     buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
+    findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
     submitDraftExpenseReport,
@@ -140,6 +141,36 @@ void describe("expenseReportRepository", () => {
         expect(transitionRows).toHaveLength(0);
     });
 
+    void test("finds audit entries by Expense Report id within tenant scope", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000196";
+        const newReport = buildNewExpenseReport(targetTenantId);
+
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const auditRows = await findAuditEntriesByExpenseReportId(
+            targetTenantId,
+            report.id,
+        );
+        const crossTenantRows = await findAuditEntriesByExpenseReportId(
+            "00000000-0000-4000-8000-000000000197",
+            report.id,
+        );
+
+        expect(auditRows).toHaveLength(1);
+        expect(auditRows[0]).toMatchObject({
+            tenantId: targetTenantId,
+            expenseReportId: report.id,
+            action: "report_created",
+        });
+        expect(crossTenantRows).toHaveLength(0);
+    });
     void test("finds an Expense Report by id", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000186";
         const targetId = "10000000-0000-4000-8000-000000000186";

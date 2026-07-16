@@ -22,6 +22,7 @@ import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js
 import {
     createDraftExpenseReport,
     readExpenseReport,
+    readExpenseReportAuditEntries,
     submitExpenseReport,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
@@ -175,6 +176,32 @@ export async function getCaseQueueStageRollups(
         });
 
         res.status(200).json(rollups);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Audit Trail reads for an Expense Report case.
+ */
+export async function getExpenseReportAuditEntries(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const auditEntries = await readExpenseReportAuditEntries({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
+
+        res.status(200).json(auditEntries);
     } catch (error: unknown) {
         next(error);
     }

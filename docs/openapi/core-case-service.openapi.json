@@ -698,10 +698,17 @@
                 }
             }
         },
+<<<<<<< HEAD
         "/v1/expense-reports/{id}/submit": {
             "post": {
                 "summary": "Submit an Expense Report",
                 "description": "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
+=======
+        "/expense-reports/{id}/audit-entries": {
+            "get": {
+                "summary": "List Expense Report audit entries",
+                "description": "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
+>>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                 "security": [
                     {
                         "bearerAuth": []
@@ -716,6 +723,7 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
+<<<<<<< HEAD
                     },
                     {
                         "schema": {
@@ -770,6 +778,17 @@
                             "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemJson"
+=======
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Audit entries found for the Expense Report.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditEntryListResponse"
+>>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                                 }
                             }
                         }
@@ -804,6 +823,7 @@
                             }
                         }
                     },
+<<<<<<< HEAD
                     "409": {
                         "description": "Only Drafted Expense Reports can be submitted.",
                         "content": {
@@ -817,6 +837,8 @@
                     "429": {
                         "$ref": "#/components/responses/RateLimitExceeded"
                     },
+=======
+>>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -826,6 +848,7 @@
                                 }
                             }
                         }
+<<<<<<< HEAD
                     },
                     "502": {
                         "description": "GL-coding service request failed.",
@@ -836,6 +859,8 @@
                                 }
                             }
                         }
+=======
+>>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                     }
                 }
             }
