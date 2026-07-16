@@ -9,7 +9,11 @@ import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
-import { auditEntry, stageTransition } from "../../db/schema/index.js";
+import {
+    auditEntry,
+    stageTransition,
+    type RoleName,
+} from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
 vi.mock("../../db/client.js", () => {
@@ -64,9 +68,13 @@ async function closeServer(server: Server): Promise<void> {
     });
 }
 
-function authorizationHeader(tenantId: string, userId: string): string {
+function authorizationHeader(
+    tenantId: string,
+    userId: string,
+    roles: RoleName[] = ["Employee"],
+): string {
     const { accessToken } = signAccessToken(
-        { tenantId, userId, roles: ["Employee"] },
+        { tenantId, userId, roles },
         loadAuthJwtConfig(),
         new Date(),
     );
@@ -253,6 +261,55 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns 403 when an Employee creates for another owner", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000108";
+        const employeeId = "50000000-0000-4000-8000-000000000008";
+        const response = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, employeeId),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                owner: "50000000-0000-4000-8000-000000000009",
+                dueDate: "2026-08-03",
+            }),
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+    });
+
+    void test("uses the authenticated internal user as the creation audit actor", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000109";
+        const financeAdminId = "50000000-0000-4000-8000-000000000010";
+        const ownerId = "50000000-0000-4000-8000-000000000011";
+        const response = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({ owner: ownerId, dueDate: "2026-08-04" }),
+        });
+        const created = (await response.json()) as { id?: string };
+
+        expect(response.status).toBe(201);
+        expect(created.id).toBeDefined();
+
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, created.id ?? ""));
+        expect(auditRows[0]?.actorId).toBe(financeAdminId);
+    });
+
     void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";
@@ -336,6 +393,40 @@ void describe("Expense Report routes", () => {
             title: "Not Found",
             status: 404,
         });
+    });
+
+    void test("does not let an Employee read another owner's report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000110";
+        const ownerId = "50000000-0000-4000-8000-000000000012";
+        const otherEmployeeId = "50000000-0000-4000-8000-000000000013";
+        const createResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, ownerId),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({ owner: ownerId, dueDate: "2026-08-05" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const readResponse = await requestApp(
+            `/expense-reports/${created.id}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        otherEmployeeId,
+                    ),
+                },
+            },
+        );
+        const body = (await readResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(readResponse.status).toBe(404);
+        expect(body).toMatchObject({ title: "Not Found", status: 404 });
     });
 
     void test("returns Problem+JSON when a report is not found", async () => {

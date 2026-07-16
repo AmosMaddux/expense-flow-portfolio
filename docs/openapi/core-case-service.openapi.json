@@ -12,6 +12,13 @@
         }
     ],
     "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
         "schemas": {
             "CreateExpenseReportRequest": {
                 "type": "object",
@@ -201,14 +208,7 @@
                 "required": ["type", "title", "status", "detail", "instance"]
             }
         },
-        "parameters": {},
-        "securitySchemes": {
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearerFormat": "JWT"
-            }
-        }
+        "parameters": {}
     },
     "paths": {
         "/auth/login": {
@@ -360,6 +360,16 @@
                             }
                         }
                     },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -406,6 +416,16 @@
                     },
                     "401": {
                         "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

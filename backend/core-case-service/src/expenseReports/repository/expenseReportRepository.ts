@@ -17,13 +17,23 @@ export const expenseReportCreatedReason = "report_created";
 export async function findExpenseReportById(
     tenantId: string,
     id: string,
+    ownerId?: string,
 ): Promise<ExpenseReport | undefined> {
     const report: ExpenseReport[] = await db
         .select()
         .from(expenseReport)
-        // The authenticated tenant is part of every lookup to prevent cross-tenant reads.
+        // Employee reads add owner scope; internal roles rely on the authenticated tenant boundary.
         .where(
-            and(eq(expenseReport.tenantId, tenantId), eq(expenseReport.id, id)),
+            ownerId === undefined
+                ? and(
+                      eq(expenseReport.tenantId, tenantId),
+                      eq(expenseReport.id, id),
+                  )
+                : and(
+                      eq(expenseReport.tenantId, tenantId),
+                      eq(expenseReport.id, id),
+                      eq(expenseReport.owner, ownerId),
+                  ),
         );
 
     if (report.length === 1 && report[0] !== undefined) {
@@ -39,6 +49,7 @@ export async function findExpenseReportById(
 export async function insertDraftExpenseReport(
     tenantId: string,
     newReport: NewExpenseReport,
+    actorId: string = newReport.owner,
 ): Promise<ExpenseReport | undefined> {
     if (newReport.tenantId !== tenantId) {
         return undefined;
@@ -61,7 +72,7 @@ export async function insertDraftExpenseReport(
         await transaction.insert(auditEntry).values({
             tenantId: insertedReport.tenantId,
             expenseReportId: insertedReport.id,
-            actorId: insertedReport.owner,
+            actorId,
             action: expenseReportCreatedReason,
             stageBeforeAction: "Drafted",
             stageAfterProposedAction: "Drafted",
@@ -72,7 +83,7 @@ export async function insertDraftExpenseReport(
             tenantId: insertedReport.tenantId,
             fromStage: "Drafted",
             toStage: "Drafted",
-            actor: insertedReport.owner,
+            actor: actorId,
             reason: expenseReportCreatedReason,
         });
 

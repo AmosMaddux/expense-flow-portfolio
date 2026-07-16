@@ -66,7 +66,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             { bearerAuth: [] },
         ]);
         expect(expenseReportsPath?.post?.responses?.[401]).toBeDefined();
+        expect(expenseReportsPath?.post?.responses?.[403]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
+        expect(expenseReportByIdPath?.get?.responses?.[403]).toBeDefined();
     });
 
     void test("documents the GET id path parameter as a required UUID", () => {

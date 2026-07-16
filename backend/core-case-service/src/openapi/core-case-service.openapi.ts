@@ -154,6 +154,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             },
             400: problemJsonResponse("Malformed create request."),
             401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -177,8 +178,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     },
                 },
             },
-            404: problemJsonResponse("Expense Report not found."),
             401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

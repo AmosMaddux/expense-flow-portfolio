@@ -30,6 +30,16 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * Represents an authenticated request that is not permitted to perform an action.
+ */
+export class ForbiddenError extends Error {
+    public constructor(message = "This action is not permitted.") {
+        super(message);
+        this.name = "ForbiddenError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -74,6 +84,16 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Unauthorized",
             status: 401,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ForbiddenError) {
+        return {
+            type: "about:blank",
+            title: "Forbidden",
+            status: 403,
             detail: error.message,
             instance,
         };
