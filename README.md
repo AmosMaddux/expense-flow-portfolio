@@ -169,24 +169,33 @@ Run the Core Case Service against the Docker database. This command builds the T
 npm start
 ```
 
-From another shell, create a synthetic Expense Report through the API:
+From another shell, mint a short-lived access token with the service's local signing key. The synthetic Employee identity must match the Expense Report owner:
+
+```sh
+export EXPENSEFLOW_TENANT_ID="40000000-0000-4000-8000-000000000300"
+export EXPENSEFLOW_EMPLOYEE_ID="50000000-0000-4000-8000-000000000300"
+export EXPENSEFLOW_ACCESS_TOKEN="$(node --env-file=.env --input-type=module -e 'import { signAccessToken } from "./backend/core-case-service/dist/auth/shared/accessTokenSigner.js"; import { loadAuthJwtConfig } from "./backend/core-case-service/dist/config/authJwtConfig.js"; const { accessToken } = signAccessToken({ tenantId: process.env.EXPENSEFLOW_TENANT_ID, userId: process.env.EXPENSEFLOW_EMPLOYEE_ID, roles: ["Employee"] }, loadAuthJwtConfig(), new Date()); process.stdout.write(accessToken);')"
+```
+
+Create a synthetic Expense Report through the authenticated API. Mint another token if the short-lived token expires during the smoke test:
 
 ```sh
 curl -sS -X POST http://127.0.0.1:3301/v1/expense-reports \
+  -H "authorization: Bearer ${EXPENSEFLOW_ACCESS_TOKEN}" \
   -H "content-type: application/json" \
-  -d '{
-    "tenant_id": "40000000-0000-4000-8000-000000000300",
-    "owner": "50000000-0000-4000-8000-000000000300",
-    "dueDate": "2026-08-14",
-    "priority": "High"
-  }'
+  -d "{
+    \"owner\": \"${EXPENSEFLOW_EMPLOYEE_ID}\",
+    \"dueDate\": \"2026-08-14\",
+    \"priority\": \"High\"
+  }"
 ```
 
 Set `EXPENSEFLOW_REPORT_ID` to the returned `id`, then verify the persisted rows:
 
 ```sh
 export EXPENSEFLOW_REPORT_ID="<returned-report-id>"
-curl -sS "http://127.0.0.1:3301/v1/expense-reports/${EXPENSEFLOW_REPORT_ID}"
+curl -sS "http://127.0.0.1:3301/v1/expense-reports/${EXPENSEFLOW_REPORT_ID}" \
+  -H "authorization: Bearer ${EXPENSEFLOW_ACCESS_TOKEN}"
 ```
 
 ```sh

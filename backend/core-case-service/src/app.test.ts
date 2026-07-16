@@ -7,7 +7,7 @@ import { app } from "./app.js";
 
 let activeServer: Server | undefined;
 
-async function requestApp(path: string): Promise<Response> {
+async function requestApp(path: string, init?: RequestInit): Promise<Response> {
     const server = await listenOnEphemeralPort();
     activeServer = server;
     const address = server.address();
@@ -16,7 +16,7 @@ async function requestApp(path: string): Promise<Response> {
         throw new Error("Expected test server to listen on a TCP port");
     }
 
-    return fetch(`http://127.0.0.1:${address.port}${path}`);
+    return fetch(`http://127.0.0.1:${address.port}${path}`, init);
 }
 
 function listenOnEphemeralPort(): Promise<Server> {
@@ -82,11 +82,36 @@ void describe("app", () => {
         expect(body).toContain("/v1/openapi.json");
     });
 
-    void test("does not expose application endpoints without a version prefix", async () => {
-        const response = await requestApp("/expense-reports");
+    void test.each([
+        ["POST", "/expense-reports"],
+        ["POST", "/auth/login"],
+        ["POST", "/auth/mfa/enroll"],
+        ["GET", "/openapi.json"],
+        ["GET", "/docs/"],
+    ])(
+        "does not expose %s %s without a version prefix",
+        async (method, path) => {
+            const response = await requestApp(path, { method });
 
-        expect(response.status).toBe(404);
-    });
+            expect(response.status).toBe(404);
+        },
+    );
+
+    void test.each(["/v1/auth/login", "/v1/auth/mfa/enroll"])(
+        "mounts the versioned auth route at %s",
+        async (path) => {
+            const response = await requestApp(path, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({}),
+            });
+
+            expect(response.status).toBe(400);
+            expect(response.headers.get("content-type")).toContain(
+                "application/problem+json",
+            );
+        },
+    );
 
     void test("contract: /v1 responses match the published schema", async () => {
         const publishedDocumentUrl = new URL(
