@@ -12,14 +12,17 @@
         }
     ],
     "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
         "schemas": {
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
-                    "tenant_id": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
                     "owner": {
                         "type": "string",
                         "format": "uuid"
@@ -34,7 +37,7 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenant_id", "owner", "dueDate"]
+                "required": ["owner", "dueDate"]
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -310,7 +313,12 @@
         "/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",
-                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
+                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -342,6 +350,26 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -358,7 +386,12 @@
         "/expense-reports/{id}": {
             "get": {
                 "summary": "Get an Expense Report",
-                "description": "Loads an Expense Report case by identifier.",
+                "description": "Loads an Expense Report case by identifier within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "schema": {
@@ -377,6 +410,26 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
                                 }
                             }
                         }

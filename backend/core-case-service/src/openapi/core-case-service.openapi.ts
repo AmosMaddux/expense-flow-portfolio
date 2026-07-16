@@ -35,6 +35,11 @@ const expenseReportIdPathParamsSchema = z.object({
  */
 export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const registry = new OpenAPIRegistry();
+    registry.registerComponent("securitySchemes", "bearerAuth", {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+    });
     const createExpenseReportRequest = registry.register(
         "CreateExpenseReportRequest",
         CreateExpenseReportInboundRequestSchema,
@@ -126,7 +131,8 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/expense-reports",
         summary: "Create an Expense Report",
         description:
-            "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
+            "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
         request: {
             body: {
                 required: true,
@@ -147,6 +153,8 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed create request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -155,7 +163,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         method: "get",
         path: "/expense-reports/{id}",
         summary: "Get an Expense Report",
-        description: "Loads an Expense Report case by identifier.",
+        description:
+            "Loads an Expense Report case by identifier within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
         request: {
             params: expenseReportIdPathParamsSchema,
         },
@@ -168,6 +178,8 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     },
                 },
             },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
             500: problemJsonResponse("Unexpected server error."),
         },

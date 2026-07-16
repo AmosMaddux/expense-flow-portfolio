@@ -9,6 +9,7 @@ import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRe
 import { loadAuthJwtConfig } from "./config/authJwtConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
+import { createAccessTokenMiddleware } from "./auth/shared/accessTokenMiddleware.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
@@ -16,6 +17,7 @@ import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 
 export const app = express();
+const authJwtConfig = loadAuthJwtConfig();
 
 app.use(express.json());
 
@@ -26,7 +28,7 @@ app.use(
             createDrizzleLoginCredentialRepository(db),
             createPasswordHasher(loadPasswordHashConfig()),
             createTotpSecretProtector(),
-            loadAuthJwtConfig(),
+            authJwtConfig,
         ),
         createMfaEnrollmentService(
             createDrizzleMfaEnrollmentRepository(db),
@@ -34,6 +36,7 @@ app.use(
         ),
     ),
 );
+app.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
 app.use("/", expenseReportRouter);
 
 /**

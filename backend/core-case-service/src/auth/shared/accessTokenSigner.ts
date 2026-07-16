@@ -34,6 +34,7 @@ export function signAccessToken(
         sub: subject.userId,
         tenant_id: subject.tenantId,
         roles: subject.roles,
+        token_use: "access",
         iat: issuedAtSeconds,
         exp: expiresAtSeconds,
     };
