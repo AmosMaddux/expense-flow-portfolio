@@ -37,6 +37,8 @@ export async function runIdempotentSubmission<TBody>({
         );
     }
 
+    let reservationToken: string | undefined;
+
     try {
         const completed = await store.getResult(tenantId, idempotencyKey);
         if (completed !== undefined) {
@@ -61,13 +63,25 @@ export async function runIdempotentSubmission<TBody>({
                 "A submission with this idempotency key is already in progress.",
             );
         }
+        reservationToken = lockToken;
 
         const body = toJsonSafeBody(await operation());
         const result = { body, statusCode: 201 };
 
         await store.saveResult(tenantId, idempotencyKey, lockToken, result);
+        reservationToken = undefined;
 
         return result;
+    } catch (error: unknown) {
+        if (reservationToken !== undefined) {
+            await store.clearReservation(
+                tenantId,
+                idempotencyKey,
+                reservationToken,
+            );
+        }
+
+        throw error;
     } finally {
         await store.releaseLock(tenantId, idempotencyKey, lockToken);
     }

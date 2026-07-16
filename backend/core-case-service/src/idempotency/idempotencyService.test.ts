@@ -84,11 +84,48 @@ void describe("runIdempotentSubmission", () => {
             },
         );
     });
+
+    void test("clears a failed reservation so the same submission can retry", async () => {
+        const store = createStore({});
+        const firstOperation = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic create failure"));
+        const tenantId = "40000000-0000-4000-8000-000000000206";
+
+        await expect(
+            runIdempotentSubmission({
+                idempotencyKey: "submit-5",
+                operation: firstOperation,
+                store,
+                tenantId,
+            }),
+        ).rejects.toThrow("synthetic create failure");
+
+        expect(store.clearReservation).toHaveBeenCalledWith(
+            tenantId,
+            "submit-5",
+            "lock-token",
+        );
+
+        const retryResult = await runIdempotentSubmission({
+            idempotencyKey: "submit-5",
+            operation: () => Promise.resolve({ id: "retried-report" }),
+            store,
+            tenantId,
+        });
+
+        expect(retryResult).toEqual({
+            body: { id: "retried-report" },
+            statusCode: 201,
+        });
+        expect(store.reserveSubmission).toHaveBeenCalledTimes(2);
+    });
 });
 
 function createStore(overrides: Partial<IdempotencyStore>): IdempotencyStore {
     return {
         acquireLock: vi.fn().mockResolvedValue("lock-token"),
+        clearReservation: vi.fn().mockResolvedValue(undefined),
         getResult: vi.fn().mockResolvedValue(undefined),
         releaseLock: vi.fn().mockResolvedValue(undefined),
         reserveSubmission: vi.fn().mockResolvedValue(true),

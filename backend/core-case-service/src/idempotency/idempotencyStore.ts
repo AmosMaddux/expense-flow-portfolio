@@ -1,5 +1,6 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
+    DeleteCommand,
     GetCommand,
     PutCommand,
     UpdateCommand,
@@ -21,6 +22,11 @@ export type IdempotencyStore = {
         tenantId: string,
         idempotencyKey: string,
     ) => Promise<string | undefined>;
+    clearReservation: (
+        tenantId: string,
+        idempotencyKey: string,
+        token: string,
+    ) => Promise<void>;
     getResult: (
         tenantId: string,
         idempotencyKey: string,
@@ -74,6 +80,33 @@ export function createIdempotencyStore(
             );
 
             return lock === "OK" ? token : undefined;
+        },
+        async clearReservation(tenantId, idempotencyKey, token) {
+            try {
+                await dynamoDb.send(
+                    new DeleteCommand({
+                        TableName: tableName,
+                        Key: {
+                            pk: toDynamoPartitionKey(tenantId, idempotencyKey),
+                        },
+                        ConditionExpression:
+                            "#status = :inProgress AND submissionToken = :token",
+                        ExpressionAttributeNames: {
+                            "#status": "status",
+                        },
+                        ExpressionAttributeValues: {
+                            ":inProgress": "in_progress",
+                            ":token": token,
+                        },
+                    }),
+                );
+            } catch (error: unknown) {
+                if (error instanceof ConditionalCheckFailedException) {
+                    return;
+                }
+
+                throw error;
+            }
         },
         async getResult(tenantId, idempotencyKey) {
             await connectRedis(redis);
