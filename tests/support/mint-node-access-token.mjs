@@ -49,7 +49,11 @@ const repository = {
             algorithm: "SHA1",
             digits: 8,
             periodSeconds: 30,
+            lastAcceptedTotpCounter: null,
         };
+    },
+    async recordAcceptedTotpCounter() {
+        return true;
     },
     async createRefreshToken() {},
     async recordFailedLogin() {},
