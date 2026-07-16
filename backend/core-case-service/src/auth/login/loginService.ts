@@ -143,12 +143,13 @@ export function createLoginService(
                 );
 
             if (storedEnrollment === undefined) {
-                return issueTokens(
-                    loginCredentialRepository,
-                    storedCredential,
-                    authJwtConfig,
-                    now(),
-                );
+                await recordFailedLogin(loginCredentialRepository, {
+                    tenantId: storedCredential.tenantId,
+                    userId: storedCredential.userId,
+                    email: normalizedEmail,
+                    action: "mfa_failed",
+                });
+                throw new InvalidMfaCodeError();
             }
 
             if (
