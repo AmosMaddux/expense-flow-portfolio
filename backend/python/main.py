@@ -15,6 +15,8 @@ from .service_health import ServiceHealth
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Validate shared JWT verifier configuration at application startup."""
+    # Intentional fail-fast: a missing/invalid JWT public key config raises
+    # AuthJwtConfigurationError here and prevents the app from starting at all.
     app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment()
     yield
 
