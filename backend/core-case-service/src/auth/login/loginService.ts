@@ -1,5 +1,6 @@
 import { createHmac, createHash, randomUUID } from "node:crypto";
 
+import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import { signAccessToken } from "../shared/accessTokenSigner.js";
@@ -18,6 +19,8 @@ import type {
     ProtectedTotpSecret,
     TotpSecretProtector,
 } from "../shared/totpSecretProtector.js";
+
+extendZodWithOpenApi(z);
 
 export const LoginInboundRequestSchema = z.object({
     tenantId: z.uuid(),

@@ -86,8 +86,14 @@ void describe("shared access token validation", () => {
     });
 
     void test("middleware attaches auth context before invoking the handler chain", () => {
+        const currentTime = new Date();
+        const currentAccessToken = signAccessToken(
+            { tenantId, userId, roles: ["Employee"] },
+            buildConfig(),
+            currentTime,
+        ).accessToken;
         const request = {
-            headers: { authorization: `Bearer ${buildAccessToken()}` },
+            headers: { authorization: `Bearer ${currentAccessToken}` },
         } as Request;
         const next = vi.fn() as NextFunction;
 
