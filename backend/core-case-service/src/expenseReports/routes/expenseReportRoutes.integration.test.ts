@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { describe, expect, test, vi } from "vitest";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
+import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import { auditEntry, stageTransition } from "../../db/schema/index.js";
@@ -71,6 +72,23 @@ function authorizationHeader(tenantId: string, userId: string): string {
     );
 
     return `Bearer ${accessToken}`;
+}
+
+function refreshAuthorizationHeader(tenantId: string, userId: string): string {
+    const issuedAt = new Date();
+    const { refreshToken } = signRefreshToken(
+        {
+            tenantId,
+            userId,
+            roles: ["Employee"],
+            jwtId: "30000000-0000-4000-8000-000000000001",
+        },
+        loadAuthJwtConfig(),
+        issuedAt,
+        new Date(issuedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+    );
+
+    return `Bearer ${refreshToken}`;
 }
 
 void describe("Expense Report routes", () => {
@@ -382,6 +400,27 @@ void describe("Expense Report routes", () => {
         expect(response.headers.get("content-type")).toContain(
             "application/problem+json",
         );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
+        });
+    });
+
+    void test("returns 401 when a refresh token is used as a bearer token", async () => {
+        const response = await requestApp("/expense-reports/not-a-report-id", {
+            headers: {
+                authorization: refreshAuthorizationHeader(
+                    "40000000-0000-4000-8000-000000000107",
+                    "50000000-0000-4000-8000-000000000007",
+                ),
+            },
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(401);
         expect(body).toMatchObject({
             title: "Unauthorized",
             status: 401,

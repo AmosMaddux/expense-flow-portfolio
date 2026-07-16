@@ -18,6 +18,7 @@ const accessTokenClaimsSchema = z.object({
     sub: z.uuid(),
     tenant_id: z.uuid(),
     roles: z.array(z.enum(roleValues)).min(1),
+    token_use: z.literal("access"),
     iat: z.number().int().nonnegative(),
     exp: z.number().int().positive(),
 });
@@ -75,7 +76,12 @@ export function verifyAccessToken(
         throw new UnauthorizedError();
     }
 
-    const header = jwtHeaderSchema.parse(decodeJson(encodedHeader));
+    const parsedHeader = jwtHeaderSchema.safeParse(decodeJson(encodedHeader));
+    if (!parsedHeader.success) {
+        throw new UnauthorizedError();
+    }
+
+    const header = parsedHeader.data;
     if (config.keyId !== undefined && header.kid !== config.keyId) {
         throw new UnauthorizedError();
     }
@@ -93,7 +99,14 @@ export function verifyAccessToken(
         throw new UnauthorizedError();
     }
 
-    const claims = accessTokenClaimsSchema.parse(decodeJson(encodedPayload));
+    const parsedClaims = accessTokenClaimsSchema.safeParse(
+        decodeJson(encodedPayload),
+    );
+    if (!parsedClaims.success) {
+        throw new UnauthorizedError();
+    }
+
+    const claims = parsedClaims.data;
     const nowSeconds = Math.floor(now.getTime() / 1000);
     if (
         claims.iss !== config.issuer ||

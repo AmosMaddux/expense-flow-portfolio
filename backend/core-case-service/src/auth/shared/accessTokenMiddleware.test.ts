@@ -8,6 +8,7 @@ import {
 } from "../../testSupport/jwtTestKeys.js";
 import { UnauthorizedError } from "../../errors/problem-json.js";
 import { signAccessToken } from "./accessTokenSigner.js";
+import { signRefreshToken } from "./refreshTokenSigner.js";
 import {
     createAccessTokenMiddleware,
     verifyAccessToken,
@@ -81,6 +82,28 @@ void describe("shared access token validation", () => {
                 token,
                 { ...buildConfig(), issuer: "another-issuer" },
                 issuedAt,
+            ),
+        ).toThrow(UnauthorizedError);
+    });
+
+    void test("rejects a signed refresh token as an access token", () => {
+        const refreshToken = signRefreshToken(
+            {
+                tenantId,
+                userId,
+                roles: ["Employee"],
+                jwtId: "30000000-0000-4000-8000-000000000001",
+            },
+            buildConfig(),
+            issuedAt,
+            new Date("2026-08-14T12:00:00.000Z"),
+        ).refreshToken;
+
+        expect(() =>
+            verifyAccessToken(
+                refreshToken,
+                buildConfig(),
+                new Date("2026-07-15T12:05:00.000Z"),
             ),
         ).toThrow(UnauthorizedError);
     });

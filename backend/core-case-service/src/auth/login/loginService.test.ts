@@ -261,6 +261,7 @@ void describe("login service", () => {
             sub: userId,
             tenant_id: tenantId,
             roles: ["Employee"],
+            token_use: "access",
             iat: 59,
             exp: 959,
         });
@@ -433,6 +434,7 @@ void describe("login service", () => {
         expect(result).toMatchObject({ tenantId, userId });
         expect(decodeVerifiedJwt(result.accessToken).payload).toMatchObject({
             roles: ["Employee"],
+            token_use: "access",
         });
         expect(repository.failedAuditEntries).toEqual([]);
         expect(repository.createRefreshTokenMock).toHaveBeenCalledOnce();
