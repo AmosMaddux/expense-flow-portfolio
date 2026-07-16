@@ -99,6 +99,9 @@ function createRepository(
     findMfaEnrollmentByTenantAndUserMock: ReturnType<typeof vi.fn>;
     createRefreshTokenMock: ReturnType<typeof vi.fn>;
     recordAcceptedTotpCounterMock: ReturnType<typeof vi.fn>;
+    recordAcceptedTotpCounterAndCreateRefreshTokenMock: ReturnType<
+        typeof vi.fn
+    >;
     recordFailedLoginMock: ReturnType<typeof vi.fn>;
 } {
     const failedAuditEntries: FailedLoginAuditEntry[] = [];
@@ -112,6 +115,18 @@ function createRepository(
         return Promise.resolve();
     });
     const recordAcceptedTotpCounterMock = vi.fn(() => Promise.resolve(true));
+    const recordAcceptedTotpCounterAndCreateRefreshTokenMock = vi.fn(
+        (input: {
+            tenantId: string;
+            userId: string;
+            counter: number;
+            tokenHash: string;
+            expiresAt: Date;
+        }) => {
+            refreshTokens.push(input);
+            return Promise.resolve(true);
+        },
+    );
     const recordFailedLoginMock = vi.fn((entry: FailedLoginAuditEntry) => {
         failedAuditEntries.push(entry);
         return Promise.resolve();
@@ -128,6 +143,9 @@ function createRepository(
         createRefreshTokenMock,
         recordAcceptedTotpCounter: recordAcceptedTotpCounterMock,
         recordAcceptedTotpCounterMock,
+        recordAcceptedTotpCounterAndCreateRefreshToken:
+            recordAcceptedTotpCounterAndCreateRefreshTokenMock,
+        recordAcceptedTotpCounterAndCreateRefreshTokenMock,
         recordFailedLogin: recordFailedLoginMock,
         recordFailedLoginMock,
     };
@@ -296,11 +314,18 @@ void describe("login service", () => {
         expect(
             repository.findMfaEnrollmentByTenantAndUserMock,
         ).toHaveBeenCalledWith(tenantId, userId);
-        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
-            tenantId,
-            userId,
-            counter: 1,
-        });
+        expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tenantId,
+                userId,
+                counter: 1,
+                expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+            }),
+        );
+        expect(repository.recordAcceptedTotpCounterMock).not.toHaveBeenCalled();
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
         expect(repository.refreshTokens).toHaveLength(1);
         expect(repository.refreshTokens[0]).toMatchObject({
             tenantId,
@@ -428,12 +453,15 @@ void describe("login service", () => {
             },
         ]);
         expect(repository.recordAcceptedTotpCounterMock).not.toHaveBeenCalled();
+        expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock,
+        ).not.toHaveBeenCalled();
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 
-    void test("consumes accepted TOTP before surfacing refresh token persistence failure", async () => {
+    void test("surfaces transactional token persistence failure without standalone TOTP consumption", async () => {
         const repository = createRepository(storedCredential);
-        repository.createRefreshTokenMock.mockRejectedValue(
+        repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock.mockRejectedValue(
             new Error("Synthetic refresh token persistence failure."),
         );
         const passwordHasher = createPasswordHasher(true);
@@ -448,16 +476,19 @@ void describe("login service", () => {
             }),
         ).rejects.toThrow("Synthetic refresh token persistence failure.");
 
-        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
-            tenantId,
-            userId,
-            counter: 1,
-        });
-        expect(repository.createRefreshTokenMock).toHaveBeenCalledOnce();
+        expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId, userId, counter: 1 }),
+        );
+        expect(repository.recordAcceptedTotpCounterMock).not.toHaveBeenCalled();
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
     void test("records MFA audit and rejects a replayed TOTP", async () => {
         const repository = createRepository(storedCredential);
-        repository.recordAcceptedTotpCounterMock.mockResolvedValue(false);
+        repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock.mockResolvedValue(
+            false,
+        );
         const passwordHasher = createPasswordHasher(true);
         const loginService = createTestLoginService(repository, passwordHasher);
 
@@ -470,11 +501,12 @@ void describe("login service", () => {
             }),
         ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
 
-        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
-            tenantId,
-            userId,
-            counter: 1,
-        });
+        expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId, userId, counter: 1 }),
+        );
+        expect(repository.recordAcceptedTotpCounterMock).not.toHaveBeenCalled();
         expect(repository.failedAuditEntries).toEqual([
             {
                 tenantId,

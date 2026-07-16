@@ -16,6 +16,7 @@ import {
 import type {
     FailedLoginAuditEntry,
     LoginCredentialRepository,
+    RefreshTokenToCreate,
     StoredMfaLoginEnrollment,
     StoredLoginCredential,
 } from "./loginService.js";
@@ -146,14 +147,41 @@ export function createDrizzleLoginCredentialRepository(
             return rows.length === 1;
         },
         async createRefreshToken(token): Promise<void> {
-            const tokenRow: NewRefreshToken = {
-                tenantId: token.tenantId,
-                userId: token.userId,
-                tokenHash: token.tokenHash,
-                expiresAt: token.expiresAt,
-            };
+            await db.insert(refreshToken).values(toRefreshTokenRow(token));
+        },
+        async recordAcceptedTotpCounterAndCreateRefreshToken(
+            input,
+        ): Promise<boolean> {
+            return db.transaction(async (tx) => {
+                const rows = await tx
+                    .update(mfaEnrollment)
+                    .set({
+                        lastAcceptedTotpCounter: input.counter,
+                        updatedAt: new Date(),
+                    })
+                    .where(
+                        and(
+                            eq(mfaEnrollment.tenantId, input.tenantId),
+                            eq(mfaEnrollment.userId, input.userId),
+                            or(
+                                isNull(mfaEnrollment.lastAcceptedTotpCounter),
+                                lt(
+                                    mfaEnrollment.lastAcceptedTotpCounter,
+                                    input.counter,
+                                ),
+                            ),
+                        ),
+                    )
+                    .returning({ id: mfaEnrollment.id });
 
-            await db.insert(refreshToken).values(tokenRow);
+                if (rows.length !== 1) {
+                    return false;
+                }
+
+                await tx.insert(refreshToken).values(toRefreshTokenRow(input));
+
+                return true;
+            });
         },
         async recordFailedLogin(entry: FailedLoginAuditEntry): Promise<void> {
             const auditRow: NewAuthenticationAuditEntry = {
@@ -165,6 +193,15 @@ export function createDrizzleLoginCredentialRepository(
 
             await db.insert(authenticationAuditEntry).values(auditRow);
         },
+    };
+}
+
+function toRefreshTokenRow(token: RefreshTokenToCreate): NewRefreshToken {
+    return {
+        tenantId: token.tenantId,
+        userId: token.userId,
+        tokenHash: token.tokenHash,
+        expiresAt: token.expiresAt,
     };
 }
 

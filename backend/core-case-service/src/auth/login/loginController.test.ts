@@ -197,6 +197,7 @@ void describe("login controller", () => {
                 findMfaEnrollmentByTenantAndUserMock,
             createRefreshToken: createRefreshTokenMock,
             recordAcceptedTotpCounter: vi.fn(),
+            recordAcceptedTotpCounterAndCreateRefreshToken: vi.fn(),
             recordFailedLogin: vi.fn(() => Promise.resolve()),
         };
         const passwordHasher: PasswordHasher = {

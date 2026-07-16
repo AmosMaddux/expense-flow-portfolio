@@ -292,6 +292,52 @@ void describe("login repository", () => {
         expect(enrollmentRows[0]?.lastAcceptedTotpCounter).toBe(11);
     });
 
+    void test("rolls back accepted TOTP counter when refresh token persistence fails", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000511";
+        const userId = "10000000-0000-4000-8000-000000000511";
+        const repository = createDrizzleLoginCredentialRepository(db);
+        const duplicateTokenHash = "synthetic-duplicate-refresh-token-hash";
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "totp-rollback@example.invalid",
+        });
+        await db.insert(mfaEnrollment).values({
+            tenantId,
+            userId,
+            secretCiphertext: "synthetic-ciphertext",
+            secretIv: "synthetic-iv",
+            secretAuthTag: "synthetic-auth-tag",
+            secretKeyVersion: "synthetic-v1",
+            algorithm: "SHA1",
+            digits: 6,
+            periodSeconds: 30,
+        });
+        await db.insert(refreshToken).values({
+            tenantId,
+            userId,
+            tokenHash: duplicateTokenHash,
+            expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+        });
+
+        await expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshToken({
+                tenantId,
+                userId,
+                counter: 20,
+                tokenHash: duplicateTokenHash,
+                expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+            }),
+        ).rejects.toThrow();
+
+        const enrollmentRows = await db
+            .select()
+            .from(mfaEnrollment)
+            .where(eq(mfaEnrollment.tenantId, tenantId));
+
+        expect(enrollmentRows[0]?.lastAcceptedTotpCounter).toBeNull();
+    });
     void test("writes MFA audit entries and preserves refresh tokens for wrong and replayed TOTP", async () => {
         const passwordHasher = createPasswordHasher(testHashConfig);
         const loginService = createLoginService(

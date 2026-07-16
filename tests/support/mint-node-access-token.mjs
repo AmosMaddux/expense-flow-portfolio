@@ -55,6 +55,9 @@ const repository = {
     async recordAcceptedTotpCounter() {
         return true;
     },
+    async recordAcceptedTotpCounterAndCreateRefreshToken() {
+        return true;
+    },
     async createRefreshToken() {},
     async recordFailedLogin() {},
 };
