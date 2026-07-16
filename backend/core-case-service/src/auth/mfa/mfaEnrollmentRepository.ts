@@ -14,6 +14,7 @@ type PostgresError = {
     cause?: unknown;
     code?: string;
     constraint?: string;
+    cause?: unknown;
 };
 
 const uniqueViolationCode = "23505";
@@ -54,11 +55,27 @@ export function createDrizzleMfaEnrollmentRepository(
 }
 
 function isDuplicateMfaEnrollmentError(error: unknown): boolean {
-    if (error === null || typeof error !== "object") {
-        return false;
-    }
+    const visitedErrors = new Set<object>();
+    let currentError = error;
 
-    const postgresError = error as PostgresError;
+    while (
+        currentError !== null &&
+        typeof currentError === "object" &&
+        !visitedErrors.has(currentError)
+    ) {
+        visitedErrors.add(currentError);
+        const postgresError = currentError as PostgresError;
+
+        if (
+            postgresError.code === uniqueViolationCode &&
+            postgresError.constraint === mfaEnrollmentTenantUserConstraint
+        ) {
+            return true;
+        }
+
+        // Drizzle wraps driver errors; follow the cause chain without exposing database details.
+        currentError = postgresError.cause;
+    }
 
     return (
         (postgresError.code === uniqueViolationCode &&

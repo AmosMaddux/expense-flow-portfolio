@@ -261,6 +261,7 @@ void describe("login service", () => {
             sub: userId,
             tenant_id: tenantId,
             roles: ["Employee"],
+            token_use: "access",
             iat: 59,
             exp: 959,
         });
