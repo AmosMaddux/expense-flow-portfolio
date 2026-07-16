@@ -18,13 +18,6 @@ const invalidMfaCodeResponse = {
     message: "Invalid or expired MFA code.",
 };
 
-export const unsupportedAuthRequestSchema = z
-    .object({
-        tenantId: z.uuid().optional(),
-        email: z.email().optional(),
-    })
-    .passthrough();
-
 export const unsupportedAuthProblemResponseSchema = z.object({
     type: z.literal("about:blank"),
     title: z.literal("Not Implemented"),
@@ -70,7 +63,6 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
 export function createPostUnsupportedAuthLogin(): RequestHandler {
     return (req: Request, res: Response, next: NextFunction): void => {
         try {
-            unsupportedAuthRequestSchema.parse(req.body);
             const responseBody = unsupportedAuthProblemResponseSchema.parse({
                 type: "about:blank",
                 title: "Not Implemented",

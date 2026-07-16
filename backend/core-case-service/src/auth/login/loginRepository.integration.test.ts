@@ -276,6 +276,20 @@ void describe("login repository", () => {
                 counter: 11,
             }),
         ).resolves.toBe(true);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId: "00000000-0000-4000-8000-000000000509",
+                userId,
+                counter: 12,
+            }),
+        ).resolves.toBe(false);
+
+        const enrollmentRows = await db
+            .select()
+            .from(mfaEnrollment)
+            .where(eq(mfaEnrollment.tenantId, tenantId));
+
+        expect(enrollmentRows[0]?.lastAcceptedTotpCounter).toBe(11);
     });
 
     void test("writes MFA audit entries and preserves refresh tokens for wrong and replayed TOTP", async () => {

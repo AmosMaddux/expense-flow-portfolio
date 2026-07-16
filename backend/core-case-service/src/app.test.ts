@@ -90,18 +90,32 @@ void describe("app", () => {
     });
 
     void test("rejects unsupported SSO, SAML, and OIDC auth paths", async () => {
-        for (const path of [
-            "/auth/sso/login",
-            "/auth/saml/login",
-            "/auth/oidc/login",
-        ]) {
-            const response = await requestApp(path, {
-                method: "POST",
+        const requests = [
+            {
+                path: "/auth/sso/login",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({
                     tenantId: "00000000-0000-4000-8000-000000000605",
                     email: "employee@example.invalid",
                 }),
+            },
+            {
+                path: "/auth/saml/login",
+                headers: { "content-type": "application/xml" },
+                body: "<SyntheticSamlRequest />",
+            },
+            {
+                path: "/auth/oidc/login",
+                headers: { "content-type": "text/plain" },
+                body: "synthetic-oidc-request",
+            },
+        ];
+
+        for (const { path, headers, body: requestBody } of requests) {
+            const response = await requestApp(path, {
+                method: "POST",
+                headers,
+                body: requestBody,
             });
             const body = (await response.json()) as unknown;
 

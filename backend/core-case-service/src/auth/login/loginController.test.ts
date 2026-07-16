@@ -149,25 +149,22 @@ void describe("login controller", () => {
     void test("returns Problem+JSON for unsupported SSO, SAML, and OIDC login paths", () => {
         const handler = createPostUnsupportedAuthLogin();
         const next = vi.fn() as NextFunction;
+        const cases = [
+            { originalUrl: "/auth/sso/login", body: undefined },
+            {
+                originalUrl: "/auth/saml/login",
+                body: { tenantId: "not-a-uuid", email: "not-an-email" },
+            },
+            {
+                originalUrl: "/auth/oidc/login",
+                body: { extra: "synthetic-extra-field" },
+            },
+        ];
 
-        for (const originalUrl of [
-            "/auth/sso/login",
-            "/auth/saml/login",
-            "/auth/oidc/login",
-        ]) {
+        for (const { originalUrl, body } of cases) {
             const response = createResponse();
 
-            handler(
-                {
-                    body: {
-                        tenantId: "00000000-0000-4000-8000-000000000606",
-                        email: "employee@example.invalid",
-                    },
-                    originalUrl,
-                } as Request,
-                response,
-                next,
-            );
+            handler({ body, originalUrl } as Request, response, next);
 
             expect(response.statusMock).toHaveBeenCalledWith(501);
             expect(response.typeMock).toHaveBeenCalledWith(

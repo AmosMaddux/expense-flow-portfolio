@@ -431,6 +431,30 @@ void describe("login service", () => {
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 
+    void test("consumes accepted TOTP before surfacing refresh token persistence failure", async () => {
+        const repository = createRepository(storedCredential);
+        repository.createRefreshTokenMock.mockRejectedValue(
+            new Error("Synthetic refresh token persistence failure."),
+        );
+        const passwordHasher = createPasswordHasher(true);
+        const loginService = createTestLoginService(repository, passwordHasher);
+
+        await expect(
+            loginService.login({
+                tenantId,
+                email: "employee@example.invalid",
+                password,
+                totpCode: validTotpCode,
+            }),
+        ).rejects.toThrow("Synthetic refresh token persistence failure.");
+
+        expect(repository.recordAcceptedTotpCounterMock).toHaveBeenCalledWith({
+            tenantId,
+            userId,
+            counter: 1,
+        });
+        expect(repository.createRefreshTokenMock).toHaveBeenCalledOnce();
+    });
     void test("records MFA audit and rejects a replayed TOTP", async () => {
         const repository = createRepository(storedCredential);
         repository.recordAcceptedTotpCounterMock.mockResolvedValue(false);

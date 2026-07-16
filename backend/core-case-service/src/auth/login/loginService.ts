@@ -184,6 +184,7 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
+            // Consume the TOTP before issuing tokens so retries after token persistence failures fail closed.
             const totpCounterWasAccepted =
                 await loginCredentialRepository.recordAcceptedTotpCounter({
                     tenantId: storedCredential.tenantId,
