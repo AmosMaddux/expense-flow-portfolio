@@ -8,6 +8,7 @@ import {
     type FailedLoginAuditEntry,
     LoginInboundRequestSchema,
     LoginOutboundResponseSchema,
+    missingCredentialPasswordHash,
     type LoginCredentialRepository,
     type LoginRequest,
     type LoginResult,
@@ -353,7 +354,7 @@ void describe("login service", () => {
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
         expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
-            expect.stringMatching(/^\$argon2id\$/),
+            missingCredentialPasswordHash,
             password,
         );
         expect(
@@ -419,7 +420,7 @@ void describe("login service", () => {
         ).rejects.toBeInstanceOf(InvalidCredentialsError);
 
         expect(passwordHasher.verifyPasswordMock).toHaveBeenCalledWith(
-            expect.stringMatching(/^\$argon2id\$/),
+            missingCredentialPasswordHash,
             password,
         );
         expect(repository.failedAuditEntries).toHaveLength(1);

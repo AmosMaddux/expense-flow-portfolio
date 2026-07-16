@@ -100,7 +100,7 @@ export type LoginService = {
     login(request: LoginRequest): Promise<LoginResult>;
 };
 
-const missingCredentialPasswordHash =
+export const missingCredentialPasswordHash =
     "$argon2id$v=19$m=8192,t=1,p=1$Wa0FFWwch77sS6ipFg2HTQ$In6nZwlC0DltjYKUVVtpL4cg2i8GnqrnEYGfHnlWCdw";
 
 /**

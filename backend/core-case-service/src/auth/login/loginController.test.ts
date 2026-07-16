@@ -12,6 +12,7 @@ import {
 import {
     createLoginService,
     type LoginCredentialRepository,
+    missingCredentialPasswordHash,
     type LoginService,
     type StoredLoginCredential,
 } from "./loginService.js";
@@ -250,6 +251,16 @@ void describe("login controller", () => {
         });
 
         expect(verifyPasswordMock).toHaveBeenCalledTimes(2);
+        expect(verifyPasswordMock).toHaveBeenNthCalledWith(
+            1,
+            missingCredentialPasswordHash,
+            "synthetic-login-password",
+        );
+        expect(verifyPasswordMock).toHaveBeenNthCalledWith(
+            2,
+            storedCredential.passwordHash,
+            "synthetic-wrong-password",
+        );
         expect(findMfaEnrollmentByTenantAndUserMock).not.toHaveBeenCalled();
         expect(createRefreshTokenMock).not.toHaveBeenCalled();
     });
