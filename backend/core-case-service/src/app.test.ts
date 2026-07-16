@@ -103,12 +103,26 @@ void describe("app", () => {
                     email: "employee@example.invalid",
                 }),
             });
-            const body = await response.text();
+            const body = (await response.json()) as unknown;
 
-            expect(response.status).toBe(404);
-            expect(body).not.toContain("employee@example.invalid");
+            expect(response.status).toBe(501);
+            expect(response.headers.get("content-type")).toContain(
+                "application/problem+json",
+            );
+            expect(body).toStrictEqual({
+                type: "about:blank",
+                title: "Not Implemented",
+                status: 501,
+                detail: "SSO/SAML/OIDC login is not supported in the MVP.",
+                instance: path,
+            });
+            expect(JSON.stringify(body)).not.toContain(
+                "employee@example.invalid",
+            );
+            await closeActiveServer();
         }
     });
+
     void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/v1/docs/");
         const body = await response.text();

@@ -3,7 +3,8 @@ import { type Server } from "node:http";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { Express } from "express";
+import { beforeEach, beforeAll, describe, expect, test, vi } from "vitest";
 
 import {
     IdempotencyRequestMismatchError,
@@ -27,6 +28,7 @@ import {
     type RoleName,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
+import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
 vi.mock("../../db/client.js", () => {
     const client = new Pool({
@@ -110,7 +112,8 @@ vi.mock("../../glCoding/glCodingClient.js", () => ({
 }));
 
 import { db } from "../../db/client.js";
-import { app } from "../../app.js";
+
+let app: Express;
 
 async function requestApp(path: string, init?: RequestInit): Promise<Response> {
     const server = await listenOnEphemeralPort();
@@ -200,6 +203,17 @@ void describe("Expense Report routes", () => {
             coded_items: [],
             flags: [],
         });
+    });
+
+    beforeAll(async () => {
+        process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
+        process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
+        process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(
+            32,
+            1,
+        ).toString("base64");
+        process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        app = (await import("../../app.js")).app;
     });
 
     void test("creates then reads an Expense Report end to end", async () => {
