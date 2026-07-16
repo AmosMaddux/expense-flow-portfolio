@@ -11,9 +11,9 @@ import { MfaAlreadyEnrolledError } from "../shared/authenticationErrors.js";
 export type MfaEnrollmentDatabase = NodePgDatabase<typeof schema>;
 
 type PostgresError = {
+    cause?: unknown;
     code?: string;
     constraint?: string;
-    cause?: unknown;
 };
 
 const uniqueViolationCode = "23505";

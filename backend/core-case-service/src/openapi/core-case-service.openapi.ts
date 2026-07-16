@@ -1,4 +1,5 @@
 import {
+    extendZodWithOpenApi,
     OpenApiGeneratorV31,
     OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
@@ -17,6 +18,8 @@ import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
 } from "../auth/mfa/mfaEnrollmentService.js";
+
+extendZodWithOpenApi(z);
 
 const problemJsonSchema = z.object({
     type: z.string(),
