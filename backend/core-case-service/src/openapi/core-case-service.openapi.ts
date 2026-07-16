@@ -137,6 +137,12 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
         security: [{ bearerAuth: [] }],
         request: {
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).optional().openapi({
+                    description:
+                        "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                }),
+            }),
             body: {
                 required: true,
                 content: {
@@ -158,6 +164,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             400: problemJsonResponse("Malformed create request."),
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
+            409: problemJsonResponse(
+                "Submission with this idempotency key is already in progress.",
+            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

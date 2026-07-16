@@ -319,6 +319,19 @@
                         "bearerAuth": []
                     }
                 ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Optional tenant-scoped key used to replay completed Expense Report submissions."
+                        },
+                        "required": false,
+                        "description": "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -362,6 +375,16 @@
                     },
                     "403": {
                         "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Submission with this idempotency key is already in progress.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

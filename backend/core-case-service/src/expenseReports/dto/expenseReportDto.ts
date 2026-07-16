@@ -18,6 +18,15 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+export const IdempotentSubmissionHeaderSchema = z.object({
+    idempotencyKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._:-]+$/),
+});
+
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
 export const ExpenseReportOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -50,4 +59,8 @@ export type GetExpenseReportRequest = z.infer<
 
 export type ExpenseReportResponse = z.infer<
     typeof ExpenseReportOutboundResponseSchema
+>;
+
+export type IdempotentSubmissionHeader = z.infer<
+    typeof IdempotentSubmissionHeaderSchema
 >;
