@@ -1,5 +1,3 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-
 import { ConflictError } from "../errors/problem-json.js";
 import type {
     IdempotencyResult,
@@ -45,21 +43,31 @@ export async function runIdempotentSubmission<TBody>({
             return completed;
         }
 
+        const reserved = await store.reserveSubmission(
+            tenantId,
+            idempotencyKey,
+            lockToken,
+        );
+        if (!reserved) {
+            const reservedResult = await store.getResult(
+                tenantId,
+                idempotencyKey,
+            );
+            if (reservedResult !== undefined) {
+                return reservedResult;
+            }
+
+            throw new ConflictError(
+                "A submission with this idempotency key is already in progress.",
+            );
+        }
+
         const body = toJsonSafeBody(await operation());
         const result = { body, statusCode: 201 };
 
-        await store.saveResult(tenantId, idempotencyKey, result);
+        await store.saveResult(tenantId, idempotencyKey, lockToken, result);
 
         return result;
-    } catch (error: unknown) {
-        if (error instanceof ConditionalCheckFailedException) {
-            const completed = await store.getResult(tenantId, idempotencyKey);
-            if (completed !== undefined) {
-                return completed;
-            }
-        }
-
-        throw error;
     } finally {
         await store.releaseLock(tenantId, idempotencyKey, lockToken);
     }

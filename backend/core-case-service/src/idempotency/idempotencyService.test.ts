@@ -44,21 +44,40 @@ void describe("runIdempotentSubmission", () => {
         ).rejects.toBeInstanceOf(ConflictError);
     });
 
+    void test("does not run the operation when a durable reservation already exists", async () => {
+        const operation = vi.fn();
+        const store = createStore({
+            reserveSubmission: vi.fn().mockResolvedValue(false),
+        });
+
+        await expect(
+            runIdempotentSubmission({
+                idempotencyKey: "submit-3",
+                operation,
+                store,
+                tenantId: "40000000-0000-4000-8000-000000000204",
+            }),
+        ).rejects.toBeInstanceOf(ConflictError);
+
+        expect(operation).not.toHaveBeenCalled();
+    });
+
     void test("stores the original result as a JSON-safe response body", async () => {
         const store = createStore({});
         const createdAt = new Date("2026-08-01T12:00:00.000Z");
 
         const result = await runIdempotentSubmission({
-            idempotencyKey: "submit-3",
+            idempotencyKey: "submit-4",
             operation: () => Promise.resolve({ createdAt }),
             store,
-            tenantId: "40000000-0000-4000-8000-000000000204",
+            tenantId: "40000000-0000-4000-8000-000000000205",
         });
 
         expect(result.body).toEqual({ createdAt: "2026-08-01T12:00:00.000Z" });
         expect(store.saveResult).toHaveBeenCalledWith(
-            "40000000-0000-4000-8000-000000000204",
-            "submit-3",
+            "40000000-0000-4000-8000-000000000205",
+            "submit-4",
+            "lock-token",
             {
                 body: { createdAt: "2026-08-01T12:00:00.000Z" },
                 statusCode: 201,
@@ -72,6 +91,7 @@ function createStore(overrides: Partial<IdempotencyStore>): IdempotencyStore {
         acquireLock: vi.fn().mockResolvedValue("lock-token"),
         getResult: vi.fn().mockResolvedValue(undefined),
         releaseLock: vi.fn().mockResolvedValue(undefined),
+        reserveSubmission: vi.fn().mockResolvedValue(true),
         saveResult: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };

@@ -39,10 +39,12 @@ const idempotencyStoreMock = vi.hoisted(() => ({
         ),
     ),
     releaseLock: vi.fn().mockResolvedValue(undefined),
+    reserveSubmission: vi.fn().mockResolvedValue(true),
     saveResult: vi.fn(
         (
             tenantId: string,
             idempotencyKey: string,
+            _token: string,
             result: IdempotencyResult,
         ) => {
             idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, result);
@@ -135,6 +137,7 @@ void describe("Expense Report routes", () => {
         idempotencyStoreMock.acquireLock.mockClear();
         idempotencyStoreMock.getResult.mockClear();
         idempotencyStoreMock.releaseLock.mockClear();
+        idempotencyStoreMock.reserveSubmission.mockClear();
         idempotencyStoreMock.saveResult.mockClear();
     });
 

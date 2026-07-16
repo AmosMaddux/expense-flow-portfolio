@@ -1,6 +1,8 @@
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
     GetCommand,
     PutCommand,
+    UpdateCommand,
     type DynamoDBDocumentClient,
 } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "node:crypto";
@@ -28,16 +30,24 @@ export type IdempotencyStore = {
         idempotencyKey: string,
         token: string,
     ) => Promise<void>;
+    reserveSubmission: (
+        tenantId: string,
+        idempotencyKey: string,
+        token: string,
+    ) => Promise<boolean>;
     saveResult: (
         tenantId: string,
         idempotencyKey: string,
+        token: string,
         result: IdempotencyResult,
     ) => Promise<void>;
 };
 
 type StoredIdempotencyRecord = {
     pk: string;
-    result: IdempotencyResult;
+    result?: IdempotencyResult;
+    status: "completed" | "in_progress";
+    submissionToken?: string;
     ttl: number;
 };
 
@@ -83,12 +93,21 @@ export function createIdempotencyStore(
                 }),
             );
             const item = record.Item as StoredIdempotencyRecord | undefined;
-            if (item === undefined) {
+            if (
+                item === undefined ||
+                item.status !== "completed" ||
+                item.result === undefined
+            ) {
+                return undefined;
+            }
+
+            const remainingTtlSeconds = item.ttl - getCurrentEpochSeconds();
+            if (remainingTtlSeconds <= 0) {
                 return undefined;
             }
 
             await redis.set(redisKey, JSON.stringify(item.result), {
-                EX: IDEMPOTENCY_RESULT_TTL_SECONDS,
+                EX: remainingTtlSeconds,
             });
 
             return item.result;
@@ -104,33 +123,91 @@ export function createIdempotencyStore(
                 },
             );
         },
-        async saveResult(tenantId, idempotencyKey, result) {
-            const ttl =
-                Math.floor(Date.now() / 1000) + IDEMPOTENCY_RESULT_TTL_SECONDS;
+        async reserveSubmission(tenantId, idempotencyKey, token) {
+            try {
+                const now = getCurrentEpochSeconds();
+
+                await dynamoDb.send(
+                    new PutCommand({
+                        TableName: tableName,
+                        Item: {
+                            pk: toDynamoPartitionKey(tenantId, idempotencyKey),
+                            status: "in_progress",
+                            submissionToken: token,
+                            ttl: now + IDEMPOTENCY_RESULT_TTL_SECONDS,
+                        } satisfies StoredIdempotencyRecord,
+                        ConditionExpression:
+                            "attribute_not_exists(pk) OR #ttl <= :now",
+                        ExpressionAttributeNames: {
+                            "#ttl": "ttl",
+                        },
+                        ExpressionAttributeValues: {
+                            ":now": now,
+                        },
+                    }),
+                );
+
+                return true;
+            } catch (error: unknown) {
+                if (error instanceof ConditionalCheckFailedException) {
+                    return false;
+                }
+
+                throw error;
+            }
+        },
+        async saveResult(tenantId, idempotencyKey, token, result) {
             const pk = toDynamoPartitionKey(tenantId, idempotencyKey);
 
             await dynamoDb.send(
-                new PutCommand({
+                new UpdateCommand({
                     TableName: tableName,
-                    Item: {
-                        pk,
-                        result,
-                        ttl,
-                    } satisfies StoredIdempotencyRecord,
-                    ConditionExpression: "attribute_not_exists(pk)",
+                    Key: { pk },
+                    UpdateExpression:
+                        "SET #status = :completed, #result = :result",
+                    ConditionExpression:
+                        "#status = :inProgress AND submissionToken = :token",
+                    ExpressionAttributeNames: {
+                        "#result": "result",
+                        "#status": "status",
+                    },
+                    ExpressionAttributeValues: {
+                        ":completed": "completed",
+                        ":inProgress": "in_progress",
+                        ":result": result,
+                        ":token": token,
+                    },
                 }),
             );
+
+            const record = await dynamoDb.send(
+                new GetCommand({
+                    TableName: tableName,
+                    Key: { pk },
+                }),
+            );
+            const item = record.Item as StoredIdempotencyRecord | undefined;
+            const remainingTtlSeconds =
+                item === undefined ? 0 : item.ttl - getCurrentEpochSeconds();
+
+            if (remainingTtlSeconds <= 0) {
+                return;
+            }
 
             await connectRedis(redis);
             await redis.set(
                 toRedisResultKey(tenantId, idempotencyKey),
                 JSON.stringify(result),
                 {
-                    EX: IDEMPOTENCY_RESULT_TTL_SECONDS,
+                    EX: remainingTtlSeconds,
                 },
             );
         },
     };
+}
+
+export function getCurrentEpochSeconds(): number {
+    return Math.floor(Date.now() / 1000);
 }
 
 export function toRedisResultKey(
