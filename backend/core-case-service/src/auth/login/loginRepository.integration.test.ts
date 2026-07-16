@@ -388,6 +388,72 @@ void describe("login repository", () => {
                 .where(eq(refreshToken.tenantId, tenantId));
         }
     });
+    void test("accepts only one concurrent login attempt for the same TOTP", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000510";
+        const userId = "10000000-0000-4000-8000-000000000510";
+        const email = "concurrent-totp@example.invalid";
+        const password = "synthetic-correct-password";
+        const passwordHasher = createPasswordHasher(testHashConfig);
+        const loginService = createLoginService(
+            createDrizzleLoginCredentialRepository(db),
+            passwordHasher,
+            realTotpSecretProtector,
+            testAuthJwtConfig,
+            loginNow,
+        );
+
+        await seedLoginSubject({
+            db,
+            tenantId,
+            userId,
+            email,
+            password,
+            passwordHasher,
+        });
+
+        const loginRequest = {
+            tenantId,
+            email,
+            password,
+            totpCode: validTotpCode,
+        };
+        const loginResults = await Promise.allSettled([
+            loginService.login(loginRequest),
+            loginService.login(loginRequest),
+        ]);
+        const fulfilledResults = loginResults.filter(
+            (result) => result.status === "fulfilled",
+        );
+        const rejectedResults = loginResults.filter(
+            (result) => result.status === "rejected",
+        );
+        const tokenRows = await db
+            .select()
+            .from(refreshToken)
+            .where(eq(refreshToken.tenantId, tenantId));
+        const auditRows = await db
+            .select()
+            .from(authenticationAuditEntry)
+            .where(eq(authenticationAuditEntry.tenantId, tenantId));
+
+        expect(fulfilledResults).toHaveLength(1);
+        expect(fulfilledResults[0]).toMatchObject({
+            value: { tenantId, userId },
+        });
+        expect(rejectedResults).toHaveLength(1);
+        expect(rejectedResults[0]).toMatchObject({
+            reason: { name: "InvalidMfaCodeError" },
+        });
+        expect(tokenRows).toHaveLength(1);
+        expect(auditRows).toEqual([
+            expect.objectContaining({
+                tenantId,
+                userId,
+                action: "mfa_failed",
+                email,
+            }),
+        ]);
+    });
     void test("writes an audit entry after failed login", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000502";
         const userId = "10000000-0000-4000-8000-000000000502";
