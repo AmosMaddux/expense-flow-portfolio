@@ -9,10 +9,11 @@ The Core Case Service owns the `Expense Report` case aggregate and the case-mana
 ### Owned Capabilities
 
 - `Expense Report` identity, owner, assigned owner, due date, priority, `current_stage`, `on_hold`, and `hold_reason`.
+- Source transactions, original expense line-item records, mileage entries, submitter, and approval chain.
 - Stage transitions across `Drafted`, `Submitted`, `Manager Approval`, `AP Review`, `Paid`, and `Reconciled`.
 - Backward transitions to `Drafted` for rejections at `Manager Approval` and `AP Review`.
 - Comments, attachment metadata, receipt metadata references, audit trail entries, and stage-transition log records.
-- Payment stub reference and case-level reconciliation state.
+- Payment stub reference and reconciliation represented by the `Reconciled` stage transition and audit records.
 - Role-gated case actions for `Finance Admin`, `Department Manager`, and `Employee` workflows.
 
 ### Datastore
@@ -25,12 +26,12 @@ Core Case Service tables carry tenant scope directly or through required relatio
 
 ## GL Coding Service
 
-The GL Coding Service owns AP coding rules, GL mapping reference data, and GL-ready coding outputs for expense line items. It does not own the `Expense Report` case lifecycle or identity records.
+The GL Coding Service owns AP coding rules, GL mapping reference data, and GL-ready coding outputs for expense line items. It does not own source transactions, original expense line-item records, mileage entries, the `Expense Report` case lifecycle, or identity records.
 
 ### Owned Capabilities
 
 - Tenant-specific GL mapping reference data.
-- AP coding inputs and outputs for expense line items.
+- AP coding outputs and validation results derived from Core Case-owned expense line items.
 - Manual deductibility markers used during `AP Review`.
 - Coding validation results and GL-ready export records.
 - MVP flag evaluation for hard-coded rules such as line items over `$500`.
