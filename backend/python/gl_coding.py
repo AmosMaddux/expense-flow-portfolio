@@ -155,6 +155,8 @@ async def code_line_items_to_gl_accounts(
 ) -> GlCodingComputeResponse:
     """Return GL account mappings and review flags for submitted expense items."""
     categories = {line_item.category for line_item in request.line_items}
+    if len(request.mileage) > 0:
+        categories.add(ExpenseCategory.MILEAGE)
     accounts_by_category = await mapping_repository.get_accounts_for_categories(
         tenant_id, categories
     )
@@ -162,6 +164,10 @@ async def code_line_items_to_gl_accounts(
         code_line_item_to_gl_account(line_item, accounts_by_category)
         for line_item in request.line_items
     ]
+    coded_items.extend(
+        code_mileage_to_gl_account(mileage_entry, accounts_by_category)
+        for mileage_entry in request.mileage
+    )
     flags = [
         GlCodingFlag(
             source_id=line_item.line_item_id,
@@ -197,6 +203,28 @@ def code_line_item_to_gl_account(
         amount=line_item.amount,
         currency=line_item.currency,
         flagged_line_item=is_line_item_over_threshold(line_item.amount),
+    )
+
+
+def code_mileage_to_gl_account(
+    mileage_entry: GlCodingMileageRequest,
+    accounts_by_category: dict[ExpenseCategory, GlAccount],
+) -> GlCodedItem:
+    """Return the mapped or explicitly unmapped GL coding result for mileage."""
+    gl_account = accounts_by_category.get(ExpenseCategory.MILEAGE)
+    mapping_status = (
+        GlMappingStatus.MAPPED
+        if gl_account is not None
+        else GlMappingStatus.UNMAPPED
+    )
+
+    return GlCodedItem(
+        source_id=mileage_entry.mileage_entry_id,
+        source_type=GlSourceType.MILEAGE,
+        category=ExpenseCategory.MILEAGE,
+        mapping_status=mapping_status,
+        gl_account=gl_account,
+        flagged_line_item=False,
     )
 
 
