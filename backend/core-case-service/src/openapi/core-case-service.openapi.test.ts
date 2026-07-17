@@ -51,6 +51,20 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(createRequestSchema)).not.toContain("tenant_id");
     });
 
+    void test("documents Idempotency-Key as required for Expense Report creation", () => {
+        const expenseReportsPath = document.paths?.["/v1/expense-reports"];
+        const idempotencyHeader = expenseReportsPath?.post?.parameters?.find(
+            (parameter) =>
+                "name" in parameter && parameter.name === "Idempotency-Key",
+        );
+
+        expect(idempotencyHeader).toMatchObject({
+            in: "header",
+            name: "Idempotency-Key",
+            required: true,
+        });
+    });
+
     void test("documents bearer authentication for every Expense Report route", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =

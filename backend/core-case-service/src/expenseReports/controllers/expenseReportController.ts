@@ -11,7 +11,10 @@ import {
     IdempotentSubmissionHeaderSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
-import { runIdempotentSubmission } from "../../idempotency/idempotencyService.js";
+import {
+    createIdempotencyRequestHash,
+    runIdempotentSubmission,
+} from "../../idempotency/idempotencyService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -46,16 +49,11 @@ export async function postExpenseReport(
                 actorId: auth.userId,
             });
         const idempotencyKey = parseIdempotencyKey(req);
-        if (idempotencyKey === undefined) {
-            const report = await createReport();
-
-            res.status(201).json(report);
-            return;
-        }
-
+        const requestHash = createIdempotencyRequestHash(parsedRequest);
         const result = await runIdempotentSubmission({
             idempotencyKey,
             operation: createReport,
+            requestHash,
             store: getDefaultIdempotencyStore(),
             tenantId: auth.tenantId,
         });
@@ -120,13 +118,8 @@ function getAuthorizedOwnerScope(
     throw new ForbiddenError();
 }
 
-function parseIdempotencyKey(req: Request): string | undefined {
-    const header = req.get("idempotency-key");
-    if (header === undefined) {
-        return undefined;
-    }
-
+function parseIdempotencyKey(req: Request): string {
     return IdempotentSubmissionHeaderSchema.parse({
-        idempotencyKey: header,
+        idempotencyKey: req.get("idempotency-key"),
     }).idempotencyKey;
 }
