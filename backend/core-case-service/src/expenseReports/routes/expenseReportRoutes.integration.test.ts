@@ -2637,9 +2637,9 @@ void describe("Expense Report routes", () => {
     });
 
     void test("lets a Finance Admin read audit entries for an Expense Report", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000111";
-        const owner = "50000000-0000-4000-8000-000000000014";
-        const financeAdminId = "50000000-0000-4000-8000-000000000018";
+        const tenantId = "40000000-0000-4000-8000-000000000117";
+        const owner = "50000000-0000-4000-8000-000000000023";
+        const financeAdminId = "50000000-0000-4000-8000-000000000024";
 
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",

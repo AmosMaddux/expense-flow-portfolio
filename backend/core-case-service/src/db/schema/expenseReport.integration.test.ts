@@ -85,7 +85,7 @@ void describe("audit entry sequence migration", () => {
 
         try {
             await client.connect();
-            await applyMigrationRange(client, 0, 12);
+            await applyMigrationRange(client, 0, 13);
             await client.query(
                 `INSERT INTO "expense_report" ("id", "owner", "due_date", "tenant_id")
                  VALUES ($1, $2, '2026-07-02', $3)`,
@@ -97,7 +97,7 @@ void describe("audit entry sequence migration", () => {
                 [auditEntryId, tenantId, reportId, actorId],
             );
 
-            await applyMigrationRange(client, 13, 13);
+            await applyMigrationRange(client, 14, 14);
 
             const migratedAuditEntry = await client.query(
                 `SELECT "sequence" FROM "audit_entry" WHERE "id" = $1`,
@@ -122,7 +122,7 @@ $$;
             await client.end().catch(() => undefined);
             await container.stop().catch(() => undefined);
         }
-    });
+    }, 120000);
 });
 void describe("audit entry PostgreSQL constraints", () => {
     void test("prevents audit entry updates and deletes in PostgreSQL", async () => {
