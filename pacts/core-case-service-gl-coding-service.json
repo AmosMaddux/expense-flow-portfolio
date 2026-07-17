@@ -1,0 +1,267 @@
+{
+    "consumer": {
+        "name": "core-case-service"
+    },
+    "interactions": [
+        {
+            "description": "a request to code a flagged Travel line item",
+            "pending": false,
+            "providerStates": [
+                {
+                    "name": "the Travel GL mapping is available"
+                }
+            ],
+            "request": {
+                "body": {
+                    "content": {
+                        "line_items": [
+                            {
+                                "amount": "501.00",
+                                "category": "Travel",
+                                "currency": "USD",
+                                "line_item_id": "30000000-0000-4000-8000-000000000101",
+                                "merchant": "Synthetic Air"
+                            }
+                        ],
+                        "mileage": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.line_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.line_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].line_item_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].merchant": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "method": "POST",
+                "path": "/gl-coding/line-items"
+            },
+            "response": {
+                "body": {
+                    "content": {
+                        "coded_items": [
+                            {
+                                "amount": "501.00",
+                                "category": "Travel",
+                                "currency": "USD",
+                                "flagged_line_item": true,
+                                "gl_account": {
+                                    "account_code": "6100",
+                                    "account_name": "Travel Expense"
+                                },
+                                "source_id": "30000000-0000-4000-8000-000000000101",
+                                "source_type": "line_item"
+                            }
+                        ],
+                        "flags": [
+                            {
+                                "code": "line_item_over_threshold",
+                                "message": "Line item amount is above the MVP manual review threshold.",
+                                "source_id": "30000000-0000-4000-8000-000000000101",
+                                "source_type": "line_item"
+                            }
+                        ]
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.coded_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].flagged_line_item": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_code": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_name": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_type": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.flags": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.flags[*].code": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.flags[*].message": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.flags[*].source_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.flags[*].source_type": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "status": 200
+            },
+            "type": "Synchronous/HTTP"
+        }
+    ],
+    "metadata": {
+        "pact-js": {
+            "version": "16.5.0"
+        },
+        "pactRust": {
+            "ffi": "0.5.4",
+            "models": "1.3.11"
+        },
+        "pactSpecification": {
+            "version": "4.0"
+        }
+    },
+    "provider": {
+        "name": "gl-coding-service"
+    }
+}
