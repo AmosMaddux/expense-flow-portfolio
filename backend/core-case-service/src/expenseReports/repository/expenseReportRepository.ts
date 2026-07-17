@@ -53,13 +53,34 @@ export type SubmissionSources = {
     }>;
 };
 
+export type SubmissionSources = {
+    report: ExpenseReport;
+    lineItems: Array<{
+        id: string;
+        merchant: string;
+        amount: string;
+        currency: string;
+        category: string;
+    }>;
+    mileageEntries: Array<{
+        id: string;
+        route: string;
+        distance: string;
+        mileageDate: string;
+    }>;
+};
+
 type AuditEntryWriteClient = Pick<typeof db, "insert">;
+
+type ExpenseReportTransaction = Parameters<
+    Parameters<typeof db.transaction>[0]
+>[0];
 
 /**
  * Appends a redacted audit event using the caller's state-change transaction.
  */
-export async function appendAuditEntry(
-    transaction: AuditEntryWriteClient,
+async function appendAuditEntry(
+    transaction: ExpenseReportTransaction,
     event: NewAuditEntry,
 ): Promise<void> {
     await transaction.insert(auditEntry).values(event);
@@ -628,5 +649,5 @@ export async function findAuditEntriesByExpenseReportId(
                 eq(auditEntry.expenseReportId, expenseReportId),
             ),
         )
-        .orderBy(asc(auditEntry.createdAt));
+        .orderBy(asc(auditEntry.createdAt), asc(auditEntry.sequence));
 }

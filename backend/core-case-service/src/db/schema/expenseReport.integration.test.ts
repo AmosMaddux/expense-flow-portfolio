@@ -30,6 +30,64 @@ const requiredTables = [
     getTableConfig(mileageEntry),
 ];
 
+void describe("audit entry PostgreSQL constraints", () => {
+    void test("prevents audit entry updates and deletes in PostgreSQL", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000401";
+        const reportId = "10000000-0000-4000-8000-000000000401";
+        const ownerId = "20000000-0000-4000-8000-000000000401";
+        const actorId = "30000000-0000-4000-8000-000000000401";
+        const auditEntryId = "40000000-0000-4000-8000-000000000401";
+        const client = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query(
+                `INSERT INTO "expense_report" ("id", "owner", "due_date", "tenant_id")
+                 VALUES ($1, $2, '2026-07-02', $3)`,
+                [reportId, ownerId, tenantId],
+            );
+            await client.query(
+                `INSERT INTO "audit_entry" ("id", "tenant_id", "expense_report_id", "actor_id", "action", "stage_before_action", "stage_after_proposed_action")
+                 VALUES ($1, $2, $3, $4, 'report_created', 'Drafted', 'Drafted')`,
+                [auditEntryId, tenantId, reportId, actorId],
+            );
+
+            await client.query(`
+DO $$
+BEGIN
+    UPDATE "audit_entry" SET "action" = 'tampered' WHERE "id" = '${auditEntryId}';
+    RAISE EXCEPTION 'expected audit_entry update to fail';
+EXCEPTION
+    WHEN others THEN
+        IF SQLERRM <> 'audit_entry rows are append-only' THEN
+            RAISE;
+        END IF;
+END;
+$$;
+`);
+
+            await client.query(`
+DO $$
+BEGIN
+    DELETE FROM "audit_entry" WHERE "id" = '${auditEntryId}';
+    RAISE EXCEPTION 'expected audit_entry delete to fail';
+EXCEPTION
+    WHEN others THEN
+        IF SQLERRM <> 'audit_entry rows are append-only' THEN
+            RAISE;
+        END IF;
+END;
+$$;
+`);
+            await client.query("ROLLBACK");
+        } finally {
+            await client.end().catch(() => undefined);
+        }
+    });
+});
 void describe("case comment and attachment PostgreSQL constraints", () => {
     void test("enforces mutation triggers and attachment deletes in PostgreSQL", async () => {
         const tenantId = "00000000-0000-0000-0000-000000000083";

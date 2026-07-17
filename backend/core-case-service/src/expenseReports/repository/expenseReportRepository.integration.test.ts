@@ -141,6 +141,28 @@ void describe("expenseReportRepository", () => {
         expect(transitionRows).toHaveLength(0);
     });
 
+    void test("rolls back the Expense Report when the transactional audit insert fails", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000199";
+        const reportId = "10000000-0000-4000-8000-000000000199";
+        const newReport = buildNewExpenseReport(tenantId);
+        newReport.id = reportId;
+
+        await expect(
+            insertDraftExpenseReport(tenantId, newReport, "not-a-uuid"),
+        ).rejects.toThrow();
+
+        const reports = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reports).toHaveLength(0);
+        expect(auditRows).toHaveLength(0);
+    });
     void test("finds audit entries by Expense Report id within tenant scope", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000196";
         const newReport = buildNewExpenseReport(targetTenantId);
