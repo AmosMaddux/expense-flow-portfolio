@@ -10,11 +10,10 @@ from backend.python.domain_exceptions import (
     NegativeAmountError,
     UnknownExpenseCategoryError,
 )
-from backend.python.expense_line_item import LINE_ITEM_FLAG_THRESHOLD
 
 
 class ExpenseCategory(StrEnum):
-    """List the baseline expense categories that can be mapped to GL codes."""
+    """List baseline expense categories accepted by the GL-coding contract."""
 
     TRAVEL = "Travel"
     MEALS = "Meals"
@@ -43,32 +42,6 @@ class GlAccount(BaseModel):
 
     account_code: str
     account_name: str
-
-
-GL_ACCOUNTS_BY_CATEGORY: dict[ExpenseCategory, GlAccount] = {
-    ExpenseCategory.TRAVEL: GlAccount(
-        account_code="6000",
-        account_name="Travel Expense",
-    ),
-    ExpenseCategory.MEALS: GlAccount(account_code="6100", account_name="Meals Expense"),
-    ExpenseCategory.LODGING: GlAccount(
-        account_code="6200",
-        account_name="Lodging Expense",
-    ),
-    ExpenseCategory.MILEAGE: GlAccount(
-        account_code="6300",
-        account_name="Mileage Expense",
-    ),
-    ExpenseCategory.OFFICE_SUPPLIES: GlAccount(
-        account_code="6400",
-        account_name="Office Supplies Expense",
-    ),
-    ExpenseCategory.SOFTWARE: GlAccount(
-        account_code="6500",
-        account_name="Software Expense",
-    ),
-    ExpenseCategory.OTHER: GlAccount(account_code="6999", account_name="Other Expense"),
-}
 
 
 class GlCodingLineItemRequest(BaseModel):
@@ -103,9 +76,13 @@ class GlCodingLineItemRequest(BaseModel):
     @field_validator("category", mode="before")
     @classmethod
     def validate_known_category(cls, value: str) -> str:
-        """Reject categories that are not seeded in baseline GL mappings."""
+        """Reject categories that are outside the GL-coding request contract."""
+        if not isinstance(value, str):
+            raise UnknownExpenseCategoryError(value)
+
         if value not in {category.value for category in ExpenseCategory}:
             raise UnknownExpenseCategoryError(value)
+
         return value
 
 
@@ -151,48 +128,3 @@ class GlCodingComputeResponse(BaseModel):
 
     coded_items: list[GlCodedItem]
     flags: list[GlCodingFlag]
-
-
-def build_gl_coding_response(
-    request: GlCodingComputeRequest,
-) -> GlCodingComputeResponse:
-    """Build a deterministic GL-coding response from the validated request."""
-    coded_items: list[GlCodedItem] = []
-    flags: list[GlCodingFlag] = []
-
-    for line_item in request.line_items:
-        is_flagged = line_item.amount > LINE_ITEM_FLAG_THRESHOLD
-        coded_items.append(
-            GlCodedItem(
-                source_id=line_item.line_item_id,
-                source_type=GlSourceType.LINE_ITEM,
-                category=line_item.category,
-                gl_account=GL_ACCOUNTS_BY_CATEGORY[line_item.category],
-                amount=line_item.amount,
-                currency=line_item.currency,
-                flagged_line_item=is_flagged,
-            )
-        )
-
-        if is_flagged:
-            flags.append(
-                GlCodingFlag(
-                    source_id=line_item.line_item_id,
-                    source_type=GlSourceType.LINE_ITEM,
-                    code=GlCodingFlagCode.LINE_ITEM_OVER_THRESHOLD,
-                    message="Line item amount exceeds the manual review threshold.",
-                )
-            )
-
-    for mileage_entry in request.mileage:
-        coded_items.append(
-            GlCodedItem(
-                source_id=mileage_entry.mileage_entry_id,
-                source_type=GlSourceType.MILEAGE,
-                category=ExpenseCategory.MILEAGE,
-                gl_account=GL_ACCOUNTS_BY_CATEGORY[ExpenseCategory.MILEAGE],
-                flagged_line_item=False,
-            )
-        )
-
-    return GlCodingComputeResponse(coded_items=coded_items, flags=flags)
