@@ -23,7 +23,12 @@ const glCodingLineItemRequestSchema = z.object({
 const glCodingMileageRequestSchema = z.object({
     mileage_entry_id: z.uuid(),
     route: z.string().min(1),
-    distance: z.string().regex(/^\d{1,6}\.\d{2}$/),
+    distance: z
+        .string()
+        .regex(/^\d{1,6}\.\d{2}$/)
+        .refine((value) => Number(value) > 0, {
+            message: "Mileage distance must be greater than zero.",
+        }),
     mileage_date: z.iso.date(),
 });
 
@@ -41,6 +46,7 @@ const glCodedItemSchema = z.object({
     source_id: z.uuid(),
     source_type: z.enum(["line_item", "mileage"]),
     category: expenseCategorySchema,
+    mapping_status: z.enum(["mapped", "unmapped"]),
     gl_account: glAccountSchema.nullable(),
     amount: z.string().nullable().optional(),
     currency: z
@@ -66,16 +72,27 @@ export const GlCodingResponseSchema = z.object({
 export type GlCodingRequest = z.infer<typeof GlCodingRequestSchema>;
 export type GlCodingResponse = z.infer<typeof GlCodingResponseSchema>;
 
+export type GlCodingClientOptions = {
+    fetchImplementation?: typeof fetch;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+};
+
 /**
  * Requests GL account mappings and manual-review flags for expense line items.
  */
 export async function codeExpenseLineItems(
     serviceBaseUrl: string,
     request: GlCodingRequest,
-    fetchImplementation: typeof fetch = fetch,
+    options: GlCodingClientOptions = {},
 ): Promise<GlCodingResponse> {
     const requestBody = GlCodingRequestSchema.parse(request);
     const endpoint = `${serviceBaseUrl.replace(/\/$/, "")}/gl-coding/line-items`;
+    const fetchImplementation = options.fetchImplementation ?? fetch;
+    const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
+    const signal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
 
     let response: Response;
     try {
@@ -83,10 +100,21 @@ export async function codeExpenseLineItems(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requestBody),
+            signal,
         });
     } catch (error: unknown) {
+        if (timeoutSignal.aborted) {
+            throw new GlCodingServiceError(
+                "The GL-coding service request timed out.",
+                undefined,
+                { cause: error },
+            );
+        }
+
         throw new GlCodingServiceError(
-            "The GL-coding service could not be reached.",
+            signal.aborted
+                ? "The GL-coding service request was cancelled."
+                : "The GL-coding service could not be reached.",
             undefined,
             { cause: error },
         );
@@ -103,6 +131,14 @@ export async function codeExpenseLineItems(
         const responseBody: unknown = await response.json();
         return GlCodingResponseSchema.parse(responseBody);
     } catch (error: unknown) {
+        if (timeoutSignal.aborted) {
+            throw new GlCodingServiceError(
+                "The GL-coding service request timed out.",
+                response.status,
+                { cause: error },
+            );
+        }
+
         throw new GlCodingServiceError(
             "The GL-coding service returned an invalid response.",
             response.status,

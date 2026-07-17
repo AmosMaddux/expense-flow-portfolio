@@ -55,7 +55,8 @@
                             "combine": "AND",
                             "matchers": [
                                 {
-                                    "match": "type"
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
                                 }
                             ]
                         },
@@ -100,9 +101,10 @@
                                 "currency": "USD",
                                 "flagged_line_item": true,
                                 "gl_account": {
-                                    "account_code": "6100",
+                                    "account_code": "6000",
                                     "account_name": "Travel Expense"
                                 },
+                                "mapping_status": "mapped",
                                 "source_id": "30000000-0000-4000-8000-000000000101",
                                 "source_type": "line_item"
                             }
@@ -146,7 +148,8 @@
                             "combine": "AND",
                             "matchers": [
                                 {
-                                    "match": "type"
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
                                 }
                             ]
                         },
@@ -183,6 +186,14 @@
                                 }
                             ]
                         },
+                        "$.coded_items[*].mapping_status": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        },
                         "$.coded_items[*].source_id": {
                             "combine": "AND",
                             "matchers": [
@@ -196,7 +207,7 @@
                             "combine": "AND",
                             "matchers": [
                                 {
-                                    "match": "type"
+                                    "match": "equality"
                                 }
                             ]
                         },
@@ -213,7 +224,7 @@
                             "combine": "AND",
                             "matchers": [
                                 {
-                                    "match": "type"
+                                    "match": "equality"
                                 }
                             ]
                         },
@@ -238,7 +249,586 @@
                             "combine": "AND",
                             "matchers": [
                                 {
+                                    "match": "equality"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "status": 200
+            },
+            "type": "Synchronous/HTTP"
+        },
+        {
+            "description": "a request to code a positive mileage entry",
+            "pending": false,
+            "providerStates": [
+                {
+                    "name": "the Mileage GL mapping is available"
+                }
+            ],
+            "request": {
+                "body": {
+                    "content": {
+                        "line_items": [],
+                        "mileage": [
+                            {
+                                "distance": "18.50",
+                                "mileage_date": "2026-07-17",
+                                "mileage_entry_id": "30000000-0000-4000-8000-000000000201",
+                                "route": "Office to synthetic client site"
+                            }
+                        ]
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.mileage": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.mileage[*].distance": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^(?:[1-9]\\d{0,5}\\.\\d{2}|0\\.(?:0[1-9]|[1-9]\\d))$"
+                                }
+                            ]
+                        },
+                        "$.mileage[*].mileage_date": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "format": "yyyy-MM-dd",
+                                    "match": "date"
+                                }
+                            ]
+                        },
+                        "$.mileage[*].mileage_entry_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.mileage[*].route": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
                                     "match": "type"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "method": "POST",
+                "path": "/gl-coding/line-items"
+            },
+            "response": {
+                "body": {
+                    "content": {
+                        "coded_items": [
+                            {
+                                "category": "Mileage",
+                                "flagged_line_item": false,
+                                "gl_account": {
+                                    "account_code": "6300",
+                                    "account_name": "Mileage Expense"
+                                },
+                                "mapping_status": "mapped",
+                                "source_id": "30000000-0000-4000-8000-000000000201",
+                                "source_type": "mileage"
+                            }
+                        ],
+                        "flags": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.coded_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].flagged_line_item": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_code": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_name": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].mapping_status": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_type": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "status": 200
+            },
+            "type": "Synchronous/HTTP"
+        },
+        {
+            "description": "a request to code an unflagged Meals line item",
+            "pending": false,
+            "providerStates": [
+                {
+                    "name": "the Meals GL mapping is available"
+                }
+            ],
+            "request": {
+                "body": {
+                    "content": {
+                        "line_items": [
+                            {
+                                "amount": "42.50",
+                                "category": "Meals",
+                                "currency": "USD",
+                                "line_item_id": "30000000-0000-4000-8000-000000000102",
+                                "merchant": "Synthetic Cafe"
+                            }
+                        ],
+                        "mileage": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.line_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.line_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].line_item_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].merchant": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "method": "POST",
+                "path": "/gl-coding/line-items"
+            },
+            "response": {
+                "body": {
+                    "content": {
+                        "coded_items": [
+                            {
+                                "amount": "42.50",
+                                "category": "Meals",
+                                "currency": "USD",
+                                "flagged_line_item": false,
+                                "gl_account": {
+                                    "account_code": "6100",
+                                    "account_name": "Meals Expense"
+                                },
+                                "mapping_status": "mapped",
+                                "source_id": "30000000-0000-4000-8000-000000000102",
+                                "source_type": "line_item"
+                            }
+                        ],
+                        "flags": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.coded_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].flagged_line_item": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_code": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account.account_name": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].mapping_status": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_type": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "status": 200
+            },
+            "type": "Synchronous/HTTP"
+        },
+        {
+            "description": "a request to code an unmapped Other line item",
+            "pending": false,
+            "providerStates": [
+                {
+                    "name": "the Other category has no GL mapping"
+                }
+            ],
+            "request": {
+                "body": {
+                    "content": {
+                        "line_items": [
+                            {
+                                "amount": "25.00",
+                                "category": "Other",
+                                "currency": "USD",
+                                "line_item_id": "30000000-0000-4000-8000-000000000103",
+                                "merchant": "Synthetic Vendor"
+                            }
+                        ],
+                        "mileage": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.line_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.line_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].line_item_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.line_items[*].merchant": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "method": "POST",
+                "path": "/gl-coding/line-items"
+            },
+            "response": {
+                "body": {
+                    "content": {
+                        "coded_items": [
+                            {
+                                "amount": "25.00",
+                                "category": "Other",
+                                "currency": "USD",
+                                "flagged_line_item": false,
+                                "gl_account": null,
+                                "mapping_status": "unmapped",
+                                "source_id": "30000000-0000-4000-8000-000000000103",
+                                "source_type": "line_item"
+                            }
+                        ],
+                        "flags": []
+                    },
+                    "contentType": "application/json",
+                    "encoded": false
+                },
+                "headers": {
+                    "Content-Type": ["application/json"]
+                },
+                "matchingRules": {
+                    "body": {
+                        "$.coded_items": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type",
+                                    "min": 1
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].amount": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^\\d{1,10}\\.\\d{2}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].category": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].currency": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "^[A-Z]{3}$"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].flagged_line_item": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "type"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].gl_account": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "null"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].mapping_status": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_id": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "regex",
+                                    "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                                }
+                            ]
+                        },
+                        "$.coded_items[*].source_type": {
+                            "combine": "AND",
+                            "matchers": [
+                                {
+                                    "match": "equality"
                                 }
                             ]
                         }
