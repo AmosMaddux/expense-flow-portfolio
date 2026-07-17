@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -35,6 +36,13 @@ class GlCodingFlagCode(StrEnum):
     """Classify flags returned by the GL-coding contract."""
 
     LINE_ITEM_OVER_THRESHOLD = "line_item_over_threshold"
+
+
+class GlMappingStatus(StrEnum):
+    """Classify whether a request item resolved to a GL account."""
+
+    MAPPED = "mapped"
+    UNMAPPED = "unmapped"
 
 
 class GlAccount(BaseModel):
@@ -108,7 +116,8 @@ class GlCodedItem(BaseModel):
     source_id: UUID
     source_type: GlSourceType
     category: ExpenseCategory
-    gl_account: GlAccount
+    mapping_status: GlMappingStatus = GlMappingStatus.MAPPED
+    gl_account: GlAccount | None
     amount: Decimal | None = None
     currency: str | None = None
     flagged_line_item: bool
@@ -128,3 +137,69 @@ class GlCodingComputeResponse(BaseModel):
 
     coded_items: list[GlCodedItem]
     flags: list[GlCodingFlag]
+
+
+class GlAccountMappingRepository(Protocol):
+    """Resolve tenant-scoped GL accounts for expense categories."""
+
+    async def get_accounts_for_categories(
+        self, tenant_id: UUID, categories: set[ExpenseCategory]
+    ) -> dict[ExpenseCategory, GlAccount]:
+        """Return GL accounts keyed by category for the requested tenant."""
+
+
+async def code_line_items_to_gl_accounts(
+    request: GlCodingComputeRequest,
+    tenant_id: UUID,
+    mapping_repository: GlAccountMappingRepository,
+) -> GlCodingComputeResponse:
+    """Return GL account mappings and review flags for submitted expense items."""
+    categories = {line_item.category for line_item in request.line_items}
+    accounts_by_category = await mapping_repository.get_accounts_for_categories(
+        tenant_id, categories
+    )
+    coded_items = [
+        code_line_item_to_gl_account(line_item, accounts_by_category)
+        for line_item in request.line_items
+    ]
+    flags = [
+        GlCodingFlag(
+            source_id=line_item.line_item_id,
+            source_type=GlSourceType.LINE_ITEM,
+            code=GlCodingFlagCode.LINE_ITEM_OVER_THRESHOLD,
+            message="Line item amount is above the MVP manual review threshold.",
+        )
+        for line_item in request.line_items
+        if is_line_item_over_threshold(line_item.amount)
+    ]
+
+    return GlCodingComputeResponse(coded_items=coded_items, flags=flags)
+
+
+def code_line_item_to_gl_account(
+    line_item: GlCodingLineItemRequest,
+    accounts_by_category: dict[ExpenseCategory, GlAccount],
+) -> GlCodedItem:
+    """Return the mapped or explicitly unmapped GL coding result for one item."""
+    gl_account = accounts_by_category.get(line_item.category)
+    mapping_status = (
+        GlMappingStatus.MAPPED
+        if gl_account is not None
+        else GlMappingStatus.UNMAPPED
+    )
+
+    return GlCodedItem(
+        source_id=line_item.line_item_id,
+        source_type=GlSourceType.LINE_ITEM,
+        category=line_item.category,
+        mapping_status=mapping_status,
+        gl_account=gl_account,
+        amount=line_item.amount,
+        currency=line_item.currency,
+        flagged_line_item=is_line_item_over_threshold(line_item.amount),
+    )
+
+
+def is_line_item_over_threshold(amount: Decimal) -> bool:
+    """Return whether a line item crosses the MVP manual review threshold."""
+    return amount > Decimal("500.00")

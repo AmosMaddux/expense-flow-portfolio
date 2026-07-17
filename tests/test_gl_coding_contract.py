@@ -85,7 +85,9 @@ def test_gl_coding_response_model_accepts_tenant_resolved_account() -> None:
         }
     )
 
-    assert response.coded_items[0].gl_account.account_code == "7777"
+    gl_account = response.coded_items[0].gl_account
+    assert gl_account is not None
+    assert gl_account.account_code == "7777"
 
 
 def test_gl_coding_request_rejects_negative_line_item_amount() -> None:
