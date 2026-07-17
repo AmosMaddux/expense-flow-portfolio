@@ -339,7 +339,7 @@ void describe("auditEntry schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "audit_entry_tenant_report_created_at_idx",
-            "audit_entry_tenant_report_created_sequence_idx",
+            "audit_entry_tenant_report_sequence_idx",
             "audit_entry_tenant_actor_created_at_idx",
         ]);
     });
@@ -419,7 +419,7 @@ void describe("auditEntry schema", () => {
             "audit_entry_tenant_actor_created_at_idx",
         );
         expect(migrationSql).toContain(
-            "audit_entry_tenant_report_created_sequence_idx",
+            "audit_entry_tenant_report_sequence_idx",
         );
     });
 

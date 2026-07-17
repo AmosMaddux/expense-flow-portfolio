@@ -193,12 +193,13 @@ void describe("expenseReportRepository", () => {
         });
         expect(crossTenantRows).toHaveLength(0);
     });
-    void test("orders audit entries deterministically when timestamps tie", async () => {
+    void test("orders audit entries by append sequence when timestamps are skewed", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000198";
         const reportId = "10000000-0000-4000-8000-000000000198";
         const ownerId = "20000000-0000-4000-8000-000000000198";
         const actorId = "30000000-0000-4000-8000-000000000198";
-        const tiedCreatedAt = new Date("2026-07-02T12:00:00.000Z");
+        const firstCreatedAt = new Date("2026-07-02T12:00:00.000Z");
+        const secondCreatedAt = new Date("2026-07-02T11:59:00.000Z");
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -215,7 +216,7 @@ void describe("expenseReportRepository", () => {
                 action: "first_action",
                 stageBeforeAction: "Drafted",
                 stageAfterProposedAction: "Drafted",
-                createdAt: tiedCreatedAt,
+                createdAt: firstCreatedAt,
             },
             {
                 id: "10000000-0000-4000-8000-000000000199",
@@ -225,7 +226,7 @@ void describe("expenseReportRepository", () => {
                 action: "second_action",
                 stageBeforeAction: "Drafted",
                 stageAfterProposedAction: "Drafted",
-                createdAt: tiedCreatedAt,
+                createdAt: secondCreatedAt,
             },
         ]);
 
@@ -238,7 +239,9 @@ void describe("expenseReportRepository", () => {
             "first_action",
             "second_action",
         ]);
-        expect(auditRows[0]?.createdAt).toEqual(auditRows[1]?.createdAt);
+        expect(auditRows[1]?.createdAt.getTime()).toBeLessThan(
+            auditRows[0]?.createdAt.getTime() ?? 0,
+        );
         expect(auditRows[0]?.sequence).toBeLessThan(
             auditRows[1]?.sequence ?? 0,
         );

@@ -162,10 +162,9 @@ export const auditEntry = pgTable(
             table.expenseReportId,
             table.createdAt,
         ),
-        index("audit_entry_tenant_report_created_sequence_idx").on(
+        index("audit_entry_tenant_report_sequence_idx").on(
             table.tenantId,
             table.expenseReportId,
-            table.createdAt,
             table.sequence,
         ),
         index("audit_entry_tenant_actor_created_at_idx").on(

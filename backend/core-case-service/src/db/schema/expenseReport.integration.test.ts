@@ -1,5 +1,8 @@
+import { readFile, readdir } from "node:fs/promises";
+
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
@@ -30,6 +33,97 @@ const requiredTables = [
     getTableConfig(mileageEntry),
 ];
 
+const migrationsUrl = new URL("../../../drizzle/", import.meta.url);
+
+async function applyMigrationRange(
+    client: Client,
+    minimumMigrationNumber: number,
+    maximumMigrationNumber: number,
+): Promise<void> {
+    const migrationFileNames = (await readdir(migrationsUrl))
+        .filter((fileName) => /^\d{4}_.*\.sql$/u.test(fileName))
+        .filter((fileName) => {
+            const migrationNumber = Number(fileName.slice(0, 4));
+
+            return (
+                migrationNumber >= minimumMigrationNumber &&
+                migrationNumber <= maximumMigrationNumber
+            );
+        })
+        .sort();
+
+    for (const fileName of migrationFileNames) {
+        const migrationSql = await readFile(
+            new URL(fileName, migrationsUrl),
+            "utf8",
+        );
+        const statements = migrationSql
+            .split(/-->\s*statement-breakpoint/u)
+            .map((statement) => statement.trim())
+            .filter((statement) => statement.length > 0);
+
+        for (const statement of statements) {
+            await client.query(statement);
+        }
+    }
+}
+void describe("audit entry sequence migration", () => {
+    void test("backfills populated audit entries while preserving append-only enforcement", async () => {
+        const container = await new PostgreSqlContainer("postgres:17-alpine")
+            .withDatabase("expenseflow_core_case_sequence")
+            .withUsername("expenseflow")
+            .withPassword("expenseflow")
+            .start();
+        const client = new Client({
+            connectionString: container.getConnectionUri(),
+        });
+        const tenantId = "00000000-0000-4000-8000-000000000501";
+        const reportId = "10000000-0000-4000-8000-000000000501";
+        const ownerId = "20000000-0000-4000-8000-000000000501";
+        const actorId = "30000000-0000-4000-8000-000000000501";
+        const auditEntryId = "40000000-0000-4000-8000-000000000501";
+
+        try {
+            await client.connect();
+            await applyMigrationRange(client, 0, 12);
+            await client.query(
+                `INSERT INTO "expense_report" ("id", "owner", "due_date", "tenant_id")
+                 VALUES ($1, $2, '2026-07-02', $3)`,
+                [reportId, ownerId, tenantId],
+            );
+            await client.query(
+                `INSERT INTO "audit_entry" ("id", "tenant_id", "expense_report_id", "actor_id", "action", "stage_before_action", "stage_after_proposed_action")
+                 VALUES ($1, $2, $3, $4, 'report_created', 'Drafted', 'Drafted')`,
+                [auditEntryId, tenantId, reportId, actorId],
+            );
+
+            await applyMigrationRange(client, 13, 13);
+
+            const migratedAuditEntry = await client.query(
+                `SELECT "sequence" FROM "audit_entry" WHERE "id" = $1`,
+                [auditEntryId],
+            );
+            expect(migratedAuditEntry.rows[0]).toMatchObject({ sequence: "1" });
+
+            await client.query(`
+DO $$
+BEGIN
+    UPDATE "audit_entry" SET "action" = 'tampered' WHERE "id" = '${auditEntryId}';
+    RAISE EXCEPTION 'expected audit_entry update to fail';
+EXCEPTION
+    WHEN others THEN
+        IF SQLERRM <> 'audit_entry rows are append-only' THEN
+            RAISE;
+        END IF;
+END;
+$$;
+`);
+        } finally {
+            await client.end().catch(() => undefined);
+            await container.stop().catch(() => undefined);
+        }
+    });
+});
 void describe("audit entry PostgreSQL constraints", () => {
     void test("prevents audit entry updates and deletes in PostgreSQL", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000401";

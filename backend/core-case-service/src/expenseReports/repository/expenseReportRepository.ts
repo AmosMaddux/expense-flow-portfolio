@@ -649,5 +649,5 @@ export async function findAuditEntriesByExpenseReportId(
                 eq(auditEntry.expenseReportId, expenseReportId),
             ),
         )
-        .orderBy(asc(auditEntry.createdAt), asc(auditEntry.sequence));
+        .orderBy(asc(auditEntry.sequence));
 }
