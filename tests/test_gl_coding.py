@@ -12,6 +12,7 @@ from backend.python.gl_coding import (
     GlCodingComputeRequest,
     GlMappingStatus,
     code_line_items_to_gl_accounts,
+    get_mileage_reimbursement_rate,
 )
 from backend.python.main import app, get_gl_account_mapping_repository
 
@@ -247,3 +248,44 @@ async def test_gl_coding_endpoint_payload_preserves_currency_amounts() -> None:
 
     assert response.coded_items[0].amount == Decimal("501.00")
     assert response.coded_items[0].currency == "USD"
+
+
+@pytest.mark.anyio
+async def test_code_line_items_calculates_and_flags_mileage_reimbursements() -> None:
+    request = GlCodingComputeRequest.model_validate(
+        {
+            "line_items": [],
+            "mileage": [
+                {
+                    "mileage_entry_id": "30000000-0000-4000-8000-000000000201",
+                    "route": "Office to client site",
+                    "distance": "750.01",
+                    "mileage_date": "2026-07-16",
+                }
+            ],
+        }
+    )
+    repository = FakeGlAccountMappingRepository(SEEDED_GL_ACCOUNTS)
+
+    response = await code_line_items_to_gl_accounts(
+        request, TENANT_ID, repository, Decimal("0.70")
+    )
+
+    assert response.coded_items[0].source_type.value == "mileage"
+    assert response.coded_items[0].amount == Decimal("525.01")
+    assert response.coded_items[0].currency == "USD"
+    assert response.coded_items[0].flagged_line_item is True
+    assert response.flags[0].code.value == "mileage_over_threshold"
+    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
+
+
+def test_mileage_reimbursement_rate_uses_environment_override() -> None:
+    assert get_mileage_reimbursement_rate(
+        {"MILEAGE_REIMBURSEMENT_RATE": "0.715"}
+    ) == Decimal("0.715")
+
+
+@pytest.mark.parametrize("rate", ["0", "-0.70", "not-a-decimal"])
+def test_mileage_reimbursement_rate_rejects_invalid_configuration(rate: str) -> None:
+    with pytest.raises(ValueError, match="Mileage reimbursement rate"):
+        get_mileage_reimbursement_rate({"MILEAGE_REIMBURSEMENT_RATE": rate})

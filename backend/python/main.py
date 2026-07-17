@@ -17,6 +17,7 @@ from .gl_coding import (
     GlCodingComputeResponse,
     GlAccountMappingRepository,
     code_line_items_to_gl_accounts,
+    get_mileage_reimbursement_rate,
 )
 from .gl_mapping_repository import PostgresGlAccountMappingRepository
 from .service_health import ServiceHealth
@@ -100,7 +101,10 @@ async def gl_coding_line_items(
 ) -> GlCodingComputeResponse:
     """Return GL account coding results for AP Review line items."""
     return await code_line_items_to_gl_accounts(
-        request, context.tenant_id, mapping_repository
+        request,
+        context.tenant_id,
+        mapping_repository,
+        get_mileage_reimbursement_rate(),
     )
 
 
