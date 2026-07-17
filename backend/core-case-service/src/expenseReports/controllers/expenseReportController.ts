@@ -194,11 +194,10 @@ export async function getExpenseReportAuditEntries(
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        const ownerScope = getAuthorizedOwnerScope(auth);
+        requireInternalAuditTrailAccess(auth);
         const auditEntries = await readExpenseReportAuditEntries({
             ...parsedRequest,
             tenantId: auth.tenantId,
-            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
         });
 
         res.status(200).json(auditEntries);
@@ -213,6 +212,18 @@ function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     }
 
     return req.auth;
+}
+
+function requireInternalAuditTrailAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Audit Trail access is limited to internal roles.",
+    );
 }
 
 const internalExpenseReportRoles = new Set<RoleName>([
