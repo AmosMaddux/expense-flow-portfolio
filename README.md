@@ -213,6 +213,8 @@ docker rm expenseflow-postgres-dev
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.
 
+[docs/service-boundaries.md](docs/service-boundaries.md) defines which service owns `Expense Report` cases, GL coding, and identity, including each service's datastore and tenant-isolation strategy.
+
 Future architecture decisions should be recorded as ADRs under `docs/adr/`. Name ADR files with the pattern `NNNN-short-title.md`, such as `0001-tenant-isolation.md`.
 
 ADRs must use synthetic examples only and follow [AGENTS.md](AGENTS.md) plus the data classification posture.
@@ -230,6 +232,7 @@ ExpenseFlow uses a protected `main`, a `develop` integration branch, and short-l
 - [Agent contract](AGENTS.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Data classification posture](docs/data-classification.md)
+- [Service ownership boundaries](docs/service-boundaries.md)
 - [PR review checklist](docs/pr-review-checklist.md)
 - [ADR 0001: Store Expense Report Case records in PostgreSQL](docs/adr/0001-expense-report-case-postgresql.md)
 - [Codex configuration](config.toml)
