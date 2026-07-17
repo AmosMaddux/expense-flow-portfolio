@@ -1,9 +1,17 @@
 import type { NextFunction, Request, Response } from "express";
 
+import type { RoleName } from "../../db/schema/index.js";
+import {
+    ForbiddenError,
+    UnauthorizedError,
+} from "../../errors/problem-json.js";
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
+    IdempotentSubmissionHeaderSchema,
 } from "../../schemas/expense-report.schema.js";
+import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
+import { runIdempotentSubmission } from "../../idempotency/idempotencyService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -18,17 +26,41 @@ export async function postExpenseReport(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const report = await createDraftExpenseReport({
-            owner: parsedRequest.owner,
-            dueDate: parsedRequest.dueDate,
-            priority: parsedRequest.priority,
-            tenantId: parsedRequest.tenant_id,
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        if (ownerScope !== undefined && parsedRequest.owner !== ownerScope) {
+            throw new ForbiddenError(
+                "Employees may only create their own Expense Reports.",
+            );
+        }
+
+        const createReport = async () =>
+            createDraftExpenseReport({
+                owner: parsedRequest.owner,
+                dueDate: parsedRequest.dueDate,
+                priority: parsedRequest.priority,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+            });
+        const idempotencyKey = parseIdempotencyKey(req);
+        if (idempotencyKey === undefined) {
+            const report = await createReport();
+
+            res.status(201).json(report);
+            return;
+        }
+
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: createReport,
+            store: getDefaultIdempotencyStore(),
+            tenantId: auth.tenantId,
         });
 
-        res.status(201).json(report);
+        res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
         next(error);
     }
@@ -43,13 +75,58 @@ export async function getExpenseReportById(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        const report = await readExpenseReport(parsedRequest);
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const report = await readExpenseReport({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
 
         res.status(200).json(report);
     } catch (error: unknown) {
         next(error);
     }
+}
+
+function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
+    if (req.auth === undefined) {
+        throw new UnauthorizedError();
+    }
+
+    return req.auth;
+}
+
+const internalExpenseReportRoles = new Set<RoleName>([
+    "Finance Admin",
+    "Department Manager",
+]);
+
+function getAuthorizedOwnerScope(
+    auth: NonNullable<Request["auth"]>,
+): string | undefined {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return undefined;
+    }
+
+    if (auth.roles.includes("Employee")) {
+        // Employee Portal access is limited to records owned by the authenticated user.
+        return auth.userId;
+    }
+
+    throw new ForbiddenError();
+}
+
+function parseIdempotencyKey(req: Request): string | undefined {
+    const header = req.get("idempotency-key");
+    if (header === undefined) {
+        return undefined;
+    }
+
+    return IdempotentSubmissionHeaderSchema.parse({
+        idempotencyKey: header,
+    }).idempotencyKey;
 }

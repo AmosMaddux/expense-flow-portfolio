@@ -3,7 +3,12 @@ import { type Server } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
-import { NotFoundError, problemJsonErrorHandler } from "./problem-json.js";
+import {
+    ForbiddenError,
+    NotFoundError,
+    problemJsonErrorHandler,
+    UnauthorizedError,
+} from "./problem-json.js";
 
 let activeServer: Server | undefined;
 
@@ -71,6 +76,12 @@ function buildProblemJsonTestApp(): Express {
     });
     app.get("/missing-report", () => {
         throw new NotFoundError("Expense Report not found");
+    });
+    app.get("/unauthorized", () => {
+        throw new UnauthorizedError();
+    });
+    app.get("/forbidden", () => {
+        throw new ForbiddenError();
     });
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
@@ -224,6 +235,43 @@ void describe("problemJsonErrorHandler", () => {
             status: 404,
             detail: "Expense Report not found",
             instance: "/missing-report",
+        });
+    });
+
+    void test("maps UnauthorizedError to a 401 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/unauthorized",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Unauthorized",
+            status: 401,
+            detail: "A valid access token is required.",
+            instance: "/unauthorized",
+        });
+    });
+
+    void test("maps ForbiddenError to a 403 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/forbidden",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(403);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Forbidden",
+            status: 403,
+            detail: "This action is not permitted.",
+            instance: "/forbidden",
         });
     });
 

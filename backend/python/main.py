@@ -1,14 +1,72 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from typing import Annotated
+from collections.abc import AsyncIterator
 
+from fastapi import Depends, FastAPI
+
+from .auth import (
+    AuthJwtVerifier,
+    AuthenticatedIdentity,
+    AuthenticatedRequestContext,
+    require_authenticated_identity,
+    require_request_context,
+)
+from .gl_coding import (
+    GlCodingComputeRequest,
+    GlCodingComputeResponse,
+    code_line_items_to_gl_accounts,
+)
 from .service_health import ServiceHealth
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Validate shared JWT verifier configuration at application startup."""
+    # Intentional fail-fast: a missing/invalid JWT public key config raises
+    # AuthJwtConfigurationError here and prevents the app from starting at all.
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
     """Return a bounded health payload for deployment and smoke checks."""
     return ServiceHealth(status="healthy", message="The service is live and healthy")
+
+
+@app.get(
+    "/auth/me", response_model=AuthenticatedIdentity, response_model_by_alias=False
+)
+async def auth_me(
+    identity: Annotated[AuthenticatedIdentity, Depends(require_authenticated_identity)],
+) -> AuthenticatedIdentity:
+    """Return the identity context from a validated shared JWT."""
+    return identity
+
+
+@app.get(
+    "/auth/context",
+    response_model=AuthenticatedRequestContext,
+)
+async def auth_context(
+    context: Annotated[AuthenticatedRequestContext, Depends(require_request_context)],
+) -> AuthenticatedRequestContext:
+    """Return the trusted tenant and role request context."""
+    return context
+
+
+@app.post(
+    "/gl-coding/line-items",
+    response_model=GlCodingComputeResponse,
+)
+async def gl_coding_line_items(
+    request: GlCodingComputeRequest,
+) -> GlCodingComputeResponse:
+    """Return GL account coding results for AP Review line items."""
+    return code_line_items_to_gl_accounts(request)
 
 
 def main():

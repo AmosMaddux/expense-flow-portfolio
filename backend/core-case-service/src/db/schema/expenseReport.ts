@@ -25,6 +25,38 @@ export const approvedWorkflowStages = [
 
 export const priorityLevels = ["Low", "Normal", "High", "Urgent"] as const;
 
+export const approvedAttachmentContentTypes = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "text/plain",
+    "text/csv",
+    "application/json",
+] as const;
+
+function buildStaticStringInListSql(values: readonly string[]) {
+    if (values.length === 0) {
+        throw new Error(
+            "Static SQL allowlists must contain at least one value.",
+        );
+    }
+
+    // sql.raw preserves literal migration SQL; use only with hard-coded schema allowlists.
+    return sql.join(
+        values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`)),
+        sql`, `,
+    );
+}
+
+const approvedWorkflowStageCheckSql = buildStaticStringInListSql(
+    approvedWorkflowStages,
+);
+const priorityLevelCheckSql = buildStaticStringInListSql(priorityLevels);
+const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
+    approvedAttachmentContentTypes,
+);
+
 export const expenseReport = pgTable(
     "expense_report",
     {
@@ -46,11 +78,11 @@ export const expenseReport = pgTable(
     (table) => [
         check(
             "expense_report_current_stage_check",
-            sql`${table.currentStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.currentStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "expense_report_priority_check",
-            sql`${table.priority} in ('Low', 'Normal', 'High', 'Urgent')`,
+            sql`${table.priority} in (${priorityLevelCheckSql})`,
         ),
         check(
             "expense_report_hold_reason_check",
@@ -113,11 +145,11 @@ export const auditEntry = pgTable(
         ),
         check(
             "audit_entry_stage_before_action_check",
-            sql`${table.stageBeforeAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageBeforeAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "audit_entry_stage_after_proposed_action_check",
-            sql`${table.stageAfterProposedAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageAfterProposedAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         index("audit_entry_tenant_report_created_at_idx").on(
             table.tenantId,
@@ -155,11 +187,11 @@ export const stageTransition = pgTable(
     (table) => [
         check(
             "stage_transition_from_stage_check",
-            sql`${table.fromStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.fromStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_to_stage_check",
-            sql`${table.toStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.toStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_reason_check",
@@ -229,6 +261,77 @@ export const lineItem = pgTable(
     ],
 );
 
+export const glCode = pgTable(
+    "gl_code",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        accountCode: text("account_code").notNull(),
+        accountName: text("account_name").notNull(),
+        description: text("description"),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_code_account_code_not_blank_check",
+            sql`nullif(btrim(${table.accountCode}), '') is not null`,
+        ),
+        check(
+            "gl_code_account_name_not_blank_check",
+            sql`nullif(btrim(${table.accountName}), '') is not null`,
+        ),
+        uniqueIndex("gl_code_tenant_account_code_unique_idx").on(
+            table.tenantId,
+            table.accountCode,
+        ),
+        // Mapping rows use this key so their tenant_id must match the referenced GL code.
+        uniqueIndex("gl_code_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
+    ],
+);
+
+export const glMapping = pgTable(
+    "gl_mapping",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        category: text("category").notNull(),
+        glCodeId: uuid("gl_code_id").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_mapping_category_not_blank_check",
+            sql`nullif(btrim(${table.category}), '') is not null`,
+        ),
+        uniqueIndex("gl_mapping_tenant_category_unique_idx").on(
+            table.tenantId,
+            table.category,
+        ),
+        index("gl_mapping_tenant_gl_code_idx").on(
+            table.tenantId,
+            table.glCodeId,
+        ),
+        foreignKey({
+            name: "gl_mapping_gl_code_tenant_fk",
+            // Tenant joins prevent category mappings from pointing to another tenant's GL code.
+            columns: [table.tenantId, table.glCodeId],
+            foreignColumns: [glCode.tenantId, glCode.id],
+        }),
+    ],
+);
 export const caseComment = pgTable(
     "case_comment",
     {
@@ -287,7 +390,7 @@ export const attachmentMetadata = pgTable(
         check(
             "attachment_metadata_content_type_check",
             // Canonical MIME types keep attachment handling predictable downstream.
-            sql`${table.contentType} in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')`,
+            sql`${table.contentType} in (${approvedAttachmentContentTypeCheckSql})`,
         ),
         foreignKey({
             name: "attachment_metadata_expense_report_tenant_fk",
@@ -366,6 +469,10 @@ export const mileageEntry = pgTable(
 
 export type LineItem = InferSelectModel<typeof lineItem>;
 export type NewLineItem = InferInsertModel<typeof lineItem>;
+export type GlCode = InferSelectModel<typeof glCode>;
+export type NewGlCode = InferInsertModel<typeof glCode>;
+export type GlMapping = InferSelectModel<typeof glMapping>;
+export type NewGlMapping = InferInsertModel<typeof glMapping>;
 export type CaseComment = InferSelectModel<typeof caseComment>;
 export type NewCaseComment = InferInsertModel<typeof caseComment>;
 export type AttachmentMetadata = InferSelectModel<typeof attachmentMetadata>;

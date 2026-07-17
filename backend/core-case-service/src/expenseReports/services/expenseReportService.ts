@@ -13,17 +13,22 @@ import type {
  * Creates a Drafted Expense Report and returns the public API response shape.
  */
 export async function createDraftExpenseReport(
-    request: Omit<CreateExpenseReportRequest, "tenant_id"> & {
+    request: CreateExpenseReportRequest & {
         tenantId: string;
+        actorId: string;
     },
 ): Promise<ExpenseReportResponse> {
-    const report = await insertDraftExpenseReport(request.tenantId, {
-        tenantId: request.tenantId,
-        owner: request.owner,
-        dueDate: request.dueDate,
-        priority: request.priority,
-        currentStage: "Drafted",
-    });
+    const report = await insertDraftExpenseReport(
+        request.tenantId,
+        {
+            tenantId: request.tenantId,
+            owner: request.owner,
+            dueDate: request.dueDate,
+            priority: request.priority,
+            currentStage: "Drafted",
+        },
+        request.actorId,
+    );
 
     if (report === undefined) {
         throw new Error("Unable to create Expense Report.");
@@ -36,9 +41,16 @@ export async function createDraftExpenseReport(
  * Reads an Expense Report by case identifier and returns the public API response shape.
  */
 export async function readExpenseReport(
-    request: GetExpenseReportRequest,
+    request: GetExpenseReportRequest & {
+        tenantId: string;
+        ownerId?: string;
+    },
 ): Promise<ExpenseReportResponse> {
-    const report = await findExpenseReportById(request.id);
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
 
     if (report === undefined) {
         throw new NotFoundError("Expense Report not found.");
