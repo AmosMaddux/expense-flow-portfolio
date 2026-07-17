@@ -6,9 +6,17 @@ import {
     UnauthorizedError,
 } from "../errors/problem-json.js";
 
-type TenantWindow = {
+export type TenantRateLimitUsage = {
     requestCount: number;
-    resetsAtMilliseconds: number;
+    retryAfterSeconds: number;
+};
+
+export type TenantRateLimitStore = {
+    consume(request: {
+        tenantId: string;
+        windowSeconds: number;
+        now: Date;
+    }): Promise<TenantRateLimitUsage>;
 };
 
 /**
@@ -16,55 +24,43 @@ type TenantWindow = {
  */
 export function createTenantRateLimitMiddleware(
     config: RateLimitConfig,
-    now: () => number = Date.now,
+    store: TenantRateLimitStore,
+    now: () => Date = () => new Date(),
 ): RequestHandler {
-    const tenantWindows = new Map<string, TenantWindow>();
-    const windowMilliseconds = config.windowSeconds * 1_000;
-
-    return (req: Request, res: Response, next: NextFunction): void => {
+    return async (
+        req: Request,
+        res: Response,
+        next: NextFunction,
+    ): Promise<void> => {
         const tenantId = req.auth?.tenantId;
         if (tenantId === undefined) {
             next(new UnauthorizedError());
             return;
         }
 
-        const currentTime = now();
-        const existingWindow = tenantWindows.get(tenantId);
-        const tenantWindow =
-            existingWindow === undefined ||
-            currentTime >= existingWindow.resetsAtMilliseconds
-                ? {
-                      requestCount: 0,
-                      resetsAtMilliseconds: currentTime + windowMilliseconds,
-                  }
-                : existingWindow;
+        try {
+            const usage = await store.consume({
+                tenantId,
+                windowSeconds: config.windowSeconds,
+                now: now(),
+            });
+            const remaining = Math.max(0, config.requests - usage.requestCount);
 
-        tenantWindow.requestCount += 1;
-        tenantWindows.set(tenantId, tenantWindow);
+            res.set({
+                "RateLimit-Limit": String(config.requests),
+                "RateLimit-Remaining": String(remaining),
+                "RateLimit-Reset": String(usage.retryAfterSeconds),
+                "X-RateLimit-Cost": "1",
+            });
 
-        const retryAfterSeconds = Math.max(
-            1,
-            Math.ceil(
-                (tenantWindow.resetsAtMilliseconds - currentTime) / 1_000,
-            ),
-        );
-        const remaining = Math.max(
-            0,
-            config.requests - tenantWindow.requestCount,
-        );
+            if (usage.requestCount > config.requests) {
+                next(new RateLimitExceededError(usage.retryAfterSeconds));
+                return;
+            }
 
-        res.set({
-            "RateLimit-Limit": String(config.requests),
-            "RateLimit-Remaining": String(remaining),
-            "RateLimit-Reset": String(retryAfterSeconds),
-            "X-RateLimit-Cost": "1",
-        });
-
-        if (tenantWindow.requestCount > config.requests) {
-            next(new RateLimitExceededError(retryAfterSeconds));
-            return;
+            next();
+        } catch (error) {
+            next(error);
         }
-
-        next();
     };
 }

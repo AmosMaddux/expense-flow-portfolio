@@ -3,9 +3,51 @@ import { type Server } from "node:http";
 import { describe, expect, test } from "vitest";
 
 import { problemJsonErrorHandler } from "../errors/problem-json.js";
-import { createTenantRateLimitMiddleware } from "./tenantRateLimitMiddleware.js";
+import {
+    createTenantRateLimitMiddleware,
+    type TenantRateLimitStore,
+} from "./tenantRateLimitMiddleware.js";
 
-function buildTestApp(now: () => number): Express {
+function createFakeSharedStore(): TenantRateLimitStore {
+    const windows = new Map<
+        string,
+        { count: number; startedAtMilliseconds: number }
+    >();
+
+    return {
+        consume(request) {
+            const currentTime = request.now.getTime();
+            const existing = windows.get(request.tenantId);
+            const windowMilliseconds = request.windowSeconds * 1_000;
+            const window =
+                existing === undefined ||
+                existing.startedAtMilliseconds + windowMilliseconds <=
+                    currentTime
+                    ? { count: 0, startedAtMilliseconds: currentTime }
+                    : existing;
+
+            window.count += 1;
+            windows.set(request.tenantId, window);
+            return Promise.resolve({
+                requestCount: window.count,
+                retryAfterSeconds: Math.max(
+                    1,
+                    Math.ceil(
+                        (window.startedAtMilliseconds +
+                            windowMilliseconds -
+                            currentTime) /
+                            1_000,
+                    ),
+                ),
+            });
+        },
+    };
+}
+
+function buildTestApp(
+    now: () => Date,
+    store: TenantRateLimitStore = createFakeSharedStore(),
+): Express {
     const app = express();
 
     app.use((req, _res, next) => {
@@ -19,9 +61,11 @@ function buildTestApp(now: () => number): Express {
     app.use(
         createTenantRateLimitMiddleware(
             { requests: 2, windowSeconds: 10 },
+            store,
             now,
         ),
     );
+    app.use(express.json());
     app.get("/resource", (_req, res) => {
         res.status(200).json({ ok: true });
     });
@@ -65,7 +109,7 @@ async function closeServer(server: Server): Promise<void> {
 
 void describe("tenant rate limit middleware", () => {
     void test("returns 429 beyond the limit and resets after the window", async () => {
-        let currentTime = Date.parse("2026-07-16T12:00:00.000Z");
+        let currentTime = new Date("2026-07-16T12:00:00.000Z");
         const app = buildTestApp(() => currentTime);
 
         expect((await requestApp(app)).status).toBe(200);
@@ -82,16 +126,19 @@ void describe("tenant rate limit middleware", () => {
             status: 429,
         });
 
-        currentTime += 10_000;
+        currentTime = new Date(currentTime.getTime() + 10_000);
         expect((await requestApp(app)).status).toBe(200);
     });
 
-    void test("tracks each tenant independently", async () => {
-        const app = buildTestApp(() => 1_000);
+    void test("tracks tenants independently across middleware instances", async () => {
+        const store = createFakeSharedStore();
+        const now = () => new Date("2026-07-16T12:00:00.000Z");
+        const firstApp = buildTestApp(now, store);
+        const secondApp = buildTestApp(now, store);
 
-        expect((await requestApp(app, "tenant-one")).status).toBe(200);
-        expect((await requestApp(app, "tenant-one")).status).toBe(200);
-        expect((await requestApp(app, "tenant-one")).status).toBe(429);
-        expect((await requestApp(app, "tenant-two")).status).toBe(200);
+        expect((await requestApp(firstApp, "tenant-one")).status).toBe(200);
+        expect((await requestApp(secondApp, "tenant-one")).status).toBe(200);
+        expect((await requestApp(firstApp, "tenant-one")).status).toBe(429);
+        expect((await requestApp(secondApp, "tenant-two")).status).toBe(200);
     });
 });

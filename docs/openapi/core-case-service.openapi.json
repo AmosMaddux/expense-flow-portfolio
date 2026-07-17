@@ -3,7 +3,7 @@
     "info": {
         "title": "ExpenseFlow Core Case Service API",
         "version": "1.0.0",
-        "description": "Discoverable contract for Core Case Service Expense Report endpoints."
+        "description": "Discoverable contract for Core Case Service Expense Report endpoints. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted."
     },
     "servers": [
         {
@@ -17,6 +17,72 @@
                 "type": "http",
                 "scheme": "bearer",
                 "bearerFormat": "JWT"
+            }
+        },
+        "headers": {
+            "RateLimitLimit": {
+                "description": "Maximum tenant requests in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitRemaining": {
+                "description": "Tenant requests remaining in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "RateLimitReset": {
+                "description": "Seconds until the current tenant window resets.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitCost": {
+                "description": "Request units charged for this API call.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RetryAfter": {
+                "description": "Seconds until the tenant may retry the request.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "responses": {
+            "RateLimitExceeded": {
+                "description": "The authenticated tenant request limit was exceeded.",
+                "headers": {
+                    "RateLimit-Limit": {
+                        "$ref": "#/components/headers/RateLimitLimit"
+                    },
+                    "RateLimit-Remaining": {
+                        "$ref": "#/components/headers/RateLimitRemaining"
+                    },
+                    "RateLimit-Reset": {
+                        "$ref": "#/components/headers/RateLimitReset"
+                    },
+                    "X-RateLimit-Cost": {
+                        "$ref": "#/components/headers/RateLimitCost"
+                    },
+                    "Retry-After": {
+                        "$ref": "#/components/headers/RetryAfter"
+                    }
+                },
+                "content": {
+                    "application/problem+json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ProblemJson"
+                        }
+                    }
+                }
             }
         },
         "schemas": {
@@ -332,6 +398,20 @@
                 "responses": {
                     "201": {
                         "description": "Expense Report created.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -370,6 +450,9 @@
                             }
                         }
                     },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -406,6 +489,20 @@
                 "responses": {
                     "200": {
                         "description": "Expense Report found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -443,6 +540,9 @@
                                 }
                             }
                         }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
                     },
                     "500": {
                         "description": "Unexpected server error.",

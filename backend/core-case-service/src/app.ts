@@ -17,12 +17,12 @@ import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
+import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
 
-app.use(express.json());
-
+app.use("/auth", express.json());
 app.use(
     "/",
     createAuthRouter(
@@ -41,8 +41,12 @@ app.use(
 app.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
 app.use(
     "/expense-reports",
-    createTenantRateLimitMiddleware(loadRateLimitConfig()),
+    createTenantRateLimitMiddleware(
+        loadRateLimitConfig(),
+        createPostgresTenantRateLimitStore(db),
+    ),
 );
+app.use("/expense-reports", express.json());
 app.use("/", expenseReportRouter);
 
 /**

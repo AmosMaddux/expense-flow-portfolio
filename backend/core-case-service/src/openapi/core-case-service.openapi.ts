@@ -57,6 +57,53 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         mfaEnrollmentResponseSchema,
     );
     const problemJson = registry.register("ProblemJson", problemJsonSchema);
+    const rateLimitLimitHeader = registry.registerComponent(
+        "headers",
+        "RateLimitLimit",
+        integerHeader("Maximum tenant requests in the current window.", 1),
+    );
+    const rateLimitRemainingHeader = registry.registerComponent(
+        "headers",
+        "RateLimitRemaining",
+        integerHeader("Tenant requests remaining in the current window.", 0),
+    );
+    const rateLimitResetHeader = registry.registerComponent(
+        "headers",
+        "RateLimitReset",
+        integerHeader("Seconds until the current tenant window resets.", 1),
+    );
+    const rateLimitCostHeader = registry.registerComponent(
+        "headers",
+        "RateLimitCost",
+        integerHeader("Request units charged for this API call.", 1),
+    );
+    const retryAfterHeader = registry.registerComponent(
+        "headers",
+        "RetryAfter",
+        integerHeader("Seconds until the tenant may retry the request.", 1),
+    );
+    const rateLimitHeaders = {
+        "RateLimit-Limit": rateLimitLimitHeader.ref,
+        "RateLimit-Remaining": rateLimitRemainingHeader.ref,
+        "RateLimit-Reset": rateLimitResetHeader.ref,
+        "X-RateLimit-Cost": rateLimitCostHeader.ref,
+    };
+    const rateLimitExceededResponse = registry.registerComponent(
+        "responses",
+        "RateLimitExceeded",
+        {
+            description: "The authenticated tenant request limit was exceeded.",
+            headers: {
+                ...rateLimitHeaders,
+                "Retry-After": retryAfterHeader.ref,
+            },
+            content: {
+                "application/problem+json": {
+                    schema: { $ref: "#/components/schemas/ProblemJson" },
+                },
+            },
+        },
+    );
     const loginRequest = registry.register("LoginRequest", loginRequestSchema);
     const loginResponse = registry.register(
         "LoginResponse",
@@ -146,6 +193,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             201: {
                 description: "Expense Report created.",
+                headers: rateLimitHeaders,
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,
@@ -155,6 +203,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             400: problemJsonResponse("Malformed create request."),
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
+            429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -172,6 +221,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             200: {
                 description: "Expense Report found.",
+                headers: rateLimitHeaders,
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,
@@ -181,6 +231,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -195,7 +246,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             title: "ExpenseFlow Core Case Service API",
             version: "1.0.0",
             description:
-                "Discoverable contract for Core Case Service Expense Report endpoints.",
+                "Discoverable contract for Core Case Service Expense Report endpoints. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted.",
         },
         servers: [
             {
@@ -213,6 +264,13 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     schema: problemJson,
                 },
             },
+        };
+    }
+
+    function integerHeader(description: string, minimum: number) {
+        return {
+            description,
+            schema: { type: "integer" as const, minimum },
         };
     }
 }
