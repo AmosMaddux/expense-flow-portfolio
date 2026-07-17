@@ -11,6 +11,11 @@ from .auth import (
     require_authenticated_identity,
     require_request_context,
 )
+from .gl_coding import (
+    GlCodingComputeRequest,
+    GlCodingComputeResponse,
+    build_gl_coding_response,
+)
 from .service_health import ServiceHealth
 
 
@@ -51,6 +56,18 @@ async def auth_context(
 ) -> AuthenticatedRequestContext:
     """Return the trusted tenant and role request context."""
     return context
+
+
+@app.post(
+    "/gl-coding/compute",
+    response_model=GlCodingComputeResponse,
+    response_model_by_alias=False,
+)
+async def compute_gl_coding(
+    request: GlCodingComputeRequest,
+) -> GlCodingComputeResponse:
+    """Return GL-coded line items and mileage entries for a validated request."""
+    return build_gl_coding_response(request)
 
 
 def main():

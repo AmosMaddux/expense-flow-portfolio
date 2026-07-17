@@ -16,3 +16,10 @@ class MalformedCurrencyError(ValueError):
         super().__init__(
             f"Currency must be exactly 3 uppercase letters. Got: {str(currency)}"
         )
+
+
+class UnknownExpenseCategoryError(ValueError):
+    """Report an expense category that has no baseline GL mapping."""
+
+    def __init__(self, category: Any) -> None:
+        super().__init__(f"Expense category has no GL mapping. Got: {str(category)}")
