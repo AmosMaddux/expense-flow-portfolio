@@ -171,6 +171,56 @@ void describe("expenseReportRepository", () => {
         });
         expect(crossTenantRows).toHaveLength(0);
     });
+    void test("orders audit entries deterministically when timestamps tie", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000198";
+        const reportId = "10000000-0000-4000-8000-000000000198";
+        const ownerId = "20000000-0000-4000-8000-000000000198";
+        const actorId = "30000000-0000-4000-8000-000000000198";
+        const tiedCreatedAt = new Date("2026-07-02T12:00:00.000Z");
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-07-02",
+        });
+        await db.insert(auditEntry).values([
+            {
+                id: "90000000-0000-4000-8000-000000000198",
+                tenantId,
+                expenseReportId: reportId,
+                actorId,
+                action: "first_action",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Drafted",
+                createdAt: tiedCreatedAt,
+            },
+            {
+                id: "10000000-0000-4000-8000-000000000199",
+                tenantId,
+                expenseReportId: reportId,
+                actorId,
+                action: "second_action",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Drafted",
+                createdAt: tiedCreatedAt,
+            },
+        ]);
+
+        const auditRows = await findAuditEntriesByExpenseReportId(
+            tenantId,
+            reportId,
+        );
+
+        expect(auditRows.map((row) => row.action)).toEqual([
+            "first_action",
+            "second_action",
+        ]);
+        expect(auditRows[0]?.createdAt).toEqual(auditRows[1]?.createdAt);
+        expect(auditRows[0]?.sequence).toBeLessThan(
+            auditRows[1]?.sequence ?? 0,
+        );
+    });
     void test("finds an Expense Report by id", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000186";
         const targetId = "10000000-0000-4000-8000-000000000186";
