@@ -7,10 +7,13 @@ import { getTableName } from "drizzle-orm";
 
 import {
     attachmentMetadata,
+    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     auditEntry,
     caseComment,
     expenseReport,
+    glCode,
+    glMapping,
     lineItem,
     mileageEntry,
     priorityLevels,
@@ -45,6 +48,21 @@ const requiredLineItemColumnNames = [
     "category",
     "expense_report_id",
     "tenant_id",
+];
+const glCodeRequiredColumnNames = [
+    "tenant_id",
+    "account_code",
+    "account_name",
+    "created_at",
+    "updated_at",
+];
+
+const glMappingRequiredColumnNames = [
+    "tenant_id",
+    "category",
+    "gl_code_id",
+    "created_at",
+    "updated_at",
 ];
 
 const caseCommentRequiredColumnNames = [
@@ -96,6 +114,10 @@ const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
     import.meta.url,
 );
+const glReferenceMigrationSqlUrl = new URL(
+    "../../../drizzle/0009_gl_reference_seed.sql",
+    import.meta.url,
+);
 
 async function readLatestMigrationSql(): Promise<string> {
     // Drizzle chooses a generated suffix, so pin this test to the next migration number.
@@ -113,9 +135,17 @@ async function readLatestMigrationSql(): Promise<string> {
     return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
 }
 
-// MUST be strictly equal. If outside, checks FAILED
+function expectMigrationSqlToContainValues(
+    migrationSql: string,
+    values: readonly string[],
+): void {
+    for (const value of values) {
+        expect(migrationSql).toContain(`'${value.toLowerCase()}'`);
+    }
+}
+
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages and priority levels", () => {
+    void test("exports the approved workflow stages", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -124,12 +154,26 @@ void describe("expenseReport schema", () => {
             "Paid",
             "Reconciled",
         ]);
+    });
 
+    void test("exports the priority levels", () => {
         expect(priorityLevels).toStrictEqual([
             "Low",
             "Normal",
             "High",
             "Urgent",
+        ]);
+    });
+
+    void test("exports the approved attachment content types", () => {
+        expect(approvedAttachmentContentTypes).toStrictEqual([
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "text/plain",
+            "text/csv",
+            "application/json",
         ]);
     });
 
@@ -214,6 +258,8 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain("expense_report_current_stage_check");
         expect(migrationSql).toContain('expense_report_priority_check"');
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
+        expectMigrationSqlToContainValues(migrationSql, priorityLevels);
         expect(migrationSql).toContain("expense_report_hold_reason_check");
         expect(migrationSql).toContain("expense_report_tenant_stage_idx");
         expect(migrationSql).toContain(
@@ -350,6 +396,7 @@ void describe("auditEntry schema", () => {
         expect(migrationSql).toContain(
             "audit_entry_stage_after_proposed_action_check",
         );
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain(
             "audit_entry_tenant_report_created_at_idx",
         );
@@ -586,13 +633,10 @@ void describe("attachmentMetadata schema", () => {
         expect(migrationSql).toContain(
             "attachment_metadata_content_type_check",
         );
-        expect(migrationSql).toContain("'application/pdf'");
-        expect(migrationSql).toContain("'image/png'");
-        expect(migrationSql).toContain("'image/jpeg'");
-        expect(migrationSql).toContain("'image/webp'");
-        expect(migrationSql).toContain("'text/plain'");
-        expect(migrationSql).toContain("'text/csv'");
-        expect(migrationSql).toContain("'application/json'");
+        expectMigrationSqlToContainValues(
+            migrationSql,
+            approvedAttachmentContentTypes,
+        );
         expect(migrationSql).toContain("attachment_metadata_tenant_report_idx");
     });
 });
@@ -773,6 +817,7 @@ void describe("stageTransition schema", () => {
         );
         expect(migrationSql).toContain("stage_transition_from_stage_check");
         expect(migrationSql).toContain("stage_transition_to_stage_check");
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
         expect(migrationSql).toContain("report_created");
@@ -882,6 +927,172 @@ void describe("lineItem schema", () => {
     });
 });
 
+void describe("gl reference schema", () => {
+    void test("defines tenant-scoped GL account reference data", () => {
+        const tableConfig = getTableConfig(glCode);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glCode)).toEqual("gl_code");
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(columnNames).toContain("description");
+        expect(tableConfig.checks.map((check) => check.name).sort()).toEqual([
+            "gl_code_account_code_not_blank_check",
+            "gl_code_account_name_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_code_tenant_account_code_unique_idx",
+            "gl_code_tenant_id_unique_idx",
+        ]);
+
+        for (const indexConfig of tableConfig.indexes) {
+            expect(indexConfig.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("defines category-to-account mappings with tenant uniqueness", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glMapping)).toEqual("gl_mapping");
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(tableConfig.checks.map((check) => check.name)).toEqual([
+            "gl_mapping_category_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_mapping_tenant_category_unique_idx",
+            "gl_mapping_tenant_gl_code_idx",
+        ]);
+
+        const categoryIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "gl_mapping_tenant_category_unique_idx",
+        );
+
+        expect(categoryIndex).toBeDefined();
+
+        if (categoryIndex !== undefined) {
+            expect(categoryIndex.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("locks GL mappings to accounts within the same tenant", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "gl_code_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "gl_mapping_gl_code_tenant_fk",
+            },
+        ]);
+    });
+
+    void test("generates SQL for GL accounts and category mappings", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({ glCode, glMapping });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "gl_code"');
+        expect(migrationSql).toContain('create table "gl_mapping"');
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain(
+            "gl_code_tenant_account_code_unique_idx",
+        );
+        expect(migrationSql).toContain("gl_code_tenant_id_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_category_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_gl_code_idx");
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","gl_code_id") references "public"."gl_code"("tenant_id","id")',
+        );
+    });
+
+    void test("seeds baseline GL category mappings in the checked-in migration", async () => {
+        const migrationSql = (
+            await readFile(glReferenceMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain('insert into "gl_code"');
+        expect(migrationSql).toContain('insert into "gl_mapping"');
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "account_code") do nothing',
+        );
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "category") do nothing',
+        );
+
+        for (const category of [
+            "travel",
+            "meals",
+            "lodging",
+            "mileage",
+            "office supplies",
+            "software",
+            "other",
+        ]) {
+            expect(migrationSql).toContain(`'${category}'`);
+        }
+    });
+});
 void describe("receiptMetadata schema", () => {
     void test("defines the receipt_metadata child table", () => {
         const receiptMetadataConfig = getTableConfig(receiptMetadata);

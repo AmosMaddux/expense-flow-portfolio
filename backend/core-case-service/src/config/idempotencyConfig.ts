@@ -6,7 +6,7 @@ export type IdempotencyConfig = {
 };
 
 /**
- * Loads local and deployed idempotency infrastructure settings.
+ * Loads infrastructure settings for tenant-scoped idempotency storage.
  */
 export function loadIdempotencyConfig(
     env: NodeJS.ProcessEnv = process.env,

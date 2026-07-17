@@ -12,7 +12,7 @@ type RunIdempotentSubmissionRequest<TBody> = {
 };
 
 /**
- * Replays completed submissions and reserves a tenant key before side effects.
+ * Replays completed submissions and serializes first writers per tenant key.
  */
 export async function runIdempotentSubmission<TBody>({
     idempotencyKey,
@@ -27,10 +27,18 @@ export async function runIdempotentSubmission<TBody>({
 
     const lockToken = await store.acquireLock(tenantId, idempotencyKey);
     if (lockToken === undefined) {
-        return await readCompletedOrConflict(store, tenantId, idempotencyKey);
+        const completed = await store.getResult(tenantId, idempotencyKey);
+        if (completed !== undefined) {
+            return completed;
+        }
+
+        throw new ConflictError(
+            "A submission with this idempotency key is already in progress.",
+        );
     }
 
     let reservationToken: string | undefined;
+
     try {
         const completed = await store.getResult(tenantId, idempotencyKey);
         if (completed !== undefined) {
@@ -43,18 +51,23 @@ export async function runIdempotentSubmission<TBody>({
             lockToken,
         );
         if (!reserved) {
-            return await readCompletedOrConflict(
-                store,
+            const reservedResult = await store.getResult(
                 tenantId,
                 idempotencyKey,
+            );
+            if (reservedResult !== undefined) {
+                return reservedResult;
+            }
+
+            throw new ConflictError(
+                "A submission with this idempotency key is already in progress.",
             );
         }
         reservationToken = lockToken;
 
-        const result = {
-            body: toJsonSafeBody(await operation()),
-            statusCode: 201,
-        };
+        const body = toJsonSafeBody(await operation());
+        const result = { body, statusCode: 201 };
+
         await store.saveResult(tenantId, idempotencyKey, lockToken, result);
         reservationToken = undefined;
 
@@ -72,21 +85,6 @@ export async function runIdempotentSubmission<TBody>({
     } finally {
         await store.releaseLock(tenantId, idempotencyKey, lockToken);
     }
-}
-
-async function readCompletedOrConflict(
-    store: IdempotencyStore,
-    tenantId: string,
-    idempotencyKey: string,
-): Promise<IdempotencyResult> {
-    const completed = await store.getResult(tenantId, idempotencyKey);
-    if (completed !== undefined) {
-        return completed;
-    }
-
-    throw new ConflictError(
-        "A submission with this idempotency key is already in progress.",
-    );
 }
 
 function toJsonSafeBody(body: unknown): unknown {

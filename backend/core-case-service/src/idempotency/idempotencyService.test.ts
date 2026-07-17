@@ -28,50 +28,93 @@ void describe("runIdempotentSubmission", () => {
         expect(operation).not.toHaveBeenCalled();
     });
 
-    void test("does not run the operation when a durable reservation exists", async () => {
+    void test("rejects a concurrent submission when no result is ready", async () => {
         const store = createStore({
-            reserveSubmission: vi.fn().mockResolvedValue(false),
+            acquireLock: vi.fn().mockResolvedValue(undefined),
+            getResult: vi.fn().mockResolvedValue(undefined),
         });
-        const operation = vi.fn();
 
         await expect(
             runIdempotentSubmission({
                 idempotencyKey: "submit-2",
-                operation,
+                operation: vi.fn(),
                 store,
                 tenantId: "40000000-0000-4000-8000-000000000203",
             }),
         ).rejects.toBeInstanceOf(ConflictError);
-        expect(operation).not.toHaveBeenCalled();
     });
 
-    void test("clears a failed reservation so the same submission can retry", async () => {
-        const store = createStore({});
-        const tenantId = "40000000-0000-4000-8000-000000000204";
+    void test("does not run the operation when a durable reservation already exists", async () => {
+        const operation = vi.fn();
+        const store = createStore({
+            reserveSubmission: vi.fn().mockResolvedValue(false),
+        });
 
         await expect(
             runIdempotentSubmission({
                 idempotencyKey: "submit-3",
-                operation: () => Promise.reject(new Error("synthetic failure")),
+                operation,
+                store,
+                tenantId: "40000000-0000-4000-8000-000000000204",
+            }),
+        ).rejects.toBeInstanceOf(ConflictError);
+
+        expect(operation).not.toHaveBeenCalled();
+    });
+
+    void test("stores the original result as a JSON-safe response body", async () => {
+        const store = createStore({});
+        const createdAt = new Date("2026-08-01T12:00:00.000Z");
+
+        const result = await runIdempotentSubmission({
+            idempotencyKey: "submit-4",
+            operation: () => Promise.resolve({ createdAt }),
+            store,
+            tenantId: "40000000-0000-4000-8000-000000000205",
+        });
+
+        expect(result.body).toEqual({ createdAt: "2026-08-01T12:00:00.000Z" });
+        expect(store.saveResult).toHaveBeenCalledWith(
+            "40000000-0000-4000-8000-000000000205",
+            "submit-4",
+            "lock-token",
+            {
+                body: { createdAt: "2026-08-01T12:00:00.000Z" },
+                statusCode: 201,
+            },
+        );
+    });
+
+    void test("clears a failed reservation so the same submission can retry", async () => {
+        const store = createStore({});
+        const firstOperation = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic create failure"));
+        const tenantId = "40000000-0000-4000-8000-000000000206";
+
+        await expect(
+            runIdempotentSubmission({
+                idempotencyKey: "submit-5",
+                operation: firstOperation,
                 store,
                 tenantId,
             }),
-        ).rejects.toThrow("synthetic failure");
+        ).rejects.toThrow("synthetic create failure");
 
         expect(store.clearReservation).toHaveBeenCalledWith(
             tenantId,
-            "submit-3",
+            "submit-5",
             "lock-token",
         );
 
-        const retry = await runIdempotentSubmission({
-            idempotencyKey: "submit-3",
+        const retryResult = await runIdempotentSubmission({
+            idempotencyKey: "submit-5",
             operation: () => Promise.resolve({ id: "retried-report" }),
             store,
             tenantId,
         });
 
-        expect(retry).toEqual({
+        expect(retryResult).toEqual({
             body: { id: "retried-report" },
             statusCode: 201,
         });

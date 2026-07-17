@@ -3,7 +3,6 @@ export {
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
-    TenantContextInboundRequestSchema,
     createExpenseReportRequestSchema,
     expenseReportResponseSchema,
     getExpenseReportRequestSchema,
@@ -11,5 +10,4 @@ export {
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
     type IdempotentSubmissionHeader,
-    type TenantContextRequest,
 } from "../expenseReports/dto/expenseReportDto.js";

@@ -11,7 +11,7 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-void describe("idempotency store keys and TTL", () => {
+void describe("idempotency key builders", () => {
     void test("scopes Redis and DynamoDB keys by tenant", () => {
         const tenantId = "40000000-0000-4000-8000-000000000201";
         const idempotencyKey = "expense-submit-1";
@@ -26,7 +26,9 @@ void describe("idempotency store keys and TTL", () => {
             "idem:40000000-0000-4000-8000-000000000201:expense-submit-1",
         );
     });
+});
 
+void describe("idempotency store TTL handling", () => {
     void test("hydrates Redis only for the remaining DynamoDB TTL", async () => {
         vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
         const dynamoDb = {

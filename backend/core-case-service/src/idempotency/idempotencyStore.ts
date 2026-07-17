@@ -58,7 +58,7 @@ type StoredIdempotencyRecord = {
 };
 
 /**
- * Persists completed idempotency results in DynamoDB and caches them in Redis.
+ * Persists idempotency results in DynamoDB and mirrors completed results in Redis.
  */
 export function createIdempotencyStore(
     dynamoDb: DynamoDBDocumentClient,
@@ -73,7 +73,10 @@ export function createIdempotencyStore(
             const lock = await redis.set(
                 toRedisLockKey(tenantId, idempotencyKey),
                 token,
-                { NX: true, PX: IDEMPOTENCY_LOCK_TTL_MILLISECONDS },
+                {
+                    NX: true,
+                    PX: IDEMPOTENCY_LOCK_TTL_MILLISECONDS,
+                },
             );
 
             return lock === "OK" ? token : undefined;
@@ -88,7 +91,9 @@ export function createIdempotencyStore(
                         },
                         ConditionExpression:
                             "#status = :inProgress AND submissionToken = :token",
-                        ExpressionAttributeNames: { "#status": "status" },
+                        ExpressionAttributeNames: {
+                            "#status": "status",
+                        },
                         ExpressionAttributeValues: {
                             ":inProgress": "in_progress",
                             ":token": token,
@@ -115,7 +120,9 @@ export function createIdempotencyStore(
             const record = await dynamoDb.send(
                 new GetCommand({
                     TableName: tableName,
-                    Key: { pk: toDynamoPartitionKey(tenantId, idempotencyKey) },
+                    Key: {
+                        pk: toDynamoPartitionKey(tenantId, idempotencyKey),
+                    },
                 }),
             );
             const item = record.Item as StoredIdempotencyRecord | undefined;
@@ -164,8 +171,12 @@ export function createIdempotencyStore(
                         } satisfies StoredIdempotencyRecord,
                         ConditionExpression:
                             "attribute_not_exists(pk) OR #ttl <= :now",
-                        ExpressionAttributeNames: { "#ttl": "ttl" },
-                        ExpressionAttributeValues: { ":now": now },
+                        ExpressionAttributeNames: {
+                            "#ttl": "ttl",
+                        },
+                        ExpressionAttributeValues: {
+                            ":now": now,
+                        },
                     }),
                 );
 
@@ -203,7 +214,10 @@ export function createIdempotencyStore(
             );
 
             const record = await dynamoDb.send(
-                new GetCommand({ TableName: tableName, Key: { pk } }),
+                new GetCommand({
+                    TableName: tableName,
+                    Key: { pk },
+                }),
             );
             const item = record.Item as StoredIdempotencyRecord | undefined;
             const remainingTtlSeconds =
@@ -217,7 +231,9 @@ export function createIdempotencyStore(
             await redis.set(
                 toRedisResultKey(tenantId, idempotencyKey),
                 JSON.stringify(result),
-                { EX: remainingTtlSeconds },
+                {
+                    EX: remainingTtlSeconds,
+                },
             );
         },
     };

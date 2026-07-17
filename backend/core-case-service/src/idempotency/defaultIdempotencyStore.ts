@@ -8,14 +8,14 @@ import {
     type IdempotencyStore,
 } from "./idempotencyStore.js";
 
-let defaultStore: IdempotencyStore | undefined;
+let store: IdempotencyStore | undefined;
 
 /**
- * Builds the shared DynamoDB and Redis idempotency store.
+ * Builds the shared Redis and DynamoDB-backed idempotency store.
  */
 export function getDefaultIdempotencyStore(): IdempotencyStore {
-    if (defaultStore !== undefined) {
-        return defaultStore;
+    if (store !== undefined) {
+        return store;
     }
 
     const config = loadIdempotencyConfig();
@@ -29,11 +29,7 @@ export function getDefaultIdempotencyStore(): IdempotencyStore {
     );
     const redis = createClient({ url: config.redisUrl });
 
-    defaultStore = createIdempotencyStore(
-        dynamoDb,
-        redis,
-        config.dynamoDbTableName,
-    );
+    store = createIdempotencyStore(dynamoDb, redis, config.dynamoDbTableName);
 
-    return defaultStore;
+    return store;
 }
