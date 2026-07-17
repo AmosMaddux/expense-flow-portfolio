@@ -13,6 +13,34 @@
     ],
     "components": {
         "schemas": {
+            "CaseQueueStageRollupList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "overdueCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["currentStage", "reportCount", "overdueCount"]
+                }
+            },
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
@@ -118,11 +146,83 @@
                     }
                 },
                 "required": ["type", "title", "status", "detail", "instance"]
+            },
+            "ReadCaseQueueStageRollupsRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "asOfDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["tenantId", "asOfDate"]
             }
         },
         "parameters": {}
     },
     "paths": {
+        "/case-queue/rollups": {
+            "get": {
+                "summary": "Get Case Queue rollups",
+                "description": "Loads tenant-scoped Case Queue rollups from the Redis cache or DynamoDB source of record.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "tenantId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "asOfDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Case Queue rollups found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseQueueStageRollupList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed rollup request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",

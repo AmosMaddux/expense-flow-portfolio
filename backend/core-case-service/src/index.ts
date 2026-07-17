@@ -5,10 +5,18 @@ export {
     readCaseQueueReportsForStage,
     readCaseQueueStageRollups,
     type CaseQueueReport,
-    type CaseQueueStageRollup,
     type ReadCaseQueueReportsForStageParams,
-    type ReadCaseQueueStageRollupsParams,
 } from "./db/queries/caseQueueRollups.js";
+export {
+    readCachedCaseQueueStageRollups,
+    transitionExpenseReportStage,
+    type CaseQueueServiceDependencies,
+} from "./expenseReports/services/caseQueueService.js";
+export {
+    type CaseQueueStageRollup,
+    type ReadCaseQueueStageRollupsParams,
+    type TransitionExpenseReportStageRequest,
+} from "./expenseReports/dto/expenseReportDto.js";
 
 const PORT = process.env.PORT ?? 3000;
 

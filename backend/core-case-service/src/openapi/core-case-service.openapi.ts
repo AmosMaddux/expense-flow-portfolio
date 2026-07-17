@@ -6,8 +6,10 @@ import type { OpenAPIObject } from "openapi3-ts/oas31";
 import { z } from "zod";
 
 import {
+    CaseQueueStageRollupListSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    ReadCaseQueueStageRollupsInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 
 const problemJsonSchema = z.object({
@@ -35,7 +37,38 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
     );
+    const readCaseQueueStageRollupsRequest = registry.register(
+        "ReadCaseQueueStageRollupsRequest",
+        ReadCaseQueueStageRollupsInboundRequestSchema,
+    );
+    const caseQueueStageRollupList = registry.register(
+        "CaseQueueStageRollupList",
+        CaseQueueStageRollupListSchema,
+    );
     const problemJson = registry.register("ProblemJson", problemJsonSchema);
+
+    registry.registerPath({
+        method: "get",
+        path: "/case-queue/rollups",
+        summary: "Get Case Queue rollups",
+        description:
+            "Loads tenant-scoped Case Queue rollups from the Redis cache or DynamoDB source of record.",
+        request: {
+            query: readCaseQueueStageRollupsRequest,
+        },
+        responses: {
+            200: {
+                description: "Case Queue rollups found.",
+                content: {
+                    "application/json": {
+                        schema: caseQueueStageRollupList,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed rollup request."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
 
     registry.registerPath({
         method: "post",

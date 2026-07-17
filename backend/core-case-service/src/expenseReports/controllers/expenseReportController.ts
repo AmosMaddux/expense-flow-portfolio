@@ -3,7 +3,9 @@ import type { NextFunction, Request, Response } from "express";
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
+    ReadCaseQueueStageRollupsInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
+import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -49,6 +51,28 @@ export async function getExpenseReportById(
         const report = await readExpenseReport(parsedRequest);
 
         res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Case Queue rollup read requests for one tenant.
+ */
+export async function getCaseQueueStageRollups(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const parsedRequest =
+            ReadCaseQueueStageRollupsInboundRequestSchema.parse({
+                tenantId: req.query.tenantId,
+                asOfDate: req.query.asOfDate,
+            });
+        const rollups = await readCachedCaseQueueStageRollups(parsedRequest);
+
+        res.status(200).json(rollups);
     } catch (error: unknown) {
         next(error);
     }
