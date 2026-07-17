@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -15,12 +15,26 @@ export const expenseReportCreatedReason = "report_created";
  * Reads an Expense Report from the case store within a tenant boundary.
  */
 export async function findExpenseReportById(
+    tenantId: string,
     id: string,
+    ownerId?: string,
 ): Promise<ExpenseReport | undefined> {
     const report: ExpenseReport[] = await db
         .select()
         .from(expenseReport)
-        .where(eq(expenseReport.id, id));
+        // Employee reads add owner scope; internal roles rely on the authenticated tenant boundary.
+        .where(
+            ownerId === undefined
+                ? and(
+                      eq(expenseReport.tenantId, tenantId),
+                      eq(expenseReport.id, id),
+                  )
+                : and(
+                      eq(expenseReport.tenantId, tenantId),
+                      eq(expenseReport.id, id),
+                      eq(expenseReport.owner, ownerId),
+                  ),
+        );
 
     if (report.length === 1 && report[0] !== undefined) {
         return report[0];
@@ -35,6 +49,7 @@ export async function findExpenseReportById(
 export async function insertDraftExpenseReport(
     tenantId: string,
     newReport: NewExpenseReport,
+    actorId: string = newReport.owner,
 ): Promise<ExpenseReport | undefined> {
     if (newReport.tenantId !== tenantId) {
         return undefined;
@@ -57,7 +72,7 @@ export async function insertDraftExpenseReport(
         await transaction.insert(auditEntry).values({
             tenantId: insertedReport.tenantId,
             expenseReportId: insertedReport.id,
-            actorId: insertedReport.owner,
+            actorId,
             action: expenseReportCreatedReason,
             stageBeforeAction: "Drafted",
             stageAfterProposedAction: "Drafted",
@@ -68,7 +83,7 @@ export async function insertDraftExpenseReport(
             tenantId: insertedReport.tenantId,
             fromStage: "Drafted",
             toStage: "Drafted",
-            actor: insertedReport.owner,
+            actor: actorId,
             reason: expenseReportCreatedReason,
         });
 

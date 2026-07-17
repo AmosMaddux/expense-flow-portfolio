@@ -9,14 +9,9 @@ import {
 extendZodWithOpenApi(z);
 
 export const CreateExpenseReportInboundRequestSchema = z.object({
-    tenant_id: z.uuid(),
     owner: z.uuid(),
     dueDate: z.iso.date(),
     priority: z.enum(priorityLevels).default("Normal"),
-});
-
-export const TenantContextInboundRequestSchema = z.object({
-    tenantId: z.uuid(),
 });
 
 export const GetExpenseReportInboundRequestSchema = z.object({
@@ -35,6 +30,15 @@ export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     fromStage: z.enum(approvedWorkflowStages),
     toStage: z.enum(approvedWorkflowStages),
     reason: z.string().trim().min(1),
+});
+
+export const IdempotentSubmissionHeaderSchema = z.object({
+    idempotencyKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._:-]+$/),
 });
 
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
@@ -83,10 +87,6 @@ export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
 >;
 
-export type TenantContextRequest = z.infer<
-    typeof TenantContextInboundRequestSchema
->;
-
 export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
 >;
@@ -104,3 +104,7 @@ export type TransitionExpenseReportStageRequest = z.infer<
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type IdempotentSubmissionHeader = z.infer<
+    typeof IdempotentSubmissionHeaderSchema
+>;
