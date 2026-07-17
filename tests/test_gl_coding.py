@@ -21,6 +21,12 @@ from backend.python.main import app, get_gl_account_mapping_repository, lifespan
 TENANT_ID = UUID("40000000-0000-4000-8000-000000000300")
 
 
+@pytest.fixture(autouse=True)
+def initialized_mileage_rate() -> None:
+    """Provide startup state for endpoint tests using the in-process ASGI transport."""
+    app.state.mileage_reimbursement_rate = Decimal("0.70")
+
+
 class FakeGlAccountMappingRepository:
     """Return synthetic tenant-scoped GL mappings for endpoint tests."""
 
@@ -181,6 +187,77 @@ async def test_gl_coding_endpoint_returns_mapped_and_unmapped_line_items() -> No
     assert repository.requests == [
         (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
     ]
+
+
+@pytest.mark.anyio
+async def test_gl_coding_endpoint_calculates_and_flags_mileage_from_configured_rate(
+    monkeypatch,
+) -> None:
+    repository = FakeGlAccountMappingRepository(SEEDED_GL_ACCOUNTS)
+    monkeypatch.setattr(
+        "backend.python.main.AuthJwtVerifier.from_environment", lambda: object()
+    )
+    monkeypatch.setenv("MILEAGE_REIMBURSEMENT_RATE", "0.75")
+
+    async def finance_admin_context() -> AuthenticatedRequestContext:
+        return AuthenticatedRequestContext(
+            tenant_id=TENANT_ID,
+            role="Finance Admin",
+            roles=["Finance Admin"],
+        )
+
+    app.dependency_overrides[require_request_context] = finance_admin_context
+    app.dependency_overrides[get_gl_account_mapping_repository] = lambda: repository
+    try:
+        async with lifespan(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/gl-coding/line-items",
+                    json={
+                        "line_items": [],
+                        "mileage": [
+                            {
+                                "mileage_entry_id": "30000000-0000-4000-8000-000000000201",
+                                "route": "Office to client site",
+                                "distance": "800.00",
+                                "mileage_date": "2026-07-16",
+                            }
+                        ],
+                    },
+                )
+    finally:
+        app.dependency_overrides.pop(require_request_context, None)
+        app.dependency_overrides.pop(get_gl_account_mapping_repository, None)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "coded_items": [
+            {
+                "source_id": "30000000-0000-4000-8000-000000000201",
+                "source_type": "mileage",
+                "category": "Mileage",
+                "mapping_status": "mapped",
+                "gl_account": {
+                    "account_code": "6300",
+                    "account_name": "Mileage Expense",
+                },
+                "amount": "600.00",
+                "currency": "USD",
+                "flagged_line_item": True,
+            }
+        ],
+        "flags": [
+            {
+                "source_id": "30000000-0000-4000-8000-000000000201",
+                "source_type": "mileage",
+                "code": "mileage_over_threshold",
+                "message": "Mileage reimbursement is above the MVP manual review threshold.",
+            }
+        ],
+    }
+    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
 
 
 @pytest.mark.anyio
