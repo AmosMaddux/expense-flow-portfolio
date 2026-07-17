@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -138,41 +139,28 @@ class GlCodingComputeResponse(BaseModel):
     flags: list[GlCodingFlag]
 
 
-# The MVP lookup is intentionally static until tenant-managed GL mappings exist.
-GL_MAPPING_LOOKUP: dict[ExpenseCategory, GlAccount] = {
-    ExpenseCategory.TRAVEL: GlAccount(
-        account_code="6100",
-        account_name="Travel Expense",
-    ),
-    ExpenseCategory.MEALS: GlAccount(
-        account_code="6200",
-        account_name="Meals Expense",
-    ),
-    ExpenseCategory.LODGING: GlAccount(
-        account_code="6300",
-        account_name="Lodging Expense",
-    ),
-    ExpenseCategory.MILEAGE: GlAccount(
-        account_code="6400",
-        account_name="Mileage Reimbursement",
-    ),
-    ExpenseCategory.OFFICE_SUPPLIES: GlAccount(
-        account_code="6500",
-        account_name="Office Supplies Expense",
-    ),
-    ExpenseCategory.SOFTWARE: GlAccount(
-        account_code="6600",
-        account_name="Software Expense",
-    ),
-}
+class GlAccountMappingRepository(Protocol):
+    """Resolve tenant-scoped GL accounts for expense categories."""
+
+    async def get_accounts_for_categories(
+        self, tenant_id: UUID, categories: set[ExpenseCategory]
+    ) -> dict[ExpenseCategory, GlAccount]:
+        """Return GL accounts keyed by category for the requested tenant."""
 
 
-def code_line_items_to_gl_accounts(
+async def code_line_items_to_gl_accounts(
     request: GlCodingComputeRequest,
+    tenant_id: UUID,
+    mapping_repository: GlAccountMappingRepository,
 ) -> GlCodingComputeResponse:
     """Return GL account mappings and review flags for submitted expense items."""
+    categories = {line_item.category for line_item in request.line_items}
+    accounts_by_category = await mapping_repository.get_accounts_for_categories(
+        tenant_id, categories
+    )
     coded_items = [
-        code_line_item_to_gl_account(line_item) for line_item in request.line_items
+        code_line_item_to_gl_account(line_item, accounts_by_category)
+        for line_item in request.line_items
     ]
     flags = [
         GlCodingFlag(
@@ -188,9 +176,12 @@ def code_line_items_to_gl_accounts(
     return GlCodingComputeResponse(coded_items=coded_items, flags=flags)
 
 
-def code_line_item_to_gl_account(line_item: GlCodingLineItemRequest) -> GlCodedItem:
+def code_line_item_to_gl_account(
+    line_item: GlCodingLineItemRequest,
+    accounts_by_category: dict[ExpenseCategory, GlAccount],
+) -> GlCodedItem:
     """Return the mapped or explicitly unmapped GL coding result for one item."""
-    gl_account = GL_MAPPING_LOOKUP.get(line_item.category)
+    gl_account = accounts_by_category.get(line_item.category)
     mapping_status = (
         GlMappingStatus.MAPPED
         if gl_account is not None
