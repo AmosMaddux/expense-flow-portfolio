@@ -8,7 +8,7 @@ from typing import Any
 
 import anyio
 import pytest
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from starlette.requests import Request
 
@@ -16,6 +16,7 @@ from backend.python.auth import (
     AuthJwtConfigurationError,
     AuthJwtVerifier,
     require_authenticated_identity,
+    require_request_context,
 )
 from backend.python.main import app, lifespan
 
@@ -83,6 +84,86 @@ async def test_auth_me_accepts_login_service_minted_access_token_over_http(
     }
     assert isinstance(response.json()["exp"], int)
     assert isinstance(response.json()["iat"], int)
+
+
+@pytest.mark.anyio
+async def test_auth_context_exposes_tenant_and_primary_role_over_http(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/auth/context", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tenant_id": TENANT_ID,
+        "role": "Employee",
+        "roles": ["Employee"],
+    }
+
+
+@pytest.mark.anyio
+async def test_auth_context_preserves_multi_role_assignments_over_http(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_raw_access_token(
+        generated_jwt_environment,
+        {"roles": ["Employee", "Finance Admin"]},
+    )
+    app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/auth/context", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tenant_id": TENANT_ID,
+        "role": "Finance Admin",
+        "roles": ["Employee", "Finance Admin"],
+    }
+
+
+@pytest.mark.anyio
+async def test_auth_context_rejects_missing_token_before_handler_context(
+    generated_jwt_environment: dict[str, str],
+) -> None:
+    handler_was_called = False
+    test_app = FastAPI()
+    test_app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment(
+        generated_jwt_environment
+    )
+
+    # Test-only route: if auth dependency short-circuiting fails, this body runs.
+    @test_app.get("/protected", dependencies=[Depends(require_request_context)])
+    async def protected_route() -> dict[str, bool]:
+        nonlocal handler_was_called
+        handler_was_called = True
+        return {"handler_was_called": handler_was_called}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app), base_url="http://test"
+    ) as client:
+        response = await client.get("/protected")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid or missing bearer token."}
+    assert handler_was_called is False
 
 
 def test_auth_verifier_accepts_single_key_fallback(
