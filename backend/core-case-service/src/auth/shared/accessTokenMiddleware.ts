@@ -29,11 +29,9 @@ export type AuthenticatedRequestContext = {
     roles: RoleName[];
 };
 
-declare global {
-    namespace Express {
-        interface Request {
-            auth?: AuthenticatedRequestContext;
-        }
+declare module "express-serve-static-core" {
+    interface Request {
+        auth?: AuthenticatedRequestContext;
     }
 }
 

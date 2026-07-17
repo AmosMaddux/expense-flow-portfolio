@@ -3,7 +3,9 @@ import { type Server } from "node:http";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+import type { IdempotencyResult } from "../../idempotency/idempotencyStore.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
@@ -25,6 +27,37 @@ vi.mock("../../db/client.js", () => {
         db: drizzle(client),
     };
 });
+
+const idempotencyRecords = vi.hoisted(
+    () => new Map<string, IdempotencyResult>(),
+);
+const idempotencyStoreMock = vi.hoisted(() => ({
+    acquireLock: vi.fn().mockResolvedValue("lock-token"),
+    clearReservation: vi.fn().mockResolvedValue(undefined),
+    getResult: vi.fn((tenantId: string, idempotencyKey: string) =>
+        Promise.resolve(
+            idempotencyRecords.get(`${tenantId}:${idempotencyKey}`),
+        ),
+    ),
+    releaseLock: vi.fn().mockResolvedValue(undefined),
+    reserveSubmission: vi.fn().mockResolvedValue(true),
+    saveResult: vi.fn(
+        (
+            tenantId: string,
+            idempotencyKey: string,
+            _token: string,
+            result: IdempotencyResult,
+        ) => {
+            idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, result);
+
+            return Promise.resolve();
+        },
+    ),
+}));
+
+vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
+    getDefaultIdempotencyStore: () => idempotencyStoreMock,
+}));
 
 import { db } from "../../db/client.js";
 import { app } from "../../app.js";
@@ -100,12 +133,22 @@ function refreshAuthorizationHeader(tenantId: string, userId: string): string {
 }
 
 void describe("Expense Report routes", () => {
+    beforeEach(() => {
+        idempotencyRecords.clear();
+        idempotencyStoreMock.acquireLock.mockClear();
+        idempotencyStoreMock.clearReservation.mockClear();
+        idempotencyStoreMock.getResult.mockClear();
+        idempotencyStoreMock.releaseLock.mockClear();
+        idempotencyStoreMock.reserveSubmission.mockClear();
+        idempotencyStoreMock.saveResult.mockClear();
+    });
+
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
         const owner = "71000000-0000-4000-8000-000000000001";
         const dueDate = "2026-09-03";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -136,7 +179,7 @@ void describe("Expense Report routes", () => {
         }
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
@@ -160,7 +203,7 @@ void describe("Expense Report routes", () => {
             currentStage: "Drafted",
         });
 
-        const limitedResponse = await requestApp("/expense-reports", {
+        const limitedResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -224,7 +267,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000100";
         const owner = "50000000-0000-4000-8000-000000000001";
 
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -249,10 +292,81 @@ void describe("Expense Report routes", () => {
         expect(body.currentStage).toEqual("Drafted");
     });
 
+    void test("replays the original result for a retried idempotent create", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000111";
+        const owner = "50000000-0000-4000-8000-000000000014";
+        const body = JSON.stringify({
+            owner,
+            dueDate: "2026-08-06",
+            priority: "Normal",
+        });
+        const headers = {
+            authorization: authorizationHeader(tenantId, owner),
+            "content-type": "application/json",
+            "idempotency-key": "expense-submit-111",
+        };
+
+        const firstResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers,
+            body,
+        });
+        const first = (await firstResponse.json()) as { id?: string };
+        const retryResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers,
+            body,
+        });
+        const retry = (await retryResponse.json()) as { id?: string };
+
+        expect(firstResponse.status).toBe(201);
+        expect(retryResponse.status).toBe(201);
+        expect(retry.id).toBe(first.id);
+        expect(idempotencyStoreMock.saveResult).toHaveBeenCalledTimes(1);
+        expect(idempotencyStoreMock.acquireLock).toHaveBeenCalledTimes(1);
+    });
+
+    void test("scopes the same idempotency key to each authenticated tenant", async () => {
+        const owner = "50000000-0000-4000-8000-000000000015";
+        const createForTenant = async (tenantId: string) => {
+            const response = await requestApp("/v1/expense-reports", {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "shared-submit-key",
+                },
+                body: JSON.stringify({
+                    owner,
+                    dueDate: "2026-08-07",
+                    priority: "Low",
+                }),
+            });
+
+            return (await response.json()) as {
+                id?: string;
+                tenantId?: string;
+            };
+        };
+
+        const firstTenant = await createForTenant(
+            "40000000-0000-4000-8000-000000000112",
+        );
+        const secondTenant = await createForTenant(
+            "40000000-0000-4000-8000-000000000113",
+        );
+
+        expect(firstTenant.id).toEqual(expect.any(String));
+        expect(secondTenant.id).toEqual(expect.any(String));
+        expect(firstTenant.id).not.toBe(secondTenant.id);
+        expect(firstTenant.tenantId).not.toBe(secondTenant.tenantId);
+        expect(idempotencyStoreMock.saveResult).toHaveBeenCalledTimes(2);
+    });
+
     void test("returns Problem+JSON for an invalid create request", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000105";
         const userId = "50000000-0000-4000-8000-000000000005";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, userId),
@@ -281,7 +395,7 @@ void describe("Expense Report routes", () => {
     void test("returns 403 when an Employee creates for another owner", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000108";
         const employeeId = "50000000-0000-4000-8000-000000000008";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, employeeId),
@@ -305,7 +419,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000109";
         const financeAdminId = "50000000-0000-4000-8000-000000000010";
         const ownerId = "50000000-0000-4000-8000-000000000011";
-        const response = await requestApp("/expense-reports", {
+        const response = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, financeAdminId, [
@@ -331,7 +445,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -348,7 +462,7 @@ void describe("Expense Report routes", () => {
         };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
@@ -373,7 +487,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000102";
         const owner = "50000000-0000-4000-8000-000000000003";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -390,7 +504,7 @@ void describe("Expense Report routes", () => {
         };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -416,7 +530,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000110";
         const ownerId = "50000000-0000-4000-8000-000000000012";
         const otherEmployeeId = "50000000-0000-4000-8000-000000000013";
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, ownerId),
@@ -427,7 +541,7 @@ void describe("Expense Report routes", () => {
         const created = (await createResponse.json()) as { id: string };
 
         const readResponse = await requestApp(
-            `/expense-reports/${created.id}`,
+            `/v1/expense-reports/${created.id}`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -448,7 +562,7 @@ void describe("Expense Report routes", () => {
 
     void test("returns Problem+JSON when a report is not found", async () => {
         const response = await requestApp(
-            "/expense-reports/60000000-0000-4000-8000-000000000001",
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000001",
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -474,14 +588,17 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns Problem+JSON when the route id is invalid", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id", {
-            headers: {
-                authorization: authorizationHeader(
-                    "40000000-0000-4000-8000-000000000106",
-                    "50000000-0000-4000-8000-000000000006",
-                ),
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000106",
+                        "50000000-0000-4000-8000-000000000006",
+                    ),
+                },
             },
-        });
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;
@@ -498,7 +615,9 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns 401 before handling a request without a token", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id");
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;
@@ -515,14 +634,17 @@ void describe("Expense Report routes", () => {
     });
 
     void test("returns 401 when a refresh token is used as a bearer token", async () => {
-        const response = await requestApp("/expense-reports/not-a-report-id", {
-            headers: {
-                authorization: refreshAuthorizationHeader(
-                    "40000000-0000-4000-8000-000000000107",
-                    "50000000-0000-4000-8000-000000000007",
-                ),
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-report-id",
+            {
+                headers: {
+                    authorization: refreshAuthorizationHeader(
+                        "40000000-0000-4000-8000-000000000107",
+                        "50000000-0000-4000-8000-000000000007",
+                    ),
+                },
             },
-        });
+        );
         const body = (await response.json()) as {
             title?: string;
             status?: number;

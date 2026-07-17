@@ -52,6 +52,16 @@ export class RateLimitExceededError extends Error {
 }
 
 /**
+ * Represents a request that conflicts with another in-flight operation.
+ */
+export class ConflictError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "ConflictError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -120,6 +130,16 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Too Many Requests",
             status: 429,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ConflictError) {
+        return {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
             detail: error.message,
             instance,
         };

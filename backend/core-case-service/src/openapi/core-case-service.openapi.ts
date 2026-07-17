@@ -1,4 +1,5 @@
 import {
+    extendZodWithOpenApi,
     OpenApiGeneratorV31,
     OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
@@ -17,6 +18,8 @@ import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
 } from "../auth/mfa/mfaEnrollmentService.js";
+
+extendZodWithOpenApi(z);
 
 const problemJsonSchema = z.object({
     type: z.string(),
@@ -112,7 +115,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "post",
-        path: "/auth/login",
+        path: "/v1/auth/login",
         summary: "Authenticate with email, password, and optional TOTP MFA",
         description:
             "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
@@ -145,7 +148,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "post",
-        path: "/auth/mfa/enroll",
+        path: "/v1/auth/mfa/enroll",
         summary: "Enroll TOTP MFA",
         description:
             "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
@@ -175,12 +178,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "post",
-        path: "/expense-reports",
+        path: "/v1/expense-reports",
         summary: "Create an Expense Report",
         description:
             "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
         security: [{ bearerAuth: [] }],
         request: {
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).optional().openapi({
+                    description:
+                        "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                }),
+            }),
             body: {
                 required: true,
                 content: {
@@ -203,6 +212,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             400: problemJsonResponse("Malformed create request."),
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
+            409: problemJsonResponse(
+                "Submission with this idempotency key is already in progress.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -210,7 +222,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "get",
-        path: "/expense-reports/{id}",
+        path: "/v1/expense-reports/{id}",
         summary: "Get an Expense Report",
         description:
             "Loads an Expense Report case by identifier within the authenticated tenant.",
@@ -243,10 +255,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     return generator.generateDocument({
         openapi: "3.1.0",
         info: {
-            title: "ExpenseFlow Core Case Service API",
+            title: "ExpenseFlow Core Case Service API v1",
             version: "1.0.0",
             description:
-                "Discoverable contract for Core Case Service Expense Report endpoints. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted.",
+                "Version 1 contract for Core Case Service endpoints. Fields are never removed or changed silently within v1: a field is first marked deprecated with a migration note and remains supported until a future API version. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted.",
         },
         servers: [
             {
