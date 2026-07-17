@@ -343,7 +343,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "get",
-        path: "/expense-reports/{id}/audit-entries",
+        path: "/v1/expense-reports/{id}/audit-entries",
         summary: "List Expense Report audit entries",
         description:
             "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",

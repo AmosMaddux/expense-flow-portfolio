@@ -1614,7 +1614,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000111";
         const owner = "50000000-0000-4000-8000-000000000014";
 
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -1625,7 +1625,7 @@ void describe("Expense Report routes", () => {
         const created = (await createResponse.json()) as { id: string };
 
         const auditResponse = await requestApp(
-            `/expense-reports/${created.id}/audit-entries`,
+            `/v1/expense-reports/${created.id}/audit-entries`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
@@ -1656,7 +1656,7 @@ void describe("Expense Report routes", () => {
     void test("does not read audit entries for another tenant", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000112";
         const owner = "50000000-0000-4000-8000-000000000015";
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
@@ -1667,7 +1667,7 @@ void describe("Expense Report routes", () => {
         const created = (await createResponse.json()) as { id: string };
 
         const auditResponse = await requestApp(
-            `/expense-reports/${created.id}/audit-entries`,
+            `/v1/expense-reports/${created.id}/audit-entries`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -1690,7 +1690,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000114";
         const ownerId = "50000000-0000-4000-8000-000000000016";
         const otherEmployeeId = "50000000-0000-4000-8000-000000000017";
-        const createResponse = await requestApp("/expense-reports", {
+        const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, ownerId),
@@ -1701,7 +1701,7 @@ void describe("Expense Report routes", () => {
         const created = (await createResponse.json()) as { id: string };
 
         const auditResponse = await requestApp(
-            `/expense-reports/${created.id}/audit-entries`,
+            `/v1/expense-reports/${created.id}/audit-entries`,
             {
                 headers: {
                     authorization: authorizationHeader(

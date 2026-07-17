@@ -71,6 +71,9 @@ void describe("app", () => {
         expect(body.paths).toHaveProperty("/v1/expense-reports");
         expect(body.paths).toHaveProperty("/v1/expense-reports/{id}");
         expect(body.paths).toHaveProperty("/v1/expense-reports/{id}/submit");
+        expect(body.paths).toHaveProperty(
+            "/v1/expense-reports/{id}/audit-entries",
+        );
     });
 
     void test("serves Scalar documentation for the OpenAPI document", async () => {
@@ -89,6 +92,10 @@ void describe("app", () => {
         ["POST", "/auth/mfa/enroll"],
         ["GET", "/openapi.json"],
         ["GET", "/docs/"],
+        [
+            "GET",
+            "/expense-reports/60000000-0000-4000-8000-000000000001/audit-entries",
+        ],
     ])(
         "does not expose %s %s without a version prefix",
         async (method, path) => {

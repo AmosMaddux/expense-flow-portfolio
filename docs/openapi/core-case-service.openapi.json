@@ -699,12 +699,16 @@
             }
         },
 <<<<<<< HEAD
+<<<<<<< HEAD
         "/v1/expense-reports/{id}/submit": {
             "post": {
                 "summary": "Submit an Expense Report",
                 "description": "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
 =======
         "/expense-reports/{id}/audit-entries": {
+=======
+        "/v1/expense-reports/{id}/audit-entries": {
+>>>>>>> 13328ff (fix: reversion routes)
             "get": {
                 "summary": "List Expense Report audit entries",
                 "description": "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
