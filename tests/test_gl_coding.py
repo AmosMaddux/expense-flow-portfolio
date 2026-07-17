@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+import anyio
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
@@ -14,7 +15,8 @@ from backend.python.gl_coding import (
     code_line_items_to_gl_accounts,
     get_mileage_reimbursement_rate,
 )
-from backend.python.main import app, get_gl_account_mapping_repository
+from backend.python.domain_exceptions import InvalidMileageRateError
+from backend.python.main import app, get_gl_account_mapping_repository, lifespan
 
 TENANT_ID = UUID("40000000-0000-4000-8000-000000000300")
 
@@ -289,3 +291,17 @@ def test_mileage_reimbursement_rate_uses_environment_override() -> None:
 def test_mileage_reimbursement_rate_rejects_invalid_configuration(rate: str) -> None:
     with pytest.raises(ValueError, match="Mileage reimbursement rate"):
         get_mileage_reimbursement_rate({"MILEAGE_REIMBURSEMENT_RATE": rate})
+
+
+def test_lifespan_rejects_invalid_mileage_rate_configuration(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.python.main.AuthJwtVerifier.from_environment", lambda: object()
+    )
+    monkeypatch.setenv("MILEAGE_REIMBURSEMENT_RATE", "not-a-decimal")
+
+    async def start_app_with_invalid_mileage_rate() -> None:
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(InvalidMileageRateError):
+        anyio.run(start_app_with_invalid_mileage_rate)

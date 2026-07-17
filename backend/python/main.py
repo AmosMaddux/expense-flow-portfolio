@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
-from typing import Annotated
 from collections.abc import AsyncIterator
+from decimal import Decimal
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
+from starlette.requests import Request
 
 from .auth import (
     AuthJwtVerifier,
@@ -25,10 +27,11 @@ from .service_health import ServiceHealth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Validate shared JWT verifier configuration at application startup."""
+    """Validate shared service configuration at application startup."""
     # Intentional fail-fast: a missing/invalid JWT public key config raises
     # AuthJwtConfigurationError here and prevents the app from starting at all.
     app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment()
+    app.state.mileage_reimbursement_rate = get_mileage_reimbursement_rate()
     yield
 
 
@@ -55,6 +58,14 @@ async def require_ap_review_gl_coding_context(
 async def get_gl_account_mapping_repository() -> GlAccountMappingRepository:
     """Return the configured tenant-scoped GL account mapping repository."""
     return PostgresGlAccountMappingRepository.from_environment()
+
+
+async def get_configured_mileage_reimbursement_rate(request: Request) -> Decimal:
+    """Return the startup-validated mileage reimbursement rate."""
+    rate = getattr(request.app.state, "mileage_reimbursement_rate", None)
+    if not isinstance(rate, Decimal):
+        raise RuntimeError("Mileage reimbursement rate is not configured.")
+    return rate
 
 
 @app.get("/health")
@@ -98,13 +109,17 @@ async def gl_coding_line_items(
         GlAccountMappingRepository,
         Depends(get_gl_account_mapping_repository),
     ],
+    mileage_reimbursement_rate: Annotated[
+        Decimal,
+        Depends(get_configured_mileage_reimbursement_rate),
+    ],
 ) -> GlCodingComputeResponse:
     """Return GL account coding results for AP Review line items."""
     return await code_line_items_to_gl_accounts(
         request,
         context.tenant_id,
         mapping_repository,
-        get_mileage_reimbursement_rate(),
+        mileage_reimbursement_rate,
     )
 
 
