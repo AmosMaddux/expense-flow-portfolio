@@ -3,7 +3,10 @@ import type { NextFunction, Request, Response } from "express";
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
+    IdempotentSubmissionHeaderSchema,
 } from "../../schemas/expense-report.schema.js";
+import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
+import { runIdempotentSubmission } from "../../idempotency/idempotencyService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -21,14 +24,29 @@ export async function postExpenseReport(
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const report = await createDraftExpenseReport({
-            owner: parsedRequest.owner,
-            dueDate: parsedRequest.dueDate,
-            priority: parsedRequest.priority,
+        const createReport = async () =>
+            createDraftExpenseReport({
+                owner: parsedRequest.owner,
+                dueDate: parsedRequest.dueDate,
+                priority: parsedRequest.priority,
+                tenantId: parsedRequest.tenant_id,
+            });
+        const idempotencyKey = parseIdempotencyKey(req);
+        if (idempotencyKey === undefined) {
+            const report = await createReport();
+
+            res.status(201).json(report);
+            return;
+        }
+
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: createReport,
+            store: getDefaultIdempotencyStore(),
             tenantId: parsedRequest.tenant_id,
         });
 
-        res.status(201).json(report);
+        res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
         next(error);
     }
@@ -52,4 +70,15 @@ export async function getExpenseReportById(
     } catch (error: unknown) {
         next(error);
     }
+}
+
+function parseIdempotencyKey(req: Request): string | undefined {
+    const header = req.get("idempotency-key");
+    if (header === undefined) {
+        return undefined;
+    }
+
+    return IdempotentSubmissionHeaderSchema.parse({
+        idempotencyKey: header,
+    }).idempotencyKey;
 }

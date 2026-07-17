@@ -44,6 +44,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         description:
             "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
         request: {
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).optional(),
+            }),
             body: {
                 required: true,
                 content: {
@@ -63,6 +66,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed create request."),
+            409: problemJsonResponse(
+                "Submission with this idempotency key is already in progress.",
+            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

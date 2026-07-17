@@ -3,10 +3,11 @@ import { type Server } from "node:http";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import { auditEntry, stageTransition } from "../../db/schema/index.js";
+import type { IdempotencyResult } from "../../idempotency/idempotencyStore.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
 vi.mock("../../db/client.js", () => {
@@ -18,6 +19,37 @@ vi.mock("../../db/client.js", () => {
         db: drizzle(client),
     };
 });
+
+const idempotencyRecords = vi.hoisted(
+    () => new Map<string, IdempotencyResult>(),
+);
+const idempotencyStoreMock = vi.hoisted(() => ({
+    acquireLock: vi.fn().mockResolvedValue("lock-token"),
+    clearReservation: vi.fn().mockResolvedValue(undefined),
+    getResult: vi.fn((tenantId: string, idempotencyKey: string) =>
+        Promise.resolve(
+            idempotencyRecords.get(`${tenantId}:${idempotencyKey}`),
+        ),
+    ),
+    releaseLock: vi.fn().mockResolvedValue(undefined),
+    reserveSubmission: vi.fn().mockResolvedValue(true),
+    saveResult: vi.fn(
+        (
+            tenantId: string,
+            idempotencyKey: string,
+            _token: string,
+            result: IdempotencyResult,
+        ) => {
+            idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, result);
+
+            return Promise.resolve();
+        },
+    ),
+}));
+
+vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
+    getDefaultIdempotencyStore: () => idempotencyStoreMock,
+}));
 
 import { db } from "../../db/client.js";
 import { app } from "../../app.js";
@@ -62,6 +94,16 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 void describe("Expense Report routes", () => {
+    beforeEach(() => {
+        idempotencyRecords.clear();
+        idempotencyStoreMock.acquireLock.mockClear();
+        idempotencyStoreMock.clearReservation.mockClear();
+        idempotencyStoreMock.getResult.mockClear();
+        idempotencyStoreMock.releaseLock.mockClear();
+        idempotencyStoreMock.reserveSubmission.mockClear();
+        idempotencyStoreMock.saveResult.mockClear();
+    });
+
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
         const owner = "71000000-0000-4000-8000-000000000001";
@@ -183,6 +225,86 @@ void describe("Expense Report routes", () => {
         expect(body.id).toEqual(expect.any(String));
         expect(body.tenantId).toEqual(tenantId);
         expect(body.currentStage).toEqual("Drafted");
+    });
+
+    void test("creates one Expense Report when a submission is retried with the same idempotency key", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000110";
+        const owner = "50000000-0000-4000-8000-000000000010";
+        const requestBody = JSON.stringify({
+            tenant_id: tenantId,
+            owner,
+            dueDate: "2026-08-06",
+            priority: "Normal",
+        });
+        const headers = {
+            "content-type": "application/json",
+            "idempotency-key": "expense-submit-110",
+        };
+
+        const firstResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body: requestBody,
+        });
+        const first = (await firstResponse.json()) as { id?: string };
+        const retryResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body: requestBody,
+        });
+        const retry = (await retryResponse.json()) as { id?: string };
+
+        expect(firstResponse.status).toBe(201);
+        expect(retryResponse.status).toBe(201);
+        expect(retry.id).toBe(first.id);
+        expect(idempotencyStoreMock.saveResult).toHaveBeenCalledTimes(1);
+
+        const rollups = await readCaseQueueStageRollups(db, {
+            tenantId,
+            asOfDate: "2026-08-01",
+        });
+        const draftedRollup = rollups.find(
+            (rollup) => rollup.currentStage === "Drafted",
+        );
+
+        expect(draftedRollup).toMatchObject({ reportCount: 1 });
+    });
+
+    void test("scopes the same idempotency key to each tenant", async () => {
+        const owner = "50000000-0000-4000-8000-000000000011";
+        const createForTenant = async (tenantId: string) => {
+            const response = await requestApp("/expense-reports", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "shared-submit-key",
+                },
+                body: JSON.stringify({
+                    tenant_id: tenantId,
+                    owner,
+                    dueDate: "2026-08-07",
+                    priority: "Low",
+                }),
+            });
+
+            return (await response.json()) as {
+                id?: string;
+                tenantId?: string;
+            };
+        };
+
+        const firstTenant = await createForTenant(
+            "40000000-0000-4000-8000-000000000111",
+        );
+        const secondTenant = await createForTenant(
+            "40000000-0000-4000-8000-000000000112",
+        );
+
+        expect(firstTenant.id).toEqual(expect.any(String));
+        expect(secondTenant.id).toEqual(expect.any(String));
+        expect(firstTenant.id).not.toBe(secondTenant.id);
+        expect(firstTenant.tenantId).not.toBe(secondTenant.tenantId);
+        expect(idempotencyStoreMock.saveResult).toHaveBeenCalledTimes(2);
     });
 
     void test("returns Problem+JSON for an invalid create request", async () => {

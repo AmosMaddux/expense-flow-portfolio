@@ -127,6 +127,17 @@
             "post": {
                 "summary": "Create an Expense Report",
                 "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "required": false,
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -150,6 +161,16 @@
                     },
                     "400": {
                         "description": "Malformed create request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Submission with this idempotency key is already in progress.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
