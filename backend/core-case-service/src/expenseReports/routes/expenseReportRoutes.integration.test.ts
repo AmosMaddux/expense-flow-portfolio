@@ -203,6 +203,23 @@ void describe("Expense Report routes", () => {
             currentStage: "Drafted",
         });
 
+        const limitedResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+            },
+            body: "{",
+        });
+        expect(limitedResponse.status).toBe(429);
+        expect(limitedResponse.headers.get("retry-after")).toBeTruthy();
+        expect(limitedResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(limitedResponse.headers.get("x-ratelimit-cost")).toBe("1");
+        await expect(limitedResponse.json()).resolves.toMatchObject({
+            title: "Too Many Requests",
+            status: 429,
+        });
+
         const rollups = await readCaseQueueStageRollups(db, {
             tenantId,
             asOfDate: "2026-09-01",

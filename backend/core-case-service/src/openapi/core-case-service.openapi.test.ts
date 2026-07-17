@@ -115,6 +115,23 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         ).toContain("#/components/schemas/ExpenseReportResponse");
     });
 
+    void test("documents reusable tenant rate-limit headers and 429 responses", () => {
+        const responses =
+            document.paths?.["/v1/expense-reports"]?.post?.responses;
+        const successResponse = JSON.stringify(responses?.[201]);
+        const limitedResponse = JSON.stringify(responses?.[429]);
+        const responseComponents = JSON.stringify(
+            document.components?.responses,
+        );
+
+        expect(successResponse).toContain("RateLimit-Limit");
+        expect(successResponse).toContain("X-RateLimit-Cost");
+        expect(limitedResponse).toContain(
+            "#/components/responses/RateLimitExceeded",
+        );
+        expect(responseComponents).toContain("Retry-After");
+    });
+
     void test("documents Problem+JSON responses for validation, not found, and server errors", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =

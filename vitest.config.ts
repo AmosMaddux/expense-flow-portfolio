@@ -20,6 +20,8 @@ const testEnvironment = {
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",
     MFA_TOTP_SECRET_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     MFA_TOTP_SECRET_KEY_VERSION: "synthetic-vitest-key",
+    CORE_CASE_RATE_LIMIT_REQUESTS: "2",
+    CORE_CASE_RATE_LIMIT_WINDOW_SECONDS: "60",
 };
 
 export default defineConfig({

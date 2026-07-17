@@ -11,17 +11,19 @@ import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import { createAccessTokenMiddleware } from "./auth/shared/accessTokenMiddleware.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
+import { loadRateLimitConfig } from "./config/rateLimitConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
+import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
+import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
 const v1Router = express.Router();
 
-app.use(express.json());
-
+v1Router.use("/auth", express.json());
 v1Router.use(
     "/",
     createAuthRouter(
@@ -38,6 +40,14 @@ v1Router.use(
     ),
 );
 v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use(
+    "/expense-reports",
+    createTenantRateLimitMiddleware(
+        loadRateLimitConfig(),
+        createPostgresTenantRateLimitStore(db),
+    ),
+);
+v1Router.use("/expense-reports", express.json());
 v1Router.use("/", expenseReportRouter);
 
 /**
