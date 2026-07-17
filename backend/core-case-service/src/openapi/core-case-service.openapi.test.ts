@@ -125,6 +125,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         );
 
         expect(successResponse).toContain("RateLimit-Limit");
+        expect(successResponse).toContain("RateLimit-Remaining");
+        expect(successResponse).toContain("RateLimit-Reset");
         expect(successResponse).toContain("X-RateLimit-Cost");
         expect(limitedResponse).toContain(
             "#/components/responses/RateLimitExceeded",

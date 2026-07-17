@@ -108,6 +108,24 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 void describe("tenant rate limit middleware", () => {
+    void test("reports cost and decrements remaining quota within a window", async () => {
+        const app = buildTestApp(
+            () => new Date("2026-07-16T12:00:00.000Z"),
+        );
+
+        const firstResponse = await requestApp(app);
+        expect(firstResponse.status).toBe(200);
+        expect(firstResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(firstResponse.headers.get("ratelimit-remaining")).toBe("1");
+        expect(firstResponse.headers.get("x-ratelimit-cost")).toBe("1");
+
+        const secondResponse = await requestApp(app);
+        expect(secondResponse.status).toBe(200);
+        expect(secondResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(secondResponse.headers.get("ratelimit-remaining")).toBe("0");
+        expect(secondResponse.headers.get("x-ratelimit-cost")).toBe("1");
+    });
+
     void test("returns 429 beyond the limit and resets after the window", async () => {
         let currentTime = new Date("2026-07-16T12:00:00.000Z");
         const app = buildTestApp(() => currentTime);
