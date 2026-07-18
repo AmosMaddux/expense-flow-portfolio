@@ -8,6 +8,8 @@
     },
     "scripts": {
         "test": "npm run build && npx vitest run && UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest",
+        "ci:provider": "npm ci && uv sync && npm run test:provider",
+        "test:provider": "UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest tests/test_gl_coding_provider_pact.py",
         "build": "tsc --build",
         "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
