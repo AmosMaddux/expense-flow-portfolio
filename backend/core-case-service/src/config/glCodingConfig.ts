@@ -1,21 +1,30 @@
 import { z } from "zod";
 
 const glCodingEnvironmentSchema = z.object({
-    GL_CODING_SERVICE_BASE_URL: z
-        .string()
-        .url()
-        .default("http://127.0.0.1:8000"),
-    GL_CODING_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
-    GL_CODING_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+    GL_CODING_SERVICE_BASE_URL: z.string().url(),
+    GL_CODING_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .positive()
+        .max(30_000)
+        .default(5_000),
+    GL_CODING_MAX_RETRIES: z.coerce
+        .number()
+        .int()
+        .nonnegative()
+        .max(5)
+        .default(2),
     GL_CODING_BASE_BACKOFF_MS: z.coerce
         .number()
         .int()
         .nonnegative()
+        .max(5_000)
         .default(100),
     GL_CODING_MAX_BACKOFF_MS: z.coerce
         .number()
         .int()
         .nonnegative()
+        .max(30_000)
         .default(1_000),
 });
 

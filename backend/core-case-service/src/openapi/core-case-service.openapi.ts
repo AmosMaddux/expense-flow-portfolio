@@ -295,6 +295,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Only Drafted Expense Reports can be submitted.",
             ),
             429: rateLimitExceededResponse.ref,
+            502: problemJsonResponse("GL-coding service request failed."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

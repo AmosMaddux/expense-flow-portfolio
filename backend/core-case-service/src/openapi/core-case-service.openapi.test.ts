@@ -217,6 +217,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             JSON.stringify(expenseReportSubmitPath?.post?.responses?.[409]),
         ).toContain("#/components/schemas/ProblemJson");
         expect(
+            JSON.stringify(expenseReportSubmitPath?.post?.responses?.[502]),
+        ).toContain("#/components/schemas/ProblemJson");
+        expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[500]),
         ).toContain("#/components/schemas/ProblemJson");
         expect(

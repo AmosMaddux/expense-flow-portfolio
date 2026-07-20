@@ -379,6 +379,7 @@ export const glCodingResult = pgTable(
             table.sourceType,
             table.sourceId,
             table.codedAt,
+            table.id,
         ),
         index("gl_coding_result_tenant_submission_idx").on(
             table.tenantId,

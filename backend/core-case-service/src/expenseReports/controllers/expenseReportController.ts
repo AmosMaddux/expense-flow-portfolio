@@ -22,6 +22,7 @@ import {
     readExpenseReport,
     submitExpenseReport,
 } from "../services/expenseReportService.js";
+import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
 
 /**
  * Handles Expense Report creation requests.
@@ -103,10 +104,19 @@ export async function postExpenseReportSubmission(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireInternalExpenseReportRole(auth);
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
+        if (!hasInternalExpenseReportRole(auth)) {
+            await insertDeniedSubmissionAuditEntry(
+                auth.tenantId,
+                parsedParams.id,
+                auth.userId,
+                "Authenticated role is not permitted to submit Expense Reports.",
+            );
+            throw new ForbiddenError();
+        }
+
         const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
             req.body,
         );
@@ -172,12 +182,10 @@ function getAuthorizedOwnerScope(
     throw new ForbiddenError();
 }
 
-function requireInternalExpenseReportRole(auth: NonNullable<Request["auth"]>) {
-    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
-        return;
-    }
-
-    throw new ForbiddenError();
+function hasInternalExpenseReportRole(
+    auth: NonNullable<Request["auth"]>,
+): boolean {
+    return auth.roles.some((role) => internalExpenseReportRoles.has(role));
 }
 
 function parseIdempotencyKey(req: Request): string {

@@ -714,6 +714,16 @@
                                 }
                             }
                         }
+                    },
+                    "502": {
+                        "description": "GL-coding service request failed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
                     }
                 }
             }

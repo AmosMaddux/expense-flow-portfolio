@@ -21,6 +21,6 @@ CREATE TABLE "gl_coding_result" (
 --> statement-breakpoint
 ALTER TABLE "gl_coding_result" ADD CONSTRAINT "gl_coding_result_expense_report_tenant_fk" FOREIGN KEY ("tenant_id","expense_report_id") REFERENCES "public"."expense_report"("tenant_id","id") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
-CREATE INDEX "gl_coding_result_tenant_source_coded_at_idx" ON "gl_coding_result" USING btree ("tenant_id","source_type","source_id","coded_at");
+CREATE INDEX "gl_coding_result_tenant_source_coded_at_idx" ON "gl_coding_result" USING btree ("tenant_id","source_type","source_id","coded_at","id");
 --> statement-breakpoint
 CREATE INDEX "gl_coding_result_tenant_submission_idx" ON "gl_coding_result" USING btree ("tenant_id","submission_id");

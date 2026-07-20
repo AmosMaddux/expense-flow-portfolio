@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
 import {
+    BadGatewayError,
     ForbiddenError,
     NotFoundError,
     problemJsonErrorHandler,
@@ -82,6 +83,11 @@ function buildProblemJsonTestApp(): Express {
     });
     app.get("/forbidden", () => {
         throw new ForbiddenError();
+    });
+    app.get("/bad-gateway", () => {
+        throw new BadGatewayError(
+            "The GL-coding service could not be reached.",
+        );
     });
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
@@ -215,6 +221,26 @@ void describe("problemJsonErrorHandler", () => {
             status: 400,
             detail: "Malformed JSON body could not be parsed.",
             instance: "/body-parser-parse-failure",
+        });
+    });
+
+    void test("maps downstream service failures to a 502 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/bad-gateway",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(502);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            detail: "The GL-coding service could not be reached.",
+            instance: "/bad-gateway",
         });
     });
 

@@ -1,6 +1,6 @@
 import { type Server } from "node:http";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -9,6 +9,7 @@ import {
     IdempotencyRequestMismatchError,
     type IdempotencyResult,
 } from "../../idempotency/idempotencyStore.js";
+import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { verifyAccessToken } from "../../auth/shared/accessTokenMiddleware.js";
@@ -631,6 +632,19 @@ void describe("Expense Report routes", () => {
                     currency: "USD",
                     flagged_line_item: true,
                 },
+                {
+                    source_id: "30000000-0000-4000-8000-000000000131",
+                    source_type: "mileage",
+                    category: "Mileage",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6300",
+                        account_name: "Mileage Expense",
+                    },
+                    amount: "29.40",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
             ],
             flags: [],
         });
@@ -677,15 +691,29 @@ void describe("Expense Report routes", () => {
     });
 
     void test("rejects Employee submission attempts", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000132";
+        const owner = "50000000-0000-4000-8000-000000000132";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-132",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
         const response = await requestApp(
-            "/v1/expense-reports/10000000-0000-4000-8000-000000000132/submit",
+            `/v1/expense-reports/${created.id}/submit`,
             {
                 method: "POST",
                 headers: {
-                    authorization: authorizationHeader(
-                        "40000000-0000-4000-8000-000000000132",
-                        "50000000-0000-4000-8000-000000000132",
-                    ),
+                    authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-132",
                 },
@@ -695,6 +723,26 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(403);
         expect(glCodingClientMock).not.toHaveBeenCalled();
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, created.id),
+                ),
+            );
+        expect(auditRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_denied",
+                    stageBeforeAction: "Drafted",
+                    stageAfterProposedAction: "Submitted",
+                    denialReason:
+                        "Authenticated role is not permitted to submit Expense Reports.",
+                }),
+            ]),
+        );
     });
 
     void test("requires an Idempotency-Key header for submit requests", async () => {
@@ -740,7 +788,7 @@ void describe("Expense Report routes", () => {
         expect(glCodingClientMock).not.toHaveBeenCalled();
     });
 
-    void test("returns not found for missing or cross-tenant submit targets", async () => {
+    void test("returns not found for missing submit targets", async () => {
         const response = await requestApp(
             "/v1/expense-reports/10000000-0000-4000-8000-000000000135/submit",
             {
@@ -760,6 +808,66 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(404);
         expect(glCodingClientMock).not.toHaveBeenCalled();
+    });
+
+    void test("does not submit or audit a report from another tenant", async () => {
+        const tenantA = "40000000-0000-4000-8000-000000000140";
+        const tenantB = "40000000-0000-4000-8000-000000000141";
+        const owner = "50000000-0000-4000-8000-000000000140";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantA, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-140",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantB,
+                        "50000000-0000-4000-8000-000000000141",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-140",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantA),
+                    eq(expenseReport.id, created.id),
+                ),
+            );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantA),
+                    eq(auditEntry.expenseReportId, created.id),
+                ),
+            );
+
+        expect(response.status).toBe(404);
+        expect(glCodingClientMock).not.toHaveBeenCalled();
+        expect(reportRows[0]?.currentStage).toBe("Drafted");
+        expect(auditRows).toHaveLength(1);
     });
 
     void test("rejects submit requests for reports that are not Drafted", async () => {
@@ -800,6 +908,26 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(409);
         expect(glCodingClientMock).not.toHaveBeenCalled();
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, created.id ?? ""),
+                ),
+            );
+        expect(auditRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_denied",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Submitted",
+                    denialReason:
+                        "Only Drafted Expense Reports can be submitted.",
+                }),
+            ]),
+        );
     });
 
     void test("keeps the report Drafted when GL coding fails", async () => {
@@ -821,7 +949,7 @@ void describe("Expense Report routes", () => {
         }
 
         glCodingClientMock.mockRejectedValueOnce(
-            new Error("Synthetic GL-coding failure"),
+            new GlCodingServiceError("Synthetic GL-coding failure"),
         );
 
         const response = await requestApp(
@@ -857,7 +985,7 @@ void describe("Expense Report routes", () => {
             .from(auditEntry)
             .where(eq(auditEntry.expenseReportId, created.id));
 
-        expect(response.status).toBe(500);
+        expect(response.status).toBe(502);
         expect(reportRows[0]?.currentStage).toBe("Drafted");
         expect(codingRows).toHaveLength(0);
         expect(transitionRows).toHaveLength(1);

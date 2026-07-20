@@ -1198,6 +1198,9 @@ void describe("glCodingResult schema", () => {
             "gl_coding_result_tenant_source_coded_at_idx",
         );
         expect(migrationSql).toContain(
+            '"tenant_id","source_type","source_id","coded_at","id"',
+        );
+        expect(migrationSql).toContain(
             "gl_coding_result_tenant_submission_idx",
         );
     });

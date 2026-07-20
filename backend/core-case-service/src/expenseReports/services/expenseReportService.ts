@@ -2,13 +2,20 @@ import { randomUUID } from "node:crypto";
 
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { loadGlCodingConfig } from "../../config/glCodingConfig.js";
-import { NotFoundError } from "../../errors/problem-json.js";
+import {
+    BadGatewayError,
+    ConflictError,
+    NotFoundError,
+} from "../../errors/problem-json.js";
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import type { RoleName } from "../../db/schema/index.js";
 import { codeExpenseLineItems } from "../../glCoding/glCodingClient.js";
+import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
+    buildSubmissionSourceKeys,
     findExpenseReportById,
     insertDraftExpenseReport,
+    insertDeniedSubmissionAuditEntry,
     readDraftSubmissionSources,
     submitDraftExpenseReport,
 } from "../repository/expenseReportRepository.js";
@@ -90,7 +97,15 @@ export async function submitExpenseReport(request: {
             throw new NotFoundError("Expense Report not found.");
         }
 
-        throw new Error("Only Drafted Expense Reports can be submitted.");
+        await insertDeniedSubmissionAuditEntry(
+            request.tenantId,
+            request.id,
+            request.actorId,
+            "Only Drafted Expense Reports can be submitted.",
+        );
+        throw new ConflictError(
+            "Only Drafted Expense Reports can be submitted.",
+        );
     }
 
     const authConfig = loadAuthJwtConfig();
@@ -104,45 +119,62 @@ export async function submitExpenseReport(request: {
         authConfig,
         new Date(),
     );
-    const glResponse = await codeExpenseLineItems(
-        glConfig.GL_CODING_SERVICE_BASE_URL,
-        {
-            line_items: sources.lineItems.map((item) => ({
-                line_item_id: item.id,
-                merchant: item.merchant,
-                amount: item.amount,
-                currency: item.currency,
-                category: item.category as Parameters<
-                    typeof codeExpenseLineItems
-                >[1]["line_items"][number]["category"],
-            })),
-            mileage: sources.mileageEntries.map((entry) => ({
-                mileage_entry_id: entry.id,
-                route: entry.route,
-                distance: entry.distance,
-                mileage_date: entry.mileageDate,
-            })),
-        },
-        {
-            accessToken,
-            timeoutMs: glConfig.GL_CODING_TIMEOUT_MS,
-            maxRetries: glConfig.GL_CODING_MAX_RETRIES,
-            baseBackoffMs: glConfig.GL_CODING_BASE_BACKOFF_MS,
-            maxBackoffMs: glConfig.GL_CODING_MAX_BACKOFF_MS,
-        },
-    );
-    const report = await submitDraftExpenseReport(
-        request.tenantId,
-        request.id,
-        request.actorId,
-        randomUUID(),
-        glResponse,
-    );
-    if (report === undefined) {
-        throw new Error("Only Drafted Expense Reports can be submitted.");
-    }
+    try {
+        const glResponse = await codeExpenseLineItems(
+            glConfig.GL_CODING_SERVICE_BASE_URL,
+            {
+                line_items: sources.lineItems.map((item) => ({
+                    line_item_id: item.id,
+                    merchant: item.merchant,
+                    amount: item.amount,
+                    currency: item.currency,
+                    category: item.category as Parameters<
+                        typeof codeExpenseLineItems
+                    >[1]["line_items"][number]["category"],
+                })),
+                mileage: sources.mileageEntries.map((entry) => ({
+                    mileage_entry_id: entry.id,
+                    route: entry.route,
+                    distance: entry.distance,
+                    mileage_date: entry.mileageDate,
+                })),
+            },
+            {
+                accessToken,
+                timeoutMs: glConfig.GL_CODING_TIMEOUT_MS,
+                maxRetries: glConfig.GL_CODING_MAX_RETRIES,
+                baseBackoffMs: glConfig.GL_CODING_BASE_BACKOFF_MS,
+                maxBackoffMs: glConfig.GL_CODING_MAX_BACKOFF_MS,
+            },
+        );
+        const report = await submitDraftExpenseReport(
+            request.tenantId,
+            request.id,
+            request.actorId,
+            randomUUID(),
+            glResponse,
+            buildSubmissionSourceKeys(sources),
+        );
+        if (report === undefined) {
+            await insertDeniedSubmissionAuditEntry(
+                request.tenantId,
+                request.id,
+                request.actorId,
+                "Only Drafted Expense Reports can be submitted.",
+            );
+            throw new ConflictError(
+                "Only Drafted Expense Reports can be submitted.",
+            );
+        }
 
-    return toExpenseReportResponse(report);
+        return toExpenseReportResponse(report);
+    } catch (error: unknown) {
+        if (error instanceof GlCodingServiceError) {
+            throw new BadGatewayError(error.message);
+        }
+
+        throw error;
+    }
 }
 
 function toExpenseReportResponse(report: {
