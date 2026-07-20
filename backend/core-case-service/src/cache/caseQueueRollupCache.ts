@@ -12,12 +12,24 @@ export type CaseQueueRollupCacheClient = {
     incr(key: string): Promise<number>;
 };
 
+export type CaseQueueRollupCacheMiss = {
+    kind: "miss";
+    cacheKey: string;
+};
+
+export type CaseQueueRollupCacheReadResult =
+    | {
+          kind: "hit";
+          rollups: CaseQueueStageRollup[];
+      }
+    | CaseQueueRollupCacheMiss;
+
 export type CaseQueueRollupCache = {
     get(
         params: ReadCaseQueueStageRollupsParams,
-    ): Promise<CaseQueueStageRollup[] | undefined>;
+    ): Promise<CaseQueueRollupCacheReadResult | undefined>;
     set(
-        params: ReadCaseQueueStageRollupsParams,
+        cacheMiss: CaseQueueRollupCacheMiss,
         rollups: CaseQueueStageRollup[],
     ): Promise<void>;
     invalidateTenant(tenantId: string): Promise<void>;
@@ -42,20 +54,22 @@ export function createRedisCaseQueueRollupCache(
                 const cachedValue = await client.get(cacheKey);
 
                 if (cachedValue === null) {
-                    return undefined;
+                    return { kind: "miss", cacheKey };
                 }
 
-                return CaseQueueStageRollupListSchema.parse(
-                    JSON.parse(cachedValue),
-                );
+                return {
+                    kind: "hit",
+                    rollups: CaseQueueStageRollupListSchema.parse(
+                        JSON.parse(cachedValue),
+                    ),
+                };
             } catch {
                 return undefined;
             }
         },
-        async set(params, rollups) {
+        async set(cacheMiss, rollups) {
             try {
-                const cacheKey = await buildRollupCacheKey(client, params);
-                await client.set(cacheKey, JSON.stringify(rollups), {
+                await client.set(cacheMiss.cacheKey, JSON.stringify(rollups), {
                     EX: ttlSeconds,
                 });
             } catch {

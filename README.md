@@ -111,6 +111,20 @@ Run tests with:
 uv run pytest
 ```
 
+The Python provider Pact tests also require the checked-in Node lockfile dependency that provides `node_modules/.bin/pact-verifier`. On a clean checkout, install both Python and Node dependencies before running the full pytest suite:
+
+```sh
+uv sync
+npm ci
+uv run pytest
+```
+
+To run only the provider Pact tests with the same reproducible setup CI should use:
+
+```sh
+npm run ci:provider
+```
+
 Utility function to run linter, typing, and test checks:
 
 ```sh

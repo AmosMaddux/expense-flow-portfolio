@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     codeExpenseLineItems,
     GlCodingRequestSchema,
+    GlCodingResponseSchema,
     type GlCodingRequest,
 } from "./glCodingClient.js";
 
@@ -24,6 +25,37 @@ describe("GL-coding client", () => {
                 ],
             }),
         ).toThrow("Mileage distance must be greater than zero.");
+    });
+
+    it("accepts a flagged mileage reimbursement response", () => {
+        const response = GlCodingResponseSchema.parse({
+            coded_items: [
+                {
+                    source_id: "30000000-0000-4000-8000-000000000201",
+                    source_type: "mileage",
+                    category: "Mileage",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6300",
+                        account_name: "Mileage Expense",
+                    },
+                    amount: "600.00",
+                    currency: "USD",
+                    flagged_line_item: true,
+                },
+            ],
+            flags: [
+                {
+                    source_id: "30000000-0000-4000-8000-000000000201",
+                    source_type: "mileage",
+                    code: "mileage_over_threshold",
+                    message:
+                        "Mileage reimbursement is above the MVP manual review threshold.",
+                },
+            ],
+        });
+
+        expect(response.flags[0]?.code).toBe("mileage_over_threshold");
     });
 
     it("aborts a GL-coding request after the configured timeout", async () => {

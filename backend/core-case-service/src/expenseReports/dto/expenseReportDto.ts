@@ -8,11 +8,13 @@ import {
 
 extendZodWithOpenApi(z);
 
-export const CreateExpenseReportInboundRequestSchema = z.object({
-    owner: z.uuid(),
-    dueDate: z.iso.date(),
-    priority: z.enum(priorityLevels).default("Normal"),
-});
+export const CreateExpenseReportInboundRequestSchema = z
+    .object({
+        owner: z.uuid(),
+        dueDate: z.iso.date(),
+        priority: z.enum(priorityLevels).default("Normal"),
+    })
+    .strict();
 
 export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
@@ -20,6 +22,10 @@ export const GetExpenseReportInboundRequestSchema = z.object({
 
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
+    asOfDate: z.iso.date(),
+});
+
+export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
@@ -76,6 +82,9 @@ export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 export const readCaseQueueStageRollupsRequestSchema =
     ReadCaseQueueStageRollupsInboundRequestSchema;
 
+export const readCaseQueueStageRollupsQuerySchema =
+    ReadCaseQueueStageRollupsQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
@@ -97,6 +106,10 @@ export type ExpenseReportResponse = z.infer<
 
 export type ReadCaseQueueStageRollupsParams = z.infer<
     typeof ReadCaseQueueStageRollupsInboundRequestSchema
+>;
+
+export type ReadCaseQueueStageRollupsQuery = z.infer<
+    typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
 export type TransitionExpenseReportStageRequest = z.infer<

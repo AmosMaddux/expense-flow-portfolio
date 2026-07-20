@@ -131,7 +131,8 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["owner", "dueDate"]
+                "required": ["owner", "dueDate"],
+                "additionalProperties": false
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -304,16 +305,12 @@
             "ReadCaseQueueStageRollupsRequest": {
                 "type": "object",
                 "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
                     "asOfDate": {
                         "type": "string",
                         "format": "date"
                     }
                 },
-                "required": ["tenantId", "asOfDate"]
+                "required": ["asOfDate"]
             }
         },
         "parameters": {}
@@ -322,17 +319,13 @@
         "/v1/case-queue/rollups": {
             "get": {
                 "summary": "Get Case Queue rollups",
-                "description": "Loads tenant-scoped Case Queue rollups from the Redis cache or DynamoDB source of record.",
-                "parameters": [
+                "description": "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+                "security": [
                     {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "tenantId",
-                        "in": "query"
-                    },
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
                     {
                         "schema": {
                             "type": "string",
@@ -356,6 +349,26 @@
                     },
                     "400": {
                         "description": "Malformed rollup request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user is not permitted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -490,10 +503,10 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 128,
-                            "description": "Optional tenant-scoped key used to replay completed Expense Report submissions."
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
                         },
-                        "required": false,
-                        "description": "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
                         "in": "header"
                     }

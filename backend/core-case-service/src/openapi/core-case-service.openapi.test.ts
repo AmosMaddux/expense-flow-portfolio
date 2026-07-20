@@ -51,7 +51,23 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(createRequestSchema)).not.toContain("tenant_id");
     });
 
+    void test("documents Idempotency-Key as required for Expense Report creation", () => {
+        const expenseReportsPath = document.paths?.["/v1/expense-reports"];
+        const idempotencyHeader = expenseReportsPath?.post?.parameters?.find(
+            (parameter) =>
+                "name" in parameter && parameter.name === "Idempotency-Key",
+        );
+
+        expect(idempotencyHeader).toMatchObject({
+            in: "header",
+            name: "Idempotency-Key",
+            required: true,
+        });
+    });
+
     void test("documents bearer authentication for every Expense Report route", () => {
+        const caseQueueRollupsPath =
+            document.paths?.["/v1/case-queue/rollups"];
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
@@ -61,12 +77,17 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             scheme: "bearer",
             bearerFormat: "JWT",
         });
+        expect(caseQueueRollupsPath?.get?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(expenseReportsPath?.post?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
         expect(expenseReportByIdPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(caseQueueRollupsPath?.get?.responses?.[401]).toBeDefined();
+        expect(caseQueueRollupsPath?.get?.responses?.[403]).toBeDefined();
         expect(expenseReportsPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportsPath?.post?.responses?.[403]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
@@ -100,6 +121,17 @@ void describe("coreCaseServiceOpenApiDocument", () => {
 
         expect(expenseReportByIdPath?.get?.parameters).toHaveLength(1);
         expect(tenantHeader).toBeUndefined();
+    });
+
+    void test("does not document tenant input for Case Queue rollups", () => {
+        const parameters =
+            document.paths?.["/v1/case-queue/rollups"]?.get?.parameters ?? [];
+        const parameterNames = parameters
+            .filter((parameter) => "name" in parameter)
+            .map((parameter) => parameter.name);
+
+        expect(parameterNames).toStrictEqual(["asOfDate"]);
+        expect(JSON.stringify(parameters)).not.toContain("tenant");
     });
 
     void test("documents successful responses from the outbound Expense Report DTO", () => {

@@ -60,7 +60,7 @@ const glCodedItemSchema = z.object({
 const glCodingFlagSchema = z.object({
     source_id: z.uuid(),
     source_type: z.enum(["line_item", "mileage"]),
-    code: z.literal("line_item_over_threshold"),
+    code: z.enum(["line_item_over_threshold", "mileage_over_threshold"]),
     message: z.string().min(1),
 });
 

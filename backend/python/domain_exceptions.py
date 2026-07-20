@@ -23,3 +23,12 @@ class UnknownExpenseCategoryError(ValueError):
 
     def __init__(self, category: Any) -> None:
         super().__init__(f"Expense category has no GL mapping. Got: {str(category)}")
+
+
+class InvalidMileageRateError(ValueError):
+    """Report a mileage reimbursement rate that cannot be used for calculation."""
+
+    def __init__(self, rate: Any) -> None:
+        super().__init__(
+            f"Mileage reimbursement rate must be a positive decimal. Got: {str(rate)}"
+        )

@@ -9,10 +9,13 @@ import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
-    ReadCaseQueueStageRollupsInboundRequestSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
-import { runIdempotentSubmission } from "../../idempotency/idempotencyService.js";
+import {
+    createIdempotencyRequestHash,
+    runIdempotentSubmission,
+} from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
     createDraftExpenseReport,
@@ -48,16 +51,11 @@ export async function postExpenseReport(
                 actorId: auth.userId,
             });
         const idempotencyKey = parseIdempotencyKey(req);
-        if (idempotencyKey === undefined) {
-            const report = await createReport();
-
-            res.status(201).json(report);
-            return;
-        }
-
+        const requestHash = createIdempotencyRequestHash(parsedRequest);
         const result = await runIdempotentSubmission({
             idempotencyKey,
             operation: createReport,
+            requestHash,
             store: getDefaultIdempotencyStore(),
             tenantId: auth.tenantId,
         });
@@ -103,12 +101,14 @@ export async function getCaseQueueStageRollups(
     next: NextFunction,
 ): Promise<void> {
     try {
-        const parsedRequest =
-            ReadCaseQueueStageRollupsInboundRequestSchema.parse({
-                tenantId: req.query.tenantId,
-                asOfDate: req.query.asOfDate,
-            });
-        const rollups = await readCachedCaseQueueStageRollups(parsedRequest);
+        const auth = requireAuthContext(req);
+        const parsedQuery = ReadCaseQueueStageRollupsQuerySchema.parse({
+            asOfDate: req.query.asOfDate,
+        });
+        const rollups = await readCachedCaseQueueStageRollups({
+            tenantId: auth.tenantId,
+            asOfDate: parsedQuery.asOfDate,
+        });
 
         res.status(200).json(rollups);
     } catch (error: unknown) {
@@ -144,13 +144,8 @@ function getAuthorizedOwnerScope(
     throw new ForbiddenError();
 }
 
-function parseIdempotencyKey(req: Request): string | undefined {
-    const header = req.get("idempotency-key");
-    if (header === undefined) {
-        return undefined;
-    }
-
+function parseIdempotencyKey(req: Request): string {
     return IdempotentSubmissionHeaderSchema.parse({
-        idempotencyKey: header,
+        idempotencyKey: req.get("idempotency-key"),
     }).idempotencyKey;
 }

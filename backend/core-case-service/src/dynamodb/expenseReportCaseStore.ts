@@ -1,18 +1,14 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
     type DynamoDBDocumentClient,
     QueryCommand,
-    UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
 
 import { approvedWorkflowStages } from "../db/schema/index.js";
 import {
     CaseQueueStageRollupListSchema,
-    TransitionExpenseReportStageInboundRequestSchema,
     type CaseQueueStageRollup,
     type ReadCaseQueueStageRollupsParams,
-    type TransitionExpenseReportStageRequest,
 } from "../expenseReports/dto/expenseReportDto.js";
 import { dynamoDbDocumentClient } from "./client.js";
 
@@ -22,25 +18,12 @@ export type ExpenseReportCaseStore = {
     readCaseQueueStageRollups(
         params: ReadCaseQueueStageRollupsParams,
     ): Promise<CaseQueueStageRollup[]>;
-    transitionExpenseReportStage(
-        request: TransitionExpenseReportStageRequest,
-    ): Promise<boolean>;
 };
 
 const dynamoExpenseReportItemSchema = z.object({
     currentStage: z.enum(approvedWorkflowStages),
     dueDate: z.iso.date(),
 });
-
-const validTransitionEdges = new Set<string>([
-    "Drafted->Submitted",
-    "Submitted->Manager Approval",
-    "Manager Approval->AP Review",
-    "AP Review->Paid",
-    "Paid->Reconciled",
-    "Manager Approval->Drafted",
-    "AP Review->Drafted",
-]);
 
 /**
  * Builds the DynamoDB-backed Expense Report case store.
@@ -58,48 +41,6 @@ export function createDynamoExpenseReportCaseStore(
             );
 
             return rollupExpenseReports(items, params.asOfDate);
-        },
-        async transitionExpenseReportStage(request) {
-            const parsedRequest =
-                TransitionExpenseReportStageInboundRequestSchema.parse(request);
-
-            if (!isValidTransitionEdge(parsedRequest)) {
-                return false;
-            }
-
-            try {
-                await client.send(
-                    new UpdateCommand({
-                        TableName: tableName,
-                        Key: {
-                            tenantId: parsedRequest.tenantId,
-                            id: parsedRequest.id,
-                        },
-                        ConditionExpression:
-                            "attribute_exists(#id) and #currentStage = :fromStage",
-                        UpdateExpression:
-                            "set #currentStage = :toStage, #updatedAt = :updatedAt",
-                        ExpressionAttributeNames: {
-                            "#id": "id",
-                            "#currentStage": "currentStage",
-                            "#updatedAt": "updatedAt",
-                        },
-                        ExpressionAttributeValues: {
-                            ":fromStage": parsedRequest.fromStage,
-                            ":toStage": parsedRequest.toStage,
-                            ":updatedAt": new Date().toISOString(),
-                        },
-                    }),
-                );
-
-                return true;
-            } catch (error: unknown) {
-                if (error instanceof ConditionalCheckFailedException) {
-                    return false;
-                }
-
-                throw error;
-            }
         },
     };
 }
@@ -183,10 +124,4 @@ function rollupExpenseReports(
     }
 
     return CaseQueueStageRollupListSchema.parse(rollups);
-}
-
-function isValidTransitionEdge(
-    request: TransitionExpenseReportStageRequest,
-): boolean {
-    return validTransitionEdges.has(`${request.fromStage}->${request.toStage}`);
 }

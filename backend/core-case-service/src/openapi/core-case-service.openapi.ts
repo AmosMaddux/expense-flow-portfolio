@@ -10,7 +10,7 @@ import {
     CaseQueueStageRollupListSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
-    ReadCaseQueueStageRollupsInboundRequestSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -55,7 +55,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     );
     const readCaseQueueStageRollupsRequest = registry.register(
         "ReadCaseQueueStageRollupsRequest",
-        ReadCaseQueueStageRollupsInboundRequestSchema,
+        ReadCaseQueueStageRollupsQuerySchema,
     );
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
@@ -128,7 +128,8 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/case-queue/rollups",
         summary: "Get Case Queue rollups",
         description:
-            "Loads tenant-scoped Case Queue rollups from the Redis cache or DynamoDB source of record.",
+            "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+        security: [{ bearerAuth: [] }],
         request: {
             query: readCaseQueueStageRollupsRequest,
         },
@@ -142,6 +143,8 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed rollup request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("Authenticated user is not permitted."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -218,9 +221,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         security: [{ bearerAuth: [] }],
         request: {
             headers: z.object({
-                "Idempotency-Key": z.string().max(128).optional().openapi({
+                "Idempotency-Key": z.string().max(128).openapi({
                     description:
-                        "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                        "Required tenant-scoped key used to replay completed Expense Report submissions.",
                 }),
             }),
             body: {

@@ -3,10 +3,11 @@ import {
     type CaseQueueRollupCache,
 } from "../../cache/caseQueueRollupCache.js";
 import { getRedisClient } from "../../cache/redisClient.js";
+import { db } from "../../db/client.js";
+import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import {
-    createDynamoExpenseReportCaseStore,
-    type ExpenseReportCaseStore,
-} from "../../dynamodb/expenseReportCaseStore.js";
+    transitionExpenseReportStage as transitionPostgresExpenseReportStage,
+} from "../repository/expenseReportRepository.js";
 import {
     ReadCaseQueueStageRollupsInboundRequestSchema,
     TransitionExpenseReportStageInboundRequestSchema,
@@ -15,13 +16,26 @@ import {
     type TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
 
+export type CaseQueueRollupStore = {
+    readCaseQueueStageRollups(
+        params: ReadCaseQueueStageRollupsParams,
+    ): Promise<CaseQueueStageRollup[]>;
+};
+
+export type CaseQueueTransitionStore = {
+    transitionExpenseReportStage(
+        request: TransitionExpenseReportStageRequest,
+    ): Promise<boolean>;
+};
+
 export type CaseQueueServiceDependencies = {
-    caseStore: ExpenseReportCaseStore;
+    rollupStore: CaseQueueRollupStore;
+    transitionStore?: CaseQueueTransitionStore | undefined;
     rollupCache?: CaseQueueRollupCache | undefined;
 };
 
 /**
- * Reads Case Queue rollups from Redis when present, otherwise from DynamoDB.
+ * Reads Case Queue rollups from Redis when present, otherwise from Postgres.
  */
 export async function readCachedCaseQueueStageRollups(
     request: ReadCaseQueueStageRollupsParams,
@@ -31,24 +45,27 @@ export async function readCachedCaseQueueStageRollups(
         ReadCaseQueueStageRollupsInboundRequestSchema.parse(request);
     const resolvedDependencies =
         dependencies ?? (await createDefaultCaseQueueServiceDependencies());
-    const cachedRollups =
+    const cacheRead =
         await resolvedDependencies.rollupCache?.get(parsedRequest);
 
-    if (cachedRollups !== undefined) {
-        return cachedRollups;
+    if (cacheRead?.kind === "hit") {
+        return cacheRead.rollups;
     }
 
     const rollups =
-        await resolvedDependencies.caseStore.readCaseQueueStageRollups(
+        await resolvedDependencies.rollupStore.readCaseQueueStageRollups(
             parsedRequest,
         );
-    await resolvedDependencies.rollupCache?.set(parsedRequest, rollups);
+
+    if (cacheRead?.kind === "miss") {
+        await resolvedDependencies.rollupCache?.set(cacheRead, rollups);
+    }
 
     return rollups;
 }
 
 /**
- * Transitions an Expense Report stage in DynamoDB and invalidates tenant rollups.
+ * Transitions an Expense Report stage and invalidates tenant rollups.
  */
 export async function transitionExpenseReportStage(
     request: TransitionExpenseReportStageRequest,
@@ -58,10 +75,16 @@ export async function transitionExpenseReportStage(
         TransitionExpenseReportStageInboundRequestSchema.parse(request);
     const resolvedDependencies =
         dependencies ?? (await createDefaultCaseQueueServiceDependencies());
-    const didTransition =
-        await resolvedDependencies.caseStore.transitionExpenseReportStage(
-            parsedRequest,
+    const transitionStore = resolvedDependencies.transitionStore;
+
+    if (transitionStore === undefined) {
+        throw new Error(
+            "Case Queue stage transitions require a transition store.",
         );
+    }
+
+    const didTransition =
+        await transitionStore.transitionExpenseReportStage(parsedRequest);
 
     if (didTransition) {
         await resolvedDependencies.rollupCache?.invalidateTenant(
@@ -76,7 +99,13 @@ async function createDefaultCaseQueueServiceDependencies(): Promise<CaseQueueSer
     const redisClient = await getRedisClient();
 
     return {
-        caseStore: createDynamoExpenseReportCaseStore(),
+        rollupStore: {
+            readCaseQueueStageRollups: (params) =>
+                readCaseQueueStageRollups(db, params),
+        },
+        transitionStore: {
+            transitionExpenseReportStage: transitionPostgresExpenseReportStage,
+        },
         rollupCache:
             redisClient === undefined
                 ? undefined

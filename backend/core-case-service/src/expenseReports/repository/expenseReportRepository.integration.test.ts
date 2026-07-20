@@ -25,6 +25,7 @@ import { db } from "../../db/client.js";
 import {
     findExpenseReportById,
     insertDraftExpenseReport,
+    transitionExpenseReportStage,
 } from "./expenseReportRepository.js";
 
 void describe("expenseReportRepository", () => {
@@ -182,5 +183,119 @@ void describe("expenseReportRepository", () => {
         );
 
         expect(foundReport).toBeUndefined();
+    });
+
+    void test("writes audit and stage-transition rows for an approved transition", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000190";
+        const actorId = "20000000-0000-4000-8000-000000000190";
+        const newReport = buildNewExpenseReport(targetTenantId);
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const didTransition = await transitionExpenseReportStage({
+            tenantId: targetTenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            reason: "employee_submitted",
+        });
+        const transitionedReport = await findExpenseReportById(
+            targetTenantId,
+            report.id,
+        );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, report.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, report.id));
+
+        expect(didTransition).toBe(true);
+        expect(transitionedReport?.currentStage).toBe("Submitted");
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                tenantId: targetTenantId,
+                expenseReportId: report.id,
+                actorId,
+                action: "transition_approved",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Submitted",
+                denialReason: null,
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                tenantId: targetTenantId,
+                expenseReportId: report.id,
+                actor: actorId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                reason: "employee_submitted",
+            }),
+        );
+    });
+
+    void test("writes a denied audit row without transitioning the report", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000191";
+        const actorId = "20000000-0000-4000-8000-000000000191";
+        const newReport = buildNewExpenseReport(targetTenantId);
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const didTransition = await transitionExpenseReportStage({
+            tenantId: targetTenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "Drafted",
+            toStage: "AP Review",
+            reason: "invalid_skip",
+        });
+        const unchangedReport = await findExpenseReportById(
+            targetTenantId,
+            report.id,
+        );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, report.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, report.id));
+
+        expect(didTransition).toBe(false);
+        expect(unchangedReport?.currentStage).toBe("Drafted");
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                tenantId: targetTenantId,
+                expenseReportId: report.id,
+                actorId,
+                action: "transition_denied",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "AP Review",
+                denialReason: "Invalid transition from Drafted to AP Review.",
+            }),
+        );
+        expect(transitionRows).toHaveLength(1);
+        expect(transitionRows[0]).toMatchObject({
+            fromStage: "Drafted",
+            toStage: "Drafted",
+            reason: "report_created",
+        });
     });
 });

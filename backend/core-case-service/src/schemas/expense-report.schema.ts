@@ -6,6 +6,7 @@ export {
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadCaseQueueStageRollupsInboundRequestSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
     TransitionExpenseReportStageInboundRequestSchema,
     caseQueueStageRollupListSchema,
     caseQueueStageRollupSchema,
@@ -13,6 +14,7 @@ export {
     expenseReportResponseSchema,
     getExpenseReportRequestSchema,
     readCaseQueueStageRollupsRequestSchema,
+    readCaseQueueStageRollupsQuerySchema,
     transitionExpenseReportStageRequestSchema,
     type CaseQueueStageRollup,
     type CreateExpenseReportRequest,
@@ -20,5 +22,6 @@ export {
     type GetExpenseReportRequest,
     type IdempotentSubmissionHeader,
     type ReadCaseQueueStageRollupsParams,
+    type ReadCaseQueueStageRollupsQuery,
     type TransitionExpenseReportStageRequest,
 } from "../expenseReports/dto/expenseReportDto.js";

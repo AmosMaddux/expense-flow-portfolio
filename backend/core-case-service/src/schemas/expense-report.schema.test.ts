@@ -40,24 +40,28 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         });
     });
 
-    void test("keeps workflow stage out of the inbound create request contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            currentStage: "Submitted",
-        });
-
-        expect(parsed).not.toHaveProperty("currentStage");
+    void test("rejects workflow stage in the inbound create request contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                currentStage: "Submitted",
+            }),
+        ).toThrow();
     });
 
-    void test("keeps client-supplied tenant scope out of the create contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            tenant_id: validExpenseReportResponse.tenantId,
-            tenantId: validExpenseReportResponse.tenantId,
-        });
-
-        expect(parsed).not.toHaveProperty("tenant_id");
-        expect(parsed).not.toHaveProperty("tenantId");
+    void test("rejects client-supplied tenant scope in the create contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenant_id: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenantId: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
     });
 
     void test("accepts an explicit priority", () => {
