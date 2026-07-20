@@ -58,9 +58,8 @@ const priorityLevelCheckSql = buildStaticStringInListSql(priorityLevels);
 const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
     approvedAttachmentContentTypes,
 );
-const glCodingSourceTypeCheckSql = buildStaticStringInListSql(
-    glCodingSourceTypes,
-);
+const glCodingSourceTypeCheckSql =
+    buildStaticStringInListSql(glCodingSourceTypes);
 
 export const expenseReport = pgTable(
     "expense_report",

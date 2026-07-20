@@ -82,7 +82,10 @@ export async function submitExpenseReport(request: {
         request.id,
     );
     if (sources === undefined) {
-        const existing = await findExpenseReportById(request.tenantId, request.id);
+        const existing = await findExpenseReportById(
+            request.tenantId,
+            request.id,
+        );
         if (existing === undefined) {
             throw new NotFoundError("Expense Report not found.");
         }
@@ -109,10 +112,9 @@ export async function submitExpenseReport(request: {
                 merchant: item.merchant,
                 amount: item.amount,
                 currency: item.currency,
-                category:
-                    item.category as Parameters<
-                        typeof codeExpenseLineItems
-                    >[1]["line_items"][number]["category"],
+                category: item.category as Parameters<
+                    typeof codeExpenseLineItems
+                >[1]["line_items"][number]["category"],
             })),
             mileage: sources.mileageEntries.map((entry) => ({
                 mileage_entry_id: entry.id,

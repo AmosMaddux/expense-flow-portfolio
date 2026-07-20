@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { describe, expect, test, vi } from "vitest";
@@ -7,6 +7,9 @@ import type { NewExpenseReport } from "../../db/schema/expenseReport.js";
 import {
     auditEntry,
     expenseReport,
+    glCodingResult,
+    lineItem,
+    mileageEntry,
     stageTransition,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
@@ -25,6 +28,7 @@ import { db } from "../../db/client.js";
 import {
     findExpenseReportById,
     insertDraftExpenseReport,
+    submitDraftExpenseReport,
 } from "./expenseReportRepository.js";
 
 void describe("expenseReportRepository", () => {
@@ -182,5 +186,229 @@ void describe("expenseReportRepository", () => {
         );
 
         expect(foundReport).toBeUndefined();
+    });
+
+    void test("submits a Drafted report with appended GL coding history", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000190";
+        const ownerId = "20000000-0000-4000-8000-000000000190";
+        const actorId = "20000000-0000-4000-8000-000000000191";
+        const submissionId = "90000000-0000-4000-8000-000000000190";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, ownerId),
+            ownerId,
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const insertedLineItems = await db
+            .insert(lineItem)
+            .values({
+                id: "30000000-0000-4000-8000-000000000190",
+                tenantId,
+                expenseReportId: report.id,
+                merchant: "Synthetic Air",
+                amount: "501.00",
+                currency: "USD",
+                category: "Travel",
+            })
+            .returning();
+        const insertedMileageEntries = await db
+            .insert(mileageEntry)
+            .values({
+                id: "30000000-0000-4000-8000-000000000191",
+                tenantId,
+                expenseReportId: report.id,
+                route: "Synthetic office to airport",
+                distance: "42.00",
+                mileageDate: "2026-07-18",
+            })
+            .returning();
+        const lineItemId = insertedLineItems[0]?.id;
+        const mileageEntryId = insertedMileageEntries[0]?.id;
+
+        if (lineItemId === undefined || mileageEntryId === undefined) {
+            throw new Error("Expected reimbursable source rows to be created");
+        }
+
+        const submitted = await submitDraftExpenseReport(
+            tenantId,
+            report.id,
+            actorId,
+            submissionId,
+            {
+                coded_items: [
+                    {
+                        source_id: lineItemId,
+                        source_type: "line_item",
+                        category: "Travel",
+                        mapping_status: "mapped",
+                        gl_account: {
+                            account_code: "6000",
+                            account_name: "Travel Expense",
+                        },
+                        amount: "501.00",
+                        currency: "USD",
+                        flagged_line_item: true,
+                    },
+                    {
+                        source_id: mileageEntryId,
+                        source_type: "mileage",
+                        category: "Mileage",
+                        mapping_status: "mapped",
+                        gl_account: {
+                            account_code: "6300",
+                            account_name: "Mileage Expense",
+                        },
+                        amount: "29.40",
+                        currency: "USD",
+                        flagged_line_item: false,
+                    },
+                ],
+                flags: [
+                    {
+                        source_id: lineItemId,
+                        source_type: "line_item",
+                        code: "line_item_over_threshold",
+                        message:
+                            "Line item amount is above the MVP manual review threshold.",
+                    },
+                ],
+            },
+        );
+
+        expect(submitted?.currentStage).toBe("Submitted");
+
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, report.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, report.id));
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, report.id));
+
+        expect(auditRows).toHaveLength(2);
+        expect(auditRows[1]).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            actorId,
+            action: "transition_approved",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            denialReason: null,
+        });
+        expect(transitionRows).toHaveLength(2);
+        expect(transitionRows[1]).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            actor: actorId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            reason: "report_submitted",
+        });
+        expect(codingRows).toHaveLength(2);
+        expect(new Set(codingRows.map((row) => row.submissionId))).toEqual(
+            new Set([submissionId]),
+        );
+        expect(codingRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    tenantId,
+                    expenseReportId: report.id,
+                    sourceType: "line_item",
+                    sourceId: lineItemId,
+                    category: "Travel",
+                    mappingStatus: "mapped",
+                    glAccountCode: "6000",
+                    glAccountName: "Travel Expense",
+                    amount: "501.00",
+                    currency: "USD",
+                    flaggedLineItem: true,
+                    flagCode: "line_item_over_threshold",
+                }),
+                expect.objectContaining({
+                    tenantId,
+                    expenseReportId: report.id,
+                    sourceType: "mileage",
+                    sourceId: mileageEntryId,
+                    category: "Mileage",
+                    mappingStatus: "mapped",
+                    glAccountCode: "6300",
+                    glAccountName: "Mileage Expense",
+                    amount: "29.40",
+                    currency: "USD",
+                    flaggedLineItem: false,
+                    flagCode: null,
+                }),
+            ]),
+        );
+    });
+
+    void test("reads current GL coding as the latest coded_at row", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000192";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const sourceId = "30000000-0000-4000-8000-000000000192";
+        await db.insert(glCodingResult).values([
+            {
+                submissionId: "90000000-0000-4000-8000-000000000192",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                flaggedLineItem: false,
+                codedAt: new Date("2026-07-18T10:00:00.000Z"),
+            },
+            {
+                submissionId: "90000000-0000-4000-8000-000000000193",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6010",
+                glAccountName: "Updated Travel Expense",
+                flaggedLineItem: true,
+                codedAt: new Date("2026-07-18T11:00:00.000Z"),
+            },
+        ]);
+
+        const latestRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.sourceType, "line_item"),
+                    eq(glCodingResult.sourceId, sourceId),
+                ),
+            )
+            .orderBy(desc(glCodingResult.codedAt))
+            .limit(1);
+
+        expect(latestRows[0]).toMatchObject({
+            glAccountCode: "6010",
+            glAccountName: "Updated Travel Expense",
+            flaggedLineItem: true,
+        });
     });
 });

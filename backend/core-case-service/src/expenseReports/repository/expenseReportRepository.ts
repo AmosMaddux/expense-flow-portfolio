@@ -183,8 +183,8 @@ export async function submitDraftExpenseReport(
                 flag,
             ]),
         );
-        const resultRows: NewGlCodingResult[] = glCodingResponse.coded_items.map(
-            (item) => {
+        const resultRows: NewGlCodingResult[] =
+            glCodingResponse.coded_items.map((item) => {
                 const flag = flagsBySource.get(
                     `${item.source_type}:${item.source_id}`,
                 );
@@ -205,8 +205,7 @@ export async function submitDraftExpenseReport(
                     flagCode: flag?.code ?? null,
                     flagMessage: flag?.message ?? null,
                 };
-            },
-        );
+            });
 
         if (resultRows.length > 0) {
             await transaction.insert(glCodingResult).values(resultRows);

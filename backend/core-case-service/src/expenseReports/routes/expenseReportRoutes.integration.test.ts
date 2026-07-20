@@ -11,11 +11,16 @@ import {
 } from "../../idempotency/idempotencyStore.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
+import { verifyAccessToken } from "../../auth/shared/accessTokenMiddleware.js";
 import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import {
     auditEntry,
+    expenseReport,
+    glCodingResult,
+    lineItem,
+    mileageEntry,
     stageTransition,
     type RoleName,
 } from "../../db/schema/index.js";
@@ -75,6 +80,12 @@ const idempotencyStoreMock = vi.hoisted(() => ({
 
 vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
     getDefaultIdempotencyStore: () => idempotencyStoreMock,
+}));
+
+const glCodingClientMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../glCoding/glCodingClient.js", () => ({
+    codeExpenseLineItems: glCodingClientMock,
 }));
 
 import { db } from "../../db/client.js";
@@ -159,6 +170,11 @@ void describe("Expense Report routes", () => {
         idempotencyStoreMock.releaseLock.mockClear();
         idempotencyStoreMock.reserveSubmission.mockClear();
         idempotencyStoreMock.saveResult.mockClear();
+        glCodingClientMock.mockReset();
+        glCodingClientMock.mockResolvedValue({
+            coded_items: [],
+            flags: [],
+        });
     });
 
     void test("creates then reads an Expense Report end to end", async () => {
@@ -559,6 +575,293 @@ void describe("Expense Report routes", () => {
             .from(auditEntry)
             .where(eq(auditEntry.expenseReportId, created.id ?? ""));
         expect(auditRows[0]?.actorId).toBe(financeAdminId);
+    });
+
+    void test("submits a Drafted report as a Department Manager with a tenant JWT", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000130";
+        const owner = "50000000-0000-4000-8000-000000000130";
+        const managerId = "50000000-0000-4000-8000-000000000131";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-130",
+            },
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-12",
+            }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        await db.insert(lineItem).values({
+            id: "30000000-0000-4000-8000-000000000130",
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Air",
+            amount: "501.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(mileageEntry).values({
+            id: "30000000-0000-4000-8000-000000000131",
+            tenantId,
+            expenseReportId: created.id,
+            route: "Synthetic office to airport",
+            distance: "42.00",
+            mileageDate: "2026-07-18",
+        });
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [
+                {
+                    source_id: "30000000-0000-4000-8000-000000000130",
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "501.00",
+                    currency: "USD",
+                    flagged_line_item: true,
+                },
+            ],
+            flags: [],
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-130",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+
+        expect(response.status).toBe(201);
+        expect(body.currentStage).toBe("Submitted");
+        expect(glCodingClientMock).toHaveBeenCalledOnce();
+        const glRequest = glCodingClientMock.mock.calls[0]?.[1] as {
+            line_items: unknown[];
+            mileage: unknown[];
+        };
+        const glOptions = glCodingClientMock.mock.calls[0]?.[2] as {
+            accessToken?: string;
+        };
+        expect(glRequest.line_items).toHaveLength(1);
+        expect(glRequest.mileage).toHaveLength(1);
+        expect(glOptions.accessToken).toBeDefined();
+
+        const outboundAuth = verifyAccessToken(
+            glOptions.accessToken ?? "",
+            loadAuthJwtConfig(),
+        );
+        expect(outboundAuth).toEqual({
+            tenantId,
+            userId: managerId,
+            roles: ["Department Manager"],
+        });
+    });
+
+    void test("rejects Employee submission attempts", async () => {
+        const response = await requestApp(
+            "/v1/expense-reports/10000000-0000-4000-8000-000000000132/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000132",
+                        "50000000-0000-4000-8000-000000000132",
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-132",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(response.status).toBe(403);
+        expect(glCodingClientMock).not.toHaveBeenCalled();
+    });
+
+    void test("requires an Idempotency-Key header for submit requests", async () => {
+        const response = await requestApp(
+            "/v1/expense-reports/10000000-0000-4000-8000-000000000133/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000133",
+                        "50000000-0000-4000-8000-000000000133",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(response.status).toBe(400);
+        expect(idempotencyStoreMock.reserveSubmission).not.toHaveBeenCalled();
+    });
+
+    void test("rejects malformed submit request bodies", async () => {
+        const response = await requestApp(
+            "/v1/expense-reports/10000000-0000-4000-8000-000000000134/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000134",
+                        "50000000-0000-4000-8000-000000000134",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-134",
+                },
+                body: JSON.stringify({ unexpected: true }),
+            },
+        );
+
+        expect(response.status).toBe(400);
+        expect(glCodingClientMock).not.toHaveBeenCalled();
+    });
+
+    void test("returns not found for missing or cross-tenant submit targets", async () => {
+        const response = await requestApp(
+            "/v1/expense-reports/10000000-0000-4000-8000-000000000135/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000135",
+                        "50000000-0000-4000-8000-000000000135",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-135",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(response.status).toBe(404);
+        expect(glCodingClientMock).not.toHaveBeenCalled();
+    });
+
+    void test("rejects submit requests for reports that are not Drafted", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000136";
+        const owner = "50000000-0000-4000-8000-000000000136";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-136",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-13" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Submitted" })
+            .where(eq(expenseReport.id, created.id ?? ""));
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        "50000000-0000-4000-8000-000000000137",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-136",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(response.status).toBe(409);
+        expect(glCodingClientMock).not.toHaveBeenCalled();
+    });
+
+    void test("keeps the report Drafted when GL coding fails", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000138";
+        const owner = "50000000-0000-4000-8000-000000000138";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-138",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-14" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        glCodingClientMock.mockRejectedValueOnce(
+            new Error("Synthetic GL-coding failure"),
+        );
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        "50000000-0000-4000-8000-000000000139",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-138",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, created.id));
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, created.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, created.id));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, created.id));
+
+        expect(response.status).toBe(500);
+        expect(reportRows[0]?.currentStage).toBe("Drafted");
+        expect(codingRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(1);
+        expect(auditRows).toHaveLength(1);
     });
 
     void test("reads an Expense Report by id", async () => {
