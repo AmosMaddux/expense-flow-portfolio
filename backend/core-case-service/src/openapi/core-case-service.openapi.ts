@@ -185,9 +185,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         security: [{ bearerAuth: [] }],
         request: {
             headers: z.object({
-                "Idempotency-Key": z.string().max(128).optional().openapi({
+                "Idempotency-Key": z.string().max(128).openapi({
                     description:
-                        "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                        "Required tenant-scoped key used to replay completed Expense Report submissions.",
                 }),
             }),
             body: {

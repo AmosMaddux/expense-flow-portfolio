@@ -5,7 +5,10 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { IdempotencyResult } from "../../idempotency/idempotencyStore.js";
+import {
+    IdempotencyRequestMismatchError,
+    type IdempotencyResult,
+} from "../../idempotency/idempotencyStore.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
@@ -29,15 +32,26 @@ vi.mock("../../db/client.js", () => {
 });
 
 const idempotencyRecords = vi.hoisted(
-    () => new Map<string, IdempotencyResult>(),
+    () => new Map<string, { requestHash: string; result: IdempotencyResult }>(),
 );
 const idempotencyStoreMock = vi.hoisted(() => ({
     acquireLock: vi.fn().mockResolvedValue("lock-token"),
     clearReservation: vi.fn().mockResolvedValue(undefined),
-    getResult: vi.fn((tenantId: string, idempotencyKey: string) =>
-        Promise.resolve(
-            idempotencyRecords.get(`${tenantId}:${idempotencyKey}`),
-        ),
+    getResult: vi.fn(
+        (tenantId: string, idempotencyKey: string, requestHash: string) => {
+            const record = idempotencyRecords.get(
+                `${tenantId}:${idempotencyKey}`,
+            );
+            if (record === undefined) {
+                return Promise.resolve(undefined);
+            }
+
+            if (record.requestHash !== requestHash) {
+                return Promise.reject(new IdempotencyRequestMismatchError());
+            }
+
+            return Promise.resolve(record.result);
+        },
     ),
     releaseLock: vi.fn().mockResolvedValue(undefined),
     reserveSubmission: vi.fn().mockResolvedValue(true),
@@ -46,9 +60,13 @@ const idempotencyStoreMock = vi.hoisted(() => ({
             tenantId: string,
             idempotencyKey: string,
             _token: string,
+            requestHash: string,
             result: IdempotencyResult,
         ) => {
-            idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, result);
+            idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, {
+                requestHash,
+                result,
+            });
 
             return Promise.resolve();
         },
@@ -153,9 +171,9 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-e2e",
             },
             body: JSON.stringify({
-                tenant_id: tenantId,
                 owner,
                 dueDate,
                 priority: "Normal",
@@ -208,6 +226,7 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-rate-limit",
             },
             body: "{",
         });
@@ -272,9 +291,9 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-100",
             },
             body: JSON.stringify({
-                tenant_id: "40000000-0000-4000-8000-000000000999",
                 owner,
                 dueDate: "2026-07-31",
                 priority: "High",
@@ -290,6 +309,65 @@ void describe("Expense Report routes", () => {
         expect(body.id).toEqual(expect.any(String));
         expect(body.tenantId).toEqual(tenantId);
         expect(body.currentStage).toEqual("Drafted");
+    });
+
+    void test("rejects client-supplied tenant scope in create requests", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000114";
+        const owner = "50000000-0000-4000-8000-000000000016";
+
+        const response = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-114",
+            },
+            body: JSON.stringify({
+                tenant_id: "40000000-0000-4000-8000-000000000999",
+                owner,
+                dueDate: "2026-08-08",
+                priority: "High",
+            }),
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            title: "Bad Request",
+            status: 400,
+        });
+    });
+
+    void test("requires an Idempotency-Key header for create requests", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000116";
+        const owner = "50000000-0000-4000-8000-000000000018";
+
+        const response = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-11",
+                priority: "Normal",
+            }),
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            title: "Bad Request",
+            status: 400,
+        });
+        expect(idempotencyStoreMock.reserveSubmission).not.toHaveBeenCalled();
     });
 
     void test("replays the original result for a retried idempotent create", async () => {
@@ -324,6 +402,46 @@ void describe("Expense Report routes", () => {
         expect(retry.id).toBe(first.id);
         expect(idempotencyStoreMock.saveResult).toHaveBeenCalledTimes(1);
         expect(idempotencyStoreMock.acquireLock).toHaveBeenCalledTimes(1);
+    });
+
+    void test("rejects an idempotency key reused with a different create body", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000115";
+        const owner = "50000000-0000-4000-8000-000000000017";
+        const headers = {
+            authorization: authorizationHeader(tenantId, owner),
+            "content-type": "application/json",
+            "idempotency-key": "expense-submit-115",
+        };
+
+        const firstResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-09",
+                priority: "Normal",
+            }),
+        });
+        const mismatchResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-10",
+                priority: "Normal",
+            }),
+        });
+        const mismatchBody = (await mismatchResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(firstResponse.status).toBe(201);
+        expect(mismatchResponse.status).toBe(409);
+        expect(mismatchBody).toMatchObject({
+            title: "Conflict",
+            status: 409,
+        });
     });
 
     void test("scopes the same idempotency key to each authenticated tenant", async () => {
@@ -371,9 +489,9 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, userId),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-105",
             },
             body: JSON.stringify({
-                tenant_id: "40000000-0000-4000-8000-000000000105",
                 dueDate: "2026-07-31",
             }),
         });
@@ -400,6 +518,7 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, employeeId),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-108",
             },
             body: JSON.stringify({
                 owner: "50000000-0000-4000-8000-000000000009",
@@ -426,6 +545,7 @@ void describe("Expense Report routes", () => {
                     "Finance Admin",
                 ]),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-109",
             },
             body: JSON.stringify({ owner: ownerId, dueDate: "2026-08-04" }),
         });
@@ -450,9 +570,9 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-101",
             },
             body: JSON.stringify({
-                tenant_id: tenantId,
                 owner,
                 dueDate: "2026-08-01",
             }),
@@ -492,9 +612,9 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-102",
             },
             body: JSON.stringify({
-                tenant_id: tenantId,
                 owner,
                 dueDate: "2026-08-02",
             }),
@@ -535,6 +655,7 @@ void describe("Expense Report routes", () => {
             headers: {
                 authorization: authorizationHeader(tenantId, ownerId),
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-110",
             },
             body: JSON.stringify({ owner: ownerId, dueDate: "2026-08-05" }),
         });

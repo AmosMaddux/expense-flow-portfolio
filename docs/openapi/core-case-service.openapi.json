@@ -103,7 +103,8 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["owner", "dueDate"]
+                "required": ["owner", "dueDate"],
+                "additionalProperties": false
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -390,10 +391,10 @@
                         "schema": {
                             "type": "string",
                             "maxLength": 128,
-                            "description": "Optional tenant-scoped key used to replay completed Expense Report submissions."
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
                         },
-                        "required": false,
-                        "description": "Optional tenant-scoped key used to replay completed Expense Report submissions.",
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
                         "in": "header"
                     }

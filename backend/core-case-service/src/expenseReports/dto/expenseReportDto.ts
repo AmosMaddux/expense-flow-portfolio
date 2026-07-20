@@ -8,11 +8,13 @@ import {
 
 extendZodWithOpenApi(z);
 
-export const CreateExpenseReportInboundRequestSchema = z.object({
-    owner: z.uuid(),
-    dueDate: z.iso.date(),
-    priority: z.enum(priorityLevels).default("Normal"),
-});
+export const CreateExpenseReportInboundRequestSchema = z
+    .object({
+        owner: z.uuid(),
+        dueDate: z.iso.date(),
+        priority: z.enum(priorityLevels).default("Normal"),
+    })
+    .strict();
 
 export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
