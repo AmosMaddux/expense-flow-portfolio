@@ -992,6 +992,105 @@ void describe("Expense Report routes", () => {
         expect(auditRows).toHaveLength(1);
     });
 
+    void test("keeps the report Drafted when submitted sources change during GL coding", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000142";
+        const owner = "50000000-0000-4000-8000-000000000142";
+        const lineItemId = "30000000-0000-4000-8000-000000000142";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-142",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-14" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Air",
+            amount: "501.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        glCodingClientMock.mockImplementationOnce(async () => {
+            await db
+                .update(lineItem)
+                .set({ amount: "601.00" })
+                .where(
+                    and(
+                        eq(lineItem.tenantId, tenantId),
+                        eq(lineItem.id, lineItemId),
+                    ),
+                );
+
+            return {
+                coded_items: [
+                    {
+                        source_id: lineItemId,
+                        source_type: "line_item",
+                        category: "Travel",
+                        mapping_status: "mapped",
+                        gl_account: {
+                            account_code: "6000",
+                            account_name: "Travel Expense",
+                        },
+                        amount: "501.00",
+                        currency: "USD",
+                        flagged_line_item: true,
+                    },
+                ],
+                flags: [],
+            };
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        "50000000-0000-4000-8000-000000000143",
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-142",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, created.id));
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, created.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, created.id));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, created.id));
+
+        expect(response.status).toBe(502);
+        expect(reportRows[0]?.currentStage).toBe("Drafted");
+        expect(codingRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(1);
+        expect(auditRows).toHaveLength(1);
+    });
+
     void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";

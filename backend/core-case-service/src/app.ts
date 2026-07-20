@@ -7,6 +7,7 @@ import { createDrizzleLoginCredentialRepository } from "./auth/login/loginReposi
 import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
 import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
 import { loadAuthJwtConfig } from "./config/authJwtConfig.js";
+import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import { createAccessTokenMiddleware } from "./auth/shared/accessTokenMiddleware.js";
@@ -21,6 +22,7 @@ import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRa
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
+loadDefaultGlCodingConfig();
 const v1Router = express.Router();
 
 v1Router.use("/auth", express.json());

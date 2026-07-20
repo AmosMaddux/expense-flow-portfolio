@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ConfigurationError } from "../errors/problem-json.js";
+
 const glCodingEnvironmentSchema = z.object({
     GL_CODING_SERVICE_BASE_URL: z.string().url(),
     GL_CODING_TIMEOUT_MS: z.coerce
@@ -30,11 +32,36 @@ const glCodingEnvironmentSchema = z.object({
 
 export type GlCodingConfig = z.infer<typeof glCodingEnvironmentSchema>;
 
+let defaultGlCodingConfig: GlCodingConfig | undefined;
+
 /**
  * Reads GL-coding service client settings from the environment.
  */
 export function loadGlCodingConfig(
     environment: NodeJS.ProcessEnv = process.env,
 ): GlCodingConfig {
-    return glCodingEnvironmentSchema.parse(environment);
+    const parsed = glCodingEnvironmentSchema.safeParse(environment);
+    if (!parsed.success) {
+        const fields = parsed.error.issues
+            .map((issue) => issue.path.join("."))
+            .filter((field) => field.length > 0)
+            .join(", ");
+        throw new ConfigurationError(
+            `GL-coding configuration is invalid: ${fields}.`,
+            {
+                cause: parsed.error,
+            },
+        );
+    }
+
+    return parsed.data;
+}
+
+/**
+ * Returns the process-wide GL-coding service client settings.
+ */
+export function loadDefaultGlCodingConfig(): GlCodingConfig {
+    defaultGlCodingConfig ??= loadGlCodingConfig();
+
+    return defaultGlCodingConfig;
 }

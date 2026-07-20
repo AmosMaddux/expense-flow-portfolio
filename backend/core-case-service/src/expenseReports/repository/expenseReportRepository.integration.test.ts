@@ -29,6 +29,7 @@ vi.mock("../../db/client.js", () => {
 
 import { db } from "../../db/client.js";
 import {
+    buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
     findExpenseReportById,
     insertDraftExpenseReport,
@@ -284,6 +285,25 @@ void describe("expenseReportRepository", () => {
             buildSubmissionSourceKeys({
                 lineItems: [{ id: lineItemId }],
                 mileageEntries: [{ id: mileageEntryId }],
+            }),
+            buildSubmissionSourceFingerprint({
+                lineItems: [
+                    {
+                        id: lineItemId,
+                        merchant: "Synthetic Air",
+                        amount: "501.00",
+                        currency: "USD",
+                        category: "Travel",
+                    },
+                ],
+                mileageEntries: [
+                    {
+                        id: mileageEntryId,
+                        route: "Synthetic office to airport",
+                        distance: "42.00",
+                        mileageDate: "2026-07-18",
+                    },
+                ],
             }),
         );
 
@@ -620,6 +640,18 @@ void describe("expenseReportRepository", () => {
                     preparedResponse,
                     buildSubmissionSourceKeys({
                         lineItems: [{ id: sourceId }],
+                        mileageEntries: [],
+                    }),
+                    buildSubmissionSourceFingerprint({
+                        lineItems: [
+                            {
+                                id: sourceId,
+                                merchant: "Synthetic Air",
+                                amount: "501.00",
+                                currency: "USD",
+                                category: "Travel",
+                            },
+                        ],
                         mileageEntries: [],
                     }),
                 ),

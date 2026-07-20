@@ -36,6 +36,7 @@ export type SubmissionSources = {
 };
 
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
+type SubmissionSourceFingerprint = string;
 
 /**
  * Reads an Expense Report from the case store within a tenant boundary.
@@ -163,6 +164,7 @@ export async function submitDraftExpenseReport(
     submissionId: string,
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
+    expectedSourceFingerprint: SubmissionSourceFingerprint,
 ): Promise<ExpenseReport | undefined> {
     return db.transaction(async (transaction) => {
         const [lineItems, mileageEntries] = await Promise.all([
@@ -185,11 +187,16 @@ export async function submitDraftExpenseReport(
                     ),
                 ),
         ]);
-        const currentSourceKeys = buildSubmissionSourceKeys({
+        const currentSources = {
             lineItems,
             mileageEntries,
-        });
+        };
+        const currentSourceKeys = buildSubmissionSourceKeys(currentSources);
         assertSourceKeysEqual(expectedSourceKeys, currentSourceKeys);
+        assertSourceFingerprintEqual(
+            expectedSourceFingerprint,
+            buildSubmissionSourceFingerprint(currentSources),
+        );
         validateGlCodingResponse(glCodingResponse, currentSourceKeys);
 
         const updatedReports = await transaction
@@ -319,6 +326,45 @@ export function buildSubmissionSourceKeys(sources: {
     ]);
 }
 
+/**
+ * Builds a stable fingerprint of every source field submitted for GL coding.
+ */
+export function buildSubmissionSourceFingerprint(sources: {
+    lineItems: Array<{
+        id: string;
+        merchant: string;
+        amount: string;
+        currency: string;
+        category: string;
+    }>;
+    mileageEntries: Array<{
+        id: string;
+        route: string;
+        distance: string;
+        mileageDate: string;
+    }>;
+}): SubmissionSourceFingerprint {
+    return JSON.stringify({
+        lineItems: sources.lineItems
+            .map((item) => ({
+                id: item.id,
+                merchant: item.merchant,
+                amount: item.amount,
+                currency: item.currency,
+                category: item.category,
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+        mileageEntries: sources.mileageEntries
+            .map((entry) => ({
+                id: entry.id,
+                route: entry.route,
+                distance: entry.distance,
+                mileageDate: entry.mileageDate,
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+    });
+}
+
 function validateGlCodingResponse(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
@@ -368,6 +414,17 @@ function validateGlCodingResponse(
                 "The GL-coding service returned a flag for an unknown source.",
             );
         }
+    }
+}
+
+function assertSourceFingerprintEqual(
+    expectedSourceFingerprint: SubmissionSourceFingerprint,
+    currentSourceFingerprint: SubmissionSourceFingerprint,
+): void {
+    if (expectedSourceFingerprint !== currentSourceFingerprint) {
+        throw invalidGlCodingResponseError(
+            "Expense Report sources changed during submission.",
+        );
     }
 }
 

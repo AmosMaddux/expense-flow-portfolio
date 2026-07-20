@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { ConfigurationError } from "../errors/problem-json.js";
 import { loadGlCodingConfig } from "./glCodingConfig.js";
 
 void describe("GL-coding client configuration", () => {
@@ -22,12 +23,19 @@ void describe("GL-coding client configuration", () => {
     });
 
     void test("requires an explicit GL-coding service URL", () => {
+        expect(() => loadGlCodingConfig({})).toThrow(ConfigurationError);
         expect(() => loadGlCodingConfig({})).toThrow(
             "GL_CODING_SERVICE_BASE_URL",
         );
     });
 
     void test("rejects excessive retry and backoff settings", () => {
+        expect(() =>
+            loadGlCodingConfig({
+                GL_CODING_SERVICE_BASE_URL: "https://gl-coding.example.test",
+                GL_CODING_MAX_RETRIES: "6",
+            }),
+        ).toThrow(ConfigurationError);
         expect(() =>
             loadGlCodingConfig({
                 GL_CODING_SERVICE_BASE_URL: "https://gl-coding.example.test",

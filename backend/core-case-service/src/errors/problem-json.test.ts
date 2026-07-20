@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
 import {
     BadGatewayError,
+    ConfigurationError,
     ForbiddenError,
     NotFoundError,
     problemJsonErrorHandler,
@@ -88,6 +89,9 @@ function buildProblemJsonTestApp(): Express {
         throw new BadGatewayError(
             "The GL-coding service could not be reached.",
         );
+    });
+    app.get("/invalid-configuration", () => {
+        throw new ConfigurationError("GL-coding configuration is invalid.");
     });
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
@@ -298,6 +302,23 @@ void describe("problemJsonErrorHandler", () => {
             status: 403,
             detail: "This action is not permitted.",
             instance: "/forbidden",
+        });
+    });
+
+    void test("maps ConfigurationError to a 500 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/invalid-configuration",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(500);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Internal Server Error",
+            status: 500,
+            detail: "GL-coding configuration is invalid.",
+            instance: "/invalid-configuration",
         });
     });
 

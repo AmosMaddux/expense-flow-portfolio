@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
-import { loadGlCodingConfig } from "../../config/glCodingConfig.js";
+import { loadDefaultGlCodingConfig } from "../../config/glCodingConfig.js";
 import {
     BadGatewayError,
     ConflictError,
+    ConfigurationError,
     NotFoundError,
 } from "../../errors/problem-json.js";
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
@@ -13,6 +14,7 @@ import { codeExpenseLineItems } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
     buildSubmissionSourceKeys,
+    buildSubmissionSourceFingerprint,
     findExpenseReportById,
     insertDraftExpenseReport,
     insertDeniedSubmissionAuditEntry,
@@ -109,7 +111,7 @@ export async function submitExpenseReport(request: {
     }
 
     const authConfig = loadAuthJwtConfig();
-    const glConfig = loadGlCodingConfig();
+    const glConfig = loadDefaultGlCodingConfig();
     const { accessToken } = signAccessToken(
         {
             tenantId: request.tenantId,
@@ -154,6 +156,7 @@ export async function submitExpenseReport(request: {
             randomUUID(),
             glResponse,
             buildSubmissionSourceKeys(sources),
+            buildSubmissionSourceFingerprint(sources),
         );
         if (report === undefined) {
             await insertDeniedSubmissionAuditEntry(
@@ -171,6 +174,10 @@ export async function submitExpenseReport(request: {
     } catch (error: unknown) {
         if (error instanceof GlCodingServiceError) {
             throw new BadGatewayError(error.message);
+        }
+
+        if (error instanceof ConfigurationError) {
+            throw error;
         }
 
         throw error;
