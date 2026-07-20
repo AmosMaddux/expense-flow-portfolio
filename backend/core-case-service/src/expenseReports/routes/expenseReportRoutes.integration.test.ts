@@ -186,6 +186,9 @@ void describe("Expense Report routes", () => {
         };
 
         expect(createResponse.status).toBe(201);
+        expect(createResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(createResponse.headers.get("ratelimit-remaining")).toBe("1");
+        expect(createResponse.headers.get("x-ratelimit-cost")).toBe("1");
         expect(created.id).toEqual(expect.any(String));
         expect(created).toMatchObject({
             tenantId,
@@ -213,6 +216,9 @@ void describe("Expense Report routes", () => {
         };
 
         expect(readResponse.status).toBe(200);
+        expect(readResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(readResponse.headers.get("ratelimit-remaining")).toBe("0");
+        expect(readResponse.headers.get("x-ratelimit-cost")).toBe("1");
         expect(readBody).toMatchObject({
             id: created.id,
             tenantId,
