@@ -99,6 +99,21 @@ def gl_coding_payload() -> dict[str, object]:
     }
 
 
+def mileage_payload() -> dict[str, object]:
+    """Return a synthetic mileage entry for GL-coding endpoint coverage."""
+    return {
+        "line_items": [],
+        "mileage": [
+            {
+                "mileage_entry_id": "30000000-0000-4000-8000-000000000201",
+                "route": "Office to synthetic client site",
+                "distance": "18.50",
+                "mileage_date": "2026-07-17",
+            }
+        ],
+    }
+
+
 @pytest.mark.anyio
 async def test_code_line_items_uses_seeded_tenant_mapping_and_marks_missing_category_unmapped() -> None:
     request = GlCodingComputeRequest.model_validate(gl_coding_payload())
@@ -122,6 +137,24 @@ async def test_code_line_items_uses_seeded_tenant_mapping_and_marks_missing_cate
     assert repository.requests == [
         (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
     ]
+
+
+@pytest.mark.anyio
+async def test_code_line_items_maps_mileage_entries() -> None:
+    request = GlCodingComputeRequest.model_validate(mileage_payload())
+    repository = FakeGlAccountMappingRepository(SEEDED_GL_ACCOUNTS)
+
+    response = await code_line_items_to_gl_accounts(request, TENANT_ID, repository)
+
+    mileage_item = response.coded_items[0]
+    assert mileage_item.source_id == UUID("30000000-0000-4000-8000-000000000201")
+    assert mileage_item.category is ExpenseCategory.MILEAGE
+    assert mileage_item.mapping_status is GlMappingStatus.MAPPED
+    assert mileage_item.gl_account is not None
+    assert mileage_item.gl_account.account_code == "6300"
+    assert mileage_item.flagged_line_item is False
+    assert response.flags == []
+    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
 
 
 @pytest.mark.anyio
