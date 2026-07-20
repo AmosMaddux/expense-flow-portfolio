@@ -5,11 +5,34 @@ import {
     auditEntry,
     expenseReport,
     type ExpenseReport,
+    glCodingResult,
+    lineItem,
+    mileageEntry,
     type NewExpenseReport,
+    type NewGlCodingResult,
     stageTransition,
 } from "../../db/schema/expenseReport.js";
+import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 
 export const expenseReportCreatedReason = "report_created";
+export const expenseReportSubmittedReason = "report_submitted";
+
+export type SubmissionSources = {
+    report: ExpenseReport;
+    lineItems: Array<{
+        id: string;
+        merchant: string;
+        amount: string;
+        currency: string;
+        category: string;
+    }>;
+    mileageEntries: Array<{
+        id: string;
+        route: string;
+        distance: string;
+        mileageDate: string;
+    }>;
+};
 
 /**
  * Reads an Expense Report from the case store within a tenant boundary.
@@ -88,5 +111,125 @@ export async function insertDraftExpenseReport(
         });
 
         return insertedReport;
+    });
+}
+
+/**
+ * Reads the Drafted report and reimbursable sources needed for submission.
+ */
+export async function readDraftSubmissionSources(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<SubmissionSources | undefined> {
+    const report = await findExpenseReportById(tenantId, expenseReportId);
+    if (report === undefined || report.currentStage !== "Drafted") {
+        return undefined;
+    }
+
+    const [lineItems, mileageEntries] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            ),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            ),
+    ]);
+
+    return { report, lineItems, mileageEntries };
+}
+
+/**
+ * Appends GL-coding results and advances a Drafted report to Submitted.
+ */
+export async function submitDraftExpenseReport(
+    tenantId: string,
+    expenseReportId: string,
+    actorId: string,
+    submissionId: string,
+    glCodingResponse: GlCodingResponse,
+): Promise<ExpenseReport | undefined> {
+    return db.transaction(async (transaction) => {
+        const updatedReports = await transaction
+            .update(expenseReport)
+            .set({ currentStage: "Submitted", updatedAt: new Date() })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, expenseReportId),
+                    eq(expenseReport.currentStage, "Drafted"),
+                ),
+            )
+            .returning();
+        const updatedReport = updatedReports[0];
+        if (updatedReport === undefined) {
+            return undefined;
+        }
+
+        const flagsBySource = new Map(
+            glCodingResponse.flags.map((flag) => [
+                `${flag.source_type}:${flag.source_id}`,
+                flag,
+            ]),
+        );
+        const resultRows: NewGlCodingResult[] = glCodingResponse.coded_items.map(
+            (item) => {
+                const flag = flagsBySource.get(
+                    `${item.source_type}:${item.source_id}`,
+                );
+
+                return {
+                    submissionId,
+                    tenantId,
+                    expenseReportId,
+                    sourceType: item.source_type,
+                    sourceId: item.source_id,
+                    category: item.category,
+                    mappingStatus: item.mapping_status,
+                    glAccountCode: item.gl_account?.account_code ?? null,
+                    glAccountName: item.gl_account?.account_name ?? null,
+                    amount: item.amount ?? null,
+                    currency: item.currency ?? null,
+                    flaggedLineItem: item.flagged_line_item,
+                    flagCode: flag?.code ?? null,
+                    flagMessage: flag?.message ?? null,
+                };
+            },
+        );
+
+        if (resultRows.length > 0) {
+            await transaction.insert(glCodingResult).values(resultRows);
+        }
+
+        await transaction.insert(auditEntry).values({
+            tenantId,
+            expenseReportId,
+            actorId,
+            action: "transition_approved",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+        });
+
+        await transaction.insert(stageTransition).values({
+            tenantId,
+            expenseReportId,
+            actor: actorId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            reason: expenseReportSubmittedReason,
+        });
+
+        return updatedReport;
     });
 }

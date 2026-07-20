@@ -20,6 +20,8 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
+
 export const IdempotentSubmissionHeaderSchema = z.object({
     idempotencyKey: z
         .string()
@@ -49,6 +51,9 @@ export const createExpenseReportRequestSchema =
 export const getExpenseReportRequestSchema =
     GetExpenseReportInboundRequestSchema;
 
+export const submitExpenseReportRequestSchema =
+    SubmitExpenseReportInboundRequestSchema;
+
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export type CreateExpenseReportRequest = z.infer<
@@ -57,6 +62,10 @@ export type CreateExpenseReportRequest = z.infer<
 
 export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
+>;
+
+export type SubmitExpenseReportRequest = z.infer<
+    typeof SubmitExpenseReportInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<

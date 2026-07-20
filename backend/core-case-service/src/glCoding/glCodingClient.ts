@@ -73,9 +73,15 @@ export type GlCodingRequest = z.infer<typeof GlCodingRequestSchema>;
 export type GlCodingResponse = z.infer<typeof GlCodingResponseSchema>;
 
 export type GlCodingClientOptions = {
+    accessToken?: string;
+    delayImplementation?: (milliseconds: number) => Promise<void>;
     fetchImplementation?: typeof fetch;
+    maxBackoffMs?: number;
+    maxRetries?: number;
+    random?: () => number;
     signal?: AbortSignal;
     timeoutMs?: number;
+    baseBackoffMs?: number;
 };
 
 /**
@@ -89,60 +95,108 @@ export async function codeExpenseLineItems(
     const requestBody = GlCodingRequestSchema.parse(request);
     const endpoint = `${serviceBaseUrl.replace(/\/$/, "")}/gl-coding/line-items`;
     const fetchImplementation = options.fetchImplementation ?? fetch;
-    const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
-    const signal = options.signal
-        ? AbortSignal.any([options.signal, timeoutSignal])
-        : timeoutSignal;
+    const maxRetries = options.maxRetries ?? 0;
+    const delay = options.delayImplementation ?? defaultDelay;
+    const random = options.random ?? Math.random;
 
-    let response: Response;
-    try {
-        response = await fetchImplementation(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-            signal,
-        });
-    } catch (error: unknown) {
-        if (timeoutSignal.aborted) {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
+        const signal = options.signal
+            ? AbortSignal.any([options.signal, timeoutSignal])
+            : timeoutSignal;
+
+        let response: Response;
+        try {
+            response = await fetchImplementation(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(options.accessToken === undefined
+                        ? {}
+                        : { Authorization: `Bearer ${options.accessToken}` }),
+                },
+                body: JSON.stringify(requestBody),
+                signal,
+            });
+        } catch (error: unknown) {
+            if (attempt < maxRetries && options.signal?.aborted !== true) {
+                await delay(calculateRetryDelay(attempt, options, random));
+                continue;
+            }
+
+            if (timeoutSignal.aborted) {
+                throw new GlCodingServiceError(
+                    "The GL-coding service request timed out.",
+                    undefined,
+                    { cause: error },
+                );
+            }
+
             throw new GlCodingServiceError(
-                "The GL-coding service request timed out.",
+                signal.aborted
+                    ? "The GL-coding service request was cancelled."
+                    : "The GL-coding service could not be reached.",
                 undefined,
                 { cause: error },
             );
         }
 
-        throw new GlCodingServiceError(
-            signal.aborted
-                ? "The GL-coding service request was cancelled."
-                : "The GL-coding service could not be reached.",
-            undefined,
-            { cause: error },
-        );
-    }
+        if (!response.ok) {
+            if (attempt < maxRetries && isRetryableStatus(response.status)) {
+                await delay(calculateRetryDelay(attempt, options, random));
+                continue;
+            }
 
-    if (!response.ok) {
-        throw new GlCodingServiceError(
-            "The GL-coding service rejected the coding request.",
-            response.status,
-        );
-    }
-
-    try {
-        const responseBody: unknown = await response.json();
-        return GlCodingResponseSchema.parse(responseBody);
-    } catch (error: unknown) {
-        if (timeoutSignal.aborted) {
             throw new GlCodingServiceError(
-                "The GL-coding service request timed out.",
+                "The GL-coding service rejected the coding request.",
+                response.status,
+            );
+        }
+
+        try {
+            const responseBody: unknown = await response.json();
+            return GlCodingResponseSchema.parse(responseBody);
+        } catch (error: unknown) {
+            if (timeoutSignal.aborted) {
+                throw new GlCodingServiceError(
+                    "The GL-coding service request timed out.",
+                    response.status,
+                    { cause: error },
+                );
+            }
+
+            throw new GlCodingServiceError(
+                "The GL-coding service returned an invalid response.",
                 response.status,
                 { cause: error },
             );
         }
-
-        throw new GlCodingServiceError(
-            "The GL-coding service returned an invalid response.",
-            response.status,
-            { cause: error },
-        );
     }
+
+    throw new GlCodingServiceError("The GL-coding service request failed.");
+}
+
+function isRetryableStatus(statusCode: number): boolean {
+    return statusCode === 429 || statusCode >= 500;
+}
+
+function calculateRetryDelay(
+    attempt: number,
+    options: GlCodingClientOptions,
+    random: () => number,
+): number {
+    const baseBackoffMs = options.baseBackoffMs ?? 100;
+    const maxBackoffMs = options.maxBackoffMs ?? 1_000;
+    const exponentialDelay = Math.min(
+        maxBackoffMs,
+        baseBackoffMs * 2 ** attempt,
+    );
+
+    return Math.floor(exponentialDelay / 2 + random() * (exponentialDelay / 2));
+}
+
+async function defaultDelay(milliseconds: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+        setTimeout(resolve, milliseconds);
+    });
 }

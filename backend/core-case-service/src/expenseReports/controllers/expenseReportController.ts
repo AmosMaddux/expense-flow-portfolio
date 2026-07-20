@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 
 import type { RoleName } from "../../db/schema/index.js";
 import {
+    ConflictError,
     ForbiddenError,
     UnauthorizedError,
 } from "../../errors/problem-json.js";
@@ -9,6 +10,7 @@ import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    SubmitExpenseReportInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
@@ -18,6 +20,7 @@ import {
 import {
     createDraftExpenseReport,
     readExpenseReport,
+    submitExpenseReport,
 } from "../services/expenseReportService.js";
 
 /**
@@ -90,6 +93,57 @@ export async function getExpenseReportById(
     }
 }
 
+/**
+ * Handles Expense Report submission requests.
+ */
+export async function postExpenseReportSubmission(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalExpenseReportRole(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
+            req.body,
+        );
+        const submitReport = async () =>
+            submitExpenseReport({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+                roles: auth.roles,
+            });
+        const idempotencyKey = parseIdempotencyKey(req);
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: submitReport,
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            tenantId: auth.tenantId,
+        });
+
+        res.status(result.statusCode).json(result.body);
+    } catch (error: unknown) {
+        if (
+            error instanceof Error &&
+            error.message === "Only Drafted Expense Reports can be submitted."
+        ) {
+            next(new ConflictError(error.message));
+            return;
+        }
+
+        next(error);
+    }
+}
+
 function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     if (req.auth === undefined) {
         throw new UnauthorizedError();
@@ -113,6 +167,14 @@ function getAuthorizedOwnerScope(
     if (auth.roles.includes("Employee")) {
         // Employee Portal access is limited to records owned by the authenticated user.
         return auth.userId;
+    }
+
+    throw new ForbiddenError();
+}
+
+function requireInternalExpenseReportRole(auth: NonNullable<Request["auth"]>) {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return;
     }
 
     throw new ForbiddenError();
