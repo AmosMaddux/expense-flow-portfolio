@@ -1,13 +1,33 @@
 import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import type { IdempotencyResult } from "../../idempotency/idempotencyStore.js";
+
 const logExpenseReportAuditErrorMock = vi.hoisted(() => vi.fn());
 const logExpenseReportAuditSuccessMock = vi.hoisted(() => vi.fn());
+const idempotencyRecords = vi.hoisted(
+    () => new Map<string, IdempotencyResult>(),
+);
+const idempotencyStoreMock = vi.hoisted(() => ({
+    acquireLock: vi.fn().mockResolvedValue("lock-token"),
+    clearReservation: vi.fn().mockResolvedValue(undefined),
+    getResult: vi.fn((tenantId: string, idempotencyKey: string) =>
+        Promise.resolve(
+            idempotencyRecords.get(`${tenantId}:${idempotencyKey}`),
+        ),
+    ),
+    releaseLock: vi.fn().mockResolvedValue(undefined),
+    reserveSubmission: vi.fn().mockResolvedValue(true),
+    saveResult: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../logging/coreCaseLogger.js", () => ({
-    coreCaseLogger: {},
     logExpenseReportAuditError: logExpenseReportAuditErrorMock,
     logExpenseReportAuditSuccess: logExpenseReportAuditSuccessMock,
+}));
+
+vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
+    getDefaultIdempotencyStore: () => idempotencyStoreMock,
 }));
 
 import { UnauthorizedError } from "../../errors/problem-json.js";
@@ -28,6 +48,13 @@ import {
 void describe("Expense Report controller authorization", () => {
     beforeEach(() => {
         readCachedCaseQueueStageRollupsMock.mockReset();
+        idempotencyRecords.clear();
+        idempotencyStoreMock.acquireLock.mockClear();
+        idempotencyStoreMock.clearReservation.mockClear();
+        idempotencyStoreMock.getResult.mockClear();
+        idempotencyStoreMock.releaseLock.mockClear();
+        idempotencyStoreMock.reserveSubmission.mockClear();
+        idempotencyStoreMock.saveResult.mockClear();
         logExpenseReportAuditErrorMock.mockClear();
         logExpenseReportAuditSuccessMock.mockClear();
     });
@@ -98,7 +125,7 @@ void describe("Expense Report controller authorization", () => {
         await postExpenseReport(request, {} as Response, next);
 
         expect(logExpenseReportAuditErrorMock).toHaveBeenCalledOnce();
-        const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[1] as
+        const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[0] as
             | Record<string, unknown>
             | undefined;
 
@@ -124,7 +151,7 @@ void describe("Expense Report controller authorization", () => {
         await getExpenseReportAuditEntries(request, {} as Response, next);
 
         expect(logExpenseReportAuditErrorMock).toHaveBeenCalledOnce();
-        const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[1] as
+        const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[0] as
             | Record<string, unknown>
             | undefined;
 
@@ -133,5 +160,50 @@ void describe("Expense Report controller authorization", () => {
             route: "GET /v1/expense-reports/:id/audit-entries",
         });
         expect(JSON.stringify(payload)).not.toContain(rawPaymentReference);
+    });
+
+    void test("does not log a creation audit event for cached idempotency replays", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000703";
+        const owner = "50000000-0000-4000-8000-000000000703";
+        const idempotencyKey = "cached-submit-key";
+        const cachedBody = {
+            id: "60000000-0000-4000-8000-000000000703",
+            tenantId,
+        };
+        idempotencyRecords.set(`${tenantId}:${idempotencyKey}`, {
+            body: cachedBody,
+            statusCode: 201,
+        });
+        const json = vi.fn();
+        const status = vi.fn(() => ({ json }));
+        const response = {
+            status,
+        } as unknown as Response;
+        const request = {
+            auth: {
+                tenantId,
+                userId: owner,
+                roles: ["Employee"],
+            },
+            body: {
+                dueDate: "2026-08-01",
+                owner,
+            },
+            get: vi.fn((headerName: string) =>
+                headerName.toLowerCase() === "idempotency-key"
+                    ? idempotencyKey
+                    : undefined,
+            ),
+            originalUrl: "/v1/expense-reports",
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await postExpenseReport(request, response, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(status).toHaveBeenCalledWith(201);
+        expect(json).toHaveBeenCalledWith(cachedBody);
+        expect(logExpenseReportAuditSuccessMock).not.toHaveBeenCalled();
+        expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
     });
 });

@@ -20,7 +20,6 @@ import {
 } from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
-    coreCaseLogger,
     logExpenseReportAuditError,
     logExpenseReportAuditSuccess,
 } from "../../logging/coreCaseLogger.js";
@@ -68,7 +67,7 @@ export async function postExpenseReport(
         if (idempotencyKey === undefined) {
             const report = await createReport();
 
-            logExpenseReportAuditSuccess(coreCaseLogger, {
+            logExpenseReportAuditSuccess({
                 action: "report_created",
                 actorId: auth.userId,
                 expenseReportId: report.id,
@@ -87,16 +86,18 @@ export async function postExpenseReport(
             tenantId: auth.tenantId,
         });
 
-        logExpenseReportAuditSuccess(coreCaseLogger, {
-            action: "report_created",
-            actorId: auth.userId,
-            expenseReportId: readExpenseReportId(result.body),
-            route: createExpenseReportRouteLogName,
-            tenantId: auth.tenantId,
-        });
+        if (!result.replayed) {
+            logExpenseReportAuditSuccess({
+                action: "report_created",
+                actorId: auth.userId,
+                expenseReportId: readExpenseReportId(result.body),
+                route: createExpenseReportRouteLogName,
+                tenantId: auth.tenantId,
+            });
+        }
         res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
-        logExpenseReportAuditError(coreCaseLogger, {
+        logExpenseReportAuditError({
             action: "report_created",
             actorId: req.auth?.userId,
             error,
@@ -239,7 +240,7 @@ export async function getExpenseReportAuditEntries(
             tenantId: auth.tenantId,
         });
 
-        logExpenseReportAuditSuccess(coreCaseLogger, {
+        logExpenseReportAuditSuccess({
             action: "audit_entries_read",
             actorId: auth.userId,
             expenseReportId: parsedRequest.id,
@@ -248,7 +249,7 @@ export async function getExpenseReportAuditEntries(
         });
         res.status(200).json(auditEntries);
     } catch (error: unknown) {
-        logExpenseReportAuditError(coreCaseLogger, {
+        logExpenseReportAuditError({
             action: "audit_entries_read",
             actorId: req.auth?.userId,
             error,

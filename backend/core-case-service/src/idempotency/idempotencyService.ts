@@ -15,6 +15,10 @@ type RunIdempotentSubmissionRequest<TBody> = {
     tenantId: string;
 };
 
+export type IdempotentSubmissionRunResult = IdempotencyResult & {
+    replayed: boolean;
+};
+
 /**
  * Replays completed submissions and serializes first writers per tenant key.
  */
@@ -32,7 +36,7 @@ export async function runIdempotentSubmission<TBody>({
         requestHash,
     );
     if (cached !== undefined) {
-        return cached;
+        return { ...cached, replayed: true };
     }
 
     const lockToken = await store.acquireLock(tenantId, idempotencyKey);
@@ -44,7 +48,7 @@ export async function runIdempotentSubmission<TBody>({
             requestHash,
         );
         if (completed !== undefined) {
-            return completed;
+            return { ...completed, replayed: true };
         }
 
         throw new ConflictError(
@@ -62,7 +66,7 @@ export async function runIdempotentSubmission<TBody>({
             requestHash,
         );
         if (completed !== undefined) {
-            return completed;
+            return { ...completed, replayed: true };
         }
 
         const reserved = await store.reserveSubmission(
@@ -79,7 +83,7 @@ export async function runIdempotentSubmission<TBody>({
                 requestHash,
             );
             if (reservedResult !== undefined) {
-                return reservedResult;
+                return { ...reservedResult, replayed: true };
             }
 
             throw new ConflictError(
@@ -101,7 +105,7 @@ export async function runIdempotentSubmission<TBody>({
             result,
         );
 
-        return result;
+        return { ...result, replayed: false };
     } catch (error: unknown) {
         if (shouldClearReservation) {
             await store.clearReservation(tenantId, idempotencyKey, lockToken);

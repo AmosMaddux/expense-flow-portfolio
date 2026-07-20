@@ -16,13 +16,17 @@ const receiptPersonalDataKeyPattern =
 const receiptAmountKeyPattern = /^(amount|subtotal|tax|tip|total)$/i;
 const emailAddressPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
-/**
- * Creates the pino logger used by the Core Case Service.
- */
-export function createCoreCaseLogger(
+type CoreCasePinoLogger = Pick<Logger, "error" | "info">;
+
+export type CoreCaseAuditLogger = {
+    logExpenseReportAuditError: (event: Record<string, unknown>) => void;
+    logExpenseReportAuditSuccess: (event: Record<string, unknown>) => void;
+};
+
+function createCoreCasePinoLogger(
     destination?: DestinationStream,
     options: LoggerOptions = {},
-): Logger {
+): CoreCasePinoLogger {
     return pino(
         {
             ...options,
@@ -48,29 +52,49 @@ export function createCoreCaseLogger(
     );
 }
 
-export const coreCaseLogger = createCoreCaseLogger();
+/**
+ * Creates a safe Core Case audit logger that sanitizes payloads before writing.
+ */
+export function createCoreCaseAuditLogger(
+    destination?: DestinationStream,
+    options: LoggerOptions = {},
+): CoreCaseAuditLogger {
+    const logger = createCoreCasePinoLogger(destination, options);
+
+    return {
+        logExpenseReportAuditError(event) {
+            logger.error(
+                sanitizeLogPayload(event),
+                "Expense Report audit event failed",
+            );
+        },
+        logExpenseReportAuditSuccess(event) {
+            logger.info(
+                sanitizeLogPayload(event),
+                "Expense Report audit event",
+            );
+        },
+    };
+}
+
+const coreCaseAuditLogger = createCoreCaseAuditLogger();
 
 /**
  * Logs successful Expense Report audit activity without exposing receipt or payment data.
  */
 export function logExpenseReportAuditSuccess(
-    logger: Logger,
     event: Record<string, unknown>,
 ): void {
-    logger.info(sanitizeLogPayload(event), "Expense Report audit event");
+    coreCaseAuditLogger.logExpenseReportAuditSuccess(event);
 }
 
 /**
  * Logs failed Expense Report audit activity without exposing receipt or payment data.
  */
 export function logExpenseReportAuditError(
-    logger: Logger,
     event: Record<string, unknown>,
 ): void {
-    logger.error(
-        sanitizeLogPayload(event),
-        "Expense Report audit event failed",
-    );
+    coreCaseAuditLogger.logExpenseReportAuditError(event);
 }
 
 /**

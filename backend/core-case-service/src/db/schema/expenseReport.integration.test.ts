@@ -81,7 +81,10 @@ void describe("audit entry sequence migration", () => {
         const reportId = "10000000-0000-4000-8000-000000000501";
         const ownerId = "20000000-0000-4000-8000-000000000501";
         const actorId = "30000000-0000-4000-8000-000000000501";
-        const auditEntryId = "40000000-0000-4000-8000-000000000501";
+        const firstAuditEntryId = "40000000-0000-4000-8000-000000000501";
+        const secondAuditEntryId = "40000000-0000-4000-8000-000000000502";
+        const thirdAuditEntryId = "40000000-0000-4000-8000-000000000503";
+        const newAuditEntryId = "40000000-0000-4000-8000-000000000504";
 
         try {
             await client.connect();
@@ -92,23 +95,47 @@ void describe("audit entry sequence migration", () => {
                 [reportId, ownerId, tenantId],
             );
             await client.query(
-                `INSERT INTO "audit_entry" ("id", "tenant_id", "expense_report_id", "actor_id", "action", "stage_before_action", "stage_after_proposed_action")
-                 VALUES ($1, $2, $3, $4, 'report_created', 'Drafted', 'Drafted')`,
-                [auditEntryId, tenantId, reportId, actorId],
+                `INSERT INTO "audit_entry" ("id", "tenant_id", "expense_report_id", "actor_id", "action", "stage_before_action", "stage_after_proposed_action", "created_at")
+                 VALUES
+                    ($1, $2, $3, $4, 'report_created', 'Drafted', 'Drafted', '2026-07-02T10:00:00.000Z'),
+                    ($5, $2, $3, $4, 'manager_reviewed', 'Drafted', 'Manager Approval', '2026-07-02T09:00:00.000Z'),
+                    ($6, $2, $3, $4, 'ap_reviewed', 'Manager Approval', 'AP Review', '2026-07-02T09:00:00.000Z')`,
+                [
+                    thirdAuditEntryId,
+                    tenantId,
+                    reportId,
+                    actorId,
+                    secondAuditEntryId,
+                    firstAuditEntryId,
+                ],
             );
 
             await applyMigrationRange(client, 14, 14);
 
-            const migratedAuditEntry = await client.query(
-                `SELECT "sequence" FROM "audit_entry" WHERE "id" = $1`,
-                [auditEntryId],
+            const migratedAuditEntries = await client.query(
+                `SELECT "id", "sequence" FROM "audit_entry" ORDER BY "sequence"`,
             );
-            expect(migratedAuditEntry.rows[0]).toMatchObject({ sequence: "1" });
+            expect(migratedAuditEntries.rows).toEqual([
+                { id: firstAuditEntryId, sequence: "1" },
+                { id: secondAuditEntryId, sequence: "2" },
+                { id: thirdAuditEntryId, sequence: "3" },
+            ]);
+
+            await client.query(
+                `INSERT INTO "audit_entry" ("id", "tenant_id", "expense_report_id", "actor_id", "action", "stage_before_action", "stage_after_proposed_action")
+                 VALUES ($1, $2, $3, $4, 'payment_stubbed', 'AP Review', 'Paid')`,
+                [newAuditEntryId, tenantId, reportId, actorId],
+            );
+            const newAuditEntry = await client.query(
+                `SELECT "sequence" FROM "audit_entry" WHERE "id" = $1`,
+                [newAuditEntryId],
+            );
+            expect(newAuditEntry.rows[0]).toMatchObject({ sequence: "4" });
 
             await client.query(`
 DO $$
 BEGIN
-    UPDATE "audit_entry" SET "action" = 'tampered' WHERE "id" = '${auditEntryId}';
+    UPDATE "audit_entry" SET "action" = 'tampered' WHERE "id" = '${firstAuditEntryId}';
     RAISE EXCEPTION 'expected audit_entry update to fail';
 EXCEPTION
     WHEN others THEN

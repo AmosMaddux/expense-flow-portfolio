@@ -22,11 +22,12 @@ import {
     readDraftSubmissionSources,
     submitDraftExpenseReport,
 } from "../repository/expenseReportRepository.js";
-import type {
-    AuditEntryResponse,
-    CreateExpenseReportRequest,
-    ExpenseReportResponse,
-    GetExpenseReportRequest,
+import {
+    AuditEntryOutboundResponseSchema,
+    type AuditEntryResponse,
+    type CreateExpenseReportRequest,
+    type ExpenseReportResponse,
+    type GetExpenseReportRequest,
 } from "../../schemas/expense-report.schema.js";
 
 /**
@@ -210,19 +211,19 @@ export async function readExpenseReportAuditEntries(
         request.id,
     );
 
-    return auditEntries.map((entry) => ({
-        id: entry.id,
-        tenantId: entry.tenantId,
-        expenseReportId: entry.expenseReportId,
-        actorId: entry.actorId,
-        action: entry.action,
-        stageBeforeAction:
-            entry.stageBeforeAction as AuditEntryResponse["stageBeforeAction"],
-        stageAfterProposedAction:
-            entry.stageAfterProposedAction as AuditEntryResponse["stageAfterProposedAction"],
-        denialReason: entry.denialReason,
-        createdAt: entry.createdAt,
-    }));
+    return auditEntries.map((entry) =>
+        AuditEntryOutboundResponseSchema.parse({
+            id: entry.id,
+            tenantId: entry.tenantId,
+            expenseReportId: entry.expenseReportId,
+            actorId: entry.actorId,
+            action: entry.action,
+            stageBeforeAction: entry.stageBeforeAction,
+            stageAfterProposedAction: entry.stageAfterProposedAction,
+            denialReason: entry.denialReason,
+            createdAt: entry.createdAt,
+        }),
+    );
 }
 
 function toExpenseReportResponse(report: {
