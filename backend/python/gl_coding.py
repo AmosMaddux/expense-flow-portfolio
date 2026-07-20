@@ -1,16 +1,23 @@
+import os
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Mapping, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
 from backend.python.domain_exceptions import (
     MalformedCurrencyError,
+    InvalidMileageRateError,
     NegativeAmountError,
     UnknownExpenseCategoryError,
 )
+
+MILEAGE_REIMBURSEMENT_RATE_ENVIRONMENT_VARIABLE = "MILEAGE_REIMBURSEMENT_RATE"
+DEFAULT_MILEAGE_REIMBURSEMENT_RATE = Decimal("0.70")
+MILEAGE_REIMBURSEMENT_CURRENCY = "USD"
+LINE_ITEM_FLAG_THRESHOLD = Decimal("500.00")
 
 
 class ExpenseCategory(StrEnum):
@@ -36,6 +43,7 @@ class GlCodingFlagCode(StrEnum):
     """Classify flags returned by the GL-coding contract."""
 
     LINE_ITEM_OVER_THRESHOLD = "line_item_over_threshold"
+    MILEAGE_OVER_THRESHOLD = "mileage_over_threshold"
 
 
 class GlMappingStatus(StrEnum):
@@ -152,10 +160,11 @@ async def code_line_items_to_gl_accounts(
     request: GlCodingComputeRequest,
     tenant_id: UUID,
     mapping_repository: GlAccountMappingRepository,
+    mileage_reimbursement_rate: Decimal = DEFAULT_MILEAGE_REIMBURSEMENT_RATE,
 ) -> GlCodingComputeResponse:
     """Return GL account mappings and review flags for submitted expense items."""
     categories = {line_item.category for line_item in request.line_items}
-    if len(request.mileage) > 0:
+    if request.mileage:
         categories.add(ExpenseCategory.MILEAGE)
     accounts_by_category = await mapping_repository.get_accounts_for_categories(
         tenant_id, categories
@@ -165,7 +174,9 @@ async def code_line_items_to_gl_accounts(
         for line_item in request.line_items
     ]
     coded_items.extend(
-        code_mileage_to_gl_account(mileage_entry, accounts_by_category)
+        code_mileage_to_gl_account(
+            mileage_entry, accounts_by_category, mileage_reimbursement_rate
+        )
         for mileage_entry in request.mileage
     )
     flags = [
@@ -178,6 +189,20 @@ async def code_line_items_to_gl_accounts(
         for line_item in request.line_items
         if is_line_item_over_threshold(line_item.amount)
     ]
+    flags.extend(
+        GlCodingFlag(
+            source_id=mileage_entry.mileage_entry_id,
+            source_type=GlSourceType.MILEAGE,
+            code=GlCodingFlagCode.MILEAGE_OVER_THRESHOLD,
+            message="Mileage reimbursement is above the MVP manual review threshold.",
+        )
+        for mileage_entry in request.mileage
+        if is_line_item_over_threshold(
+            calculate_mileage_reimbursement(
+                mileage_entry.distance, mileage_reimbursement_rate
+            )
+        )
+    )
 
     return GlCodingComputeResponse(coded_items=coded_items, flags=flags)
 
@@ -209,25 +234,60 @@ def code_line_item_to_gl_account(
 def code_mileage_to_gl_account(
     mileage_entry: GlCodingMileageRequest,
     accounts_by_category: dict[ExpenseCategory, GlAccount],
+    mileage_reimbursement_rate: Decimal,
 ) -> GlCodedItem:
-    """Return the mapped or explicitly unmapped GL coding result for mileage."""
+    """Return the GL coding result for one reimbursable mileage entry."""
     gl_account = accounts_by_category.get(ExpenseCategory.MILEAGE)
-    mapping_status = (
-        GlMappingStatus.MAPPED
-        if gl_account is not None
-        else GlMappingStatus.UNMAPPED
+    reimbursement_amount = calculate_mileage_reimbursement(
+        mileage_entry.distance, mileage_reimbursement_rate
     )
 
     return GlCodedItem(
         source_id=mileage_entry.mileage_entry_id,
         source_type=GlSourceType.MILEAGE,
         category=ExpenseCategory.MILEAGE,
-        mapping_status=mapping_status,
+        mapping_status=(
+            GlMappingStatus.MAPPED
+            if gl_account is not None
+            else GlMappingStatus.UNMAPPED
+        ),
         gl_account=gl_account,
-        flagged_line_item=False,
+        amount=reimbursement_amount,
+        currency=MILEAGE_REIMBURSEMENT_CURRENCY,
+        flagged_line_item=is_line_item_over_threshold(reimbursement_amount),
     )
+
+
+def calculate_mileage_reimbursement(
+    distance: Decimal, mileage_reimbursement_rate: Decimal
+) -> Decimal:
+    """Calculate a currency-rounded reimbursement from an approved mileage rate."""
+    # Reimbursements must be rounded once after multiplication to avoid cumulative cent drift.
+    return (distance * mileage_reimbursement_rate).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+
+def get_mileage_reimbursement_rate(
+    environment: Mapping[str, str] | None = None,
+) -> Decimal:
+    """Return the configured per-mile reimbursement rate for compute requests."""
+    env = environment if environment is not None else os.environ
+    raw_rate = env.get(MILEAGE_REIMBURSEMENT_RATE_ENVIRONMENT_VARIABLE)
+    if raw_rate is None:
+        return DEFAULT_MILEAGE_REIMBURSEMENT_RATE
+
+    try:
+        rate = Decimal(raw_rate)
+    except Exception as error:
+        raise InvalidMileageRateError(raw_rate) from error
+
+    if not rate.is_finite() or rate <= 0:
+        raise InvalidMileageRateError(raw_rate)
+
+    return rate
 
 
 def is_line_item_over_threshold(amount: Decimal) -> bool:
     """Return whether a line item crosses the MVP manual review threshold."""
-    return amount > Decimal("500.00")
+    return amount > LINE_ITEM_FLAG_THRESHOLD
