@@ -9,12 +9,14 @@ import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
     createIdempotencyRequestHash,
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
+import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
     createDraftExpenseReport,
     readExpenseReport,
@@ -85,6 +87,30 @@ export async function getExpenseReportById(
         });
 
         res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Case Queue rollup read requests for one tenant.
+ */
+export async function getCaseQueueStageRollups(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedQuery = ReadCaseQueueStageRollupsQuerySchema.parse({
+            asOfDate: req.query.asOfDate,
+        });
+        const rollups = await readCachedCaseQueueStageRollups({
+            tenantId: auth.tenantId,
+            asOfDate: parsedQuery.asOfDate,
+        });
+
+        res.status(200).json(rollups);
     } catch (error: unknown) {
         next(error);
     }

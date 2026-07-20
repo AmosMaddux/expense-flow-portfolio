@@ -754,6 +754,25 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns 401 for Case Queue rollups without a token", async () => {
+        const response = await requestApp(
+            "/v1/case-queue/rollups?tenantId=40000000-0000-4000-8000-000000000108&asOfDate=2026-07-20",
+        );
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
+        });
+    });
+
     void test("returns 401 when a refresh token is used as a bearer token", async () => {
         const response = await requestApp(
             "/v1/expense-reports/not-a-report-id",

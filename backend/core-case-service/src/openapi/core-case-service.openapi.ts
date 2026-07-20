@@ -7,8 +7,10 @@ import type { OpenAPIObject } from "openapi3-ts/oas31";
 import { z } from "zod";
 
 import {
+    CaseQueueStageRollupListSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -50,6 +52,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportResponse = registry.register(
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
+    );
+    const readCaseQueueStageRollupsRequest = registry.register(
+        "ReadCaseQueueStageRollupsRequest",
+        ReadCaseQueueStageRollupsQuerySchema,
+    );
+    const caseQueueStageRollupList = registry.register(
+        "CaseQueueStageRollupList",
+        CaseQueueStageRollupListSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -112,6 +122,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "LoginResponse",
         loginResponseSchema,
     );
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/case-queue/rollups",
+        summary: "Get Case Queue rollups",
+        description:
+            "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readCaseQueueStageRollupsRequest,
+        },
+        responses: {
+            200: {
+                description: "Case Queue rollups found.",
+                content: {
+                    "application/json": {
+                        schema: caseQueueStageRollupList,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed rollup request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("Authenticated user is not permitted."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
 
     registry.registerPath({
         method: "post",

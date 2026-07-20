@@ -86,6 +86,34 @@
             }
         },
         "schemas": {
+            "CaseQueueStageRollupList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "overdueCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["currentStage", "reportCount", "overdueCount"]
+                }
+            },
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
@@ -273,11 +301,95 @@
                     }
                 },
                 "required": ["type", "title", "status", "detail", "instance"]
+            },
+            "ReadCaseQueueStageRollupsRequest": {
+                "type": "object",
+                "properties": {
+                    "asOfDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["asOfDate"]
             }
         },
         "parameters": {}
     },
     "paths": {
+        "/v1/case-queue/rollups": {
+            "get": {
+                "summary": "Get Case Queue rollups",
+                "description": "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "asOfDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Case Queue rollups found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseQueueStageRollupList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed rollup request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/login": {
             "post": {
                 "summary": "Authenticate with email, password, and optional TOTP MFA",
