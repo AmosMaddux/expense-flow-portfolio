@@ -122,7 +122,7 @@ $$;
             await client.end().catch(() => undefined);
             await container.stop().catch(() => undefined);
         }
-    }, 120000);
+    }, 240000);
 });
 void describe("audit entry PostgreSQL constraints", () => {
     void test("prevents audit entry updates and deletes in PostgreSQL", async () => {

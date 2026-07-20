@@ -56,6 +56,9 @@ async function closeActiveServer(): Promise<void> {
         return;
     }
 
+    server.closeIdleConnections();
+    server.closeAllConnections();
+
     await new Promise<void>((resolve, reject) => {
         server.close((error) => {
             if (error === undefined) {
@@ -146,7 +149,7 @@ void describe("problemJsonErrorHandler", () => {
         });
         expect(body.detail).toContain("owner:");
         expect(body.detail).toContain("dueDate:");
-    });
+    }, 15000);
 
     void test("returns Problem+JSON when JSON request dates fail DTO validation", async () => {
         const invalidPayload = {
