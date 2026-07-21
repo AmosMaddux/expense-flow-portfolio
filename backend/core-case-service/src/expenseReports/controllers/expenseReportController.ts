@@ -1,5 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 
+import { BadRequestError } from "../../errors/problem-json.js";
+import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
+import {
+    createIdempotencyRequestHash,
+    createIdempotencyResourceId,
+    runIdempotentSubmission,
+} from "../../idempotency/idempotencyService.js";
 import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
@@ -21,14 +28,35 @@ export async function postExpenseReport(
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const report = await createDraftExpenseReport({
-            owner: parsedRequest.owner,
-            dueDate: parsedRequest.dueDate,
-            priority: parsedRequest.priority,
-            tenantId: parsedRequest.tenant_id,
+        const tenantId = parsedRequest.tenant_id;
+        const idempotencyKey = parseIdempotencyKey(req);
+        const resourceId = createIdempotencyResourceId(
+            tenantId,
+            idempotencyKey,
+        );
+        const requestHash = createIdempotencyRequestHash(parsedRequest);
+
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: () =>
+                createDraftExpenseReport({
+                    id: resourceId,
+                    owner: parsedRequest.owner,
+                    dueDate: parsedRequest.dueDate,
+                    priority: parsedRequest.priority,
+                    tenantId,
+                }),
+            requestHash,
+            reservationMetadata: {
+                operation: "create_expense_report",
+                resourceId,
+                tenantId,
+            },
+            store: getDefaultIdempotencyStore(),
+            tenantId,
         });
 
-        res.status(201).json(report);
+        res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
         next(error);
     }
@@ -52,4 +80,14 @@ export async function getExpenseReportById(
     } catch (error: unknown) {
         next(error);
     }
+}
+
+function parseIdempotencyKey(req: Request): string {
+    const idempotencyKey = req.get("idempotency-key")?.trim();
+
+    if (idempotencyKey === undefined || idempotencyKey.length === 0) {
+        throw new BadRequestError("Idempotency-Key header is required.");
+    }
+
+    return idempotencyKey;
 }

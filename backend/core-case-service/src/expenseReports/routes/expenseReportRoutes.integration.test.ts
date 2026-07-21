@@ -1,12 +1,17 @@
 import { type Server } from "node:http";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
-import { auditEntry, stageTransition } from "../../db/schema/index.js";
+import {
+    auditEntry,
+    expenseReport,
+    stageTransition,
+} from "../../db/schema/index.js";
+import { resetDefaultIdempotencyStoreForTests } from "../../idempotency/defaultIdempotencyStore.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
 vi.mock("../../db/client.js", () => {
@@ -62,6 +67,10 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 void describe("Expense Report routes", () => {
+    beforeEach(() => {
+        resetDefaultIdempotencyStoreForTests();
+    });
+
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
         const owner = "71000000-0000-4000-8000-000000000001";
@@ -71,6 +80,7 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-e2e",
             },
             body: JSON.stringify({
                 tenant_id: tenantId,
@@ -165,6 +175,7 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-100",
             },
             body: JSON.stringify({
                 tenant_id: tenantId,
@@ -190,6 +201,7 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-invalid-105",
             },
             body: JSON.stringify({
                 tenant_id: "40000000-0000-4000-8000-000000000105",
@@ -219,6 +231,7 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-101",
             },
             body: JSON.stringify({
                 tenant_id: tenantId,
@@ -253,6 +266,7 @@ void describe("Expense Report routes", () => {
             method: "POST",
             headers: {
                 "content-type": "application/json",
+                "idempotency-key": "expense-submit-103",
             },
             body: JSON.stringify({
                 tenant_id: tenantId,
@@ -276,6 +290,117 @@ void describe("Expense Report routes", () => {
             id: created.id,
             tenantId,
             currentStage: "Drafted",
+        });
+    });
+
+    void test("replays the original result for a retried idempotent create", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000111";
+        const owner = "50000000-0000-4000-8000-000000000014";
+        const headers = {
+            "content-type": "application/json",
+            "idempotency-key": "expense-submit-111",
+        };
+        const body = JSON.stringify({
+            tenant_id: tenantId,
+            owner,
+            dueDate: "2026-08-06",
+            priority: "Normal",
+        });
+
+        const firstResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body,
+        });
+        const retryResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body,
+        });
+        const first = (await firstResponse.json()) as { id?: string };
+        const retry = (await retryResponse.json()) as { id?: string };
+        const reports = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, retry.id ?? ""),
+                ),
+            );
+
+        expect(firstResponse.status).toBe(201);
+        expect(retryResponse.status).toBe(201);
+        expect(retry.id).toBe(first.id);
+        expect(reports).toHaveLength(1);
+    });
+
+    void test("rejects an idempotency key reused with a different create body", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000115";
+        const owner = "50000000-0000-4000-8000-000000000017";
+        const headers = {
+            "content-type": "application/json",
+            "idempotency-key": "expense-submit-115",
+        };
+
+        const firstResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                owner,
+                dueDate: "2026-08-09",
+                priority: "Normal",
+            }),
+        });
+        const mismatchResponse = await requestApp("/expense-reports", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                owner,
+                dueDate: "2026-08-10",
+                priority: "Normal",
+            }),
+        });
+        const mismatchBody = (await mismatchResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(firstResponse.status).toBe(201);
+        expect(mismatchResponse.status).toBe(409);
+        expect(mismatchBody).toMatchObject({
+            title: "Conflict",
+            status: 409,
+        });
+    });
+
+    void test("requires an Idempotency-Key header for create requests", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000116";
+        const owner = "50000000-0000-4000-8000-000000000018";
+
+        const response = await requestApp("/expense-reports", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                tenant_id: tenantId,
+                owner,
+                dueDate: "2026-08-11",
+                priority: "Normal",
+            }),
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            title: "Bad Request",
+            status: 400,
         });
     });
 

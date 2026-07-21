@@ -10,11 +10,14 @@
         "test": "npm run build --workspaces=false && vitest run"
     },
     "dependencies": {
+        "@aws-sdk/client-dynamodb": "^3.948.0",
+        "@aws-sdk/lib-dynamodb": "^3.948.0",
         "@asteasolutions/zod-to-openapi": "^8.5.0",
         "@scalar/express-api-reference": "^0.8.13",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
         "pg": "^8.22.0",
+        "redis": "^5.10.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {

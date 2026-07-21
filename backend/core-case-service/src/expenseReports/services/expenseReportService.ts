@@ -1,4 +1,4 @@
-import { NotFoundError } from "../../errors/problem-json.js";
+import { ConflictError, NotFoundError } from "../../errors/problem-json.js";
 import {
     findExpenseReportById,
     insertDraftExpenseReport,
@@ -14,10 +14,12 @@ import type {
  */
 export async function createDraftExpenseReport(
     request: Omit<CreateExpenseReportRequest, "tenant_id"> & {
+        id?: string;
         tenantId: string;
     },
 ): Promise<ExpenseReportResponse> {
     const report = await insertDraftExpenseReport(request.tenantId, {
+        ...(request.id === undefined ? {} : { id: request.id }),
         tenantId: request.tenantId,
         owner: request.owner,
         dueDate: request.dueDate,
@@ -26,7 +28,9 @@ export async function createDraftExpenseReport(
     });
 
     if (report === undefined) {
-        throw new Error("Unable to create Expense Report.");
+        throw new ConflictError(
+            "Idempotency key was reused with a different request payload.",
+        );
     }
 
     return toExpenseReportResponse(report);

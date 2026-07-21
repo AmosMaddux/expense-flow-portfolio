@@ -20,6 +20,26 @@ export class NotFoundError extends Error {
 }
 
 /**
+ * Represents a malformed or missing client request field.
+ */
+export class BadRequestError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "BadRequestError";
+    }
+}
+
+/**
+ * Represents a request that conflicts with an existing submission.
+ */
+export class ConflictError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "ConflictError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -54,6 +74,26 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Not Found",
             status: 404,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof BadRequestError) {
+        return {
+            type: "about:blank",
+            title: "Bad Request",
+            status: 400,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ConflictError) {
+        return {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
             detail: error.message,
             instance,
         };

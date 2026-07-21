@@ -40,6 +40,18 @@ export async function insertDraftExpenseReport(
         return undefined;
     }
 
+    if (newReport.id !== undefined) {
+        const existingReport = await findExpenseReportById(newReport.id);
+
+        if (existingReport !== undefined) {
+            if (matchesDraftCreateRequest(existingReport, newReport)) {
+                return existingReport;
+            }
+
+            return undefined;
+        }
+    }
+
     return db.transaction(async (transaction) => {
         const insertedReports = await transaction
             .insert(expenseReport)
@@ -74,4 +86,17 @@ export async function insertDraftExpenseReport(
 
         return insertedReport;
     });
+}
+
+function matchesDraftCreateRequest(
+    report: ExpenseReport,
+    newReport: NewExpenseReport,
+): boolean {
+    return (
+        report.tenantId === newReport.tenantId &&
+        report.owner === newReport.owner &&
+        report.dueDate === newReport.dueDate &&
+        report.priority === (newReport.priority ?? "Normal") &&
+        report.currentStage === "Drafted"
+    );
 }
