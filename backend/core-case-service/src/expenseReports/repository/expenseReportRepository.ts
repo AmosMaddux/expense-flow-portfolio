@@ -53,8 +53,6 @@ export type SubmissionSources = {
     }>;
 };
 
-type AuditEntryWriteClient = Pick<typeof db, "insert">;
-
 type ExpenseReportTransaction = Parameters<
     Parameters<typeof db.transaction>[0]
 >[0];

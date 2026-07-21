@@ -18,4 +18,3 @@ ALTER TABLE "audit_entry" ENABLE TRIGGER "audit_entry_prevent_mutation_trigger";
 ALTER TABLE "audit_entry" ALTER COLUMN "sequence" SET DEFAULT nextval('"audit_entry_sequence_seq"');--> statement-breakpoint
 ALTER TABLE "audit_entry" ALTER COLUMN "sequence" SET NOT NULL;--> statement-breakpoint
 CREATE INDEX "audit_entry_tenant_report_sequence_idx" ON "audit_entry" USING btree ("tenant_id","expense_report_id","sequence");
-
