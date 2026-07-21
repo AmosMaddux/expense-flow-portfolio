@@ -336,7 +336,7 @@ export async function insertDeniedSubmissionAuditEntry(
             return false;
         }
 
-        await writeTransitionAuditEntry(
+        await writeDeniedTransitionLog(
             transaction,
             {
                 tenantId,
@@ -347,7 +347,6 @@ export async function insertDeniedSubmissionAuditEntry(
                 reason: expenseReportSubmittedReason,
             },
             report.currentStage as ExpenseReportStage,
-            "transition_denied",
             denialReason,
         );
 
@@ -395,6 +394,40 @@ export async function insertDeniedWorkflowTransitionAttempt(request: {
     });
 }
 
+/**
+ * Records a denied flag-clear attempt without writing a workflow transition row.
+ */
+export async function insertDeniedFlagClearAuditEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    actorId: string;
+    outcomeReason: string;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return false;
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "line_item_flags_clear_denied",
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: request.outcomeReason,
+        });
+
+        return true;
+    });
+}
 /**
  * Counts uncleared line-item flags on an Expense Report.
  */

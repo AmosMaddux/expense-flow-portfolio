@@ -1179,6 +1179,16 @@
                             }
                         }
                     },
+                    "409": {
+                        "description": "Line-item flags can only be cleared during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
                     "429": {
                         "$ref": "#/components/responses/RateLimitExceeded"
                     },

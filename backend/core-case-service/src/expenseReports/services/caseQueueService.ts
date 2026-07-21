@@ -93,6 +93,18 @@ export async function transitionExpenseReportStage(
     return didTransition;
 }
 
+/**
+ * Invalidates cached Case Queue rollups for one tenant after stage-changing writes.
+ */
+export async function invalidateCachedCaseQueueStageRollups(
+    tenantId: string,
+    dependencies?: CaseQueueServiceDependencies,
+): Promise<void> {
+    const resolvedDependencies =
+        dependencies ?? (await createDefaultCaseQueueServiceDependencies());
+
+    await resolvedDependencies.rollupCache?.invalidateTenant(tenantId);
+}
 async function createDefaultCaseQueueServiceDependencies(): Promise<CaseQueueServiceDependencies> {
     const redisClient = await getRedisClient();
 

@@ -20,12 +20,14 @@ import {
     findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
+    insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
     insertDeniedWorkflowTransitionAttempt,
     readDraftSubmissionSources,
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
 } from "../repository/expenseReportRepository.js";
+import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
     AuditEntryOutboundResponseSchema,
     type AuditEntryResponse,
@@ -179,6 +181,8 @@ export async function submitExpenseReport(request: {
             );
         }
 
+        await invalidateCachedCaseQueueStageRollups(request.tenantId);
+
         return toExpenseReportResponse(report);
     } catch (error: unknown) {
         if (error instanceof GlCodingServiceError) {
@@ -210,12 +214,11 @@ export async function clearExpenseReportFlags(
     }
 
     if (!canReviewWorkflow(request.roles)) {
-        await insertDeniedWorkflowTransitionAttempt({
+        await insertDeniedFlagClearAuditEntry({
             tenantId: request.tenantId,
-            id: request.id,
-            actor: request.actorId,
-            toStage: report.currentStage as ExpenseReportStage,
-            denialReason:
+            expenseReportId: request.id,
+            actorId: request.actorId,
+            outcomeReason:
                 "Authenticated role is not permitted to clear line-item flags.",
         });
         throw new ForbiddenError();
@@ -284,6 +287,8 @@ export async function transitionExpenseReportWorkflow(
             `Expense Report cannot transition from ${report.currentStage} to ${request.toStage}.`,
         );
     }
+
+    await invalidateCachedCaseQueueStageRollups(request.tenantId);
 
     const transitionedReport = await findExpenseReportById(
         request.tenantId,

@@ -148,7 +148,7 @@ export const auditEntry = pgTable(
     (table) => [
         check(
             "audit_entry_denial_reason_check",
-            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared', 'line_item_flags_clear_denied') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
         ),
         check(
             "audit_entry_stage_before_action_check",

@@ -1,0 +1,2 @@
+ALTER TABLE "audit_entry" DROP CONSTRAINT "audit_entry_denial_reason_check";--> statement-breakpoint
+ALTER TABLE "audit_entry" ADD CONSTRAINT "audit_entry_denial_reason_check" CHECK (("audit_entry"."action" <> 'transition_denied' or nullif(btrim("audit_entry"."denial_reason"), '') is not null) and ("audit_entry"."action" = 'transition_denied' or "audit_entry"."denial_reason" is null) and ("audit_entry"."action" not in ('transition_sent_back', 'line_item_flags_cleared', 'line_item_flags_clear_denied') or nullif(btrim("audit_entry"."outcome_reason"), '') is not null));
