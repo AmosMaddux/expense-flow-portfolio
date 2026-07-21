@@ -59,10 +59,18 @@ export type FailedLoginAuditEntry = {
     action: "login_failed" | "mfa_failed";
 };
 
+export type RefreshTokenToCreate = {
+    tenantId: string;
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+};
+
 export type StoredMfaLoginEnrollment = ProtectedTotpSecret & {
     algorithm: "SHA1";
     digits: 6 | 8;
     periodSeconds: number;
+    lastAcceptedTotpCounter: number | null;
 };
 
 export type LoginCredentialRepository = {
@@ -74,12 +82,15 @@ export type LoginCredentialRepository = {
         tenantId: string,
         userId: string,
     ): Promise<StoredMfaLoginEnrollment | undefined>;
-    createRefreshToken(token: {
+    createRefreshToken(token: RefreshTokenToCreate): Promise<void>;
+    recordAcceptedTotpCounter(input: {
         tenantId: string;
         userId: string;
-        tokenHash: string;
-        expiresAt: Date;
-    }): Promise<void>;
+        counter: number;
+    }): Promise<boolean>;
+    recordAcceptedTotpCounterAndCreateRefreshToken(
+        input: RefreshTokenToCreate & { counter: number },
+    ): Promise<boolean>;
     recordFailedLogin(entry: FailedLoginAuditEntry): Promise<void>;
 };
 
@@ -89,7 +100,7 @@ export type LoginService = {
     login(request: LoginRequest): Promise<LoginResult>;
 };
 
-const missingCredentialPasswordHash =
+export const missingCredentialPasswordHash =
     "$argon2id$v=19$m=8192,t=1,p=1$Wa0FFWwch77sS6ipFg2HTQ$In6nZwlC0DltjYKUVVtpL4cg2i8GnqrnEYGfHnlWCdw";
 
 /**
@@ -155,18 +166,20 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
-            if (
+            const acceptedTotpCounter =
                 validatedRequest.totpCode === undefined ||
-                !/^\d{6,8}$/.test(validatedRequest.totpCode) ||
-                !verifyTotpCode(
-                    totpSecretProtector
-                        .reveal(storedEnrollment)
-                        .toString("utf8"),
-                    validatedRequest.totpCode,
-                    storedEnrollment,
-                    now(),
-                )
-            ) {
+                !/^\d{6,8}$/.test(validatedRequest.totpCode)
+                    ? undefined
+                    : verifyTotpCode(
+                          totpSecretProtector
+                              .reveal(storedEnrollment)
+                              .toString("utf8"),
+                          validatedRequest.totpCode,
+                          storedEnrollment,
+                          now(),
+                      );
+
+            if (acceptedTotpCounter === undefined) {
                 await recordFailedLogin(loginCredentialRepository, {
                     tenantId: storedCredential.tenantId,
                     userId: storedCredential.userId,
@@ -176,12 +189,25 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
-            return issueTokens(
+            const issuedTokens = await issueTokens(
                 loginCredentialRepository,
                 storedCredential,
                 authJwtConfig,
+                acceptedTotpCounter,
                 now(),
             );
+
+            if (issuedTokens === undefined) {
+                await recordFailedLogin(loginCredentialRepository, {
+                    tenantId: storedCredential.tenantId,
+                    userId: storedCredential.userId,
+                    email: normalizedEmail,
+                    action: "mfa_failed",
+                });
+                throw new InvalidMfaCodeError();
+            }
+
+            return issuedTokens;
         },
     };
 }
@@ -201,8 +227,9 @@ async function issueTokens(
     loginCredentialRepository: LoginCredentialRepository,
     storedCredential: StoredLoginCredential,
     authJwtConfig: AuthJwtConfig,
+    acceptedTotpCounter: number,
     currentTime: Date,
-): Promise<LoginResult> {
+): Promise<LoginResult | undefined> {
     const refreshTokenExpiresAt = new Date(
         currentTime.getTime() + 30 * 24 * 60 * 60 * 1000,
     );
@@ -227,12 +254,20 @@ async function issueTokens(
         refreshTokenExpiresAt,
     );
 
-    await loginCredentialRepository.createRefreshToken({
-        tenantId: storedCredential.tenantId,
-        userId: storedCredential.userId,
-        tokenHash: hashToken(issuedRefreshToken.refreshToken),
-        expiresAt: issuedRefreshToken.refreshTokenExpiresAt,
-    });
+    const refreshTokenWasCreated =
+        await loginCredentialRepository.recordAcceptedTotpCounterAndCreateRefreshToken(
+            {
+                tenantId: storedCredential.tenantId,
+                userId: storedCredential.userId,
+                counter: acceptedTotpCounter,
+                tokenHash: hashToken(issuedRefreshToken.refreshToken),
+                expiresAt: issuedRefreshToken.refreshTokenExpiresAt,
+            },
+        );
+
+    if (!refreshTokenWasCreated) {
+        return undefined;
+    }
 
     return LoginOutboundResponseSchema.parse({
         tenantId: storedCredential.tenantId,
@@ -251,7 +286,7 @@ function verifyTotpCode(
     code: string,
     enrollment: StoredMfaLoginEnrollment,
     currentTime: Date,
-): boolean {
+): number | undefined {
     const counter = Math.floor(
         currentTime.getTime() / 1000 / enrollment.periodSeconds,
     );
@@ -265,11 +300,11 @@ function verifyTotpCode(
                 enrollment.digits,
             ) === code
         ) {
-            return true;
+            return counter + offset;
         }
     }
 
-    return false;
+    return undefined;
 }
 
 function generateTotpCode(

@@ -1,10 +1,12 @@
 import { type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { afterEach, describe, expect, test } from "vitest";
+import type { Express } from "express";
+import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { app } from "./app.js";
+import { syntheticRsaPrivateKeyBase64 } from "./testSupport/jwtTestKeys.js";
 
+let app: Express;
 let activeServer: Server | undefined;
 
 async function requestApp(path: string, init?: RequestInit): Promise<Response> {
@@ -50,6 +52,17 @@ async function closeActiveServer(): Promise<void> {
 }
 
 void describe("app", () => {
+    beforeAll(async () => {
+        process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
+        process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
+        process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(
+            32,
+            1,
+        ).toString("base64");
+        process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        app = (await import("./app.js")).app;
+    });
+
     afterEach(async () => {
         await closeActiveServer();
     });
@@ -76,6 +89,54 @@ void describe("app", () => {
         );
     });
 
+    void test("rejects unsupported SSO, SAML, and OIDC auth paths", async () => {
+        const requests = [
+            {
+                path: "/v1/auth/sso/login",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    tenantId: "00000000-0000-4000-8000-000000000605",
+                    email: "employee@example.invalid",
+                }),
+            },
+            {
+                path: "/v1/auth/saml/login",
+                headers: { "content-type": "application/xml" },
+                body: "<SyntheticSamlRequest />",
+            },
+            {
+                path: "/v1/auth/oidc/login",
+                headers: { "content-type": "text/plain" },
+                body: "synthetic-oidc-request",
+            },
+        ];
+
+        for (const { path, headers, body: requestBody } of requests) {
+            const response = await requestApp(path, {
+                method: "POST",
+                headers,
+                body: requestBody,
+            });
+            const body = (await response.json()) as unknown;
+
+            expect(response.status).toBe(501);
+            expect(response.headers.get("content-type")).toContain(
+                "application/problem+json",
+            );
+            expect(body).toStrictEqual({
+                type: "about:blank",
+                title: "Not Implemented",
+                status: 501,
+                detail: "SSO/SAML/OIDC login is not supported in the MVP.",
+                instance: path,
+            });
+            expect(JSON.stringify(body)).not.toContain(
+                "employee@example.invalid",
+            );
+            await closeActiveServer();
+        }
+    });
+
     void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/v1/docs/");
         const body = await response.text();
@@ -90,6 +151,9 @@ void describe("app", () => {
         ["POST", "/expense-reports"],
         ["POST", "/auth/login"],
         ["POST", "/auth/mfa/enroll"],
+        ["POST", "/auth/sso/login"],
+        ["POST", "/auth/saml/login"],
+        ["POST", "/auth/oidc/login"],
         ["GET", "/openapi.json"],
         ["GET", "/docs/"],
         [

@@ -115,6 +115,7 @@ void describe("identityAuth schema", () => {
             "algorithm",
             "digits",
             "period_seconds",
+            "last_accepted_totp_counter",
             "created_at",
             "updated_at",
         ]);

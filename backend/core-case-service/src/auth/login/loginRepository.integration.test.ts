@@ -7,7 +7,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { createPasswordHasher } from "../shared/passwordHasher.js";
 import { createLoginService } from "./loginService.js";
-import type { TotpSecretProtector } from "../shared/totpSecretProtector.js";
+import {
+    createTotpSecretProtector,
+    type TotpSecretProtector,
+} from "../shared/totpSecretProtector.js";
 import {
     createDrizzleLoginCredentialRepository,
     type IdentityAuthDatabase,
@@ -17,6 +20,8 @@ import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 import {
     authenticationAuditEntry,
     credential,
+    mfaEnrollment,
+    refreshToken,
     role,
     user,
 } from "../../db/schema/index.js";
@@ -36,6 +41,14 @@ const unusedTotpSecretProtector: TotpSecretProtector = {
         throw new Error("Not needed for failed password integration tests.");
     },
 };
+const rfc6238Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+const validTotpCode = "94287082";
+const invalidTotpCode = "00000000";
+const loginNow = () => new Date("1970-01-01T00:00:59.000Z");
+const realTotpSecretProtector = createTotpSecretProtector(() => ({
+    key: Buffer.alloc(32, 2),
+    keyVersion: "synthetic-v1",
+}));
 const testAuthJwtConfig = {
     issuer: "expenseflow-core-case-service-test",
     privateKey: createPrivateKey(
@@ -220,6 +233,273 @@ void describe("login repository", () => {
         });
     });
 
+    void test("records each accepted TOTP counter only once", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000506";
+        const userId = "10000000-0000-4000-8000-000000000506";
+        const repository = createDrizzleLoginCredentialRepository(db);
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "totp-replay@example.invalid",
+        });
+        await db.insert(mfaEnrollment).values({
+            tenantId,
+            userId,
+            secretCiphertext: "synthetic-ciphertext",
+            secretIv: "synthetic-iv",
+            secretAuthTag: "synthetic-auth-tag",
+            secretKeyVersion: "synthetic-v1",
+            algorithm: "SHA1",
+            digits: 6,
+            periodSeconds: 30,
+        });
+
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 10,
+            }),
+        ).resolves.toBe(true);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 10,
+            }),
+        ).resolves.toBe(false);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId,
+                userId,
+                counter: 11,
+            }),
+        ).resolves.toBe(true);
+        await expect(
+            repository.recordAcceptedTotpCounter({
+                tenantId: "00000000-0000-4000-8000-000000000509",
+                userId,
+                counter: 12,
+            }),
+        ).resolves.toBe(false);
+
+        const enrollmentRows = await db
+            .select()
+            .from(mfaEnrollment)
+            .where(eq(mfaEnrollment.tenantId, tenantId));
+
+        expect(enrollmentRows[0]?.lastAcceptedTotpCounter).toBe(11);
+    });
+
+    void test("rolls back accepted TOTP counter when refresh token persistence fails", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000511";
+        const userId = "10000000-0000-4000-8000-000000000511";
+        const repository = createDrizzleLoginCredentialRepository(db);
+        const duplicateTokenHash = "synthetic-duplicate-refresh-token-hash";
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "totp-rollback@example.invalid",
+        });
+        await db.insert(mfaEnrollment).values({
+            tenantId,
+            userId,
+            secretCiphertext: "synthetic-ciphertext",
+            secretIv: "synthetic-iv",
+            secretAuthTag: "synthetic-auth-tag",
+            secretKeyVersion: "synthetic-v1",
+            algorithm: "SHA1",
+            digits: 6,
+            periodSeconds: 30,
+        });
+        await db.insert(refreshToken).values({
+            tenantId,
+            userId,
+            tokenHash: duplicateTokenHash,
+            expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+        });
+
+        await expect(
+            repository.recordAcceptedTotpCounterAndCreateRefreshToken({
+                tenantId,
+                userId,
+                counter: 20,
+                tokenHash: duplicateTokenHash,
+                expiresAt: new Date("1970-01-31T00:00:59.000Z"),
+            }),
+        ).rejects.toThrow();
+
+        const enrollmentRows = await db
+            .select()
+            .from(mfaEnrollment)
+            .where(eq(mfaEnrollment.tenantId, tenantId));
+
+        expect(enrollmentRows[0]?.lastAcceptedTotpCounter).toBeNull();
+    });
+    void test("writes MFA audit entries and preserves refresh tokens for wrong and replayed TOTP", async () => {
+        const passwordHasher = createPasswordHasher(testHashConfig);
+        const loginService = createLoginService(
+            createDrizzleLoginCredentialRepository(db),
+            passwordHasher,
+            realTotpSecretProtector,
+            testAuthJwtConfig,
+            loginNow,
+        );
+        const wrongTotpTenantId = "00000000-0000-4000-8000-000000000507";
+        const wrongTotpUserId = "10000000-0000-4000-8000-000000000507";
+        const replayTenantId = "00000000-0000-4000-8000-000000000508";
+        const replayUserId = "10000000-0000-4000-8000-000000000508";
+
+        await seedLoginSubject({
+            db,
+            tenantId: wrongTotpTenantId,
+            userId: wrongTotpUserId,
+            email: "wrong-totp@example.invalid",
+            password: "synthetic-correct-password",
+            passwordHasher,
+        });
+        await seedLoginSubject({
+            db,
+            tenantId: replayTenantId,
+            userId: replayUserId,
+            email: "replayed-totp@example.invalid",
+            password: "synthetic-correct-password",
+            passwordHasher,
+        });
+
+        await expect(
+            loginService.login({
+                tenantId: wrongTotpTenantId,
+                email: "wrong-totp@example.invalid",
+                password: "synthetic-correct-password",
+                totpCode: invalidTotpCode,
+            }),
+        ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
+        await expect(
+            loginService.login({
+                tenantId: replayTenantId,
+                email: "replayed-totp@example.invalid",
+                password: "synthetic-correct-password",
+                totpCode: validTotpCode,
+            }),
+        ).resolves.toMatchObject({
+            tenantId: replayTenantId,
+            userId: replayUserId,
+        });
+        await expect(
+            loginService.login({
+                tenantId: replayTenantId,
+                email: "replayed-totp@example.invalid",
+                password: "synthetic-correct-password",
+                totpCode: validTotpCode,
+            }),
+        ).rejects.toMatchObject({ name: "InvalidMfaCodeError" });
+
+        await expect(auditRowsForTenant(wrongTotpTenantId)).resolves.toEqual([
+            expect.objectContaining({
+                tenantId: wrongTotpTenantId,
+                userId: wrongTotpUserId,
+                action: "mfa_failed",
+                email: "wrong-totp@example.invalid",
+            }),
+        ]);
+        await expect(auditRowsForTenant(replayTenantId)).resolves.toEqual([
+            expect.objectContaining({
+                tenantId: replayTenantId,
+                userId: replayUserId,
+                action: "mfa_failed",
+                email: "replayed-totp@example.invalid",
+            }),
+        ]);
+        await expect(
+            refreshTokenRowsForTenant(wrongTotpTenantId),
+        ).resolves.toHaveLength(0);
+        await expect(
+            refreshTokenRowsForTenant(replayTenantId),
+        ).resolves.toHaveLength(1);
+
+        async function auditRowsForTenant(tenantId: string) {
+            return db
+                .select()
+                .from(authenticationAuditEntry)
+                .where(eq(authenticationAuditEntry.tenantId, tenantId));
+        }
+
+        async function refreshTokenRowsForTenant(tenantId: string) {
+            return db
+                .select()
+                .from(refreshToken)
+                .where(eq(refreshToken.tenantId, tenantId));
+        }
+    });
+    void test("accepts only one concurrent login attempt for the same TOTP", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000510";
+        const userId = "10000000-0000-4000-8000-000000000510";
+        const email = "concurrent-totp@example.invalid";
+        const password = "synthetic-correct-password";
+        const passwordHasher = createPasswordHasher(testHashConfig);
+        const loginService = createLoginService(
+            createDrizzleLoginCredentialRepository(db),
+            passwordHasher,
+            realTotpSecretProtector,
+            testAuthJwtConfig,
+            loginNow,
+        );
+
+        await seedLoginSubject({
+            db,
+            tenantId,
+            userId,
+            email,
+            password,
+            passwordHasher,
+        });
+
+        const loginRequest = {
+            tenantId,
+            email,
+            password,
+            totpCode: validTotpCode,
+        };
+        const loginResults = await Promise.allSettled([
+            loginService.login(loginRequest),
+            loginService.login(loginRequest),
+        ]);
+        const fulfilledResults = loginResults.filter(
+            (result) => result.status === "fulfilled",
+        );
+        const rejectedResults = loginResults.filter(
+            (result) => result.status === "rejected",
+        );
+        const tokenRows = await db
+            .select()
+            .from(refreshToken)
+            .where(eq(refreshToken.tenantId, tenantId));
+        const auditRows = await db
+            .select()
+            .from(authenticationAuditEntry)
+            .where(eq(authenticationAuditEntry.tenantId, tenantId));
+
+        expect(fulfilledResults).toHaveLength(1);
+        expect(fulfilledResults[0]).toMatchObject({
+            value: { tenantId, userId },
+        });
+        expect(rejectedResults).toHaveLength(1);
+        expect(rejectedResults[0]).toMatchObject({
+            reason: { name: "InvalidMfaCodeError" },
+        });
+        expect(tokenRows).toHaveLength(1);
+        expect(auditRows).toEqual([
+            expect.objectContaining({
+                tenantId,
+                userId,
+                action: "mfa_failed",
+                email,
+            }),
+        ]);
+    });
     void test("writes an audit entry after failed login", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000502";
         const userId = "10000000-0000-4000-8000-000000000502";
@@ -277,3 +557,46 @@ void describe("login repository", () => {
         });
     });
 });
+
+type SeedLoginSubjectInput = {
+    db: IdentityAuthDatabase;
+    tenantId: string;
+    userId: string;
+    email: string;
+    password: string;
+    passwordHasher: ReturnType<typeof createPasswordHasher>;
+};
+
+async function seedLoginSubject(input: SeedLoginSubjectInput): Promise<void> {
+    const passwordHash = await input.passwordHasher.hashPassword(
+        input.password,
+    );
+    const protectedSecret = realTotpSecretProtector.protect(
+        Buffer.from(rfc6238Secret, "utf8"),
+    );
+
+    await input.db.insert(user).values({
+        id: input.userId,
+        tenantId: input.tenantId,
+        email: input.email,
+    });
+    await input.db.insert(credential).values({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        passwordHash,
+        passwordHashAlgorithm: "argon2id",
+    });
+    await input.db.insert(role).values({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        name: "Employee",
+    });
+    await input.db.insert(mfaEnrollment).values({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        ...protectedSecret,
+        algorithm: "SHA1",
+        digits: 8,
+        periodSeconds: 30,
+    });
+}
