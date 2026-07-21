@@ -13,6 +13,7 @@ import {
     caseComment,
     expenseReport,
     glCode,
+    glCodingResult,
     glMapping,
     lineItem,
     mileageEntry,
@@ -63,6 +64,18 @@ const glMappingRequiredColumnNames = [
     "gl_code_id",
     "created_at",
     "updated_at",
+];
+
+const glCodingResultRequiredColumnNames = [
+    "submission_id",
+    "tenant_id",
+    "expense_report_id",
+    "source_type",
+    "source_id",
+    "category",
+    "mapping_status",
+    "flagged_line_item",
+    "coded_at",
 ];
 
 const caseCommentRequiredColumnNames = [
@@ -1091,6 +1104,105 @@ void describe("gl reference schema", () => {
         ]) {
             expect(migrationSql).toContain(`'${category}'`);
         }
+    });
+});
+
+void describe("glCodingResult schema", () => {
+    void test("defines append-only GL coding result rows for line items and mileage", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glCodingResult)).toEqual("gl_coding_result");
+
+        for (const columnName of glCodingResultRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        expect(columnNames).toContain("gl_account_code");
+        expect(columnNames).toContain("gl_account_name");
+        expect(columnNames).toContain("amount");
+        expect(columnNames).toContain("currency");
+        expect(columnNames).toContain("flag_code");
+        expect(columnNames).toContain("flag_message");
+    });
+
+    void test("keeps GL coding results tenant-scoped and queryable by source or submission", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "gl_coding_result_expense_report_tenant_fk",
+            },
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_coding_result_tenant_source_coded_at_idx",
+            "gl_coding_result_tenant_submission_idx",
+        ]);
+    });
+
+    void test("keeps source type and mapping status checks explicit", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "gl_coding_result_mapping_status_check",
+            "gl_coding_result_source_type_check",
+        ]);
+    });
+
+    void test("generates SQL for GL coding result history", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({ expenseReport });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            glCodingResult,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "gl_coding_result"');
+
+        for (const columnName of glCodingResultRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain("gl_coding_result_source_type_check");
+        expect(migrationSql).toContain("gl_coding_result_mapping_status_check");
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain(
+            "gl_coding_result_tenant_source_coded_at_idx",
+        );
+        expect(migrationSql).toContain(
+            '"tenant_id","source_type","source_id","coded_at","id"',
+        );
+        expect(migrationSql).toContain(
+            "gl_coding_result_tenant_submission_idx",
+        );
     });
 });
 void describe("receiptMetadata schema", () => {

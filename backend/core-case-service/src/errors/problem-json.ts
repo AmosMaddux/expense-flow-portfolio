@@ -62,6 +62,26 @@ export class ConflictError extends Error {
 }
 
 /**
+ * Represents a downstream service failure needed to complete a request.
+ */
+export class BadGatewayError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "BadGatewayError";
+    }
+}
+
+/**
+ * Represents invalid server-side configuration.
+ */
+export class ConfigurationError extends Error {
+    public constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
+        this.name = "ConfigurationError";
+    }
+}
+
+/**
  * Converts thrown application errors into RFC 9457 Problem+JSON responses.
  */
 export const problemJsonErrorHandler: ErrorRequestHandler = (
@@ -140,6 +160,26 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Conflict",
             status: 409,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof BadGatewayError) {
+        return {
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ConfigurationError) {
+        return {
+            type: "about:blank",
+            title: "Internal Server Error",
+            status: 500,
             detail: error.message,
             instance,
         };

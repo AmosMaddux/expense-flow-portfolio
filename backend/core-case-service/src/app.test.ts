@@ -70,6 +70,7 @@ void describe("app", () => {
         expect(body.paths).toHaveProperty("/v1/auth/mfa/enroll");
         expect(body.paths).toHaveProperty("/v1/expense-reports");
         expect(body.paths).toHaveProperty("/v1/expense-reports/{id}");
+        expect(body.paths).toHaveProperty("/v1/expense-reports/{id}/submit");
     });
 
     void test("serves Scalar documentation for the OpenAPI document", async () => {

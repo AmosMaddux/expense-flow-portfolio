@@ -11,6 +11,7 @@ import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    SubmitExpenseReportInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -52,6 +53,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportResponse = registry.register(
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
+    );
+    const submitExpenseReportRequest = registry.register(
+        "SubmitExpenseReportRequest",
+        SubmitExpenseReportInboundRequestSchema,
     );
     const readCaseQueueStageRollupsRequest = registry.register(
         "ReadCaseQueueStageRollupsRequest",
@@ -280,6 +285,53 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
             429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/submit",
+        summary: "Submit an Expense Report",
+        description:
+            "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).openapi({
+                    description:
+                        "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                }),
+            }),
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: submitExpenseReportRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Expense Report submitted.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed submit request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Only Drafted Expense Reports can be submitted.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            502: problemJsonResponse("GL-coding service request failed."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

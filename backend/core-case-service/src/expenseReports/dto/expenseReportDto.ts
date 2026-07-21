@@ -20,6 +20,8 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
+
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     asOfDate: z.iso.date(),
@@ -77,6 +79,9 @@ export const createExpenseReportRequestSchema =
 export const getExpenseReportRequestSchema =
     GetExpenseReportInboundRequestSchema;
 
+export const submitExpenseReportRequestSchema =
+    SubmitExpenseReportInboundRequestSchema;
+
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export const readCaseQueueStageRollupsRequestSchema =
@@ -98,6 +103,10 @@ export type CreateExpenseReportRequest = z.infer<
 
 export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
+>;
+
+export type SubmitExpenseReportRequest = z.infer<
+    typeof SubmitExpenseReportInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<

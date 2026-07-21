@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
     codeExpenseLineItems,
@@ -8,6 +8,14 @@ import {
 } from "./glCodingClient.js";
 
 const emptyRequest: GlCodingRequest = { line_items: [], mileage: [] };
+const successResponse = {
+    coded_items: [],
+    flags: [],
+};
+type FetchProcedure = (
+    input: string | URL | Request,
+    init?: RequestInit,
+) => Promise<Response>;
 
 describe("GL-coding client", () => {
     it("rejects a zero mileage distance", () => {
@@ -68,7 +76,11 @@ describe("GL-coding client", () => {
                 signal?.addEventListener(
                     "abort",
                     () => {
-                        reject(signal.reason);
+                        reject(
+                            signal.reason instanceof Error
+                                ? signal.reason
+                                : new Error("The request was aborted."),
+                        );
                     },
                     { once: true },
                 );
@@ -89,5 +101,117 @@ describe("GL-coding client", () => {
         ).rejects.toMatchObject({
             message: "The GL-coding service request timed out.",
         });
+    });
+
+    it("sends a tenant-scoped bearer token when one is provided", async () => {
+        const fetchImplementation = vi.fn<FetchProcedure>(() =>
+            Promise.resolve(Response.json(successResponse)),
+        );
+
+        await codeExpenseLineItems(
+            "http://gl-coding.example.test",
+            emptyRequest,
+            {
+                accessToken: "synthetic-access-token",
+                fetchImplementation:
+                    fetchImplementation as unknown as typeof fetch,
+            },
+        );
+
+        const call = fetchImplementation.mock.calls[0];
+        expect(call?.[0]).toBe(
+            "http://gl-coding.example.test/gl-coding/line-items",
+        );
+        expect(call?.[1]?.headers).toMatchObject({
+            Authorization: "Bearer synthetic-access-token",
+            "Content-Type": "application/json",
+        });
+    });
+
+    it("retries retryable HTTP failures with deterministic backoff", async () => {
+        const delays: number[] = [];
+        const fetchImplementation = vi
+            .fn<FetchProcedure>()
+            .mockResolvedValueOnce(
+                new Response("service unavailable", { status: 503 }),
+            )
+            .mockResolvedValueOnce(
+                new Response("too many requests", { status: 429 }),
+            )
+            .mockResolvedValueOnce(Response.json(successResponse));
+
+        const response = await codeExpenseLineItems(
+            "http://gl-coding.example.test",
+            emptyRequest,
+            {
+                baseBackoffMs: 100,
+                delayImplementation: (milliseconds) => {
+                    delays.push(milliseconds);
+                    return Promise.resolve();
+                },
+                fetchImplementation:
+                    fetchImplementation as unknown as typeof fetch,
+                maxRetries: 2,
+                random: () => 0,
+            },
+        );
+
+        expect(response).toEqual(successResponse);
+        expect(fetchImplementation).toHaveBeenCalledTimes(3);
+        expect(delays).toEqual([50, 100]);
+    });
+
+    it("retries network failures without exceeding the retry bound", async () => {
+        const fetchImplementation = vi
+            .fn<FetchProcedure>()
+            .mockRejectedValueOnce(new Error("synthetic network failure"))
+            .mockResolvedValueOnce(Response.json(successResponse));
+
+        await expect(
+            codeExpenseLineItems(
+                "http://gl-coding.example.test",
+                emptyRequest,
+                {
+                    delayImplementation: () => Promise.resolve(),
+                    fetchImplementation:
+                        fetchImplementation as unknown as typeof fetch,
+                    maxRetries: 1,
+                    random: () => 0,
+                },
+            ),
+        ).resolves.toEqual(successResponse);
+
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry non-transient HTTP failures", async () => {
+        const fetchImplementation = vi.fn<FetchProcedure>(() =>
+            Promise.resolve(
+                Response.json({ detail: "bad request" }, { status: 400 }),
+            ),
+        );
+
+        await expect(
+            codeExpenseLineItems(
+                "http://gl-coding.example.test",
+                emptyRequest,
+                {
+                    delayImplementation: () =>
+                        Promise.reject(
+                            new Error(
+                                "Non-transient failures should not wait.",
+                            ),
+                        ),
+                    fetchImplementation:
+                        fetchImplementation as unknown as typeof fetch,
+                    maxRetries: 2,
+                },
+            ),
+        ).rejects.toMatchObject({
+            message: "The GL-coding service rejected the coding request.",
+            statusCode: 400,
+        });
+
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
     });
 });

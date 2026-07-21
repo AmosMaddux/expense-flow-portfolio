@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
 import {
+    BadGatewayError,
+    ConfigurationError,
     ForbiddenError,
     NotFoundError,
     problemJsonErrorHandler,
@@ -82,6 +84,14 @@ function buildProblemJsonTestApp(): Express {
     });
     app.get("/forbidden", () => {
         throw new ForbiddenError();
+    });
+    app.get("/bad-gateway", () => {
+        throw new BadGatewayError(
+            "The GL-coding service could not be reached.",
+        );
+    });
+    app.get("/invalid-configuration", () => {
+        throw new ConfigurationError("GL-coding configuration is invalid.");
     });
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
@@ -218,6 +228,26 @@ void describe("problemJsonErrorHandler", () => {
         });
     });
 
+    void test("maps downstream service failures to a 502 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/bad-gateway",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(502);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            detail: "The GL-coding service could not be reached.",
+            instance: "/bad-gateway",
+        });
+    });
+
     void test("maps NotFoundError to a 404 Problem+JSON response", async () => {
         const response = await requestTestApp(
             buildProblemJsonTestApp(),
@@ -272,6 +302,23 @@ void describe("problemJsonErrorHandler", () => {
             status: 403,
             detail: "This action is not permitted.",
             instance: "/forbidden",
+        });
+    });
+
+    void test("maps ConfigurationError to a 500 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/invalid-configuration",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(500);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Internal Server Error",
+            status: 500,
+            detail: "GL-coding configuration is invalid.",
+            instance: "/invalid-configuration",
         });
     });
 

@@ -33,8 +33,7 @@ void describe("Expense Report controller authorization", () => {
     void test("uses authenticated tenant for Case Queue rollups instead of query tenant", async () => {
         readCachedCaseQueueStageRollupsMock.mockResolvedValue([]);
 
-        const authenticatedTenantId =
-            "40000000-0000-4000-8000-000000000001";
+        const authenticatedTenantId = "40000000-0000-4000-8000-000000000001";
         const requestedTenantId = "50000000-0000-4000-8000-000000000001";
         const request = {
             auth: {
@@ -47,8 +46,9 @@ void describe("Expense Report controller authorization", () => {
                 asOfDate: "2026-07-20",
             },
         } as unknown as Request;
+        const status = vi.fn().mockReturnThis();
         const response = {
-            status: vi.fn().mockReturnThis(),
+            status,
             json: vi.fn(),
         } as unknown as Response;
         const next = vi.fn() as NextFunction;
@@ -62,7 +62,7 @@ void describe("Expense Report controller authorization", () => {
         expect(readCachedCaseQueueStageRollupsMock).not.toHaveBeenCalledWith(
             expect.objectContaining({ tenantId: requestedTenantId }),
         );
-        expect(response.status).toHaveBeenCalledWith(200);
+        expect(status).toHaveBeenCalledWith(200);
         expect(next).not.toHaveBeenCalled();
     });
 });

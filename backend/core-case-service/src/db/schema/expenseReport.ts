@@ -35,6 +35,8 @@ export const approvedAttachmentContentTypes = [
     "application/json",
 ] as const;
 
+export const glCodingSourceTypes = ["line_item", "mileage"] as const;
+
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
         throw new Error(
@@ -56,6 +58,8 @@ const priorityLevelCheckSql = buildStaticStringInListSql(priorityLevels);
 const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
     approvedAttachmentContentTypes,
 );
+const glCodingSourceTypeCheckSql =
+    buildStaticStringInListSql(glCodingSourceTypes);
 
 export const expenseReport = pgTable(
     "expense_report",
@@ -332,6 +336,57 @@ export const glMapping = pgTable(
         }),
     ],
 );
+
+export const glCodingResult = pgTable(
+    "gl_coding_result",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        submissionId: uuid("submission_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        sourceType: text("source_type").notNull(),
+        sourceId: uuid("source_id").notNull(),
+        category: text("category").notNull(),
+        mappingStatus: text("mapping_status").notNull(),
+        glAccountCode: text("gl_account_code"),
+        glAccountName: text("gl_account_name"),
+        amount: numeric("amount", { precision: 12, scale: 2 }),
+        currency: text("currency"),
+        flaggedLineItem: boolean("flagged_line_item").notNull().default(false),
+        flagCode: text("flag_code"),
+        flagMessage: text("flag_message"),
+        codedAt: timestamp("coded_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_coding_result_source_type_check",
+            sql`${table.sourceType} in (${glCodingSourceTypeCheckSql})`,
+        ),
+        check(
+            "gl_coding_result_mapping_status_check",
+            sql`${table.mappingStatus} in ('mapped', 'unmapped')`,
+        ),
+        foreignKey({
+            name: "gl_coding_result_expense_report_tenant_fk",
+            // Tenant joins prevent coding history from attaching to another tenant's report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("gl_coding_result_tenant_source_coded_at_idx").on(
+            table.tenantId,
+            table.sourceType,
+            table.sourceId,
+            table.codedAt,
+            table.id,
+        ),
+        index("gl_coding_result_tenant_submission_idx").on(
+            table.tenantId,
+            table.submissionId,
+        ),
+    ],
+);
 export const caseComment = pgTable(
     "case_comment",
     {
@@ -473,6 +528,8 @@ export type GlCode = InferSelectModel<typeof glCode>;
 export type NewGlCode = InferInsertModel<typeof glCode>;
 export type GlMapping = InferSelectModel<typeof glMapping>;
 export type NewGlMapping = InferInsertModel<typeof glMapping>;
+export type GlCodingResult = InferSelectModel<typeof glCodingResult>;
+export type NewGlCodingResult = InferInsertModel<typeof glCodingResult>;
 export type CaseComment = InferSelectModel<typeof caseComment>;
 export type NewCaseComment = InferInsertModel<typeof caseComment>;
 export type AttachmentMetadata = InferSelectModel<typeof attachmentMetadata>;

@@ -5,9 +5,7 @@ import {
 import { getRedisClient } from "../../cache/redisClient.js";
 import { db } from "../../db/client.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
-import {
-    transitionExpenseReportStage as transitionPostgresExpenseReportStage,
-} from "../repository/expenseReportRepository.js";
+import { transitionExpenseReportStage as transitionPostgresExpenseReportStage } from "../repository/expenseReportRepository.js";
 import {
     ReadCaseQueueStageRollupsInboundRequestSchema,
     TransitionExpenseReportStageInboundRequestSchema,

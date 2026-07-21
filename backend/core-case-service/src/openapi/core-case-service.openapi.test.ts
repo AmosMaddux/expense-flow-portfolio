@@ -15,9 +15,12 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
 
         expect(expenseReportsPath?.post).toBeDefined();
         expect(expenseReportByIdPath?.get).toBeDefined();
+        expect(expenseReportSubmitPath?.post).toBeDefined();
     });
 
     void test("documents the login endpoint and token response fields", () => {
@@ -65,12 +68,29 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
+    void test("documents Idempotency-Key as required for Expense Report submission", () => {
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
+        const idempotencyHeader =
+            expenseReportSubmitPath?.post?.parameters?.find(
+                (parameter) =>
+                    "name" in parameter && parameter.name === "Idempotency-Key",
+            );
+
+        expect(idempotencyHeader).toMatchObject({
+            in: "header",
+            name: "Idempotency-Key",
+            required: true,
+        });
+    });
+
     void test("documents bearer authentication for every Expense Report route", () => {
-        const caseQueueRollupsPath =
-            document.paths?.["/v1/case-queue/rollups"];
+        const caseQueueRollupsPath = document.paths?.["/v1/case-queue/rollups"];
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
 
         expect(document.components?.securitySchemes?.bearerAuth).toMatchObject({
             type: "http",
@@ -86,12 +106,17 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportByIdPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(expenseReportSubmitPath?.post?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(caseQueueRollupsPath?.get?.responses?.[401]).toBeDefined();
         expect(caseQueueRollupsPath?.get?.responses?.[403]).toBeDefined();
         expect(expenseReportsPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportsPath?.post?.responses?.[403]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[403]).toBeDefined();
+        expect(expenseReportSubmitPath?.post?.responses?.[401]).toBeDefined();
+        expect(expenseReportSubmitPath?.post?.responses?.[403]).toBeDefined();
     });
 
     void test("documents the GET id path parameter as a required UUID", () => {
@@ -123,6 +148,29 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(tenantHeader).toBeUndefined();
     });
 
+    void test("documents submit with id path parameter and strict empty body", () => {
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
+        const requestBody = expenseReportSubmitPath?.post?.requestBody;
+
+        expect(expenseReportSubmitPath?.post?.parameters).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    in: "path",
+                    name: "id",
+                    required: true,
+                    schema: {
+                        type: "string",
+                        format: "uuid",
+                    },
+                }),
+            ]),
+        );
+        expect(JSON.stringify(requestBody)).toContain(
+            "#/components/schemas/SubmitExpenseReportRequest",
+        );
+    });
+
     void test("does not document tenant input for Case Queue rollups", () => {
         const parameters =
             document.paths?.["/v1/case-queue/rollups"]?.get?.parameters ?? [];
@@ -138,12 +186,17 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
 
         expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[201]),
         ).toContain("#/components/schemas/ExpenseReportResponse");
         expect(
             JSON.stringify(expenseReportByIdPath?.get?.responses?.[200]),
+        ).toContain("#/components/schemas/ExpenseReportResponse");
+        expect(
+            JSON.stringify(expenseReportSubmitPath?.post?.responses?.[201]),
         ).toContain("#/components/schemas/ExpenseReportResponse");
     });
 
@@ -170,12 +223,20 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const expenseReportSubmitPath =
+            document.paths?.["/v1/expense-reports/{id}/submit"];
 
         expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[400]),
         ).toContain("#/components/schemas/ProblemJson");
         expect(
             JSON.stringify(expenseReportByIdPath?.get?.responses?.[404]),
+        ).toContain("#/components/schemas/ProblemJson");
+        expect(
+            JSON.stringify(expenseReportSubmitPath?.post?.responses?.[409]),
+        ).toContain("#/components/schemas/ProblemJson");
+        expect(
+            JSON.stringify(expenseReportSubmitPath?.post?.responses?.[502]),
         ).toContain("#/components/schemas/ProblemJson");
         expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[500]),

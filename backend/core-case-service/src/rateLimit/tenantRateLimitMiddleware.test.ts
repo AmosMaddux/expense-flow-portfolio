@@ -109,9 +109,7 @@ async function closeServer(server: Server): Promise<void> {
 
 void describe("tenant rate limit middleware", () => {
     void test("reports cost and decrements remaining quota within a window", async () => {
-        const app = buildTestApp(
-            () => new Date("2026-07-16T12:00:00.000Z"),
-        );
+        const app = buildTestApp(() => new Date("2026-07-16T12:00:00.000Z"));
 
         const firstResponse = await requestApp(app);
         expect(firstResponse.status).toBe(200);
