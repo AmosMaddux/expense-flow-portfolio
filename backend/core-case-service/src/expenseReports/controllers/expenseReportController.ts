@@ -7,11 +7,13 @@ import {
     UnauthorizedError,
 } from "../../errors/problem-json.js";
 import {
+    ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
+    TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
@@ -24,10 +26,12 @@ import {
     logExpenseReportAuditSuccess,
 } from "../../logging/coreCaseLogger.js";
 import {
+    clearExpenseReportFlags,
     createDraftExpenseReport,
     readExpenseReport,
     readExpenseReportAuditEntries,
     submitExpenseReport,
+    transitionExpenseReportWorkflow,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
 
@@ -194,6 +198,66 @@ export async function postExpenseReportSubmission(
     }
 }
 
+/**
+ * Handles guarded Expense Report workflow transition requests.
+ */
+export async function postExpenseReportTransition(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest =
+            TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
+        const report = await transitionExpenseReportWorkflow({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            toStage: parsedRequest.toStage,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles line-item flag clearing after internal review.
+ */
+export async function postExpenseReportFlagClear(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = ClearExpenseReportFlagsInboundRequestSchema.parse(
+            req.body,
+        );
+        const result = await clearExpenseReportFlags({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            sourceIds: parsedRequest.sourceIds,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(result);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 /**
  * Handles Case Queue rollup read requests for one tenant.
  */

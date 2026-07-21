@@ -31,6 +31,8 @@ import { db } from "../../db/client.js";
 import {
     buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
+    clearExpenseReportFlags,
+    countOpenExpenseReportFlags,
     findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
@@ -670,14 +672,319 @@ void describe("expenseReportRepository", () => {
                 denialReason: "Invalid transition from Drafted to AP Review.",
             }),
         );
-        expect(transitionRows).toHaveLength(1);
-        expect(transitionRows[0]).toMatchObject({
-            fromStage: "Drafted",
-            toStage: "Drafted",
-            reason: "report_created",
-        });
+        expect(transitionRows).toHaveLength(2);
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "Drafted",
+                toStage: "Drafted",
+                reason: "report_created",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "Drafted",
+                toStage: "Drafted",
+                reason: "transition_denied: Invalid transition from Drafted to AP Review.",
+            }),
+        );
     });
 
+    void test("clears line-item flags after review", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000201";
+        const actorId = "20000000-0000-4000-8000-000000000201";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, report.id));
+
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000201",
+            submissionId: "90000000-0000-4000-8000-000000000201",
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: "30000000-0000-4000-8000-000000000201",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const beforeCount = await countOpenExpenseReportFlags(
+            tenantId,
+            report.id,
+        );
+        const clearedCount = await clearExpenseReportFlags({
+            tenantId,
+            expenseReportId: report.id,
+            actorId,
+            sourceIds: ["30000000-0000-4000-8000-000000000201"],
+            reason: "reviewed supporting receipt",
+        });
+        const afterCount = await countOpenExpenseReportFlags(
+            tenantId,
+            report.id,
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, report.id));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, report.id));
+
+        expect(beforeCount).toBe(1);
+        expect(clearedCount).toEqual({
+            kind: "cleared",
+            clearedFlagCount: 1,
+        });
+        expect(afterCount).toBe(0);
+        expect(codingRows[0]).toMatchObject({
+            flaggedLineItem: false,
+            flagCode: null,
+            flagMessage: null,
+        });
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "line_item_flags_cleared",
+                actorId,
+                denialReason: null,
+                outcomeReason: "reviewed supporting receipt",
+            }),
+        );
+    });
+
+    void test("counts only latest-submission flags as active Manager Approval blockers", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000203";
+        const actorId = "20000000-0000-4000-8000-000000000203";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, report.id));
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000203",
+                submissionId: "90000000-0000-4000-8000-000000000203",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: "30000000-0000-4000-8000-000000000203",
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                flaggedLineItem: true,
+                flagCode: "line_item_over_threshold",
+                flagMessage:
+                    "Line item amount is above the MVP manual review threshold.",
+                codedAt: new Date("2026-07-18T10:00:00.000Z"),
+            },
+            {
+                id: "91000000-0000-4000-8000-000000000204",
+                submissionId: "90000000-0000-4000-8000-000000000204",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: "30000000-0000-4000-8000-000000000203",
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                flaggedLineItem: false,
+                codedAt: new Date("2026-07-18T10:05:00.000Z"),
+            },
+        ]);
+
+        const activeFlagCount = await countOpenExpenseReportFlags(
+            tenantId,
+            report.id,
+        );
+        const didTransition = await transitionExpenseReportStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+            reason: "manager approved corrected submission",
+        });
+
+        expect(activeFlagCount).toBe(0);
+        expect(didTransition).toBe(true);
+    });
+
+    void test("clearing one of two active flags keeps Manager Approval blocked", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000205";
+        const actorId = "20000000-0000-4000-8000-000000000205";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, report.id));
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000205",
+                submissionId: "90000000-0000-4000-8000-000000000205",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: "30000000-0000-4000-8000-000000000205",
+                category: "Travel",
+                mappingStatus: "mapped",
+                flaggedLineItem: true,
+                flagCode: "line_item_over_threshold",
+            },
+            {
+                id: "91000000-0000-4000-8000-000000000206",
+                submissionId: "90000000-0000-4000-8000-000000000205",
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: "30000000-0000-4000-8000-000000000206",
+                category: "Travel",
+                mappingStatus: "mapped",
+                flaggedLineItem: true,
+                flagCode: "line_item_over_threshold",
+            },
+        ]);
+
+        const clearResult = await clearExpenseReportFlags({
+            tenantId,
+            expenseReportId: report.id,
+            actorId,
+            sourceIds: ["30000000-0000-4000-8000-000000000205"],
+            reason: "reviewed first flagged line item",
+        });
+        const activeFlagCount = await countOpenExpenseReportFlags(
+            tenantId,
+            report.id,
+        );
+        const didTransition = await transitionExpenseReportStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+            reason: "manager approved too early",
+        });
+
+        expect(clearResult).toEqual({ kind: "cleared", clearedFlagCount: 1 });
+        expect(activeFlagCount).toBe(1);
+        expect(didTransition).toBe(false);
+    });
+    void test("sends Manager Approval back to Drafted while preserving line items and flags", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000202";
+        const actorId = "20000000-0000-4000-8000-000000000202";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, report.id));
+        await db.insert(lineItem).values({
+            id: "30000000-0000-4000-8000-000000000202",
+            tenantId,
+            expenseReportId: report.id,
+            merchant: "Synthetic Rail",
+            amount: "650.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000202",
+            submissionId: "90000000-0000-4000-8000-000000000202",
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: "30000000-0000-4000-8000-000000000202",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const didTransition = await transitionExpenseReportStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "Manager Approval",
+            toStage: "Drafted",
+            reason: "receipt detail required",
+        });
+        const transitionedReport = await findExpenseReportById(
+            tenantId,
+            report.id,
+        );
+        const lineRows = await db
+            .select()
+            .from(lineItem)
+            .where(eq(lineItem.expenseReportId, report.id));
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, report.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, report.id));
+
+        expect(didTransition).toBe(true);
+        expect(transitionedReport?.currentStage).toBe("Drafted");
+        expect(lineRows).toHaveLength(1);
+        expect(codingRows[0]).toMatchObject({
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+        });
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "Manager Approval",
+                toStage: "Drafted",
+                actor: actorId,
+                reason: "receipt detail required",
+            }),
+        );
+    });
     void test.each([
         [
             "missing coded item",

@@ -23,6 +23,7 @@ import {
     lineItem,
     mileageEntry,
     stageTransition,
+    tenantRateLimitWindow,
     type RoleName,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
@@ -84,6 +85,25 @@ vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
 }));
 
 const glCodingClientMock = vi.hoisted(() => vi.fn());
+const redisCacheEntries = vi.hoisted(() => new Map<string, string>());
+const redisClientMock = vi.hoisted(() => ({
+    get: vi.fn((key: string) =>
+        Promise.resolve(redisCacheEntries.get(key) ?? null),
+    ),
+    set: vi.fn((key: string, value: string) => {
+        redisCacheEntries.set(key, value);
+        return Promise.resolve("OK");
+    }),
+    incr: vi.fn((key: string) => {
+        const nextValue = String(Number(redisCacheEntries.get(key) ?? "0") + 1);
+        redisCacheEntries.set(key, nextValue);
+        return Promise.resolve(Number(nextValue));
+    }),
+}));
+
+vi.mock("../../cache/redisClient.js", () => ({
+    getRedisClient: () => Promise.resolve(redisClientMock),
+}));
 
 vi.mock("../../glCoding/glCodingClient.js", () => ({
     codeExpenseLineItems: glCodingClientMock,
@@ -172,6 +192,10 @@ void describe("Expense Report routes", () => {
         idempotencyStoreMock.reserveSubmission.mockClear();
         idempotencyStoreMock.saveResult.mockClear();
         glCodingClientMock.mockReset();
+        redisCacheEntries.clear();
+        redisClientMock.get.mockClear();
+        redisClientMock.set.mockClear();
+        redisClientMock.incr.mockClear();
         glCodingClientMock.mockResolvedValue({
             coded_items: [],
             flags: [],
@@ -738,6 +762,10 @@ void describe("Expense Report routes", () => {
                     eq(auditEntry.expenseReportId, created.id),
                 ),
             );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, created.id));
         expect(auditRows).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -748,6 +776,14 @@ void describe("Expense Report routes", () => {
                         "Authenticated role is not permitted to submit Expense Reports.",
                 }),
             ]),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                actor: owner,
+                fromStage: "Drafted",
+                toStage: "Drafted",
+                reason: "transition_denied: Authenticated role is not permitted to submit Expense Reports.",
+            }),
         );
     });
 
@@ -923,6 +959,10 @@ void describe("Expense Report routes", () => {
                     eq(auditEntry.expenseReportId, created.id ?? ""),
                 ),
             );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, created.id ?? ""));
         expect(auditRows).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -933,6 +973,13 @@ void describe("Expense Report routes", () => {
                         "Only Drafted Expense Reports can be submitted.",
                 }),
             ]),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "Submitted",
+                toStage: "Submitted",
+                reason: "transition_denied: Only Drafted Expense Reports can be submitted.",
+            }),
         );
     });
 
@@ -1097,6 +1144,1122 @@ void describe("Expense Report routes", () => {
         expect(auditRows).toHaveLength(1);
     });
 
+    void test("rejects Employee workflow transition attempts with audit and transition logs", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000150";
+        const owner = "50000000-0000-4000-8000-000000000150";
+        const reportId = "60000000-0000-4000-8000-000000000150";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-15",
+            currentStage: "Submitted",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "employee attempted transition",
+                }),
+            },
+        );
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+        expect(reportRows[0]?.currentStage).toBe("Submitted");
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                actorId: owner,
+                action: "transition_denied",
+                stageBeforeAction: "Submitted",
+                stageAfterProposedAction: "Manager Approval",
+                denialReason:
+                    "Authenticated role is not permitted to transition Expense Reports.",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                actor: owner,
+                fromStage: "Submitted",
+                toStage: "Submitted",
+                reason: "transition_denied: Authenticated role is not permitted to transition Expense Reports.",
+            }),
+        );
+    });
+
+    void test("allows Department Manager and Finance Admin workflow transitions", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000151";
+        const owner = "50000000-0000-4000-8000-000000000151";
+        const managerId = "51000000-0000-4000-8000-000000000151";
+        const financeAdminId = "52000000-0000-4000-8000-000000000151";
+        const reportId = "60000000-0000-4000-8000-000000000151";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-16",
+            currentStage: "Submitted",
+        });
+
+        const managerResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "manager review started",
+                }),
+            },
+        );
+        const financeResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved",
+                }),
+            },
+        );
+        const financeBody = (await financeResponse.json()) as {
+            currentStage?: string;
+        };
+
+        expect(managerResponse.status).toBe(200);
+        expect(financeResponse.status).toBe(200);
+        expect(financeBody.currentStage).toBe("AP Review");
+    });
+
+    void test.each([
+        {
+            scenario:
+                "Department Manager advances Submitted to Manager Approval",
+            suffix: "171",
+            role: "Department Manager",
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+        },
+        {
+            scenario: "Finance Admin advances Submitted to Manager Approval",
+            suffix: "172",
+            role: "Finance Admin",
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+        },
+        {
+            scenario:
+                "Department Manager advances Manager Approval to AP Review",
+            suffix: "173",
+            role: "Department Manager",
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+        },
+        {
+            scenario: "Finance Admin advances Manager Approval to AP Review",
+            suffix: "174",
+            role: "Finance Admin",
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+        },
+    ] satisfies Array<{
+        scenario: string;
+        suffix: string;
+        role: RoleName;
+        fromStage: "Submitted" | "Manager Approval";
+        toStage: "Manager Approval" | "AP Review";
+    }>)("allows $scenario", async ({ suffix, role, fromStage, toStage }) => {
+        const tenantId = `40000000-0000-4000-8000-000000000${suffix}`;
+        const owner = `50000000-0000-4000-8000-000000000${suffix}`;
+        const actorId = `51000000-0000-4000-8000-000000000${suffix}`;
+        const reportId = `60000000-0000-4000-8000-000000000${suffix}`;
+        const reason = `${role} approved transition`;
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-22",
+            currentStage: fromStage,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        role,
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage,
+                    reason,
+                }),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(body.currentStage).toBe(toStage);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                actorId,
+                action: "transition_approved",
+                stageBeforeAction: fromStage,
+                stageAfterProposedAction: toStage,
+                denialReason: null,
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                actor: actorId,
+                fromStage,
+                toStage,
+                reason,
+            }),
+        );
+    });
+
+    void test.each([
+        {
+            scenario:
+                "Department Manager sends Manager Approval back to Drafted",
+            suffix: "175",
+            role: "Department Manager",
+            fromStage: "Manager Approval",
+        },
+        {
+            scenario: "Finance Admin sends Manager Approval back to Drafted",
+            suffix: "176",
+            role: "Finance Admin",
+            fromStage: "Manager Approval",
+        },
+        {
+            scenario: "Department Manager sends AP Review back to Drafted",
+            suffix: "177",
+            role: "Department Manager",
+            fromStage: "AP Review",
+        },
+        {
+            scenario: "Finance Admin sends AP Review back to Drafted",
+            suffix: "178",
+            role: "Finance Admin",
+            fromStage: "AP Review",
+        },
+    ] satisfies Array<{
+        scenario: string;
+        suffix: string;
+        role: RoleName;
+        fromStage: "Manager Approval" | "AP Review";
+    }>)("allows $scenario", async ({ suffix, role, fromStage }) => {
+        const tenantId = `40000000-0000-4000-8000-000000000${suffix}`;
+        const owner = `50000000-0000-4000-8000-000000000${suffix}`;
+        const actorId = `51000000-0000-4000-8000-000000000${suffix}`;
+        const reportId = `60000000-0000-4000-8000-000000000${suffix}`;
+        const reason = `${role} sent back for correction`;
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-23",
+            currentStage: fromStage,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        role,
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason,
+                }),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(body.currentStage).toBe("Drafted");
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                actorId,
+                action: "transition_sent_back",
+                stageBeforeAction: fromStage,
+                stageAfterProposedAction: "Drafted",
+                denialReason: null,
+                outcomeReason: reason,
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                actor: actorId,
+                fromStage,
+                toStage: "Drafted",
+                reason,
+            }),
+        );
+    });
+
+    void test.each([
+        {
+            scenario: "Employee cannot advance Submitted to Manager Approval",
+            suffix: "179",
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+        },
+        {
+            scenario: "Employee cannot advance Manager Approval to AP Review",
+            suffix: "180",
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+        },
+        {
+            scenario: "Employee cannot send Manager Approval back to Drafted",
+            suffix: "181",
+            fromStage: "Manager Approval",
+            toStage: "Drafted",
+        },
+        {
+            scenario: "Employee cannot send AP Review back to Drafted",
+            suffix: "182",
+            fromStage: "AP Review",
+            toStage: "Drafted",
+        },
+    ])(
+        "denies $scenario with audit and transition logs",
+        async ({ suffix, fromStage, toStage }) => {
+            const tenantId = `40000000-0000-4000-8000-000000000${suffix}`;
+            const owner = `50000000-0000-4000-8000-000000000${suffix}`;
+            const reportId = `60000000-0000-4000-8000-000000000${suffix}`;
+
+            await db.insert(expenseReport).values({
+                id: reportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-24",
+                currentStage: fromStage,
+            });
+
+            const response = await requestApp(
+                `/v1/expense-reports/${reportId}/transitions`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(tenantId, owner),
+                        "content-type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        toStage,
+                        reason: "employee attempted workflow action",
+                    }),
+                },
+            );
+            const body = (await response.json()) as {
+                title?: string;
+                status?: number;
+            };
+            const reportRows = await db
+                .select()
+                .from(expenseReport)
+                .where(eq(expenseReport.id, reportId));
+            const auditRows = await db
+                .select()
+                .from(auditEntry)
+                .where(eq(auditEntry.expenseReportId, reportId));
+            const transitionRows = await db
+                .select()
+                .from(stageTransition)
+                .where(eq(stageTransition.expenseReportId, reportId));
+
+            expect(response.status).toBe(403);
+            expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+            expect(reportRows[0]?.currentStage).toBe(fromStage);
+            expect(auditRows).toContainEqual(
+                expect.objectContaining({
+                    actorId: owner,
+                    action: "transition_denied",
+                    stageBeforeAction: fromStage,
+                    stageAfterProposedAction: toStage,
+                    denialReason:
+                        "Authenticated role is not permitted to transition Expense Reports.",
+                }),
+            );
+            expect(transitionRows).toContainEqual(
+                expect.objectContaining({
+                    actor: owner,
+                    fromStage,
+                    toStage: fromStage,
+                    reason: "transition_denied: Authenticated role is not permitted to transition Expense Reports.",
+                }),
+            );
+        },
+    );
+    void test("blocks Manager Approval while flags remain and advances after clearing the last flag", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000152";
+        const owner = "50000000-0000-4000-8000-000000000152";
+        const managerId = "51000000-0000-4000-8000-000000000152";
+        const reportId = "60000000-0000-4000-8000-000000000152";
+        const lineItemId = "30000000-0000-4000-8000-000000000152";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000152",
+            submissionId: "90000000-0000-4000-8000-000000000152",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const blockedResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved",
+                }),
+            },
+        );
+        const deniedAuditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const deniedTransitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(deniedAuditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_denied",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "AP Review",
+                denialReason:
+                    "Expense Report has uncleared over-threshold line-item flags.",
+            }),
+        );
+        expect(deniedTransitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "Manager Approval",
+                toStage: "Manager Approval",
+                reason: "transition_denied: Expense Report has uncleared over-threshold line-item flags.",
+            }),
+        );
+
+        const clearResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: [lineItemId],
+                    reason: "reviewed receipt detail",
+                }),
+            },
+        );
+        const clearBody = (await clearResponse.json()) as {
+            clearedFlagCount?: number;
+        };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const advanceResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved after flag review",
+                }),
+            },
+        );
+        const advanceBody = (await advanceResponse.json()) as {
+            currentStage?: string;
+        };
+
+        expect(blockedResponse.status).toBe(409);
+        expect(clearResponse.status).toBe(200);
+        expect(clearBody).toMatchObject({ clearedFlagCount: 1 });
+        expect(advanceResponse.status).toBe(200);
+        expect(advanceBody.currentStage).toBe("AP Review");
+    });
+
+    void test("sends AP Review back to Drafted without removing line items or flags", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000153";
+        const owner = "50000000-0000-4000-8000-000000000153";
+        const financeAdminId = "52000000-0000-4000-8000-000000000153";
+        const reportId = "60000000-0000-4000-8000-000000000153";
+        const lineItemId = "30000000-0000-4000-8000-000000000153";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Hotel",
+            amount: "725.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000153",
+            submissionId: "90000000-0000-4000-8000-000000000153",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "employee correction required",
+                }),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+        const lineRows = await db
+            .select()
+            .from(lineItem)
+            .where(eq(lineItem.expenseReportId, reportId));
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(body.currentStage).toBe("Drafted");
+        expect(lineRows).toHaveLength(1);
+        expect(codingRows[0]).toMatchObject({
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+        });
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_sent_back",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "Drafted",
+                denialReason: null,
+                outcomeReason: "employee correction required",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "AP Review",
+                toStage: "Drafted",
+                reason: "employee correction required",
+            }),
+        );
+    });
+
+    void test("records Employee flag-clear denials as audit-only events", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000183";
+        const owner = "50000000-0000-4000-8000-000000000183";
+        const reportId = "60000000-0000-4000-8000-000000000183";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-25",
+            currentStage: "Manager Approval",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: ["30000000-0000-4000-8000-000000000183"],
+                    reason: "employee attempted flag clear",
+                }),
+            },
+        );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(403);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                actorId: owner,
+                action: "line_item_flags_clear_denied",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Manager Approval",
+                denialReason: null,
+                outcomeReason:
+                    "Authenticated role is not permitted to clear line-item flags.",
+            }),
+        );
+        expect(transitionRows).toHaveLength(0);
+    });
+
+    void test("refreshes cached rollups through the public workflow and send-back path", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000184";
+        const owner = "50000000-0000-4000-8000-000000000184";
+        const managerId = "51000000-0000-4000-8000-000000000184";
+        const financeAdminId = "52000000-0000-4000-8000-000000000184";
+        const lineItemId = "30000000-0000-4000-8000-000000000184";
+        const asOfDate = "2026-08-20";
+        const resetRateLimit = async () => {
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        };
+        const readRollups = async () => {
+            const response = await requestApp(
+                `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
+                {
+                    headers: {
+                        authorization: authorizationHeader(
+                            tenantId,
+                            financeAdminId,
+                            ["Finance Admin"],
+                        ),
+                    },
+                },
+            );
+
+            expect(response.status).toBe(200);
+            return (await response.json()) as Array<{
+                currentStage: string;
+                reportCount: number;
+                overdueCount: number;
+            }>;
+        };
+        const expectRollup = (
+            rollups: Array<{
+                currentStage: string;
+                reportCount: number;
+                overdueCount: number;
+            }>,
+            currentStage: string,
+            reportCount: number,
+            overdueCount: number,
+        ) => {
+            expect(
+                rollups.find((rollup) => rollup.currentStage === currentStage),
+            ).toMatchObject({ reportCount, overdueCount });
+        };
+
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-184",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-10" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+
+        expect(createResponse.status).toBe(201);
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Rail",
+            amount: "125.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await resetRateLimit();
+        const warmedRollups = await readRollups();
+        expectRollup(warmedRollups, "Drafted", 1, 1);
+        expectRollup(warmedRollups, "Submitted", 0, 0);
+
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [
+                {
+                    source_id: lineItemId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "125.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+        await resetRateLimit();
+        const submitResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-184",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(submitResponse.status).toBe(201);
+        await resetRateLimit();
+        const submittedRollups = await readRollups();
+        expectRollup(submittedRollups, "Drafted", 0, 0);
+        expectRollup(submittedRollups, "Submitted", 1, 1);
+
+        await resetRateLimit();
+        const managerApprovalResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "manager review started",
+                }),
+            },
+        );
+        await resetRateLimit();
+        const apReviewResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved",
+                }),
+            },
+        );
+        await resetRateLimit();
+        const sendBackResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "employee correction required",
+                }),
+            },
+        );
+
+        expect(managerApprovalResponse.status).toBe(200);
+        expect(apReviewResponse.status).toBe(200);
+        expect(sendBackResponse.status).toBe(200);
+        await resetRateLimit();
+        const sentBackRollups = await readRollups();
+        expectRollup(sentBackRollups, "Drafted", 1, 1);
+        expectRollup(sentBackRollups, "Submitted", 0, 0);
+        expectRollup(sentBackRollups, "Manager Approval", 0, 0);
+        expectRollup(sentBackRollups, "AP Review", 0, 0);
+        expect(redisClientMock.incr).toHaveBeenCalledWith(
+            `case-queue-rollup-version:${tenantId}`,
+        );
+
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, created.id));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, created.id));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, created.id));
+
+        expect(reportRows[0]?.currentStage).toBe("Drafted");
+        expect(auditRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Drafted",
+                    stageAfterProposedAction: "Submitted",
+                }),
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Manager Approval",
+                }),
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Manager Approval",
+                    stageAfterProposedAction: "AP Review",
+                }),
+                expect.objectContaining({
+                    action: "transition_sent_back",
+                    stageBeforeAction: "AP Review",
+                    stageAfterProposedAction: "Drafted",
+                    outcomeReason: "employee correction required",
+                }),
+            ]),
+        );
+        expect(transitionRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    fromStage: "Drafted",
+                    toStage: "Submitted",
+                }),
+                expect.objectContaining({
+                    fromStage: "Submitted",
+                    toStage: "Manager Approval",
+                }),
+                expect.objectContaining({
+                    fromStage: "Manager Approval",
+                    toStage: "AP Review",
+                }),
+                expect.objectContaining({
+                    fromStage: "AP Review",
+                    toStage: "Drafted",
+                }),
+            ]),
+        );
+    });
+    void test("does not clear flags outside Manager Approval", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000158";
+        const owner = "50000000-0000-4000-8000-000000000158";
+        const managerId = "51000000-0000-4000-8000-000000000158";
+        const reportId = "60000000-0000-4000-8000-000000000158";
+        const lineItemId = "30000000-0000-4000-8000-000000000158";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-21",
+            currentStage: "Submitted",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000158",
+            submissionId: "90000000-0000-4000-8000-000000000158",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: [lineItemId],
+                    reason: "premature flag clear attempt",
+                }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+
+        expect(response.status).toBe(409);
+        expect(codingRows[0]).toMatchObject({
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+        });
+    });
+    void test("does not transition an Expense Report from another tenant", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000154";
+        const otherTenantId = "40000000-0000-4000-8000-000000000155";
+        const owner = "50000000-0000-4000-8000-000000000154";
+        const managerId = "51000000-0000-4000-8000-000000000154";
+        const reportId = "60000000-0000-4000-8000-000000000154";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "Submitted",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        managerId,
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "cross tenant attempt",
+                }),
+            },
+        );
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(reportRows[0]).toMatchObject({
+            tenantId,
+            currentStage: "Submitted",
+        });
+        expect(auditRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(0);
+    });
+
+    void test("does not clear flags on an Expense Report from another tenant", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000156";
+        const otherTenantId = "40000000-0000-4000-8000-000000000157";
+        const owner = "50000000-0000-4000-8000-000000000156";
+        const managerId = "51000000-0000-4000-8000-000000000156";
+        const reportId = "60000000-0000-4000-8000-000000000156";
+        const lineItemId = "30000000-0000-4000-8000-000000000156";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-20",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000156",
+            submissionId: "90000000-0000-4000-8000-000000000156",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        managerId,
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: [lineItemId],
+                    reason: "cross tenant flag clear attempt",
+                }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(codingRows[0]).toMatchObject({
+            tenantId,
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+        });
+        expect(auditRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(0);
+    });
     void test("lets a Finance Admin read audit entries for an Expense Report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000121";
         const owner = "50000000-0000-4000-8000-000000000023";

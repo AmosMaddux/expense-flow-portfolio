@@ -7,7 +7,7 @@
     "scripts": {
         "build": "tsc --build",
         "openapi:generate": "npm run build --workspaces=false && node dist/openapi/write-openapi.js && prettier --write ../../docs/openapi/core-case-service.openapi.json",
-        "pact:generate": "vitest run --project unit src/glCoding/glCodingClient.pact.test.ts && prettier --write ../../pacts/*.json",
+        "pact:generate": "PACT_OUTPUT_DIR=../../pacts vitest run --project unit src/glCoding/glCodingClient.pact.test.ts && prettier --write ../../pacts/*.json",
         "pact:publish": ": \"${PACT_BROKER_BASE_URL:?PACT_BROKER_BASE_URL is required}\" && : \"${PACT_CONSUMER_VERSION:?PACT_CONSUMER_VERSION is required}\" && npm run pact:generate --workspaces=false && pact-broker publish ../../pacts --consumer-app-version=\"$PACT_CONSUMER_VERSION\" --auto-detect-version-properties --broker-base-url=\"$PACT_BROKER_BASE_URL\"",
         "test": "npm run build --workspaces=false && vitest run"
     },

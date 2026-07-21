@@ -6,6 +6,7 @@ import {
     BadGatewayError,
     ConflictError,
     ConfigurationError,
+    ForbiddenError,
     NotFoundError,
 } from "../../errors/problem-json.js";
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
@@ -15,19 +16,26 @@ import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
+    clearExpenseReportFlags as clearExpenseReportFlagsInStore,
     findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
+    insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
+    insertDeniedWorkflowTransitionAttempt,
     readDraftSubmissionSources,
     submitDraftExpenseReport,
+    transitionExpenseReportStage as transitionExpenseReportStageInStore,
 } from "../repository/expenseReportRepository.js";
+import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
     AuditEntryOutboundResponseSchema,
     type AuditEntryResponse,
+    type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
+    type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
 
 /**
@@ -173,6 +181,8 @@ export async function submitExpenseReport(request: {
             );
         }
 
+        await invalidateCachedCaseQueueStageRollups(request.tenantId);
+
         return toExpenseReportResponse(report);
     } catch (error: unknown) {
         if (error instanceof GlCodingServiceError) {
@@ -187,6 +197,109 @@ export async function submitExpenseReport(request: {
     }
 }
 
+/**
+ * Clears reviewed line-item flags for an Expense Report.
+ */
+export async function clearExpenseReportFlags(
+    request: ClearExpenseReportFlagsRequest & {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+    },
+): Promise<{ clearedFlagCount: number }> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        await insertDeniedFlagClearAuditEntry({
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actorId,
+            outcomeReason:
+                "Authenticated role is not permitted to clear line-item flags.",
+        });
+        throw new ForbiddenError();
+    }
+
+    const clearResult = await clearExpenseReportFlagsInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        actorId: request.actorId,
+        sourceIds: request.sourceIds,
+        reason: request.reason,
+    });
+
+    if (clearResult.kind === "not_found") {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (clearResult.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Line-item flags can only be cleared during Manager Approval; Expense Report is in ${clearResult.currentStage}.`,
+        );
+    }
+
+    return { clearedFlagCount: clearResult.clearedFlagCount };
+}
+
+/**
+ * Applies role, sequence, and flag guards before moving an Expense Report stage.
+ */
+export async function transitionExpenseReportWorkflow(
+    request: TransitionExpenseReportWorkflowRequest & {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+    },
+): Promise<ExpenseReportResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        await insertDeniedWorkflowTransitionAttempt({
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actorId,
+            toStage: request.toStage,
+            denialReason:
+                "Authenticated role is not permitted to transition Expense Reports.",
+        });
+        throw new ForbiddenError();
+    }
+
+    const didTransition = await transitionExpenseReportStageInStore({
+        tenantId: request.tenantId,
+        id: request.id,
+        actor: request.actorId,
+        fromStage: report.currentStage as ExpenseReportStage,
+        toStage: request.toStage,
+        reason: request.reason,
+    });
+
+    if (!didTransition) {
+        throw new ConflictError(
+            `Expense Report cannot transition from ${report.currentStage} to ${request.toStage}.`,
+        );
+    }
+
+    await invalidateCachedCaseQueueStageRollups(request.tenantId);
+
+    const transitionedReport = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+    );
+    if (transitionedReport === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    return toExpenseReportResponse(transitionedReport);
+}
 /**
  * Reads the tenant-scoped audit trail entries for an Expense Report case.
  */
@@ -221,8 +334,17 @@ export async function readExpenseReportAuditEntries(
             stageBeforeAction: entry.stageBeforeAction,
             stageAfterProposedAction: entry.stageAfterProposedAction,
             denialReason: entry.denialReason,
+            outcomeReason: entry.outcomeReason,
             createdAt: entry.createdAt,
         }),
+    );
+}
+
+type ExpenseReportStage = ExpenseReportResponse["currentStage"];
+
+function canReviewWorkflow(roles: RoleName[]): boolean {
+    return roles.some(
+        (role) => role === "Department Manager" || role === "Finance Admin",
     );
 }
 

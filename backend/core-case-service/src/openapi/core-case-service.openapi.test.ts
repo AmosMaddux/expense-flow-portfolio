@@ -19,10 +19,13 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const flagClearPath =
+            document.paths?.["/v1/expense-reports/{id}/flags/clear"];
 
         expect(expenseReportsPath?.post).toBeDefined();
         expect(expenseReportByIdPath?.get).toBeDefined();
         expect(expenseReportSubmitPath?.post).toBeDefined();
+        expect(flagClearPath?.post).toBeDefined();
         expect(auditEntriesPath?.get).toBeDefined();
     });
 
@@ -96,6 +99,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const flagClearPath =
+            document.paths?.["/v1/expense-reports/{id}/flags/clear"];
 
         expect(document.components?.securitySchemes?.bearerAuth).toMatchObject({
             type: "http",
@@ -114,6 +119,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportSubmitPath?.post?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(flagClearPath?.post?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(caseQueueRollupsPath?.get?.responses?.[401]).toBeDefined();
         expect(caseQueueRollupsPath?.get?.responses?.[403]).toBeDefined();
         expect(auditEntriesPath?.get?.security).toStrictEqual([
@@ -125,6 +133,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportByIdPath?.get?.responses?.[403]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[403]).toBeDefined();
+        expect(flagClearPath?.post?.responses?.[401]).toBeDefined();
+        expect(flagClearPath?.post?.responses?.[403]).toBeDefined();
         expect(auditEntriesPath?.get?.responses?.[401]).toBeDefined();
         expect(auditEntriesPath?.get?.responses?.[403]).toBeDefined();
     });
@@ -134,8 +144,11 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const flagClearPath =
+            document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const parameter = expenseReportByIdPath?.get?.parameters?.[0];
         const auditParameter = auditEntriesPath?.get?.parameters?.[0];
+        const flagClearParameter = flagClearPath?.post?.parameters?.[0];
 
         expect(parameter).toMatchObject({
             in: "path",
@@ -147,6 +160,15 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             },
         });
         expect(auditParameter).toMatchObject({
+            in: "path",
+            name: "id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
+        expect(flagClearParameter).toMatchObject({
             in: "path",
             name: "id",
             required: true,
@@ -215,6 +237,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const flagClearPath =
+            document.paths?.["/v1/expense-reports/{id}/flags/clear"];
 
         expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[201]),
@@ -228,6 +252,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(auditEntriesPath?.get?.responses?.[200]),
         ).toContain("#/components/schemas/AuditEntryListResponse");
+        expect(JSON.stringify(flagClearPath?.post?.responses?.[200])).toContain(
+            "#/components/schemas/ClearExpenseReportFlagsResponse",
+        );
     });
 
     void test("documents reusable tenant rate-limit headers and 429 responses", () => {
@@ -257,6 +284,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const flagClearPath =
+            document.paths?.["/v1/expense-reports/{id}/flags/clear"];
 
         expect(
             JSON.stringify(expenseReportsPath?.post?.responses?.[400]),
@@ -267,6 +296,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(expenseReportSubmitPath?.post?.responses?.[409]),
         ).toContain("#/components/schemas/ProblemJson");
+        expect(JSON.stringify(flagClearPath?.post?.responses?.[409])).toContain(
+            "#/components/schemas/ProblemJson",
+        );
         expect(
             JSON.stringify(expenseReportSubmitPath?.post?.responses?.[502]),
         ).toContain("#/components/schemas/ProblemJson");

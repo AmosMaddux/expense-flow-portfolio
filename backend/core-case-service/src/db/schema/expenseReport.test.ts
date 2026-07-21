@@ -299,6 +299,7 @@ void describe("auditEntry schema", () => {
         }
 
         expect(columnNames).toContain("denial_reason");
+        expect(columnNames).toContain("outcome_reason");
 
         for (const columnName of auditEntryRequiredColumnNames) {
             const column = tableConfig.columns.find(
@@ -388,6 +389,7 @@ void describe("auditEntry schema", () => {
         }
 
         expect(migrationSql).toContain("denial_reason");
+        expect(migrationSql).toContain("outcome_reason");
 
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
@@ -395,13 +397,14 @@ void describe("auditEntry schema", () => {
         expect(migrationSql.includes("audit_entry_action_check")).toBeFalsy();
         expect(migrationSql).toContain("audit_entry_denial_reason_check");
         expect(migrationSql).toContain('"action" text not null');
-        expect(migrationSql).toContain("transition_approved");
         expect(migrationSql).toContain("transition_denied");
+        expect(migrationSql).toContain("transition_sent_back");
+        expect(migrationSql).toContain("line_item_flags_cleared");
         expect(migrationSql).toContain(
             `"audit_entry"."action" <> 'transition_denied' or nullif(btrim("audit_entry"."denial_reason"), '') is not null`,
         );
         expect(migrationSql).toContain(
-            `"audit_entry"."action" <> 'transition_approved' or "audit_entry"."denial_reason" is null`,
+            `"audit_entry"."action" = 'transition_denied' or "audit_entry"."denial_reason" is null`,
         );
         expect(migrationSql).toContain('"stage_before_action" text not null');
         expect(migrationSql).toContain(
@@ -784,7 +787,11 @@ void describe("stageTransition schema", () => {
                     ? `${fromStage}->${toStage}`
                     : `${fromStage}->${toStage}:${reason}`;
 
-            return validTransitions.has(transitionKey);
+            return (
+                validTransitions.has(transitionKey) ||
+                (fromStage === toStage &&
+                    reason?.startsWith("transition_denied:") === true)
+            );
         };
 
         expect(
@@ -796,6 +803,13 @@ void describe("stageTransition schema", () => {
         expect(isValidTransition("Paid", "Reconciled")).toBeTruthy();
         expect(isValidTransition("Manager Approval", "Drafted")).toBeTruthy();
         expect(isValidTransition("AP Review", "Drafted")).toBeTruthy();
+        expect(
+            isValidTransition(
+                "Submitted",
+                "Submitted",
+                "transition_denied: Authenticated role is not permitted.",
+            ),
+        ).toBeTruthy();
         expect(isValidTransition("Paid", "Manager Approval")).toBeFalsy();
         expect(isValidTransition("Submitted", "Drafted")).toBeFalsy();
         expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
@@ -804,6 +818,13 @@ void describe("stageTransition schema", () => {
         expect(isValidTransition("Drafted", "Drafted")).toBeFalsy();
         expect(
             isValidTransition("Drafted", "Drafted", "manual_update"),
+        ).toBeFalsy();
+        expect(
+            isValidTransition(
+                "Drafted",
+                "Submitted",
+                "transition_denied: blocked",
+            ),
         ).toBeFalsy();
     });
 
@@ -838,6 +859,7 @@ void describe("stageTransition schema", () => {
         expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
+        expect(migrationSql).toContain("transition_denied:%");
         expect(migrationSql).toContain("report_created");
         expect(migrationSql).toContain("manager approval");
         expect(migrationSql).toContain("ap review");

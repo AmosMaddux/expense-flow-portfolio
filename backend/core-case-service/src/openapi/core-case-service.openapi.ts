@@ -9,10 +9,12 @@ import { z } from "zod";
 import {
     CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
+    ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
+    TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -58,6 +60,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const submitExpenseReportRequest = registry.register(
         "SubmitExpenseReportRequest",
         SubmitExpenseReportInboundRequestSchema,
+    );
+    const transitionExpenseReportWorkflowRequest = registry.register(
+        "TransitionExpenseReportWorkflowRequest",
+        TransitionExpenseReportWorkflowInboundRequestSchema,
+    );
+    const clearExpenseReportFlagsRequest = registry.register(
+        "ClearExpenseReportFlagsRequest",
+        ClearExpenseReportFlagsInboundRequestSchema,
+    );
+    const clearExpenseReportFlagsResponse = registry.register(
+        "ClearExpenseReportFlagsResponse",
+        z.object({ clearedFlagCount: z.number().int().nonnegative() }),
     );
     const readCaseQueueStageRollupsRequest = registry.register(
         "ReadCaseQueueStageRollupsRequest",
@@ -289,6 +303,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
+
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -341,6 +356,85 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/transitions",
+        summary: "Transition an Expense Report",
+        description:
+            "Applies role, current-stage, and Manager Approval flag guards before advancing or sending an Expense Report back to Drafted.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: transitionExpenseReportWorkflowRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report transitioned.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed transition request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Expense Report cannot transition from its current stage or has uncleared flags.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/flags/clear",
+        summary: "Clear reviewed Expense Report flags",
+        description:
+            "Clears reviewed over-threshold line-item flags so Manager Approval can advance after the final flag is cleared.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: clearExpenseReportFlagsRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report flags cleared.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: clearExpenseReportFlagsResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed flag-clear request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Line-item flags can only be cleared during Manager Approval.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
     registry.registerPath({
         method: "get",
         path: "/v1/expense-reports/{id}/audit-entries",

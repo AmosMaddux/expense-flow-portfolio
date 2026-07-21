@@ -5,9 +5,18 @@ const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../repository/expenseReportRepository.js", () => ({
+    buildSubmissionSourceFingerprint: vi.fn(),
+    buildSubmissionSourceKeys: vi.fn(),
+    clearExpenseReportFlags: vi.fn(),
+    countOpenExpenseReportFlags: vi.fn(),
     findAuditEntriesByExpenseReportId: findAuditEntriesByExpenseReportIdMock,
     findExpenseReportById: findExpenseReportByIdMock,
+    insertDeniedSubmissionAuditEntry: vi.fn(),
+    insertDeniedWorkflowTransitionAttempt: vi.fn(),
     insertDraftExpenseReport: vi.fn(),
+    readDraftSubmissionSources: vi.fn(),
+    submitDraftExpenseReport: vi.fn(),
+    transitionExpenseReportStage: vi.fn(),
 }));
 
 import { readExpenseReportAuditEntries } from "./expenseReportService.js";
@@ -27,6 +36,7 @@ void describe("Expense Report service audit responses", () => {
                 actorId: "60000000-0000-4000-8000-000000000801",
                 createdAt: new Date("2026-08-01T12:00:00.000Z"),
                 denialReason: null,
+                outcomeReason: null,
                 expenseReportId,
                 id: "70000000-0000-4000-8000-000000000801",
                 stageAfterProposedAction: "Drafted",

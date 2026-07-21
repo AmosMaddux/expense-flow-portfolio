@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -21,10 +21,18 @@ import type { TransitionExpenseReportStageRequest } from "../dto/expenseReportDt
 
 export const expenseReportCreatedReason = "report_created";
 export const expenseReportSubmittedReason = "report_submitted";
+export const transitionDeniedReasonPrefix = "transition_denied:";
+export const unclearedFlagTransitionDenialReason =
+    "Expense Report has uncleared over-threshold line-item flags.";
 
 type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
 type SubmissionSourceFingerprint = string;
+
+type ClearExpenseReportFlagsResult =
+    | { kind: "cleared"; clearedFlagCount: number }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
 
 const validTransitionEdges = new Set<string>([
     "Drafted->Submitted",
@@ -328,7 +336,7 @@ export async function insertDeniedSubmissionAuditEntry(
             return false;
         }
 
-        await writeTransitionAuditEntry(
+        await writeDeniedTransitionLog(
             transaction,
             {
                 tenantId,
@@ -339,11 +347,172 @@ export async function insertDeniedSubmissionAuditEntry(
                 reason: expenseReportSubmittedReason,
             },
             report.currentStage as ExpenseReportStage,
-            "transition_denied",
             denialReason,
         );
 
         return true;
+    });
+}
+
+/**
+ * Records a denied workflow transition attempt without changing the report stage.
+ */
+export async function insertDeniedWorkflowTransitionAttempt(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    toStage: ExpenseReportStage;
+    denialReason: string;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+
+        if (report === undefined) {
+            return false;
+        }
+
+        await writeDeniedTransitionLog(
+            transaction,
+            {
+                tenantId: request.tenantId,
+                id: request.id,
+                actor: request.actor,
+                fromStage: report.currentStage,
+                toStage: request.toStage,
+                reason: transitionDeniedReasonPrefix,
+            },
+            report.currentStage,
+            request.denialReason,
+        );
+
+        return true;
+    });
+}
+
+/**
+ * Records a denied flag-clear attempt without writing a workflow transition row.
+ */
+export async function insertDeniedFlagClearAuditEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    actorId: string;
+    outcomeReason: string;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return false;
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "line_item_flags_clear_denied",
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: request.outcomeReason,
+        });
+
+        return true;
+    });
+}
+/**
+ * Counts uncleared line-item flags on an Expense Report.
+ */
+export async function countOpenExpenseReportFlags(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<number> {
+    return db.transaction(async (transaction) =>
+        countOpenExpenseReportFlagsInTransaction(
+            transaction,
+            tenantId,
+            expenseReportId,
+        ),
+    );
+}
+
+/**
+ * Clears line-item flags so Manager Approval can advance after review.
+ */
+export async function clearExpenseReportFlags(request: {
+    tenantId: string;
+    expenseReportId: string;
+    actorId: string;
+    sourceIds: string[];
+    reason: string;
+}): Promise<ClearExpenseReportFlagsResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage !== "Manager Approval") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        const latestSubmissionId = await readLatestSubmissionId(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+
+        if (latestSubmissionId === undefined) {
+            return { kind: "cleared", clearedFlagCount: 0 };
+        }
+
+        const clearedRows = await transaction
+            .update(glCodingResult)
+            .set({
+                flaggedLineItem: false,
+                flagCode: null,
+                flagMessage: null,
+            })
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, request.tenantId),
+                    eq(glCodingResult.expenseReportId, request.expenseReportId),
+                    eq(glCodingResult.sourceType, "line_item"),
+                    eq(glCodingResult.flaggedLineItem, true),
+                    inArray(glCodingResult.sourceId, request.sourceIds),
+                    eq(glCodingResult.submissionId, latestSubmissionId),
+                ),
+            )
+            .returning({ id: glCodingResult.id });
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "line_item_flags_cleared",
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: request.reason,
+        });
+
+        return { kind: "cleared", clearedFlagCount: clearedRows.length };
     });
 }
 
@@ -354,21 +523,13 @@ export async function transitionExpenseReportStage(
     request: TransitionExpenseReportStageRequest,
 ): Promise<boolean> {
     return db.transaction(async (transaction) => {
-        const currentReport = await transaction
-            .select({
-                currentStage: expenseReport.currentStage,
-            })
-            .from(expenseReport)
-            .where(
-                and(
-                    eq(expenseReport.tenantId, request.tenantId),
-                    eq(expenseReport.id, request.id),
-                ),
-            )
-            .limit(1);
-        const currentStage = currentReport[0]?.currentStage as
-            | ExpenseReportStage
-            | undefined;
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+        const currentStage = report?.currentStage;
 
         if (currentStage === undefined) {
             return false;
@@ -378,15 +539,34 @@ export async function transitionExpenseReportStage(
             !isValidTransitionEdge(request) ||
             currentStage !== request.fromStage
         ) {
-            await writeTransitionAuditEntry(
+            await writeDeniedTransitionLog(
                 transaction,
                 request,
                 currentStage,
-                "transition_denied",
                 buildTransitionDenialReason(request, currentStage),
             );
 
             return false;
+        }
+
+        if (isManagerApprovalFlagGate(request)) {
+            const openFlagCount =
+                await countOpenExpenseReportFlagsInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.id,
+                );
+
+            if (openFlagCount > 0) {
+                await writeDeniedTransitionLog(
+                    transaction,
+                    request,
+                    currentStage,
+                    unclearedFlagTransitionDenialReason,
+                );
+
+                return false;
+            }
         }
 
         const transitionedReports = await transaction
@@ -405,11 +585,10 @@ export async function transitionExpenseReportStage(
             .returning({ id: expenseReport.id });
 
         if (transitionedReports.length === 0) {
-            await writeTransitionAuditEntry(
+            await writeDeniedTransitionLog(
                 transaction,
                 request,
                 currentStage,
-                "transition_denied",
                 buildTransitionDenialReason(request, currentStage),
             );
 
@@ -420,7 +599,11 @@ export async function transitionExpenseReportStage(
             transaction,
             request,
             currentStage,
-            "transition_approved",
+            isSendBackTransition(request)
+                ? "transition_sent_back"
+                : "transition_approved",
+            undefined,
+            isSendBackTransition(request) ? request.reason : undefined,
         );
         await transaction.insert(stageTransition).values({
             expenseReportId: request.id,
@@ -493,12 +676,67 @@ export function buildSubmissionSourceFingerprint(sources: {
 
 type TransactionContext = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+async function readCurrentReportForTransition(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+    lockForUpdate = false,
+): Promise<{ currentStage: ExpenseReportStage } | undefined> {
+    const query = transaction
+        .select({
+            currentStage: expenseReport.currentStage,
+        })
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.id, expenseReportId),
+            ),
+        )
+        .limit(1);
+    const currentReport = lockForUpdate
+        ? await query.for("update")
+        : await query;
+    const currentStage = currentReport[0]?.currentStage as
+        | ExpenseReportStage
+        | undefined;
+
+    return currentStage === undefined ? undefined : { currentStage };
+}
+
+async function writeDeniedTransitionLog(
+    transaction: TransactionContext,
+    request: TransitionExpenseReportStageRequest,
+    stageBeforeAction: ExpenseReportStage,
+    denialReason: string,
+): Promise<void> {
+    await writeTransitionAuditEntry(
+        transaction,
+        request,
+        stageBeforeAction,
+        "transition_denied",
+        denialReason,
+    );
+    await transaction.insert(stageTransition).values({
+        expenseReportId: request.id,
+        tenantId: request.tenantId,
+        fromStage: stageBeforeAction,
+        toStage: stageBeforeAction,
+        actor: request.actor,
+        reason: `${transitionDeniedReasonPrefix} ${denialReason}`,
+    });
+}
+
 async function writeTransitionAuditEntry(
     transaction: TransactionContext,
     request: TransitionExpenseReportStageRequest,
     stageBeforeAction: ExpenseReportStage,
-    action: "transition_approved" | "transition_denied",
+    action:
+        | "transition_approved"
+        | "transition_denied"
+        | "transition_sent_back",
     denialReason?: string,
+    outcomeReason?: string,
 ): Promise<void> {
     await transaction.insert(auditEntry).values({
         tenantId: request.tenantId,
@@ -508,7 +746,78 @@ async function writeTransitionAuditEntry(
         stageBeforeAction,
         stageAfterProposedAction: request.toStage,
         denialReason,
+        outcomeReason,
     });
+}
+
+async function countOpenExpenseReportFlagsInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<number> {
+    const latestSubmissionId = await readLatestSubmissionId(
+        transaction,
+        tenantId,
+        expenseReportId,
+    );
+
+    if (latestSubmissionId === undefined) {
+        return 0;
+    }
+
+    const rows = await transaction
+        .select({ id: glCodingResult.id })
+        .from(glCodingResult)
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.submissionId, latestSubmissionId),
+                eq(glCodingResult.sourceType, "line_item"),
+                eq(glCodingResult.flaggedLineItem, true),
+            ),
+        );
+
+    return rows.length;
+}
+
+async function readLatestSubmissionId(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<string | undefined> {
+    const rows = await transaction
+        .select({ submissionId: glCodingResult.submissionId })
+        .from(glCodingResult)
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id))
+        .limit(1);
+
+    return rows[0]?.submissionId;
+}
+
+function isManagerApprovalFlagGate(
+    request: TransitionExpenseReportStageRequest,
+): boolean {
+    return (
+        request.fromStage === "Manager Approval" &&
+        request.toStage === "AP Review"
+    );
+}
+
+function isSendBackTransition(
+    request: TransitionExpenseReportStageRequest,
+): boolean {
+    return (
+        request.toStage === "Drafted" &&
+        (request.fromStage === "Manager Approval" ||
+            request.fromStage === "AP Review")
+    );
 }
 
 function isValidTransitionEdge(
