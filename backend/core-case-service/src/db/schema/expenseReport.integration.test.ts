@@ -110,7 +110,7 @@ void describe("audit entry sequence migration", () => {
                 ],
             );
 
-            await applyMigrationRange(client, 14, 14);
+            await applyMigrationRange(client, 14, 15);
 
             const migratedAuditEntries = await client.query(
                 `SELECT "id", "sequence" FROM "audit_entry" ORDER BY "sequence"`,

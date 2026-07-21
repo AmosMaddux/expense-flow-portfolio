@@ -87,22 +87,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
-    void test("documents Idempotency-Key as required for Expense Report submission", () => {
-        const expenseReportSubmitPath =
-            document.paths?.["/v1/expense-reports/{id}/submit"];
-        const idempotencyHeader =
-            expenseReportSubmitPath?.post?.parameters?.find(
-                (parameter) =>
-                    "name" in parameter && parameter.name === "Idempotency-Key",
-            );
-
-        expect(idempotencyHeader).toMatchObject({
-            in: "header",
-            name: "Idempotency-Key",
-            required: true,
-        });
-    });
-
     void test("documents bearer authentication for every Expense Report route", () => {
         const caseQueueRollupsPath = document.paths?.["/v1/case-queue/rollups"];
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];

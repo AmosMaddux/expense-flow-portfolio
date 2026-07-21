@@ -222,6 +222,7 @@ void describe("runIdempotentSubmission", () => {
 
             expect(result).toEqual({
                 body: { id: "created-report" },
+                replayed: false,
                 statusCode: 201,
             });
             expect(store.saveResult).toHaveBeenCalledOnce();

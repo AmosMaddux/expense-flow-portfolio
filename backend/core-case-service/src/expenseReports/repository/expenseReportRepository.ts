@@ -53,23 +53,6 @@ export type SubmissionSources = {
     }>;
 };
 
-export type SubmissionSources = {
-    report: ExpenseReport;
-    lineItems: Array<{
-        id: string;
-        merchant: string;
-        amount: string;
-        currency: string;
-        category: string;
-    }>;
-    mileageEntries: Array<{
-        id: string;
-        route: string;
-        distance: string;
-        mileageDate: string;
-    }>;
-};
-
 type AuditEntryWriteClient = Pick<typeof db, "insert">;
 
 type ExpenseReportTransaction = Parameters<

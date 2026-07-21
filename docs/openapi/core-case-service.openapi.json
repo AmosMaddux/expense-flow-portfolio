@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {
     "openapi": "3.1.0",
     "info": {
@@ -87,6 +86,74 @@
             }
         },
         "schemas": {
+            "AuditEntryListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "tenantId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "actorId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "action": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "stageBeforeAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "stageAfterProposedAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "denialReason": {
+                            "type": ["string", "null"]
+                        },
+                        "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "tenantId",
+                        "expenseReportId",
+                        "actorId",
+                        "action",
+                        "stageBeforeAction",
+                        "stageAfterProposedAction",
+                        "denialReason",
+                        "createdAt"
+                    ]
+                }
+            },
             "CaseQueueStageRollupList": {
                 "type": "array",
                 "items": {
@@ -699,21 +766,10 @@
                 }
             }
         },
-<<<<<<< HEAD
-<<<<<<< HEAD
         "/v1/expense-reports/{id}/submit": {
             "post": {
                 "summary": "Submit an Expense Report",
                 "description": "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
-=======
-        "/expense-reports/{id}/audit-entries": {
-=======
-        "/v1/expense-reports/{id}/audit-entries": {
->>>>>>> 13328ff (fix: reversion routes)
-            "get": {
-                "summary": "List Expense Report audit entries",
-                "description": "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
->>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                 "security": [
                     {
                         "bearerAuth": []
@@ -728,7 +784,6 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
-<<<<<<< HEAD
                     },
                     {
                         "schema": {
@@ -783,17 +838,6 @@
                             "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemJson"
-=======
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Audit entries found for the Expense Report.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/AuditEntryListResponse"
->>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                                 }
                             }
                         }
@@ -828,7 +872,6 @@
                             }
                         }
                     },
-<<<<<<< HEAD
                     "409": {
                         "description": "Only Drafted Expense Reports can be submitted.",
                         "content": {
@@ -842,8 +885,6 @@
                     "429": {
                         "$ref": "#/components/responses/RateLimitExceeded"
                     },
-=======
->>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -853,711 +894,9 @@
                                 }
                             }
                         }
-<<<<<<< HEAD
                     },
                     "502": {
                         "description": "GL-coding service request failed.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-=======
->>>>>>> 3ec0215 (feat: write auit entries for every state changing call)
-                    }
-                }
-            }
-        }
-    },
-    "webhooks": {}
-}
-=======
-{
-    "openapi": "3.1.0",
-    "info": {
-        "title": "ExpenseFlow Core Case Service API v1",
-        "version": "1.0.0",
-        "description": "Version 1 contract for Core Case Service endpoints. Fields are never removed or changed silently within v1: a field is first marked deprecated with a migration note and remains supported until a future API version. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted."
-    },
-    "servers": [
-        {
-            "url": "http://localhost:3000",
-            "description": "Local development server"
-        }
-    ],
-    "components": {
-        "securitySchemes": {
-            "bearerAuth": {
-                "type": "http",
-                "scheme": "bearer",
-                "bearerFormat": "JWT"
-            }
-        },
-        "headers": {
-            "RateLimitLimit": {
-                "description": "Maximum tenant requests in the current window.",
-                "schema": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            },
-            "RateLimitRemaining": {
-                "description": "Tenant requests remaining in the current window.",
-                "schema": {
-                    "type": "integer",
-                    "minimum": 0
-                }
-            },
-            "RateLimitReset": {
-                "description": "Seconds until the current tenant window resets.",
-                "schema": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            },
-            "RateLimitCost": {
-                "description": "Request units charged for this API call.",
-                "schema": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            },
-            "RetryAfter": {
-                "description": "Seconds until the tenant may retry the request.",
-                "schema": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
-        "responses": {
-            "RateLimitExceeded": {
-                "description": "The authenticated tenant request limit was exceeded.",
-                "headers": {
-                    "RateLimit-Limit": {
-                        "$ref": "#/components/headers/RateLimitLimit"
-                    },
-                    "RateLimit-Remaining": {
-                        "$ref": "#/components/headers/RateLimitRemaining"
-                    },
-                    "RateLimit-Reset": {
-                        "$ref": "#/components/headers/RateLimitReset"
-                    },
-                    "X-RateLimit-Cost": {
-                        "$ref": "#/components/headers/RateLimitCost"
-                    },
-                    "Retry-After": {
-                        "$ref": "#/components/headers/RetryAfter"
-                    }
-                },
-                "content": {
-                    "application/problem+json": {
-                        "schema": {
-                            "$ref": "#/components/schemas/ProblemJson"
-                        }
-                    }
-                }
-            }
-        },
-        "schemas": {
-            "CaseQueueStageRollupList": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "currentStage": {
-                            "type": "string",
-                            "enum": [
-                                "Drafted",
-                                "Submitted",
-                                "Manager Approval",
-                                "AP Review",
-                                "Paid",
-                                "Reconciled"
-                            ]
-                        },
-                        "reportCount": {
-                            "type": "integer",
-                            "minimum": 0
-                        },
-                        "overdueCount": {
-                            "type": "integer",
-                            "minimum": 0
-                        }
-                    },
-                    "required": ["currentStage", "reportCount", "overdueCount"]
-                }
-            },
-            "CreateExpenseReportRequest": {
-                "type": "object",
-                "properties": {
-                    "owner": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "dueDate": {
-                        "type": "string",
-                        "format": "date"
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["Low", "Normal", "High", "Urgent"],
-                        "default": "Normal"
-                    }
-                },
-                "required": ["owner", "dueDate"],
-                "additionalProperties": false
-            },
-            "ExpenseReportResponse": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "owner": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "dueDate": {
-                        "type": "string",
-                        "format": "date"
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["Low", "Normal", "High", "Urgent"]
-                    },
-                    "currentStage": {
-                        "type": "string",
-                        "enum": [
-                            "Drafted",
-                            "Submitted",
-                            "Manager Approval",
-                            "AP Review",
-                            "Paid",
-                            "Reconciled"
-                        ]
-                    },
-                    "onHold": {
-                        "type": "boolean"
-                    },
-                    "holdReason": {
-                        "type": ["string", "null"]
-                    },
-                    "createdAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "updatedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                },
-                "required": [
-                    "id",
-                    "tenantId",
-                    "owner",
-                    "dueDate",
-                    "priority",
-                    "currentStage",
-                    "onHold",
-                    "holdReason",
-                    "createdAt",
-                    "updatedAt"
-                ]
-            },
-            "LoginRequest": {
-                "type": "object",
-                "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "email": {
-                        "type": "string",
-                        "format": "email"
-                    },
-                    "password": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "totpCode": {
-                        "type": "string"
-                    }
-                },
-                "required": ["tenantId", "email", "password"]
-            },
-            "LoginResponse": {
-                "type": "object",
-                "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "userId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "accessToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "accessTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                },
-                "required": [
-                    "tenantId",
-                    "userId",
-                    "accessToken",
-                    "accessTokenExpiresAt",
-                    "refreshToken",
-                    "refreshTokenExpiresAt"
-                ]
-            },
-            "MfaEnrollmentRequest": {
-                "type": "object",
-                "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "userId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "email": {
-                        "type": "string",
-                        "format": "email"
-                    }
-                },
-                "required": ["tenantId", "userId", "email"]
-            },
-            "MfaEnrollmentResponse": {
-                "type": "object",
-                "properties": {
-                    "provisioningUri": {
-                        "type": "string"
-                    }
-                },
-                "required": ["provisioningUri"]
-            },
-            "ProblemJson": {
-                "type": "object",
-                "properties": {
-                    "type": {
-                        "type": "string"
-                    },
-                    "title": {
-                        "type": "string"
-                    },
-                    "status": {
-                        "type": "integer"
-                    },
-                    "detail": {
-                        "type": "string"
-                    },
-                    "instance": {
-                        "type": "string"
-                    }
-                },
-                "required": ["type", "title", "status", "detail", "instance"]
-            },
-            "ReadCaseQueueStageRollupsRequest": {
-                "type": "object",
-                "properties": {
-                    "asOfDate": {
-                        "type": "string",
-                        "format": "date"
-                    }
-                },
-                "required": ["asOfDate"]
-            }
-        },
-        "parameters": {}
-    },
-    "paths": {
-        "/v1/case-queue/rollups": {
-            "get": {
-                "summary": "Get Case Queue rollups",
-                "description": "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "date"
-                        },
-                        "required": true,
-                        "name": "asOfDate",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Case Queue rollups found.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/CaseQueueStageRollupList"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed rollup request.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid bearer access token.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Authenticated user is not permitted.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Unexpected server error.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/auth/login": {
-            "post": {
-                "summary": "Authenticate with email, password, and optional TOTP MFA",
-                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/LoginRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Login succeeded and tokens were issued.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/LoginResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed login request.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Invalid credentials or MFA code."
-                    },
-                    "500": {
-                        "description": "Unexpected server error.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/auth/mfa/enroll": {
-            "post": {
-                "summary": "Enroll TOTP MFA",
-                "description": "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/MfaEnrollmentRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "TOTP MFA enrollment created.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/MfaEnrollmentResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed MFA enrollment request.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Unexpected server error.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/expense-reports": {
-            "post": {
-                "summary": "Create an Expense Report",
-                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "maxLength": 128,
-                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
-                        },
-                        "required": true,
-                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
-                        "name": "Idempotency-Key",
-                        "in": "header"
-                    }
-                ],
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/CreateExpenseReportRequest"
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "201": {
-                        "description": "Expense Report created.",
-                        "headers": {
-                            "RateLimit-Limit": {
-                                "$ref": "#/components/headers/RateLimitLimit"
-                            },
-                            "RateLimit-Remaining": {
-                                "$ref": "#/components/headers/RateLimitRemaining"
-                            },
-                            "RateLimit-Reset": {
-                                "$ref": "#/components/headers/RateLimitReset"
-                            },
-                            "X-RateLimit-Cost": {
-                                "$ref": "#/components/headers/RateLimitCost"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ExpenseReportResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed create request.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Valid access token required.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Authenticated role is not permitted.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Submission with this idempotency key is already in progress.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimitExceeded"
-                    },
-                    "500": {
-                        "description": "Unexpected server error.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/expense-reports/{id}": {
-            "get": {
-                "summary": "Get an Expense Report",
-                "description": "Loads an Expense Report case by identifier within the authenticated tenant.",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "id",
-                        "in": "path"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Expense Report found.",
-                        "headers": {
-                            "RateLimit-Limit": {
-                                "$ref": "#/components/headers/RateLimitLimit"
-                            },
-                            "RateLimit-Remaining": {
-                                "$ref": "#/components/headers/RateLimitRemaining"
-                            },
-                            "RateLimit-Reset": {
-                                "$ref": "#/components/headers/RateLimitReset"
-                            },
-                            "X-RateLimit-Cost": {
-                                "$ref": "#/components/headers/RateLimitCost"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ExpenseReportResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Valid access token required.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Authenticated role is not permitted.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Expense Report not found.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimitExceeded"
-                    },
-                    "500": {
-                        "description": "Unexpected server error.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -1646,4 +985,3 @@
     },
     "webhooks": {}
 }
->>>>>>> 6a077ff (feature: redact receipt PII)

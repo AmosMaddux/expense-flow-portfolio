@@ -28,7 +28,7 @@ export async function runIdempotentSubmission<TBody>({
     requestHash,
     store,
     tenantId,
-}: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotencyResult> {
+}: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotentSubmissionRunResult> {
     const cached = await getResultForRequest(
         store,
         tenantId,

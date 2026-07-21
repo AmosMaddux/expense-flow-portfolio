@@ -114,19 +114,6 @@ export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
 
-export const readCaseQueueStageRollupsRequestSchema =
-    ReadCaseQueueStageRollupsInboundRequestSchema;
-
-export const readCaseQueueStageRollupsQuerySchema =
-    ReadCaseQueueStageRollupsQuerySchema;
-
-export const transitionExpenseReportStageRequestSchema =
-    TransitionExpenseReportStageInboundRequestSchema;
-
-export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
-
-export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
-
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
