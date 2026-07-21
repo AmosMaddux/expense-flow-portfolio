@@ -42,6 +42,7 @@ v1Router.use(
     ),
 );
 v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use("/case-queue", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use(
     "/expense-reports",
     createTenantRateLimitMiddleware(
@@ -49,7 +50,15 @@ v1Router.use(
         createPostgresTenantRateLimitStore(db),
     ),
 );
+v1Router.use(
+    "/case-queue",
+    createTenantRateLimitMiddleware(
+        loadRateLimitConfig(),
+        createPostgresTenantRateLimitStore(db),
+    ),
+);
 v1Router.use("/expense-reports", express.json());
+v1Router.use("/case-queue", express.json());
 v1Router.use("/", expenseReportRouter);
 
 /**

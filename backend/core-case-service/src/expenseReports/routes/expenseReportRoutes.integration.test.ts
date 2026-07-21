@@ -203,6 +203,9 @@ void describe("Expense Report routes", () => {
         };
 
         expect(createResponse.status).toBe(201);
+        expect(createResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(createResponse.headers.get("ratelimit-remaining")).toBe("1");
+        expect(createResponse.headers.get("x-ratelimit-cost")).toBe("1");
         expect(created.id).toEqual(expect.any(String));
         expect(created).toMatchObject({
             tenantId,
@@ -230,6 +233,9 @@ void describe("Expense Report routes", () => {
         };
 
         expect(readResponse.status).toBe(200);
+        expect(readResponse.headers.get("ratelimit-limit")).toBe("2");
+        expect(readResponse.headers.get("ratelimit-remaining")).toBe("0");
+        expect(readResponse.headers.get("x-ratelimit-cost")).toBe("1");
         expect(readBody).toMatchObject({
             id: created.id,
             tenantId,
@@ -1268,6 +1274,25 @@ void describe("Expense Report routes", () => {
     void test("returns 401 before handling a request without a token", async () => {
         const response = await requestApp(
             "/v1/expense-reports/not-a-report-id",
+        );
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
+        });
+    });
+
+    void test("returns 401 for Case Queue rollups without a token", async () => {
+        const response = await requestApp(
+            "/v1/case-queue/rollups?tenantId=40000000-0000-4000-8000-000000000108&asOfDate=2026-07-20",
         );
         const body = (await response.json()) as {
             title?: string;

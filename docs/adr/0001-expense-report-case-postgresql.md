@@ -2,7 +2,7 @@
 
 - Status: Proposed
 - Date: 2026-06-26
-- Related: [ADR 0002: Polyglot Service Split Placeholder](./0002-polyglot-service-split-placeholder.md)
+- Related: [ADR 0002: Polyglot Service Split Placeholder](./0002-polyglot-service-split-placeholder.md), [Service ownership boundaries](../service-boundaries.md)
 
 ## Context
 
@@ -24,6 +24,8 @@ ExpenseFlow also requires tenant isolation. Every case query and mutation must b
 ## Decision
 
 The Core Case Service will store the `Expense Report` Case in PostgreSQL and access it through Drizzle.
+
+Service ownership boundaries for expense reports, GL coding, and identity are maintained in [Service ownership boundaries](../service-boundaries.md).
 
 The relational schema will model the case as the durable aggregate root for:
 

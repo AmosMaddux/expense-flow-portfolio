@@ -22,6 +22,24 @@ export const GetExpenseReportInboundRequestSchema = z.object({
 
 export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
 
+export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
+    tenantId: z.uuid(),
+    asOfDate: z.iso.date(),
+});
+
+export const ReadCaseQueueStageRollupsQuerySchema = z.object({
+    asOfDate: z.iso.date(),
+});
+
+export const TransitionExpenseReportStageInboundRequestSchema = z.object({
+    tenantId: z.uuid(),
+    id: z.uuid(),
+    actor: z.uuid(),
+    fromStage: z.enum(approvedWorkflowStages),
+    toStage: z.enum(approvedWorkflowStages),
+    reason: z.string().trim().min(1),
+});
+
 export const IdempotentSubmissionHeaderSchema = z.object({
     idempotencyKey: z
         .string()
@@ -45,6 +63,16 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     updatedAt: z.date(),
 });
 
+export const CaseQueueStageRollupSchema = z.object({
+    currentStage: z.enum(approvedWorkflowStages),
+    reportCount: z.number().int().nonnegative(),
+    overdueCount: z.number().int().nonnegative(),
+});
+
+export const CaseQueueStageRollupListSchema = z.array(
+    CaseQueueStageRollupSchema,
+);
+
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
@@ -55,6 +83,19 @@ export const submitExpenseReportRequestSchema =
     SubmitExpenseReportInboundRequestSchema;
 
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
+
+export const readCaseQueueStageRollupsRequestSchema =
+    ReadCaseQueueStageRollupsInboundRequestSchema;
+
+export const readCaseQueueStageRollupsQuerySchema =
+    ReadCaseQueueStageRollupsQuerySchema;
+
+export const transitionExpenseReportStageRequestSchema =
+    TransitionExpenseReportStageInboundRequestSchema;
+
+export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
+
+export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
@@ -71,6 +112,20 @@ export type SubmitExpenseReportRequest = z.infer<
 export type ExpenseReportResponse = z.infer<
     typeof ExpenseReportOutboundResponseSchema
 >;
+
+export type ReadCaseQueueStageRollupsParams = z.infer<
+    typeof ReadCaseQueueStageRollupsInboundRequestSchema
+>;
+
+export type ReadCaseQueueStageRollupsQuery = z.infer<
+    typeof ReadCaseQueueStageRollupsQuerySchema
+>;
+
+export type TransitionExpenseReportStageRequest = z.infer<
+    typeof TransitionExpenseReportStageInboundRequestSchema
+>;
+
+export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema
