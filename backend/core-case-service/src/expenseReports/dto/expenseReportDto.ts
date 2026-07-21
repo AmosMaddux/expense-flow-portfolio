@@ -73,6 +73,23 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
+// Audit responses intentionally expose structured facts, never raw request bodies or payment data.
+export const AuditEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    tenantId: z.uuid(),
+    expenseReportId: z.uuid(),
+    actorId: z.uuid(),
+    action: z.string().min(1),
+    stageBeforeAction: z.enum(approvedWorkflowStages),
+    stageAfterProposedAction: z.enum(approvedWorkflowStages),
+    denialReason: z.string().nullable(),
+    createdAt: z.date(),
+});
+
+export const AuditEntryListOutboundResponseSchema = z.array(
+    AuditEntryOutboundResponseSchema,
+);
+
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
@@ -96,6 +113,11 @@ export const transitionExpenseReportStageRequestSchema =
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
+
+export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
+
+export const auditEntryListResponseSchema =
+    AuditEntryListOutboundResponseSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
@@ -129,4 +151,8 @@ export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema
+>;
+
+export type AuditEntryResponse = z.infer<
+    typeof AuditEntryOutboundResponseSchema
 >;

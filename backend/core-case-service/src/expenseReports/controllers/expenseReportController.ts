@@ -20,11 +20,19 @@ import {
 } from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
+    logExpenseReportAuditError,
+    logExpenseReportAuditSuccess,
+} from "../../logging/coreCaseLogger.js";
+import {
     createDraftExpenseReport,
     readExpenseReport,
+    readExpenseReportAuditEntries,
     submitExpenseReport,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
+
+const createExpenseReportRouteLogName = "POST /v1/expense-reports";
+const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
 
 /**
  * Handles Expense Report creation requests.
@@ -56,6 +64,20 @@ export async function postExpenseReport(
             });
         const idempotencyKey = parseIdempotencyKey(req);
         const requestHash = createIdempotencyRequestHash(parsedRequest);
+        if (idempotencyKey === undefined) {
+            const report = await createReport();
+
+            logExpenseReportAuditSuccess({
+                action: "report_created",
+                actorId: auth.userId,
+                expenseReportId: report.id,
+                route: createExpenseReportRouteLogName,
+                tenantId: auth.tenantId,
+            });
+            res.status(201).json(report);
+            return;
+        }
+
         const result = await runIdempotentSubmission({
             idempotencyKey,
             operation: createReport,
@@ -64,8 +86,24 @@ export async function postExpenseReport(
             tenantId: auth.tenantId,
         });
 
+        if (!result.replayed) {
+            logExpenseReportAuditSuccess({
+                action: "report_created",
+                actorId: auth.userId,
+                expenseReportId: readExpenseReportId(result.body),
+                route: createExpenseReportRouteLogName,
+                tenantId: auth.tenantId,
+            });
+        }
         res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "report_created",
+            actorId: req.auth?.userId,
+            error,
+            route: createExpenseReportRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
         next(error);
     }
 }
@@ -180,12 +218,77 @@ export async function getCaseQueueStageRollups(
     }
 }
 
+/**
+ * Handles Audit Trail reads for an Expense Report case.
+ */
+export async function getExpenseReportAuditEntries(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    let parsedExpenseReportId: string | undefined;
+
+    try {
+        const auth = requireAuthContext(req);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        parsedExpenseReportId = parsedRequest.id;
+        requireInternalAuditTrailAccess(auth);
+        const auditEntries = await readExpenseReportAuditEntries({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+        });
+
+        logExpenseReportAuditSuccess({
+            action: "audit_entries_read",
+            actorId: auth.userId,
+            expenseReportId: parsedRequest.id,
+            route: auditEntriesRouteLogName,
+            tenantId: auth.tenantId,
+        });
+        res.status(200).json(auditEntries);
+    } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "audit_entries_read",
+            actorId: req.auth?.userId,
+            error,
+            expenseReportId: parsedExpenseReportId,
+            route: auditEntriesRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
+        next(error);
+    }
+}
+
+function readExpenseReportId(body: unknown): string | undefined {
+    if (body === null || typeof body !== "object" || !("id" in body)) {
+        return undefined;
+    }
+
+    const id = body.id;
+
+    return typeof id === "string" ? id : undefined;
+}
+
 function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     if (req.auth === undefined) {
         throw new UnauthorizedError();
     }
 
     return req.auth;
+}
+
+function requireInternalAuditTrailAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Audit Trail access is limited to internal roles.",
+    );
 }
 
 const internalExpenseReportRoles = new Set<RoleName>([

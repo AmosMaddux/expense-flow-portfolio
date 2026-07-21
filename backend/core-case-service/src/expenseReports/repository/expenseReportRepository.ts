@@ -1,14 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
     auditEntry,
     approvedWorkflowStages,
+    type AuditEntry,
     expenseReport,
     type ExpenseReport,
     glCodingResult,
     lineItem,
     mileageEntry,
+    type NewAuditEntry,
     type NewExpenseReport,
     type NewGlCodingResult,
     stageTransition,
@@ -50,6 +52,20 @@ export type SubmissionSources = {
         mileageDate: string;
     }>;
 };
+
+type ExpenseReportTransaction = Parameters<
+    Parameters<typeof db.transaction>[0]
+>[0];
+
+/**
+ * Appends a redacted audit event using the caller's state-change transaction.
+ */
+async function appendAuditEntry(
+    transaction: ExpenseReportTransaction,
+    event: NewAuditEntry,
+): Promise<void> {
+    await transaction.insert(auditEntry).values(event);
+}
 
 /**
  * Reads an Expense Report from the case store within a tenant boundary.
@@ -109,7 +125,7 @@ export async function insertDraftExpenseReport(
             return undefined;
         }
 
-        await transaction.insert(auditEntry).values({
+        await appendAuditEntry(transaction, {
             tenantId: insertedReport.tenantId,
             expenseReportId: insertedReport.id,
             actorId,
@@ -596,4 +612,23 @@ function assertSourceKeysEqual(
 
 function invalidGlCodingResponseError(message: string): GlCodingServiceError {
     return new GlCodingServiceError(message);
+}
+
+/**
+ * Reads append-only audit events for an Expense Report within a tenant boundary.
+ */
+export async function findAuditEntriesByExpenseReportId(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<AuditEntry[]> {
+    return db
+        .select()
+        .from(auditEntry)
+        .where(
+            and(
+                eq(auditEntry.tenantId, tenantId),
+                eq(auditEntry.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(asc(auditEntry.sequence));
 }

@@ -30,6 +30,7 @@ void describe("runIdempotentSubmission", () => {
 
         expect(result).toEqual({
             body: { id: "cached-report" },
+            replayed: true,
             statusCode: 201,
         });
         expect(operation).not.toHaveBeenCalled();
@@ -83,7 +84,11 @@ void describe("runIdempotentSubmission", () => {
             tenantId: "40000000-0000-4000-8000-000000000205",
         });
 
-        expect(result.body).toEqual({ createdAt: "2026-08-01T12:00:00.000Z" });
+        expect(result).toMatchObject({
+            body: { createdAt: "2026-08-01T12:00:00.000Z" },
+            replayed: false,
+            statusCode: 201,
+        });
         expect(store.saveResult).toHaveBeenCalledWith(
             "40000000-0000-4000-8000-000000000205",
             "submit-4",
@@ -129,6 +134,7 @@ void describe("runIdempotentSubmission", () => {
 
         expect(retryResult).toEqual({
             body: { id: "retried-report" },
+            replayed: false,
             statusCode: 201,
         });
         expect(store.reserveSubmission).toHaveBeenCalledTimes(2);
@@ -216,6 +222,7 @@ void describe("runIdempotentSubmission", () => {
 
             expect(result).toEqual({
                 body: { id: "created-report" },
+                replayed: false,
                 statusCode: 201,
             });
             expect(store.saveResult).toHaveBeenCalledOnce();

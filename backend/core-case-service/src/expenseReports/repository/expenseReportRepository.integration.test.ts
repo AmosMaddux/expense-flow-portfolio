@@ -31,6 +31,7 @@ import { db } from "../../db/client.js";
 import {
     buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
+    findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
     submitDraftExpenseReport,
@@ -140,6 +141,111 @@ void describe("expenseReportRepository", () => {
         expect(transitionRows).toHaveLength(0);
     });
 
+    void test("rolls back the Expense Report when the transactional audit insert fails", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000199";
+        const reportId = "10000000-0000-4000-8000-000000000199";
+        const newReport = buildNewExpenseReport(tenantId);
+        newReport.id = reportId;
+
+        await expect(
+            insertDraftExpenseReport(tenantId, newReport, "not-a-uuid"),
+        ).rejects.toThrow();
+
+        const reports = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reports).toHaveLength(0);
+        expect(auditRows).toHaveLength(0);
+    });
+    void test("finds audit entries by Expense Report id within tenant scope", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000196";
+        const newReport = buildNewExpenseReport(targetTenantId);
+
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            newReport,
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const auditRows = await findAuditEntriesByExpenseReportId(
+            targetTenantId,
+            report.id,
+        );
+        const crossTenantRows = await findAuditEntriesByExpenseReportId(
+            "00000000-0000-4000-8000-000000000197",
+            report.id,
+        );
+
+        expect(auditRows).toHaveLength(1);
+        expect(auditRows[0]).toMatchObject({
+            tenantId: targetTenantId,
+            expenseReportId: report.id,
+            action: "report_created",
+        });
+        expect(crossTenantRows).toHaveLength(0);
+    });
+    void test("orders audit entries by append sequence when timestamps are skewed", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000198";
+        const reportId = "10000000-0000-4000-8000-000000000198";
+        const ownerId = "20000000-0000-4000-8000-000000000198";
+        const actorId = "30000000-0000-4000-8000-000000000198";
+        const firstCreatedAt = new Date("2026-07-02T12:00:00.000Z");
+        const secondCreatedAt = new Date("2026-07-02T11:59:00.000Z");
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-07-02",
+        });
+        await db.insert(auditEntry).values([
+            {
+                id: "90000000-0000-4000-8000-000000000198",
+                tenantId,
+                expenseReportId: reportId,
+                actorId,
+                action: "first_action",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Drafted",
+                createdAt: firstCreatedAt,
+            },
+            {
+                id: "10000000-0000-4000-8000-000000000199",
+                tenantId,
+                expenseReportId: reportId,
+                actorId,
+                action: "second_action",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Drafted",
+                createdAt: secondCreatedAt,
+            },
+        ]);
+
+        const auditRows = await findAuditEntriesByExpenseReportId(
+            tenantId,
+            reportId,
+        );
+
+        expect(auditRows.map((row) => row.action)).toEqual([
+            "first_action",
+            "second_action",
+        ]);
+        expect(auditRows[1]?.createdAt.getTime()).toBeLessThan(
+            auditRows[0]?.createdAt.getTime() ?? 0,
+        );
+        expect(auditRows[0]?.sequence).toBeLessThan(
+            auditRows[1]?.sequence ?? 0,
+        );
+    });
     void test("finds an Expense Report by id", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000186";
         const targetId = "10000000-0000-4000-8000-000000000186";

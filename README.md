@@ -133,26 +133,30 @@ make
 
 ## PostgreSQL setup
 
-Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with ``drizzle-kit migrate``
+Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with `drizzle-kit migrate`
 
 If a migration needs to be undone, write and apply a new corrective migration rather than reverse-applying — this repo does not maintain manual down-migration scripts.
+
 ## Core Case Service API Contract
 
-The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated with `OpenApiGeneratorV31` from the service Zod DTO schemas and documents the active `POST /v1/expense-reports` and `GET /v1/expense-reports/{id}` endpoints.
+The Core Case Service OpenAPI contract is committed at [docs/openapi/core-case-service.openapi.json](docs/openapi/core-case-service.openapi.json). It is generated with `OpenApiGeneratorV31` from the service Zod DTO schemas and documents the active `POST /v1/expense-reports`, `GET /v1/expense-reports/{id}`, and `GET /v1/expense-reports/{id}/audit-entries` endpoints.
 
 All public Core Case Service endpoints are versioned under `/v1`. Within a published API version, a response or request field is never removed or given incompatible semantics without first marking it `deprecated: true` in OpenAPI and adding a migration note to its schema description. Deprecated fields remain supported for the lifetime of that API version; removal or an incompatible change requires a new URL version.
 
 Generate the committed contract from the Core Case Service workspace with:
+
 ```sh
 npm run openapi:generate --workspace backend/core-case-service
 ```
 
 When the Express service is running, the same generated contract is served at:
+
 ```text
 GET /v1/openapi.json
 ```
 
 Interactive OpenAPI documentation is rendered with `@scalar/express-api-reference` from the same contract at:
+
 ```text
 GET /v1/docs
 ```

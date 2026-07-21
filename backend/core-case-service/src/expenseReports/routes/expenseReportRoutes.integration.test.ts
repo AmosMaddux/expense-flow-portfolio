@@ -428,7 +428,7 @@ void describe("Expense Report routes", () => {
     });
 
     void test("rejects an idempotency key reused with a different create body", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000115";
+        const tenantId = "40000000-0000-4000-8000-000000000122";
         const owner = "50000000-0000-4000-8000-000000000017";
         const headers = {
             authorization: authorizationHeader(tenantId, owner),
@@ -1097,6 +1097,163 @@ void describe("Expense Report routes", () => {
         expect(auditRows).toHaveLength(1);
     });
 
+    void test("lets a Finance Admin read audit entries for an Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000121";
+        const owner = "50000000-0000-4000-8000-000000000023";
+        const financeAdminId = "50000000-0000-4000-8000-000000000024";
+
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-121",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-06" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const auditBody = (await auditResponse.json()) as Array<{
+            tenantId?: string;
+            expenseReportId?: string;
+            actorId?: string;
+            action?: string;
+            rawRequestBody?: unknown;
+            paymentReference?: string;
+        }>;
+
+        expect(auditResponse.status).toBe(200);
+        expect(auditBody).toHaveLength(1);
+        expect(auditBody[0]).toMatchObject({
+            tenantId,
+            expenseReportId: created.id,
+            actorId: owner,
+            action: "report_created",
+        });
+        expect(auditBody[0]).not.toHaveProperty("rawRequestBody");
+        expect(auditBody[0]).not.toHaveProperty("paymentReference");
+    });
+
+    void test("lets a Department Manager read audit entries for an Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000123";
+        const owner = "50000000-0000-4000-8000-000000000019";
+        const departmentManagerId = "50000000-0000-4000-8000-000000000020";
+
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-123",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-09" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        departmentManagerId,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
+        const auditBody = (await auditResponse.json()) as Array<{
+            expenseReportId?: string;
+            action?: string;
+        }>;
+
+        expect(auditResponse.status).toBe(200);
+        expect(auditBody).toHaveLength(1);
+        expect(auditBody[0]).toMatchObject({
+            expenseReportId: created.id,
+            action: "report_created",
+        });
+    });
+
+    void test("does not let an Employee read audit entries for their own Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000118";
+        const owner = "50000000-0000-4000-8000-000000000021";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-118",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-10" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        const body = (await auditResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(auditResponse.status).toBe(403);
+        expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+    });
+
+    void test("does not read audit entries for another tenant", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000119";
+        const otherTenantId = "40000000-0000-4000-8000-000000000120";
+        const owner = "50000000-0000-4000-8000-000000000015";
+        const financeAdminId = "50000000-0000-4000-8000-000000000022";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-119",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-07" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await auditResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(auditResponse.status).toBe(404);
+        expect(body).toMatchObject({ title: "Not Found", status: 404 });
+    });
     void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";

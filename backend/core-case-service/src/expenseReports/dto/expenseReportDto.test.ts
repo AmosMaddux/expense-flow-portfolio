@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    AuditEntryListOutboundResponseSchema,
+    AuditEntryOutboundResponseSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    type AuditEntryResponse,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
@@ -25,6 +28,18 @@ const validExpenseReportResponse = {
     holdReason: null,
     createdAt: new Date("2026-07-06T12:00:00.000Z"),
     updatedAt: new Date("2026-07-06T12:00:00.000Z"),
+};
+
+const validAuditEntryResponse = {
+    id: "31000000-0000-4000-8000-000000000001",
+    tenantId: validExpenseReportResponse.tenantId,
+    expenseReportId: validExpenseReportResponse.id,
+    actorId: validCreateExpenseReportRequest.owner,
+    action: "report_created",
+    stageBeforeAction: "Drafted",
+    stageAfterProposedAction: "Drafted",
+    denialReason: null,
+    createdAt: new Date("2026-07-06T12:00:01.000Z"),
 };
 
 void describe("CreateExpenseReportInboundRequestSchema", () => {
@@ -138,5 +153,33 @@ void describe("ExpenseReportOutboundResponseSchema", () => {
                 createdAt: "2026-07-06",
             }),
         ).toThrow();
+    });
+});
+
+void describe("AuditEntryOutboundResponseSchema", () => {
+    void test("parses the redacted outbound audit event shape", () => {
+        const parsed: AuditEntryResponse =
+            AuditEntryOutboundResponseSchema.parse(validAuditEntryResponse);
+
+        expect(parsed).toStrictEqual(validAuditEntryResponse);
+    });
+
+    void test("parses an audit entry list for the Audit Trail view", () => {
+        const parsed = AuditEntryListOutboundResponseSchema.parse([
+            validAuditEntryResponse,
+        ]);
+
+        expect(parsed).toStrictEqual([validAuditEntryResponse]);
+    });
+
+    void test("rejects audit responses with arbitrary payment metadata", () => {
+        const parsed = AuditEntryOutboundResponseSchema.parse({
+            ...validAuditEntryResponse,
+            paymentReference: "synthetic-payment-reference",
+            rawRequestBody: { amount: "15.00" },
+        });
+
+        expect(parsed).not.toHaveProperty("paymentReference");
+        expect(parsed).not.toHaveProperty("rawRequestBody");
     });
 });

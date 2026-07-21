@@ -1,4 +1,6 @@
 export {
+    AuditEntryListOutboundResponseSchema,
+    AuditEntryOutboundResponseSchema,
     CreateExpenseReportInboundRequestSchema,
     CaseQueueStageRollupListSchema,
     CaseQueueStageRollupSchema,
@@ -11,6 +13,8 @@ export {
     TransitionExpenseReportStageInboundRequestSchema,
     caseQueueStageRollupListSchema,
     caseQueueStageRollupSchema,
+    auditEntryListResponseSchema,
+    auditEntryResponseSchema,
     createExpenseReportRequestSchema,
     expenseReportResponseSchema,
     getExpenseReportRequestSchema,
@@ -19,6 +23,7 @@ export {
     submitExpenseReportRequestSchema,
     transitionExpenseReportStageRequestSchema,
     type CaseQueueStageRollup,
+    type AuditEntryResponse,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,

@@ -1,5 +1,6 @@
 import { sql, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 import {
+    bigserial,
     boolean,
     check,
     date,
@@ -128,6 +129,7 @@ export const auditEntry = pgTable(
     "audit_entry",
     {
         id: uuid("id").defaultRandom().primaryKey(),
+        sequence: bigserial("sequence", { mode: "number" }),
         tenantId: uuid("tenant_id").notNull(),
         expenseReportId: uuid("expense_report_id").notNull(),
         actorId: uuid("actor_id").notNull(),
@@ -159,6 +161,11 @@ export const auditEntry = pgTable(
             table.tenantId,
             table.expenseReportId,
             table.createdAt,
+        ),
+        index("audit_entry_tenant_report_sequence_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.sequence,
         ),
         index("audit_entry_tenant_actor_created_at_idx").on(
             table.tenantId,
