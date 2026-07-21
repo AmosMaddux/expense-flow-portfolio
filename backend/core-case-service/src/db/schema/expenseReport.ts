@@ -140,6 +140,7 @@ export const auditEntry = pgTable(
         stageBeforeAction: text("stage_before_action").notNull(),
         stageAfterProposedAction: text("stage_after_proposed_action").notNull(),
         denialReason: text("denial_reason"),
+        outcomeReason: text("outcome_reason"),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -147,7 +148,7 @@ export const auditEntry = pgTable(
     (table) => [
         check(
             "audit_entry_denial_reason_check",
-            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} <> 'transition_approved' or ${table.denialReason} is null)`,
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
         ),
         check(
             "audit_entry_stage_before_action_check",
@@ -219,6 +220,7 @@ export const stageTransition = pgTable(
                 or (${table.fromStage} = 'Paid' and ${table.toStage} = 'Reconciled')
                 or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'Drafted')
                 or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Drafted')
+                or (${table.fromStage} = ${table.toStage} and ${table.reason} like 'transition_denied:%')
             )`,
         ),
         foreignKey({

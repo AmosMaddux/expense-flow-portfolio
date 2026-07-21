@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     AuditEntryListOutboundResponseSchema,
     AuditEntryOutboundResponseSchema,
+    ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
@@ -39,6 +40,7 @@ const validAuditEntryResponse = {
     stageBeforeAction: "Drafted",
     stageAfterProposedAction: "Drafted",
     denialReason: null,
+    outcomeReason: null,
     createdAt: new Date("2026-07-06T12:00:01.000Z"),
 };
 
@@ -156,6 +158,25 @@ void describe("ExpenseReportOutboundResponseSchema", () => {
     });
 });
 
+void describe("ClearExpenseReportFlagsInboundRequestSchema", () => {
+    void test("requires reviewed source ids for a flag clear request", () => {
+        expect(() =>
+            ClearExpenseReportFlagsInboundRequestSchema.parse({
+                reason: "reviewed receipt detail",
+            }),
+        ).toThrow();
+
+        expect(
+            ClearExpenseReportFlagsInboundRequestSchema.parse({
+                sourceIds: ["30000000-0000-4000-8000-000000000201"],
+                reason: "reviewed receipt detail",
+            }),
+        ).toStrictEqual({
+            sourceIds: ["30000000-0000-4000-8000-000000000201"],
+            reason: "reviewed receipt detail",
+        });
+    });
+});
 void describe("AuditEntryOutboundResponseSchema", () => {
     void test("parses the redacted outbound audit event shape", () => {
         const parsed: AuditEntryResponse =

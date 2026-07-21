@@ -22,6 +22,20 @@ export const GetExpenseReportInboundRequestSchema = z.object({
 
 export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
 
+export const TransitionExpenseReportWorkflowInboundRequestSchema = z
+    .object({
+        toStage: z.enum(approvedWorkflowStages),
+        reason: z.string().trim().min(1),
+    })
+    .strict();
+
+export const ClearExpenseReportFlagsInboundRequestSchema = z
+    .object({
+        sourceIds: z.array(z.uuid()).min(1),
+        reason: z.string().trim().min(1),
+    })
+    .strict();
+
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     asOfDate: z.iso.date(),
@@ -83,6 +97,7 @@ export const AuditEntryOutboundResponseSchema = z.object({
     stageBeforeAction: z.enum(approvedWorkflowStages),
     stageAfterProposedAction: z.enum(approvedWorkflowStages),
     denialReason: z.string().nullable(),
+    outcomeReason: z.string().nullable(),
     createdAt: z.date(),
 });
 
@@ -98,6 +113,12 @@ export const getExpenseReportRequestSchema =
 
 export const submitExpenseReportRequestSchema =
     SubmitExpenseReportInboundRequestSchema;
+
+export const transitionExpenseReportWorkflowRequestSchema =
+    TransitionExpenseReportWorkflowInboundRequestSchema;
+
+export const clearExpenseReportFlagsRequestSchema =
+    ClearExpenseReportFlagsInboundRequestSchema;
 
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
@@ -129,6 +150,14 @@ export type GetExpenseReportRequest = z.infer<
 
 export type SubmitExpenseReportRequest = z.infer<
     typeof SubmitExpenseReportInboundRequestSchema
+>;
+
+export type TransitionExpenseReportWorkflowRequest = z.infer<
+    typeof TransitionExpenseReportWorkflowInboundRequestSchema
+>;
+
+export type ClearExpenseReportFlagsRequest = z.infer<
+    typeof ClearExpenseReportFlagsInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<
