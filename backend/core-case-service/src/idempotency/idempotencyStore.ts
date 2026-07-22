@@ -70,7 +70,6 @@ type DynamoIdempotencyRecord = {
     result?: IdempotencyResult;
     status: "in_progress" | "completed";
     submissionToken: string;
-    ttl: number;
 } & IdempotencyReservationMetadata;
 
 type IdempotencyRecord = {
@@ -78,7 +77,6 @@ type IdempotencyRecord = {
     result?: IdempotencyResult;
     status: "in_progress" | "completed";
     submissionToken: string;
-    ttl: number;
 } & IdempotencyReservationMetadata;
 
 type LockRecord = {
@@ -130,9 +128,8 @@ export function createInMemoryIdempotencyStore(): IdempotencyStore & {
         async getResult(tenantId, idempotencyKey, requestHash) {
             const key = toDynamoPartitionKey(tenantId, idempotencyKey);
             const record = records.get(key);
-            const now = getCurrentEpochSeconds();
 
-            if (record !== undefined && record.ttl > now) {
+            if (record !== undefined) {
                 if (record.requestHash !== requestHash) {
                     throw new IdempotencyRequestMismatchError();
                 }
@@ -160,10 +157,9 @@ export function createInMemoryIdempotencyStore(): IdempotencyStore & {
             metadata = {},
         ) {
             const key = toDynamoPartitionKey(tenantId, idempotencyKey);
-            const now = getCurrentEpochSeconds();
             const existing = records.get(key);
 
-            if (existing !== undefined && existing.ttl > now) {
+            if (existing !== undefined) {
                 return false;
             }
 
@@ -172,7 +168,6 @@ export function createInMemoryIdempotencyStore(): IdempotencyStore & {
                 requestHash,
                 status: "in_progress",
                 submissionToken: token,
-                ttl: now + IDEMPOTENCY_RESULT_TTL_SECONDS,
             });
             return true;
         },
@@ -280,7 +275,6 @@ export function createIdempotencyStore(
 
             if (
                 item !== undefined &&
-                item.ttl > getCurrentEpochSeconds() &&
                 item.requestHash !== requestHash
             ) {
                 throw new IdempotencyRequestMismatchError();
@@ -294,13 +288,6 @@ export function createIdempotencyStore(
                 return undefined;
             }
 
-            const remainingTtlSeconds =
-                item.ttl - getCurrentEpochSeconds();
-
-            if (remainingTtlSeconds <= 0) {
-                return undefined;
-            }
-
             await redis.set(
                 redisKey,
                 JSON.stringify({
@@ -308,7 +295,7 @@ export function createIdempotencyStore(
                     result: item.result,
                 }),
                 {
-                    EX: remainingTtlSeconds,
+                    EX: IDEMPOTENCY_RESULT_TTL_SECONDS,
                 },
             );
             return item.result;
@@ -331,8 +318,6 @@ export function createIdempotencyStore(
             metadata = {},
         ) {
             try {
-                const now = getCurrentEpochSeconds();
-
                 await dynamoDb.send(
                     new PutCommand({
                         TableName: tableName,
@@ -345,16 +330,8 @@ export function createIdempotencyStore(
                             requestHash,
                             status: "in_progress",
                             submissionToken: token,
-                            ttl: now + IDEMPOTENCY_RESULT_TTL_SECONDS,
                         },
-                        ConditionExpression:
-                            "attribute_not_exists(pk) OR #ttl <= :now",
-                        ExpressionAttributeNames: {
-                            "#ttl": "ttl",
-                        },
-                        ExpressionAttributeValues: {
-                            ":now": now,
-                        },
+                        ConditionExpression: "attribute_not_exists(pk)",
                     }),
                 );
                 return true;
@@ -390,20 +367,6 @@ export function createIdempotencyStore(
                 }),
             );
 
-            const record = await dynamoDb.send(
-                new GetCommand({
-                    TableName: tableName,
-                    Key: { pk },
-                }),
-            );
-            const item = record.Item as DynamoIdempotencyRecord | undefined;
-            const remainingTtlSeconds =
-                item === undefined ? 0 : item.ttl - getCurrentEpochSeconds();
-
-            if (remainingTtlSeconds <= 0) {
-                return;
-            }
-
             await connectRedis(redis);
             await redis.set(
                 toRedisResultKey(tenantId, idempotencyKey),
@@ -412,15 +375,11 @@ export function createIdempotencyStore(
                     result,
                 }),
                 {
-                    EX: remainingTtlSeconds,
+                    EX: IDEMPOTENCY_RESULT_TTL_SECONDS,
                 },
             );
         },
     };
-}
-
-export function getCurrentEpochSeconds(): number {
-    return Math.floor(Date.now() / 1000);
 }
 
 export function toRedisResultKey(

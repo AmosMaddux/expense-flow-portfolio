@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { RedisClientType } from "redis";
 
@@ -9,10 +9,6 @@ import {
     toRedisLockKey,
     toRedisResultKey,
 } from "./idempotencyStore.js";
-
-afterEach(() => {
-    vi.useRealTimers();
-});
 
 void describe("idempotency key builders", () => {
     void test("scopes Redis and DynamoDB keys by tenant", () => {
@@ -33,7 +29,6 @@ void describe("idempotency key builders", () => {
 
 void describe("idempotency store", () => {
     void test("persists create recovery metadata in DynamoDB reservations", async () => {
-        vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
         const dynamoDb = createDynamoMock();
         const redis = createRedisMock();
         const store = createIdempotencyStore(
@@ -58,6 +53,7 @@ void describe("idempotency store", () => {
         expect(dynamoDb.send).toHaveBeenCalledWith(
             expect.objectContaining({
                 input: expect.objectContaining({
+                    ConditionExpression: "attribute_not_exists(pk)",
                     Item: expect.objectContaining({
                         operation: "create_expense_report",
                         pk: "idem:tenant:key",
@@ -72,15 +68,13 @@ void describe("idempotency store", () => {
         );
     });
 
-    void test("hydrates Redis only for the remaining DynamoDB TTL", async () => {
-        vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+    void test("hydrates Redis for 24 hours from a durable DynamoDB result", async () => {
         const dynamoDb = createDynamoMock({
             Item: {
                 pk: "idem:tenant:key",
                 requestHash: "request-hash-one",
                 result: { body: { id: "report-1" }, statusCode: 201 },
                 status: "completed",
-                ttl: 1_785_542_460,
             },
         });
         const redis = createRedisMock();
@@ -103,7 +97,44 @@ void describe("idempotency store", () => {
                 requestHash: "request-hash-one",
                 result: { body: { id: "report-1" }, statusCode: 201 },
             }),
-            { EX: 60 },
+            { EX: 86_400 },
+        );
+    });
+
+    void test("mirrors saved DynamoDB results into Redis for 24 hours", async () => {
+        const dynamoDb = createDynamoMock();
+        const redis = createRedisMock();
+        const store = createIdempotencyStore(
+            dynamoDb as unknown as DynamoDBDocumentClient,
+            redis as unknown as RedisClientType,
+            "idempotency-table",
+        );
+        const result = { body: { id: "report-1" }, statusCode: 201 };
+
+        await store.saveResult(
+            "tenant",
+            "key",
+            "lock-token",
+            "request-hash-one",
+            result,
+        );
+
+        expect(dynamoDb.send).toHaveBeenCalledWith(
+            expect.objectContaining({
+                input: expect.objectContaining({
+                    Key: { pk: "idem:tenant:key" },
+                    UpdateExpression:
+                        "SET #status = :completed, #result = :result",
+                }),
+            }),
+        );
+        expect(redis.set).toHaveBeenCalledWith(
+            "idem:tenant:key",
+            JSON.stringify({
+                requestHash: "request-hash-one",
+                result,
+            }),
+            { EX: 86_400 },
         );
     });
 
