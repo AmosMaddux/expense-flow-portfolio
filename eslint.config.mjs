@@ -16,15 +16,17 @@ export default [
     js.configs.recommended,
     ...tseslint.configs.recommendedTypeChecked,
     {
-        files: ["**/*.{js,mjs,cjs,ts}"],
+        files: ["**/*.{js,mjs,cjs,ts,tsx}"],
         languageOptions: {
             globals: {
+                ...globals.browser,
                 ...globals.node,
             },
             parserOptions: {
                 projectService: {
                     allowDefaultProject: [
                         "backend/core-case-service/drizzle.config.ts",
+                        "frontend/app/vite.config.ts",
                         "vitest.config.ts",
                     ],
                 },

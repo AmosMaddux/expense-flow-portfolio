@@ -143,6 +143,18 @@ Utility function to run linter, typing, and test checks:
 make
 ```
 
+## Frontend App Shell
+
+The React 18 + Vite TypeScript app shell lives in [frontend/app](frontend/app). It provides the persistent top bar and sidebar frame for future operator and employee portal screens.
+
+Build all production TypeScript and frontend output with one command:
+
+```sh
+npm run build
+```
+
+The frontend production bundle is generated at `frontend/app/dist`.
+
 ## PostgreSQL setup
 
 Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with `drizzle-kit migrate`
