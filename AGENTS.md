@@ -159,10 +159,9 @@ When code behavior changes, update or delete any related comment in the same cha
 - Do not combine unrelated changes in one commit.
 - Agents must not commit directly to `main`.
 - Agents must not push directly to `main`.
-- Agents must not open pull requests into `main` from `feature/*` or `develop`.
-- Planned work must flow from `feature/*` to `develop` to `release/*` to `main`.
-- Normal planned changes must reach `main` only through a `release/*` branch.
-- Urgent production fixes may flow through `hotfix/*` to `main`, then must be merged back to `develop`.
+- Planned work flows from `feature/*` to `development`, then from `development` to `main` through reviewed pull requests.
+- Agents may open pull requests from `development` or `hotfix/*` into `main`.
+- Urgent production fixes may flow through `hotfix/*` to `main`, then must be merged back to `development` when the fix is not already present there.
 
 ## ExpenseFlow Domain Vocabulary
 

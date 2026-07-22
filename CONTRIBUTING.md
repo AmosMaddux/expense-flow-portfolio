@@ -1,6 +1,6 @@
 # Contributing
 
-ExpenseFlow uses a protected main branch, a develop integration branch, and short-lived working branches with pull-request review for every change. These rules reflect the team branch and release conventions. Keep changes small, focused, and easy to review.
+ExpenseFlow uses a protected `main` branch, a `development` integration branch, and short-lived working branches with pull-request review for every change. Keep changes small, focused, and easy to review.
 
 ## Pull Requests
 
@@ -30,50 +30,45 @@ Use one commit per meaningful change. Do not combine unrelated changes in one co
 
 `main` is the production branch and contains the current stable version of the app.
 
-- Required before merge: full test suite, security scanning, deployment approval, and smoke-test plan are complete.
-- Protection: requires PR approval, allows no direct commits, and accepts PRs only from `release/*` or `hotfix/*` branches.
-- Deployment: production deployment requires an approval gate and post-deploy smoke tests.
-- Cadence: review `develop` after every sprint to decide whether a merge to `release/*` and `main` is ready.
+- Required before merge: the full test suite and code quality checks pass, including linting and at least 80% coverage.
+- Protection: requires PR approval, allows no direct commits, and accepts PRs from `development` or `hotfix/*` branches.
+- Cadence: review `development` after every sprint and open a pull request directly to `main` when it is ready.
+- No intermediate release branch or separate release-evidence package is required.
 
 Agents and engineers must not commit directly to `main` or push directly to `main`.
 
-## Develop Branch
+## Development Branch
 
-`develop` is the development and staging branch and contains the most recent version of the app.
+`development` is the integration branch and contains the most recent version of the app.
 
 - Required before merge: full test suite and code quality checks pass, including linting and at least 80% coverage.
 - Protection: requires PR approval.
+- Promotion: merges directly to `main` through a reviewed pull request.
 
 ## Feature Branches
 
 `feature/*` branches are sandbox branches for new feature work.
 
-- Branched from: `develop`.
-- Merged to: `develop`.
+- Branched from: `development`.
+- Merged to: `development`.
 - Naming convention: `feature/<JIRA TICKET ID>`, such as `feature/SCRUM-18`.
 - Prerequisite: unit tests are written and passing locally before push.
 - Required before merge: full test suite and code quality checks pass, including linting and at least 80% coverage.
-
-## Release Branches
-
-`release/*` branches are pre-production branches created to test a full version of the app and fix bugs before deploying to `main`.
-
-- Branched from: `develop`.
-- Merged to: `develop` and `main`.
-- Naming convention: `release/<APP NAME>/v<VERSION_NUMBER>`, such as `release/expenseflow/v1.0.0`.
-- Required before merge: full test suite, security audit, QA testing window, and pre-production deployment are complete.
 
 ## Hotfix Branches
 
 `hotfix/*` branches are used exclusively for urgent production issues.
 
-- Branched from: `main` or the active `release/*` branch.
-- Merged to: `main` and `develop`.
-- Naming convention: `hotfix/<APP NAME>/v<VERSION_NUMBER>.<PATCH_NUMBER>` or `hotfix/<JIRA TICKET ID>`, such as `hotfix/expenseflow/v1.0.1` or `hotfix/SCRUM-18`.
-- Required before merge: targeted tests, regression suite, security check, and staging validation are complete.
-- Deployment: hotfixes may use an expedited deployment path to staging.
+- Branched from: `development` when stabilizing changes not yet in `main`, or `main` when correcting the current production version.
+- Merged to: `main`; fixes created from `main` must also be merged back to `development`.
+- Naming convention: `hotfix/v<VERSION_NUMBER>` or `hotfix/<JIRA TICKET ID>`, such as `hotfix/v1.0.2` or `hotfix/SCRUM-18`.
+- Required before merge: targeted tests and the full regression and code quality checks pass, including linting and at least 80% coverage.
 - SLA: review within 6 hours of PR creation and make requested changes within 12 hours of review.
 - Escalation: if the 6-hour review window is missed, send a direct message reminder for PR review.
+
+## Database Migrations
+
+Database migrations are forward-only. Matching rollback scripts are not required; corrections to an applied migration must be delivered as a new forward migration.
 
 ## Branch Name Data Handling
 

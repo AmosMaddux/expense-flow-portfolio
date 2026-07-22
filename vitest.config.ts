@@ -27,6 +27,23 @@ const testEnvironment = {
 
 export default defineConfig({
     test: {
+        coverage: {
+            provider: "v8",
+            reportsDirectory: "coverage/typescript",
+            reporter: ["text", "json-summary", "html"],
+            include: ["backend/core-case-service/src/**/*.ts"],
+            exclude: [
+                "backend/core-case-service/src/**/*.test.ts",
+                "backend/core-case-service/src/**/*.d.ts",
+                "backend/core-case-service/src/testSupport/**",
+            ],
+            thresholds: {
+                branches: 80,
+                functions: 80,
+                lines: 80,
+                statements: 80,
+            },
+        },
         env: testEnvironment,
         exclude: [...configDefaults.exclude, "**/dist"],
         projects: [
@@ -39,6 +56,7 @@ export default defineConfig({
                         "**/dist",
                         coreCaseIntegrationTestGlob,
                     ],
+                    hookTimeout: 60_000,
                     include: [coreCaseUnitTestGlob],
                     root: repositoryRoot,
                 },
