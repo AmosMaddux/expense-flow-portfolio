@@ -1,9 +1,9 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "ExpenseFlow Core Case Service API",
+        "title": "ExpenseFlow Core Case Service API v1",
         "version": "1.0.0",
-        "description": "Discoverable contract for Core Case Service Expense Report endpoints."
+        "description": "Version 1 contract for Core Case Service endpoints. Fields are never removed or changed silently within v1: a field is first marked deprecated with a migration note and remains supported until a future API version. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted."
     },
     "servers": [
         {
@@ -12,14 +12,212 @@
         }
     ],
     "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
+        "headers": {
+            "RateLimitLimit": {
+                "description": "Maximum tenant requests in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitRemaining": {
+                "description": "Tenant requests remaining in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "RateLimitReset": {
+                "description": "Seconds until the current tenant window resets.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitCost": {
+                "description": "Request units charged for this API call.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RetryAfter": {
+                "description": "Seconds until the tenant may retry the request.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "responses": {
+            "RateLimitExceeded": {
+                "description": "The authenticated tenant request limit was exceeded.",
+                "headers": {
+                    "RateLimit-Limit": {
+                        "$ref": "#/components/headers/RateLimitLimit"
+                    },
+                    "RateLimit-Remaining": {
+                        "$ref": "#/components/headers/RateLimitRemaining"
+                    },
+                    "RateLimit-Reset": {
+                        "$ref": "#/components/headers/RateLimitReset"
+                    },
+                    "X-RateLimit-Cost": {
+                        "$ref": "#/components/headers/RateLimitCost"
+                    },
+                    "Retry-After": {
+                        "$ref": "#/components/headers/RetryAfter"
+                    }
+                },
+                "content": {
+                    "application/problem+json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ProblemJson"
+                        }
+                    }
+                }
+            }
+        },
         "schemas": {
+            "AuditEntryListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "tenantId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "actorId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "action": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "stageBeforeAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "stageAfterProposedAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "denialReason": {
+                            "type": ["string", "null"]
+                        },
+                        "outcomeReason": {
+                            "type": ["string", "null"]
+                        },
+                        "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "tenantId",
+                        "expenseReportId",
+                        "actorId",
+                        "action",
+                        "stageBeforeAction",
+                        "stageAfterProposedAction",
+                        "denialReason",
+                        "outcomeReason",
+                        "createdAt"
+                    ]
+                }
+            },
+            "CaseQueueStageRollupList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "overdueCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["currentStage", "reportCount", "overdueCount"]
+                }
+            },
+            "ClearExpenseReportFlagsRequest": {
+                "type": "object",
+                "properties": {
+                    "sourceIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "minItems": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["sourceIds", "reason"],
+                "additionalProperties": false
+            },
+            "ClearExpenseReportFlagsResponse": {
+                "type": "object",
+                "properties": {
+                    "clearedFlagCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": ["clearedFlagCount"]
+            },
             "CreateExpenseReportRequest": {
                 "type": "object",
                 "properties": {
-                    "tenant_id": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
                     "owner": {
                         "type": "string",
                         "format": "uuid"
@@ -34,7 +232,8 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenant_id", "owner", "dueDate"]
+                "required": ["owner", "dueDate"],
+                "additionalProperties": false
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -98,6 +297,91 @@
                     "updatedAt"
                 ]
             },
+            "LoginRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "totpCode": {
+                        "type": "string"
+                    }
+                },
+                "required": ["tenantId", "email", "password"]
+            },
+            "LoginResponse": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "accessToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "accessTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "tenantId",
+                    "userId",
+                    "accessToken",
+                    "accessTokenExpiresAt",
+                    "refreshToken",
+                    "refreshTokenExpiresAt"
+                ]
+            },
+            "MfaEnrollmentRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    }
+                },
+                "required": ["tenantId", "userId", "email"]
+            },
+            "MfaEnrollmentResponse": {
+                "type": "object",
+                "properties": {
+                    "provisioningUri": {
+                        "type": "string"
+                    }
+                },
+                "required": ["provisioningUri"]
+            },
             "ProblemJson": {
                 "type": "object",
                 "properties": {
@@ -118,38 +402,101 @@
                     }
                 },
                 "required": ["type", "title", "status", "detail", "instance"]
+            },
+            "ReadCaseQueueStageRollupsRequest": {
+                "type": "object",
+                "properties": {
+                    "asOfDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["asOfDate"]
+            },
+            "SubmitExpenseReportRequest": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "TransitionExpenseReportWorkflowRequest": {
+                "type": "object",
+                "properties": {
+                    "toStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["toStage", "reason"],
+                "additionalProperties": false
             }
         },
         "parameters": {}
     },
     "paths": {
-        "/expense-reports": {
-            "post": {
-                "summary": "Create an Expense Report",
-                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/CreateExpenseReportRequest"
-                            }
-                        }
+        "/v1/case-queue/rollups": {
+            "get": {
+                "summary": "Get Case Queue rollups",
+                "description": "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+                "security": [
+                    {
+                        "bearerAuth": []
                     }
-                },
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "asOfDate",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
-                    "201": {
-                        "description": "Expense Report created.",
+                    "200": {
+                        "description": "Case Queue rollups found.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                    "$ref": "#/components/schemas/CaseQueueStageRollupList"
                                 }
                             }
                         }
                     },
                     "400": {
-                        "description": "Malformed create request.",
+                        "description": "Malformed rollup request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user is not permitted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -171,10 +518,227 @@
                 }
             }
         },
-        "/expense-reports/{id}": {
+        "/v1/auth/login": {
+            "post": {
+                "summary": "Authenticate with email, password, and optional TOTP MFA",
+                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login succeeded and tokens were issued.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed login request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials or MFA code."
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/mfa/enroll": {
+            "post": {
+                "summary": "Enroll TOTP MFA",
+                "description": "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MfaEnrollmentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "TOTP MFA enrollment created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MfaEnrollmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed MFA enrollment request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports": {
+            "post": {
+                "summary": "Create an Expense Report",
+                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateExpenseReportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Expense Report created.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed create request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Submission with this idempotency key is already in progress.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}": {
             "get": {
                 "summary": "Get an Expense Report",
-                "description": "Loads an Expense Report case by identifier.",
+                "description": "Loads an Expense Report case by identifier within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "schema": {
@@ -189,10 +753,505 @@
                 "responses": {
                     "200": {
                         "description": "Expense Report found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/submit": {
+            "post": {
+                "summary": "Submit an Expense Report",
+                "description": "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubmitExpenseReportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Expense Report submitted.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed submit request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Only Drafted Expense Reports can be submitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "GL-coding service request failed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/transitions": {
+            "post": {
+                "summary": "Transition an Expense Report",
+                "description": "Applies role, current-stage, and Manager Approval flag guards before advancing or sending an Expense Report back to Drafted.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TransitionExpenseReportWorkflowRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report transitioned.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed transition request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense Report cannot transition from its current stage or has uncleared flags.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/flags/clear": {
+            "post": {
+                "summary": "Clear reviewed Expense Report flags",
+                "description": "Clears reviewed over-threshold line-item flags so Manager Approval can advance after the final flag is cleared.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClearExpenseReportFlagsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report flags cleared.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClearExpenseReportFlagsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed flag-clear request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Line-item flags can only be cleared during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/audit-entries": {
+            "get": {
+                "summary": "List Expense Report audit entries",
+                "description": "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Audit entries found for the Expense Report.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditEntryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
                                 }
                             }
                         }

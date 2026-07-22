@@ -20,22 +20,64 @@ export class NotFoundError extends Error {
 }
 
 /**
- * Represents a malformed or missing client request field.
+ * Represents a request that lacks valid authentication credentials.
  */
-export class BadRequestError extends Error {
-    public constructor(message: string) {
+export class UnauthorizedError extends Error {
+    public constructor(message = "A valid access token is required.") {
         super(message);
-        this.name = "BadRequestError";
+        this.name = "UnauthorizedError";
     }
 }
 
 /**
- * Represents a request that conflicts with an existing submission.
+ * Represents an authenticated request that is not permitted to perform an action.
+ */
+export class ForbiddenError extends Error {
+    public constructor(message = "This action is not permitted.") {
+        super(message);
+        this.name = "ForbiddenError";
+    }
+}
+
+/**
+ * Represents an authenticated tenant exceeding its configured request limit.
+ */
+export class RateLimitExceededError extends Error {
+    public constructor(public readonly retryAfterSeconds: number) {
+        super(
+            "The tenant request limit was exceeded. Retry after the indicated delay.",
+        );
+        this.name = "RateLimitExceededError";
+    }
+}
+
+/**
+ * Represents a request that conflicts with another in-flight operation.
  */
 export class ConflictError extends Error {
     public constructor(message: string) {
         super(message);
         this.name = "ConflictError";
+    }
+}
+
+/**
+ * Represents a downstream service failure needed to complete a request.
+ */
+export class BadGatewayError extends Error {
+    public constructor(message: string) {
+        super(message);
+        this.name = "BadGatewayError";
+    }
+}
+
+/**
+ * Represents invalid server-side configuration.
+ */
+export class ConfigurationError extends Error {
+    public constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
+        this.name = "ConfigurationError";
     }
 }
 
@@ -54,6 +96,10 @@ export const problemJsonErrorHandler: ErrorRequestHandler = (
     }
 
     const problem = toProblemJson(error, req.originalUrl);
+
+    if (error instanceof RateLimitExceededError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+    }
 
     res.status(problem.status).type("application/problem+json").json(problem);
 };
@@ -79,11 +125,31 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
         };
     }
 
-    if (error instanceof BadRequestError) {
+    if (error instanceof UnauthorizedError) {
         return {
             type: "about:blank",
-            title: "Bad Request",
-            status: 400,
+            title: "Unauthorized",
+            status: 401,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ForbiddenError) {
+        return {
+            type: "about:blank",
+            title: "Forbidden",
+            status: 403,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof RateLimitExceededError) {
+        return {
+            type: "about:blank",
+            title: "Too Many Requests",
+            status: 429,
             detail: error.message,
             instance,
         };
@@ -94,6 +160,26 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             type: "about:blank",
             title: "Conflict",
             status: 409,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof BadGatewayError) {
+        return {
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            detail: error.message,
+            instance,
+        };
+    }
+
+    if (error instanceof ConfigurationError) {
+        return {
+            type: "about:blank",
+            title: "Internal Server Error",
+            status: 500,
             detail: error.message,
             instance,
         };

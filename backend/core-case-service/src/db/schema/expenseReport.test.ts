@@ -7,10 +7,14 @@ import { getTableName } from "drizzle-orm";
 
 import {
     attachmentMetadata,
+    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     auditEntry,
     caseComment,
     expenseReport,
+    glCode,
+    glCodingResult,
+    glMapping,
     lineItem,
     mileageEntry,
     priorityLevels,
@@ -45,6 +49,33 @@ const requiredLineItemColumnNames = [
     "category",
     "expense_report_id",
     "tenant_id",
+];
+const glCodeRequiredColumnNames = [
+    "tenant_id",
+    "account_code",
+    "account_name",
+    "created_at",
+    "updated_at",
+];
+
+const glMappingRequiredColumnNames = [
+    "tenant_id",
+    "category",
+    "gl_code_id",
+    "created_at",
+    "updated_at",
+];
+
+const glCodingResultRequiredColumnNames = [
+    "submission_id",
+    "tenant_id",
+    "expense_report_id",
+    "source_type",
+    "source_id",
+    "category",
+    "mapping_status",
+    "flagged_line_item",
+    "coded_at",
 ];
 
 const caseCommentRequiredColumnNames = [
@@ -89,11 +120,16 @@ const auditEntryRequiredColumnNames = [
     "stage_before_action",
     "stage_after_proposed_action",
     "created_at",
+    "sequence",
 ];
 
 const coreCaseServiceDrizzleUrl = new URL("../../../drizzle/", import.meta.url);
 const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
+    import.meta.url,
+);
+const glReferenceMigrationSqlUrl = new URL(
+    "../../../drizzle/0009_gl_reference_seed.sql",
     import.meta.url,
 );
 
@@ -113,9 +149,17 @@ async function readLatestMigrationSql(): Promise<string> {
     return readFile(new URL(migrationFile, coreCaseServiceDrizzleUrl), "utf8");
 }
 
-// MUST be strictly equal. If outside, checks FAILED
+function expectMigrationSqlToContainValues(
+    migrationSql: string,
+    values: readonly string[],
+): void {
+    for (const value of values) {
+        expect(migrationSql).toContain(`'${value.toLowerCase()}'`);
+    }
+}
+
 void describe("expenseReport schema", () => {
-    void test("exports the approved workflow stages and priority levels", () => {
+    void test("exports the approved workflow stages", () => {
         expect(approvedWorkflowStages).toStrictEqual([
             "Drafted",
             "Submitted",
@@ -124,12 +168,26 @@ void describe("expenseReport schema", () => {
             "Paid",
             "Reconciled",
         ]);
+    });
 
+    void test("exports the priority levels", () => {
         expect(priorityLevels).toStrictEqual([
             "Low",
             "Normal",
             "High",
             "Urgent",
+        ]);
+    });
+
+    void test("exports the approved attachment content types", () => {
+        expect(approvedAttachmentContentTypes).toStrictEqual([
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "text/plain",
+            "text/csv",
+            "application/json",
         ]);
     });
 
@@ -214,6 +272,8 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain('"tenant_id" uuid not null');
         expect(migrationSql).toContain("expense_report_current_stage_check");
         expect(migrationSql).toContain('expense_report_priority_check"');
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
+        expectMigrationSqlToContainValues(migrationSql, priorityLevels);
         expect(migrationSql).toContain("expense_report_hold_reason_check");
         expect(migrationSql).toContain("expense_report_tenant_stage_idx");
         expect(migrationSql).toContain(
@@ -239,6 +299,7 @@ void describe("auditEntry schema", () => {
         }
 
         expect(columnNames).toContain("denial_reason");
+        expect(columnNames).toContain("outcome_reason");
 
         for (const columnName of auditEntryRequiredColumnNames) {
             const column = tableConfig.columns.find(
@@ -279,6 +340,7 @@ void describe("auditEntry schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "audit_entry_tenant_report_created_at_idx",
+            "audit_entry_tenant_report_sequence_idx",
             "audit_entry_tenant_actor_created_at_idx",
         ]);
     });
@@ -327,6 +389,7 @@ void describe("auditEntry schema", () => {
         }
 
         expect(migrationSql).toContain("denial_reason");
+        expect(migrationSql).toContain("outcome_reason");
 
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
@@ -334,13 +397,14 @@ void describe("auditEntry schema", () => {
         expect(migrationSql.includes("audit_entry_action_check")).toBeFalsy();
         expect(migrationSql).toContain("audit_entry_denial_reason_check");
         expect(migrationSql).toContain('"action" text not null');
-        expect(migrationSql).toContain("transition_approved");
         expect(migrationSql).toContain("transition_denied");
+        expect(migrationSql).toContain("transition_sent_back");
+        expect(migrationSql).toContain("line_item_flags_cleared");
         expect(migrationSql).toContain(
             `"audit_entry"."action" <> 'transition_denied' or nullif(btrim("audit_entry"."denial_reason"), '') is not null`,
         );
         expect(migrationSql).toContain(
-            `"audit_entry"."action" <> 'transition_approved' or "audit_entry"."denial_reason" is null`,
+            `"audit_entry"."action" = 'transition_denied' or "audit_entry"."denial_reason" is null`,
         );
         expect(migrationSql).toContain('"stage_before_action" text not null');
         expect(migrationSql).toContain(
@@ -350,11 +414,15 @@ void describe("auditEntry schema", () => {
         expect(migrationSql).toContain(
             "audit_entry_stage_after_proposed_action_check",
         );
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain(
             "audit_entry_tenant_report_created_at_idx",
         );
         expect(migrationSql).toContain(
             "audit_entry_tenant_actor_created_at_idx",
+        );
+        expect(migrationSql).toContain(
+            "audit_entry_tenant_report_sequence_idx",
         );
     });
 
@@ -586,13 +654,10 @@ void describe("attachmentMetadata schema", () => {
         expect(migrationSql).toContain(
             "attachment_metadata_content_type_check",
         );
-        expect(migrationSql).toContain("'application/pdf'");
-        expect(migrationSql).toContain("'image/png'");
-        expect(migrationSql).toContain("'image/jpeg'");
-        expect(migrationSql).toContain("'image/webp'");
-        expect(migrationSql).toContain("'text/plain'");
-        expect(migrationSql).toContain("'text/csv'");
-        expect(migrationSql).toContain("'application/json'");
+        expectMigrationSqlToContainValues(
+            migrationSql,
+            approvedAttachmentContentTypes,
+        );
         expect(migrationSql).toContain("attachment_metadata_tenant_report_idx");
     });
 });
@@ -722,7 +787,11 @@ void describe("stageTransition schema", () => {
                     ? `${fromStage}->${toStage}`
                     : `${fromStage}->${toStage}:${reason}`;
 
-            return validTransitions.has(transitionKey);
+            return (
+                validTransitions.has(transitionKey) ||
+                (fromStage === toStage &&
+                    reason?.startsWith("transition_denied:") === true)
+            );
         };
 
         expect(
@@ -734,6 +803,13 @@ void describe("stageTransition schema", () => {
         expect(isValidTransition("Paid", "Reconciled")).toBeTruthy();
         expect(isValidTransition("Manager Approval", "Drafted")).toBeTruthy();
         expect(isValidTransition("AP Review", "Drafted")).toBeTruthy();
+        expect(
+            isValidTransition(
+                "Submitted",
+                "Submitted",
+                "transition_denied: Authenticated role is not permitted.",
+            ),
+        ).toBeTruthy();
         expect(isValidTransition("Paid", "Manager Approval")).toBeFalsy();
         expect(isValidTransition("Submitted", "Drafted")).toBeFalsy();
         expect(isValidTransition("Drafted", "AP Review")).toBeFalsy();
@@ -742,6 +818,13 @@ void describe("stageTransition schema", () => {
         expect(isValidTransition("Drafted", "Drafted")).toBeFalsy();
         expect(
             isValidTransition("Drafted", "Drafted", "manual_update"),
+        ).toBeFalsy();
+        expect(
+            isValidTransition(
+                "Drafted",
+                "Submitted",
+                "transition_denied: blocked",
+            ),
         ).toBeFalsy();
     });
 
@@ -773,8 +856,10 @@ void describe("stageTransition schema", () => {
         );
         expect(migrationSql).toContain("stage_transition_from_stage_check");
         expect(migrationSql).toContain("stage_transition_to_stage_check");
+        expectMigrationSqlToContainValues(migrationSql, approvedWorkflowStages);
         expect(migrationSql).toContain("stage_transition_reason_check");
         expect(migrationSql).toContain("stage_transition_valid_edge_check");
+        expect(migrationSql).toContain("transition_denied:%");
         expect(migrationSql).toContain("report_created");
         expect(migrationSql).toContain("manager approval");
         expect(migrationSql).toContain("ap review");
@@ -882,6 +967,271 @@ void describe("lineItem schema", () => {
     });
 });
 
+void describe("gl reference schema", () => {
+    void test("defines tenant-scoped GL account reference data", () => {
+        const tableConfig = getTableConfig(glCode);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glCode)).toEqual("gl_code");
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(columnNames).toContain("description");
+        expect(tableConfig.checks.map((check) => check.name).sort()).toEqual([
+            "gl_code_account_code_not_blank_check",
+            "gl_code_account_name_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_code_tenant_account_code_unique_idx",
+            "gl_code_tenant_id_unique_idx",
+        ]);
+
+        for (const indexConfig of tableConfig.indexes) {
+            expect(indexConfig.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("defines category-to-account mappings with tenant uniqueness", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glMapping)).toEqual("gl_mapping");
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+
+        expect(tableConfig.checks.map((check) => check.name)).toEqual([
+            "gl_mapping_category_not_blank_check",
+        ]);
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_mapping_tenant_category_unique_idx",
+            "gl_mapping_tenant_gl_code_idx",
+        ]);
+
+        const categoryIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "gl_mapping_tenant_category_unique_idx",
+        );
+
+        expect(categoryIndex).toBeDefined();
+
+        if (categoryIndex !== undefined) {
+            expect(categoryIndex.config.unique).toBeTruthy();
+        }
+    });
+
+    void test("locks GL mappings to accounts within the same tenant", () => {
+        const tableConfig = getTableConfig(glMapping);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "gl_code_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "gl_mapping_gl_code_tenant_fk",
+            },
+        ]);
+    });
+
+    void test("generates SQL for GL accounts and category mappings", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({ glCode, glMapping });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "gl_code"');
+        expect(migrationSql).toContain('create table "gl_mapping"');
+
+        for (const columnName of glCodeRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        for (const columnName of glMappingRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain(
+            "gl_code_tenant_account_code_unique_idx",
+        );
+        expect(migrationSql).toContain("gl_code_tenant_id_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_category_unique_idx");
+        expect(migrationSql).toContain("gl_mapping_tenant_gl_code_idx");
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","gl_code_id") references "public"."gl_code"("tenant_id","id")',
+        );
+    });
+
+    void test("seeds baseline GL category mappings in the checked-in migration", async () => {
+        const migrationSql = (
+            await readFile(glReferenceMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain('insert into "gl_code"');
+        expect(migrationSql).toContain('insert into "gl_mapping"');
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "account_code") do nothing',
+        );
+        expect(migrationSql).toContain(
+            'on conflict ("tenant_id", "category") do nothing',
+        );
+
+        for (const category of [
+            "travel",
+            "meals",
+            "lodging",
+            "mileage",
+            "office supplies",
+            "software",
+            "other",
+        ]) {
+            expect(migrationSql).toContain(`'${category}'`);
+        }
+    });
+});
+
+void describe("glCodingResult schema", () => {
+    void test("defines append-only GL coding result rows for line items and mileage", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(glCodingResult)).toEqual("gl_coding_result");
+
+        for (const columnName of glCodingResultRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        expect(columnNames).toContain("gl_account_code");
+        expect(columnNames).toContain("gl_account_name");
+        expect(columnNames).toContain("amount");
+        expect(columnNames).toContain("currency");
+        expect(columnNames).toContain("flag_code");
+        expect(columnNames).toContain("flag_message");
+    });
+
+    void test("keeps GL coding results tenant-scoped and queryable by source or submission", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+        const foreignKeys = tableConfig.foreignKeys.map((foreignKeyConfig) => {
+            const reference = foreignKeyConfig.reference();
+
+            return {
+                columns: reference.columns.map((column) => column.name),
+                foreignColumns: reference.foreignColumns.map(
+                    (column) => column.name,
+                ),
+                name: foreignKeyConfig.getName(),
+            };
+        });
+
+        expect(foreignKeys).toEqual([
+            {
+                columns: ["tenant_id", "expense_report_id"],
+                foreignColumns: ["tenant_id", "id"],
+                name: "gl_coding_result_expense_report_tenant_fk",
+            },
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "gl_coding_result_tenant_source_coded_at_idx",
+            "gl_coding_result_tenant_submission_idx",
+        ]);
+    });
+
+    void test("keeps source type and mapping status checks explicit", () => {
+        const tableConfig = getTableConfig(glCodingResult);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "gl_coding_result_mapping_status_check",
+            "gl_coding_result_source_type_check",
+        ]);
+    });
+
+    void test("generates SQL for GL coding result history", async () => {
+        // Drizzle Kit's API return type is valid for TypeScript, but strict ESLint
+        // treats this generated snapshot type as unsafe.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({ expenseReport });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            expenseReport,
+            glCodingResult,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expect(migrationSql).toContain('create table "gl_coding_result"');
+
+        for (const columnName of glCodingResultRequiredColumnNames) {
+            expect(migrationSql).toContain(columnName);
+        }
+
+        expect(migrationSql).toContain("gl_coding_result_source_type_check");
+        expect(migrationSql).toContain("gl_coding_result_mapping_status_check");
+        expect(migrationSql).toContain(
+            'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
+        );
+        expect(migrationSql).toContain(
+            "gl_coding_result_tenant_source_coded_at_idx",
+        );
+        expect(migrationSql).toContain(
+            '"tenant_id","source_type","source_id","coded_at","id"',
+        );
+        expect(migrationSql).toContain(
+            "gl_coding_result_tenant_submission_idx",
+        );
+    });
+});
 void describe("receiptMetadata schema", () => {
     void test("defines the receipt_metadata child table", () => {
         const receiptMetadataConfig = getTableConfig(receiptMetadata);

@@ -1,16 +1,19 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    AuditEntryListOutboundResponseSchema,
+    AuditEntryOutboundResponseSchema,
+    ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    type AuditEntryResponse,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
 } from "./expenseReportDto.js";
 
 const validCreateExpenseReportRequest = {
-    tenant_id: "10000000-0000-4000-8000-000000000100",
     owner: "20000000-0000-4000-8000-000000000001",
     dueDate: "2026-07-31",
 };
@@ -28,6 +31,19 @@ const validExpenseReportResponse = {
     updatedAt: new Date("2026-07-06T12:00:00.000Z"),
 };
 
+const validAuditEntryResponse = {
+    id: "31000000-0000-4000-8000-000000000001",
+    tenantId: validExpenseReportResponse.tenantId,
+    expenseReportId: validExpenseReportResponse.id,
+    actorId: validCreateExpenseReportRequest.owner,
+    action: "report_created",
+    stageBeforeAction: "Drafted",
+    stageAfterProposedAction: "Drafted",
+    denialReason: null,
+    outcomeReason: null,
+    createdAt: new Date("2026-07-06T12:00:01.000Z"),
+};
+
 void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("parses the inbound fields needed to open a Drafted Expense Report", () => {
         const parsed: CreateExpenseReportRequest =
@@ -41,32 +57,28 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         });
     });
 
-    void test("keeps workflow stage out of the inbound create request contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            currentStage: "Submitted",
-        });
-
-        expect(parsed).not.toHaveProperty("currentStage");
+    void test("rejects workflow stage in the inbound create request contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                currentStage: "Submitted",
+            }),
+        ).toThrow();
     });
 
-    void test("requires tenant scope using the database-backed tenant_id field", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse(
-            validCreateExpenseReportRequest,
-        );
-
-        expect(parsed.tenant_id).toBe(
-            validCreateExpenseReportRequest.tenant_id,
-        );
-    });
-
-    void test("keeps camelCase tenant scope out of the inbound create request contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            tenantId: validExpenseReportResponse.tenantId,
-        });
-
-        expect(parsed).not.toHaveProperty("tenantId");
+    void test("rejects client-supplied tenant scope in the create contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenant_id: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenantId: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
     });
 
     void test("accepts an explicit priority", () => {
@@ -82,7 +94,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
                 dueDate: validCreateExpenseReportRequest.dueDate,
-                tenant_id: validCreateExpenseReportRequest.tenant_id,
             }),
         ).toThrow();
     });
@@ -90,7 +101,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenant_id: validCreateExpenseReportRequest.tenant_id,
                 owner: validCreateExpenseReportRequest.owner,
                 dueDate: "July 31, 2026",
             }),
@@ -145,5 +155,52 @@ void describe("ExpenseReportOutboundResponseSchema", () => {
                 createdAt: "2026-07-06",
             }),
         ).toThrow();
+    });
+});
+
+void describe("ClearExpenseReportFlagsInboundRequestSchema", () => {
+    void test("requires reviewed source ids for a flag clear request", () => {
+        expect(() =>
+            ClearExpenseReportFlagsInboundRequestSchema.parse({
+                reason: "reviewed receipt detail",
+            }),
+        ).toThrow();
+
+        expect(
+            ClearExpenseReportFlagsInboundRequestSchema.parse({
+                sourceIds: ["30000000-0000-4000-8000-000000000201"],
+                reason: "reviewed receipt detail",
+            }),
+        ).toStrictEqual({
+            sourceIds: ["30000000-0000-4000-8000-000000000201"],
+            reason: "reviewed receipt detail",
+        });
+    });
+});
+void describe("AuditEntryOutboundResponseSchema", () => {
+    void test("parses the redacted outbound audit event shape", () => {
+        const parsed: AuditEntryResponse =
+            AuditEntryOutboundResponseSchema.parse(validAuditEntryResponse);
+
+        expect(parsed).toStrictEqual(validAuditEntryResponse);
+    });
+
+    void test("parses an audit entry list for the Audit Trail view", () => {
+        const parsed = AuditEntryListOutboundResponseSchema.parse([
+            validAuditEntryResponse,
+        ]);
+
+        expect(parsed).toStrictEqual([validAuditEntryResponse]);
+    });
+
+    void test("rejects audit responses with arbitrary payment metadata", () => {
+        const parsed = AuditEntryOutboundResponseSchema.parse({
+            ...validAuditEntryResponse,
+            paymentReference: "synthetic-payment-reference",
+            rawRequestBody: { amount: "15.00" },
+        });
+
+        expect(parsed).not.toHaveProperty("paymentReference");
+        expect(parsed).not.toHaveProperty("rawRequestBody");
     });
 });

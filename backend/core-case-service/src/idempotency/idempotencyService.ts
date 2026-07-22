@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 
 import { ConflictError } from "../errors/problem-json.js";
-import {
-    IdempotencyRequestMismatchError,
-    type IdempotencyResult,
-    type IdempotencyStore,
+import type {
+    IdempotencyResult,
+    IdempotencyStore,
 } from "./idempotencyStore.js";
+import { IdempotencyRequestMismatchError } from "./idempotencyStore.js";
 
 type RunIdempotentSubmissionRequest<TBody> = {
     idempotencyKey: string;
@@ -14,6 +14,10 @@ type RunIdempotentSubmissionRequest<TBody> = {
     reservationMetadata?: Record<string, unknown>;
     store: IdempotencyStore;
     tenantId: string;
+};
+
+export type IdempotentSubmissionRunResult = IdempotencyResult & {
+    replayed: boolean;
 };
 
 /**
@@ -26,20 +30,18 @@ export async function runIdempotentSubmission<TBody>({
     reservationMetadata,
     store,
     tenantId,
-}: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotencyResult> {
+}: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotentSubmissionRunResult> {
     const cached = await getResultForRequest(
         store,
         tenantId,
         idempotencyKey,
         requestHash,
     );
-
     if (cached !== undefined) {
-        return cached;
+        return { ...cached, replayed: true };
     }
 
     const lockToken = await store.acquireLock(tenantId, idempotencyKey);
-
     if (lockToken === undefined) {
         const completed = await getResultForRequest(
             store,
@@ -47,9 +49,8 @@ export async function runIdempotentSubmission<TBody>({
             idempotencyKey,
             requestHash,
         );
-
         if (completed !== undefined) {
-            return completed;
+            return { ...completed, replayed: true };
         }
 
         throw new ConflictError(
@@ -66,9 +67,8 @@ export async function runIdempotentSubmission<TBody>({
             idempotencyKey,
             requestHash,
         );
-
         if (completed !== undefined) {
-            return completed;
+            return { ...completed, replayed: true };
         }
 
         const reserved = await store.reserveSubmission(
@@ -78,7 +78,6 @@ export async function runIdempotentSubmission<TBody>({
             requestHash,
             reservationMetadata,
         );
-
         if (!reserved) {
             const reservedResult = await getResultForRequest(
                 store,
@@ -86,9 +85,8 @@ export async function runIdempotentSubmission<TBody>({
                 idempotencyKey,
                 requestHash,
             );
-
             if (reservedResult !== undefined) {
-                return reservedResult;
+                return { ...reservedResult, replayed: true };
             }
 
             if (isRecoverableCreateReservation(reservationMetadata)) {
@@ -101,19 +99,20 @@ export async function runIdempotentSubmission<TBody>({
                     requestHash,
                     result,
                 );
-                return result;
+                return { ...result, replayed: false };
             }
 
             throw new ConflictError(
                 "A submission with this idempotency key is already in progress.",
             );
         }
-
         shouldClearReservation = true;
+
         const body = toJsonSafeBody(await operation());
         shouldClearReservation = false;
 
         const result = { body, statusCode: 201 };
+
         await store.saveResult(
             tenantId,
             idempotencyKey,
@@ -121,7 +120,8 @@ export async function runIdempotentSubmission<TBody>({
             requestHash,
             result,
         );
-        return result;
+
+        return { ...result, replayed: false };
     } catch (error: unknown) {
         if (shouldClearReservation) {
             await store.clearReservation(tenantId, idempotencyKey, lockToken);

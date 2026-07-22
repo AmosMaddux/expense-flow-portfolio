@@ -1,20 +1,43 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { BadRequestError } from "../../errors/problem-json.js";
+import type { RoleName } from "../../db/schema/index.js";
+import {
+    ConflictError,
+    ForbiddenError,
+    UnauthorizedError,
+} from "../../errors/problem-json.js";
+import {
+    ClearExpenseReportFlagsInboundRequestSchema,
+    CreateExpenseReportInboundRequestSchema,
+    GetExpenseReportInboundRequestSchema,
+    IdempotentSubmissionHeaderSchema,
+    ReadCaseQueueStageRollupsQuerySchema,
+    SubmitExpenseReportInboundRequestSchema,
+    TransitionExpenseReportWorkflowInboundRequestSchema,
+} from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
     createIdempotencyRequestHash,
     createIdempotencyResourceId,
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
+import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
-    CreateExpenseReportInboundRequestSchema,
-    GetExpenseReportInboundRequestSchema,
-} from "../../schemas/expense-report.schema.js";
+    logExpenseReportAuditError,
+    logExpenseReportAuditSuccess,
+} from "../../logging/coreCaseLogger.js";
 import {
+    clearExpenseReportFlags,
     createDraftExpenseReport,
     readExpenseReport,
+    readExpenseReportAuditEntries,
+    submitExpenseReport,
+    transitionExpenseReportWorkflow,
 } from "../services/expenseReportService.js";
+import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
+
+const createExpenseReportRouteLogName = "POST /v1/expense-reports";
+const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
 
 /**
  * Handles Expense Report creation requests.
@@ -25,39 +48,64 @@ export async function postExpenseReport(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = CreateExpenseReportInboundRequestSchema.parse(
             req.body,
         );
-        const tenantId = parsedRequest.tenant_id;
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        if (ownerScope !== undefined && parsedRequest.owner !== ownerScope) {
+            throw new ForbiddenError(
+                "Employees may only create their own Expense Reports.",
+            );
+        }
+
         const idempotencyKey = parseIdempotencyKey(req);
         const resourceId = createIdempotencyResourceId(
-            tenantId,
+            auth.tenantId,
             idempotencyKey,
         );
+        const createReport = async () =>
+            createDraftExpenseReport({
+                id: resourceId,
+                owner: parsedRequest.owner,
+                dueDate: parsedRequest.dueDate,
+                priority: parsedRequest.priority,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+            });
         const requestHash = createIdempotencyRequestHash(parsedRequest);
 
         const result = await runIdempotentSubmission({
             idempotencyKey,
-            operation: () =>
-                createDraftExpenseReport({
-                    id: resourceId,
-                    owner: parsedRequest.owner,
-                    dueDate: parsedRequest.dueDate,
-                    priority: parsedRequest.priority,
-                    tenantId,
-                }),
+            operation: createReport,
             requestHash,
             reservationMetadata: {
                 operation: "create_expense_report",
                 resourceId,
-                tenantId,
+                tenantId: auth.tenantId,
             },
             store: getDefaultIdempotencyStore(),
-            tenantId,
+            tenantId: auth.tenantId,
         });
 
+        if (!result.replayed) {
+            logExpenseReportAuditSuccess({
+                action: "report_created",
+                actorId: auth.userId,
+                expenseReportId: readExpenseReportId(result.body),
+                route: createExpenseReportRouteLogName,
+                tenantId: auth.tenantId,
+            });
+        }
         res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "report_created",
+            actorId: req.auth?.userId,
+            error,
+            route: createExpenseReportRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
         next(error);
     }
 }
@@ -71,10 +119,16 @@ export async function getExpenseReportById(
     next: NextFunction,
 ): Promise<void> {
     try {
+        const auth = requireAuthContext(req);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        const report = await readExpenseReport(parsedRequest);
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const report = await readExpenseReport({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
 
         res.status(200).json(report);
     } catch (error: unknown) {
@@ -82,12 +136,251 @@ export async function getExpenseReportById(
     }
 }
 
-function parseIdempotencyKey(req: Request): string {
-    const idempotencyKey = req.get("idempotency-key")?.trim();
+/**
+ * Handles Expense Report submission requests.
+ */
+export async function postExpenseReportSubmission(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        if (!hasInternalExpenseReportRole(auth)) {
+            await insertDeniedSubmissionAuditEntry(
+                auth.tenantId,
+                parsedParams.id,
+                auth.userId,
+                "Authenticated role is not permitted to submit Expense Reports.",
+            );
+            throw new ForbiddenError();
+        }
 
-    if (idempotencyKey === undefined || idempotencyKey.length === 0) {
-        throw new BadRequestError("Idempotency-Key header is required.");
+        const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
+            req.body,
+        );
+        const submitReport = async () =>
+            submitExpenseReport({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+                roles: auth.roles,
+            });
+        const idempotencyKey = parseIdempotencyKey(req);
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: submitReport,
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            tenantId: auth.tenantId,
+        });
+
+        res.status(result.statusCode).json(result.body);
+    } catch (error: unknown) {
+        if (
+            error instanceof Error &&
+            error.message === "Only Drafted Expense Reports can be submitted."
+        ) {
+            next(new ConflictError(error.message));
+            return;
+        }
+
+        next(error);
+    }
+}
+
+/**
+ * Handles guarded Expense Report workflow transition requests.
+ */
+export async function postExpenseReportTransition(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest =
+            TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
+        const report = await transitionExpenseReportWorkflow({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            toStage: parsedRequest.toStage,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles line-item flag clearing after internal review.
+ */
+export async function postExpenseReportFlagClear(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = ClearExpenseReportFlagsInboundRequestSchema.parse(
+            req.body,
+        );
+        const result = await clearExpenseReportFlags({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            sourceIds: parsedRequest.sourceIds,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(result);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+/**
+ * Handles Case Queue rollup read requests for one tenant.
+ */
+export async function getCaseQueueStageRollups(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedQuery = ReadCaseQueueStageRollupsQuerySchema.parse({
+            asOfDate: req.query.asOfDate,
+        });
+        const rollups = await readCachedCaseQueueStageRollups({
+            tenantId: auth.tenantId,
+            asOfDate: parsedQuery.asOfDate,
+        });
+
+        res.status(200).json(rollups);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Audit Trail reads for an Expense Report case.
+ */
+export async function getExpenseReportAuditEntries(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    let parsedExpenseReportId: string | undefined;
+
+    try {
+        const auth = requireAuthContext(req);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        parsedExpenseReportId = parsedRequest.id;
+        requireInternalAuditTrailAccess(auth);
+        const auditEntries = await readExpenseReportAuditEntries({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+        });
+
+        logExpenseReportAuditSuccess({
+            action: "audit_entries_read",
+            actorId: auth.userId,
+            expenseReportId: parsedRequest.id,
+            route: auditEntriesRouteLogName,
+            tenantId: auth.tenantId,
+        });
+        res.status(200).json(auditEntries);
+    } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "audit_entries_read",
+            actorId: req.auth?.userId,
+            error,
+            expenseReportId: parsedExpenseReportId,
+            route: auditEntriesRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
+        next(error);
+    }
+}
+
+function readExpenseReportId(body: unknown): string | undefined {
+    if (body === null || typeof body !== "object" || !("id" in body)) {
+        return undefined;
     }
 
-    return idempotencyKey;
+    const id = body.id;
+
+    return typeof id === "string" ? id : undefined;
+}
+
+function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
+    if (req.auth === undefined) {
+        throw new UnauthorizedError();
+    }
+
+    return req.auth;
+}
+
+function requireInternalAuditTrailAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Audit Trail access is limited to internal roles.",
+    );
+}
+
+const internalExpenseReportRoles = new Set<RoleName>([
+    "Finance Admin",
+    "Department Manager",
+]);
+
+function getAuthorizedOwnerScope(
+    auth: NonNullable<Request["auth"]>,
+): string | undefined {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return undefined;
+    }
+
+    if (auth.roles.includes("Employee")) {
+        // Employee Portal access is limited to records owned by the authenticated user.
+        return auth.userId;
+    }
+
+    throw new ForbiddenError();
+}
+
+function hasInternalExpenseReportRole(
+    auth: NonNullable<Request["auth"]>,
+): boolean {
+    return auth.roles.some((role) => internalExpenseReportRoles.has(role));
+}
+
+function parseIdempotencyKey(req: Request): string {
+    return IdempotentSubmissionHeaderSchema.parse({
+        idempotencyKey: req.get("idempotency-key"),
+    }).idempotencyKey;
 }

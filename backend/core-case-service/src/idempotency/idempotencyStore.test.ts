@@ -1,6 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import type { RedisClientType } from "redis";
 
 import {
     createIdempotencyStore,
@@ -29,11 +27,13 @@ void describe("idempotency key builders", () => {
 
 void describe("idempotency store", () => {
     void test("persists create recovery metadata in DynamoDB reservations", async () => {
-        const dynamoDb = createDynamoMock();
+        const dynamoDb = {
+            send: vi.fn().mockResolvedValue({}),
+        };
         const redis = createRedisMock();
         const store = createIdempotencyStore(
-            dynamoDb as unknown as DynamoDBDocumentClient,
-            redis as unknown as RedisClientType,
+            dynamoDb as never,
+            redis as never,
             "idempotency-table",
         );
 
@@ -69,18 +69,20 @@ void describe("idempotency store", () => {
     });
 
     void test("hydrates Redis for 24 hours from a durable DynamoDB result", async () => {
-        const dynamoDb = createDynamoMock({
-            Item: {
-                pk: "idem:tenant:key",
-                requestHash: "request-hash-one",
-                result: { body: { id: "report-1" }, statusCode: 201 },
-                status: "completed",
-            },
-        });
+        const dynamoDb = {
+            send: vi.fn().mockResolvedValue({
+                Item: {
+                    pk: "idem:tenant:key",
+                    requestHash: "request-hash-one",
+                    result: { body: { id: "report-1" }, statusCode: 201 },
+                    status: "completed",
+                },
+            }),
+        };
         const redis = createRedisMock();
         const store = createIdempotencyStore(
-            dynamoDb as unknown as DynamoDBDocumentClient,
-            redis as unknown as RedisClientType,
+            dynamoDb as never,
+            redis as never,
             "idempotency-table",
         );
 
@@ -102,11 +104,13 @@ void describe("idempotency store", () => {
     });
 
     void test("mirrors saved DynamoDB results into Redis for 24 hours", async () => {
-        const dynamoDb = createDynamoMock();
+        const dynamoDb = {
+            send: vi.fn().mockResolvedValue({}),
+        };
         const redis = createRedisMock();
         const store = createIdempotencyStore(
-            dynamoDb as unknown as DynamoDBDocumentClient,
-            redis as unknown as RedisClientType,
+            dynamoDb as never,
+            redis as never,
             "idempotency-table",
         );
         const result = { body: { id: "report-1" }, statusCode: 201 };
@@ -139,7 +143,9 @@ void describe("idempotency store", () => {
     });
 
     void test("rejects cached results for a different request hash", async () => {
-        const dynamoDb = createDynamoMock();
+        const dynamoDb = {
+            send: vi.fn(),
+        };
         const redis = createRedisMock({
             get: vi.fn().mockResolvedValue(
                 JSON.stringify({
@@ -149,25 +155,53 @@ void describe("idempotency store", () => {
             ),
         });
         const store = createIdempotencyStore(
-            dynamoDb as unknown as DynamoDBDocumentClient,
-            redis as unknown as RedisClientType,
+            dynamoDb as never,
+            redis as never,
             "idempotency-table",
         );
 
         await expect(
             store.getResult("tenant", "key", "request-hash-two"),
         ).rejects.toBeInstanceOf(IdempotencyRequestMismatchError);
+
         expect(dynamoDb.send).not.toHaveBeenCalled();
+    });
+
+    void test("rejects DynamoDB records for a different request hash", async () => {
+        const dynamoDb = {
+            send: vi.fn().mockResolvedValue({
+                Item: {
+                    pk: "idem:tenant:key",
+                    requestHash: "request-hash-one",
+                    result: { body: { id: "report-1" }, statusCode: 201 },
+                    status: "completed",
+                },
+            }),
+        };
+        const redis = createRedisMock();
+        const store = createIdempotencyStore(
+            dynamoDb as never,
+            redis as never,
+            "idempotency-table",
+        );
+
+        await expect(
+            store.getResult("tenant", "key", "request-hash-two"),
+        ).rejects.toBeInstanceOf(IdempotencyRequestMismatchError);
+
+        expect(redis.set).not.toHaveBeenCalled();
     });
 });
 
-function createDynamoMock(result: unknown = {}) {
-    return {
-        send: vi.fn().mockResolvedValue(result),
-    };
-}
+type RedisMock = {
+    connect: ReturnType<typeof vi.fn>;
+    eval: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+    isOpen: boolean;
+    set: ReturnType<typeof vi.fn>;
+};
 
-function createRedisMock(overrides = {}) {
+function createRedisMock(overrides: Partial<RedisMock> = {}): RedisMock {
     return {
         connect: vi.fn().mockResolvedValue(undefined),
         eval: vi.fn().mockResolvedValue(1),

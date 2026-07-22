@@ -5,47 +5,31 @@ import { createClient } from "redis";
 import { loadIdempotencyConfig } from "../config/idempotencyConfig.js";
 import {
     createIdempotencyStore,
-    createInMemoryIdempotencyStore,
     type IdempotencyStore,
 } from "./idempotencyStore.js";
 
-const memoryStore = createInMemoryIdempotencyStore();
-let defaultStore: IdempotencyStore | undefined;
+let store: IdempotencyStore | undefined;
 
 /**
- * Returns the configured tenant-scoped idempotency store.
+ * Builds the shared Redis and DynamoDB-backed idempotency store.
  */
 export function getDefaultIdempotencyStore(): IdempotencyStore {
-    defaultStore ??= createDefaultIdempotencyStore();
-    return defaultStore;
-}
-
-/**
- * Clears local idempotency state between tests.
- */
-export function resetDefaultIdempotencyStoreForTests(): void {
-    defaultStore = undefined;
-    memoryStore.clear();
-}
-
-function createDefaultIdempotencyStore(): IdempotencyStore {
-    const config = loadIdempotencyConfig();
-
-    if (config.storeBackend !== "dynamodb") {
-        return memoryStore;
+    if (store !== undefined) {
+        return store;
     }
 
-    const dynamoDbClient = new DynamoDBClient({
-        ...(config.dynamoDbEndpoint === undefined
-            ? {}
-            : { endpoint: config.dynamoDbEndpoint }),
-        region: config.dynamoDbRegion,
-    });
+    const config = loadIdempotencyConfig();
+    const dynamoDb = DynamoDBDocumentClient.from(
+        new DynamoDBClient({
+            ...(config.dynamoDbEndpoint === undefined
+                ? {}
+                : { endpoint: config.dynamoDbEndpoint }),
+            region: config.dynamoDbRegion,
+        }),
+    );
     const redis = createClient({ url: config.redisUrl });
 
-    return createIdempotencyStore(
-        DynamoDBDocumentClient.from(dynamoDbClient),
-        redis,
-        config.dynamoDbTableName,
-    );
+    store = createIdempotencyStore(dynamoDb, redis, config.dynamoDbTableName);
+
+    return store;
 }
