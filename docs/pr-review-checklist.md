@@ -43,7 +43,7 @@ Return findings first, ordered by severity. Include file and line references whe
 
 - [ ] Branch and PR conventions are followed.
     - Confirm the branch is short-lived and uses the exact naming convention from `CONTRIBUTING.md`.
-    - Confirm `feature/*` branches target `develop`, `release/*` branches target `develop` and `main`, and `hotfix/*` branches target `main` and `develop`.
+    - Confirm `feature/*` branches target `development`, and `development` or `hotfix/*` branches target `main`.
     - Confirm the PR template is complete and links the Jira ticket.
     - Confirm the PR generally maps to one Jira ticket, or references all related Jira tickets when several tickets describe the same issue or body of work.
     - Confirm required local tests passed before push for `feature/*` branches.
@@ -75,7 +75,6 @@ Return findings first, ordered by severity. Include file and line references whe
   - Confirm exported/public functions, public classes, and public methods have short docstrings or JSDoc comments where required.
   - Confirm inline comments explain non-obvious intent, constraints, tenant-isolation decisions, database assumptions, workarounds, performance choices, or surprising behavior.
   - Confirm stale or redundant comments were updated or removed.
-- [ ] All migrations have a matching rollback created
 
 ## Review Notes
 

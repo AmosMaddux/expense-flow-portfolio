@@ -70,12 +70,7 @@ export async function runIdempotentSubmission<TBody>({
         const body = toJsonSafeBody(await operation());
         const result = { body, statusCode: 201 };
 
-        await store.saveResult(
-            tenantId,
-            idempotencyKey,
-            requestHash,
-            result,
-        );
+        await store.saveResult(tenantId, idempotencyKey, requestHash, result);
 
         return { ...result, replayed: false };
     } finally {

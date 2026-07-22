@@ -1,11 +1,16 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+    createInMemoryIdempotencyStore,
     createRedisIdempotencyStore,
     IdempotencyRequestMismatchError,
     toRedisLockKey,
     toRedisResultKey,
 } from "./idempotencyStore.js";
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 void describe("idempotency key builders", () => {
     void test("scopes Redis keys by tenant", () => {
@@ -81,14 +86,102 @@ void describe("idempotency store", () => {
         const token = await store.acquireLock("tenant", "key");
 
         expect(token).toEqual(expect.any(String));
-        expect(redis.set).toHaveBeenCalledWith(
-            "lock:tenant:key",
-            token,
-            {
-                NX: true,
-                PX: 30_000,
-            },
+        expect(redis.set).toHaveBeenCalledWith("lock:tenant:key", token, {
+            NX: true,
+            PX: 30_000,
+        });
+    });
+
+    void test("returns missing results and unavailable locks", async () => {
+        const redis = createRedisMock({
+            get: vi.fn().mockResolvedValue(null),
+            set: vi.fn().mockResolvedValue(null),
+        });
+        const store = createRedisIdempotencyStore(redis as never);
+
+        await expect(
+            store.getResult("tenant", "missing", "request-hash"),
+        ).resolves.toBeUndefined();
+        await expect(
+            store.acquireLock("tenant", "key"),
+        ).resolves.toBeUndefined();
+    });
+
+    void test("connects closed Redis clients and releases owned locks", async () => {
+        const redis = createRedisMock({
+            isOpen: false,
+        });
+        const store = createRedisIdempotencyStore(redis as never);
+
+        const token = await store.acquireLock("tenant", "key");
+        await store.releaseLock("tenant", "key", token as string);
+
+        expect(redis.connect).toHaveBeenCalledTimes(2);
+        expect(redis.eval).toHaveBeenCalledOnce();
+    });
+});
+
+void describe("in-memory idempotency store", () => {
+    void test("stores results and rejects mismatched request hashes", async () => {
+        const store = createInMemoryIdempotencyStore();
+        const result = { body: { id: "report-1" }, statusCode: 201 };
+
+        await store.saveResult("tenant", "key", "request-hash-one", result);
+
+        await expect(
+            store.getResult("tenant", "key", "request-hash-one"),
+        ).resolves.toEqual(result);
+        await expect(
+            store.getResult("tenant", "key", "request-hash-two"),
+        ).rejects.toBeInstanceOf(IdempotencyRequestMismatchError);
+        await expect(
+            store.getResult("tenant", "missing", "request-hash-one"),
+        ).resolves.toBeUndefined();
+    });
+
+    void test("expires completed results", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+        const store = createInMemoryIdempotencyStore();
+        await store.saveResult("tenant", "key", "request-hash", {
+            body: {},
+            statusCode: 201,
+        });
+
+        vi.advanceTimersByTime(86_400_001);
+
+        await expect(
+            store.getResult("tenant", "key", "request-hash"),
+        ).resolves.toBeUndefined();
+    });
+
+    void test("serializes locks until release or expiration", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+        const store = createInMemoryIdempotencyStore();
+        const token = await store.acquireLock("tenant", "key");
+
+        await expect(
+            store.acquireLock("tenant", "key"),
+        ).resolves.toBeUndefined();
+        await store.releaseLock("tenant", "key", "different-token");
+        await expect(
+            store.acquireLock("tenant", "key"),
+        ).resolves.toBeUndefined();
+        await store.releaseLock("tenant", "key", token as string);
+        await expect(store.acquireLock("tenant", "key")).resolves.toEqual(
+            expect.any(String),
         );
+
+        vi.advanceTimersByTime(30_001);
+        await expect(store.acquireLock("tenant", "key")).resolves.toEqual(
+            expect.any(String),
+        );
+
+        store.clear();
+        await expect(
+            store.getResult("tenant", "key", "request-hash"),
+        ).resolves.toBeUndefined();
     });
 });
 

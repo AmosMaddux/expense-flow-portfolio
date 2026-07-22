@@ -133,13 +133,13 @@ export function createInMemoryIdempotencyStore(): IdempotencyStore & {
     const locks = new Map<string, LockRecord>();
 
     return {
-        async acquireLock(tenantId, idempotencyKey) {
+        acquireLock(tenantId, idempotencyKey) {
             const lockKey = toRedisLockKey(tenantId, idempotencyKey);
             const now = Date.now();
             const existing = locks.get(lockKey);
 
             if (existing !== undefined && existing.expiresAt > now) {
-                return undefined;
+                return Promise.resolve(undefined);
             }
 
             const token = randomUUID();
@@ -147,46 +147,49 @@ export function createInMemoryIdempotencyStore(): IdempotencyStore & {
                 token,
                 expiresAt: now + IDEMPOTENCY_LOCK_TTL_MILLISECONDS,
             });
-            return token;
+            return Promise.resolve(token);
         },
         clear() {
             locks.clear();
             records.clear();
         },
-        async getResult(tenantId, idempotencyKey, requestHash) {
+        getResult(tenantId, idempotencyKey, requestHash) {
             const key = toRedisResultKey(tenantId, idempotencyKey);
             const record = records.get(key);
 
             if (record === undefined) {
-                return undefined;
+                return Promise.resolve(undefined);
             }
 
             if (record.expiresAt <= Date.now()) {
                 records.delete(key);
-                return undefined;
+                return Promise.resolve(undefined);
             }
 
             if (record.requestHash !== requestHash) {
-                throw new IdempotencyRequestMismatchError();
+                return Promise.reject(new IdempotencyRequestMismatchError());
             }
 
-            return record.result;
+            return Promise.resolve(record.result);
         },
-        async releaseLock(tenantId, idempotencyKey, token) {
+        releaseLock(tenantId, idempotencyKey, token) {
             const lockKey = toRedisLockKey(tenantId, idempotencyKey);
             const lock = locks.get(lockKey);
 
             if (lock?.token === token) {
                 locks.delete(lockKey);
             }
+
+            return Promise.resolve();
         },
-        async saveResult(tenantId, idempotencyKey, requestHash, result) {
+        saveResult(tenantId, idempotencyKey, requestHash, result) {
             records.set(toRedisResultKey(tenantId, idempotencyKey), {
                 requestHash,
                 result,
-                expiresAt:
-                    Date.now() + IDEMPOTENCY_RESULT_TTL_SECONDS * 1000,
+                expiresAt: Date.now() + IDEMPOTENCY_RESULT_TTL_SECONDS * 1000,
             });
+
+            return Promise.resolve();
         },
     };
 }
