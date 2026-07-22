@@ -17,19 +17,15 @@ export const loginRequestSchema = z.object({
         .optional(),
 });
 
-export const refreshRequestSchema = z.object({
-    refreshToken: z.string().min(1),
-});
+export const refreshRequestSchema = z.object({});
 
-export const logoutRequestSchema = refreshRequestSchema;
+export const logoutRequestSchema = z.object({});
 
 export const tokenResponseSchema = z.object({
     tenantId: z.uuid(),
     userId: z.uuid(),
     accessToken: z.string().min(1),
     accessTokenExpiresAt: z.iso.datetime(),
-    refreshToken: z.string().min(1),
-    refreshTokenExpiresAt: z.iso.datetime(),
 });
 
 const accessTokenClaimsSchema = z.object({

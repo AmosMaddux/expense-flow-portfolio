@@ -10,16 +10,11 @@ import {
 } from "react";
 
 import { createAuthClient, type AuthClient } from "./authClient";
-import {
-    authSessionSchema,
-    type AuthSession,
-    type LoginRequest,
-    type Role,
-} from "./authSchemas";
+import type { AuthSession, LoginRequest, Role } from "./authSchemas";
 
-const sessionStorageKey = "expenseflow.auth.session.v1";
 const defaultRefreshBufferMs = 60_000;
 const noopClearCache = (): void => undefined;
+const noopLogoutErrorHandler: (error: unknown) => void = () => undefined;
 
 export type SessionUser = {
     id: string;
@@ -44,8 +39,8 @@ export type SessionContextValue = {
 export type AuthProviderProps = PropsWithChildren<{
     apiBaseUrl?: string;
     authClient?: AuthClient;
-    storage?: Storage;
     clearCache?: () => void | Promise<void>;
+    onLogoutError?: (error: unknown) => void;
     fetchImplementation?: typeof fetch;
     refreshBufferMs?: number;
     now?: () => number;
@@ -62,8 +57,8 @@ export function AuthProvider({
     children,
     apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "",
     authClient,
-    storage = window.sessionStorage,
     clearCache = noopClearCache,
+    onLogoutError = noopLogoutErrorHandler,
     fetchImplementation = fetch,
     refreshBufferMs = defaultRefreshBufferMs,
     now = Date.now,
@@ -75,26 +70,22 @@ export function AuthProvider({
     const [session, setSessionState] = useState<AuthSession | null>(null);
     const [isRestoring, setIsRestoring] = useState(true);
     const sessionRef = useRef<AuthSession | null>(null);
+    const sessionVersionRef = useRef(0);
     const refreshPromiseRef = useRef<Promise<AuthSession | null> | null>(null);
+    const hasRestoredRef = useRef(false);
 
     const persistSession = useCallback(
         (nextSession: AuthSession | null): void => {
+            sessionVersionRef.current += 1;
             sessionRef.current = nextSession;
             setSessionState(nextSession);
-
-            if (nextSession === null) {
-                storage.removeItem(sessionStorageKey);
-                return;
-            }
-
-            storage.setItem(sessionStorageKey, JSON.stringify(nextSession));
         },
-        [storage],
+        [],
     );
 
     const invalidateSession = useCallback(async (): Promise<void> => {
         persistSession(null);
-        await clearCache();
+        await Promise.allSettled([Promise.resolve().then(clearCache)]);
     }, [clearCache, persistSession]);
 
     const refreshSession =
@@ -103,22 +94,12 @@ export function AuthProvider({
                 return refreshPromiseRef.current;
             }
 
-            const currentSession = sessionRef.current;
-            if (
-                currentSession === null ||
-                Date.parse(currentSession.refreshTokenExpiresAt) <= now()
-            ) {
-                await invalidateSession();
-                return null;
-            }
+            const refreshVersion = sessionVersionRef.current;
 
             const refreshPromise = client
-                .refresh(currentSession.refreshToken)
+                .refresh()
                 .then((refreshedSession) => {
-                    if (
-                        sessionRef.current?.refreshToken !==
-                        currentSession.refreshToken
-                    ) {
+                    if (sessionVersionRef.current !== refreshVersion) {
                         return null;
                     }
 
@@ -126,10 +107,7 @@ export function AuthProvider({
                     return refreshedSession;
                 })
                 .catch(async () => {
-                    if (
-                        sessionRef.current?.refreshToken ===
-                        currentSession.refreshToken
-                    ) {
+                    if (sessionVersionRef.current === refreshVersion) {
                         await invalidateSession();
                     }
 
@@ -141,29 +119,18 @@ export function AuthProvider({
             refreshPromiseRef.current = refreshPromise;
 
             return refreshPromise;
-        }, [client, invalidateSession, now, persistSession]);
+        }, [client, invalidateSession, persistSession]);
 
     useEffect(() => {
-        const storedValue = storage.getItem(sessionStorageKey);
-
-        if (storedValue !== null) {
-            try {
-                const restoredSession = authSessionSchema.parse(
-                    JSON.parse(storedValue),
-                );
-
-                if (Date.parse(restoredSession.refreshTokenExpiresAt) > now()) {
-                    persistSession(restoredSession);
-                } else {
-                    storage.removeItem(sessionStorageKey);
-                }
-            } catch {
-                storage.removeItem(sessionStorageKey);
-            }
+        if (hasRestoredRef.current) {
+            return;
         }
 
-        setIsRestoring(false);
-    }, [now, persistSession, storage]);
+        hasRestoredRef.current = true;
+        void refreshSession().finally(() => {
+            setIsRestoring(false);
+        });
+    }, [refreshSession]);
 
     useEffect(() => {
         if (session === null) {
@@ -190,15 +157,24 @@ export function AuthProvider({
     );
 
     const logout = useCallback(async (): Promise<void> => {
-        const refreshToken = sessionRef.current?.refreshToken;
-
         // Local identity and tenant-scoped query data must disappear immediately,
         // even when the revocation endpoint is unavailable.
-        await invalidateSession();
-        if (refreshToken !== undefined) {
-            await client.logout(refreshToken);
+        persistSession(null);
+        const results = await Promise.allSettled([
+            Promise.resolve().then(clearCache),
+            Promise.resolve().then(() => client.logout()),
+        ]);
+
+        for (const result of results) {
+            if (result.status === "rejected") {
+                try {
+                    onLogoutError(result.reason as unknown);
+                } catch {
+                    // Reporting failures must not make the logout contract reject.
+                }
+            }
         }
-    }, [client, invalidateSession]);
+    }, [clearCache, client, onLogoutError, persistSession]);
 
     const getAccessToken = useCallback(async (): Promise<string | null> => {
         const currentSession = sessionRef.current;

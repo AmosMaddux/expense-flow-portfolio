@@ -11,8 +11,8 @@ type FetchImplementation = typeof fetch;
 
 export type AuthClient = {
     login: (request: LoginRequest) => Promise<AuthSession>;
-    refresh: (refreshToken: string) => Promise<AuthSession>;
-    logout: (refreshToken: string) => Promise<void>;
+    refresh: () => Promise<AuthSession>;
+    logout: () => Promise<void>;
 };
 
 /** Represents a rejected request to the authentication API. */
@@ -43,28 +43,31 @@ export function createAuthClient(
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
+                credentials: "include",
             });
 
             return readSessionResponse(response);
         },
 
-        async refresh(refreshToken): Promise<AuthSession> {
-            const body = refreshRequestSchema.parse({ refreshToken });
+        async refresh(): Promise<AuthSession> {
+            const body = refreshRequestSchema.parse({});
             const response = await fetchImplementation(`${authUrl}/refresh`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
+                credentials: "include",
             });
 
             return readSessionResponse(response);
         },
 
-        async logout(refreshToken): Promise<void> {
-            const body = logoutRequestSchema.parse({ refreshToken });
+        async logout(): Promise<void> {
+            const body = logoutRequestSchema.parse({});
             const response = await fetchImplementation(`${authUrl}/logout`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
+                credentials: "include",
             });
 
             if (!response.ok) {
