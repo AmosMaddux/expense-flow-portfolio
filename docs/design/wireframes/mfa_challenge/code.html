@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MFA Challenge - ExpenseFlow</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom digit input focus ring */
+        .digit-input:focus {
+            outline: none;
+            border-color: #475569;
+            box-shadow: 0 0 0 2px rgba(71, 85, 105, 0.1);
+        }
+        /* Hide arrows/spinners in number inputs */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed": "#ffddb8",
+                    "tertiary": "#583500",
+                    "surface": "#f7f9fb",
+                    "primary-container": "#475569",
+                    "secondary-container": "#6cf8bb",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "primary-fixed-dim": "#b9c7df",
+                    "background": "#f7f9fb",
+                    "secondary": "#006c49",
+                    "tertiary-container": "#774a00",
+                    "on-secondary-fixed-variant": "#005236",
+                    "primary-fixed": "#d5e3fc",
+                    "on-surface-variant": "#44474c",
+                    "primary": "#303e51",
+                    "inverse-on-surface": "#eff1f3",
+                    "on-surface": "#191c1e",
+                    "on-tertiary-container": "#ffbb66",
+                    "inverse-primary": "#b9c7df",
+                    "on-tertiary-fixed": "#2a1700",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed": "#0d1c2e",
+                    "outline-variant": "#c4c6cd",
+                    "surface-container-low": "#f2f4f6",
+                    "on-error": "#ffffff",
+                    "outline": "#75777d",
+                    "on-error-container": "#93000a",
+                    "on-background": "#191c1e",
+                    "on-secondary-container": "#00714d",
+                    "surface-container-high": "#e6e8ea",
+                    "surface-tint": "#515f74",
+                    "surface-container": "#eceef0",
+                    "secondary-fixed-dim": "#4edea3",
+                    "on-tertiary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "surface-bright": "#f7f9fb",
+                    "surface-variant": "#e0e3e5",
+                    "surface-container-highest": "#e0e3e5",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed": "#002113",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed": "#6ffbbe",
+                    "on-primary-container": "#bbcae1",
+                    "on-primary-fixed-variant": "#3a485b",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "surface-dim": "#d8dadc",
+                    "inverse-surface": "#2d3133"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "container_max_width": "1440px",
+                    "header_height": "64px",
+                    "xl": "32px",
+                    "sm": "8px",
+                    "sidebar_width": "260px",
+                    "xs": "4px",
+                    "lg": "24px",
+                    "base": "4px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "label-md": ["JetBrains Mono"],
+                    "headline-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-sm": ["10px", {"lineHeight": "12px", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-surface text-on-surface font-body-md selection:bg-primary-fixed selection:text-on-primary-fixed">
+<main class="min-h-screen flex items-center justify-center px-md relative overflow-hidden">
+<!-- Background Subtle Pattern -->
+<div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: radial-gradient(#475569 1px, transparent 1px); background-size: 24px 24px;"></div>
+<!-- MFA Challenge Card -->
+<div class="w-full max-w-[440px] bg-surface-container-lowest border border-outline-variant p-xl shadow-sm rounded-lg relative z-10">
+<!-- Brand Anchor - Identity -->
+<div class="flex flex-col items-center mb-lg">
+<div class="mb-md flex items-center justify-center w-12 h-12 rounded-xl bg-surface-container-high border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[28px]" data-icon="lock_open">lock_open</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-primary mb-xs">ExpenseFlow</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Management System</p>
+</div>
+<!-- Header Section -->
+<div class="text-center mb-xl">
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-sm">Verify your identity</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Enter the 6-digit code sent to your email</p>
+</div>
+<!-- MFA Inputs -->
+<form class="space-y-xl" id="mfa-form">
+<div class="flex justify-between gap-sm" id="digit-container">
+<input aria-label="Digit 1" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+<input aria-label="Digit 2" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+<input aria-label="Digit 3" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+<input aria-label="Digit 4" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+<input aria-label="Digit 5" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+<input aria-label="Digit 6" class="digit-input w-12 h-14 text-center font-headline-md text-headline-md border border-outline-variant bg-surface-container-low rounded-lg focus:ring-2 focus:ring-primary-container focus:border-primary transition-all" maxlength="1" pattern="\d*" type="text"/>
+</div>
+<!-- Primary Action -->
+<button class="w-full h-12 bg-primary-container text-on-primary hover:opacity-90 active:scale-[0.98] transition-all font-headline-sm text-headline-sm rounded-lg flex items-center justify-center gap-sm shadow-sm" type="submit">
+                    Verify
+                </button>
+<!-- Secondary Actions -->
+<div class="flex flex-col items-center gap-md pt-md border-t border-outline-variant">
+<button class="text-on-surface-variant hover:text-primary transition-colors font-body-md text-body-md flex items-center gap-xs" type="button">
+                        Didn't receive a code? 
+                        <span class="text-primary font-bold decoration-2 hover:underline">Resend Code</span>
+</button>
+<a class="text-on-surface-variant hover:text-primary transition-colors font-body-sm text-body-sm flex items-center gap-xs" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="arrow_back">arrow_back</span>
+                        Back to login
+                    </a>
+</div>
+</form>
+</div>
+<!-- Footer / Technical Info -->
+<div class="absolute bottom-md text-center w-full">
+<p class="font-label-md text-label-md text-on-surface-variant tracking-wider opacity-60">
+                SECURE ACCESS • MFA_CHALLENGE_V2
+            </p>
+</div>
+</main>
+<!-- Micro-interactions Script -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputs = document.querySelectorAll('.digit-input');
+            const form = document.getElementById('mfa-form');
+
+            // Handle Input behavior (Auto-focus next, backspace)
+            inputs.forEach((input, index) => {
+                input.addEventListener('input', (e) => {
+                    if (e.inputType === "deleteContentBackward") return;
+                    
+                    const value = e.target.value;
+                    if (value && index < inputs.length - 1) {
+                        inputs[index + 1].focus();
+                    }
+                });
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        inputs[index - 1].focus();
+                    }
+                });
+
+                // Paste support
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const pasteData = e.clipboardData.getData('text').slice(0, 6).split('');
+                    pasteData.forEach((char, i) => {
+                        if (inputs[i] && /^\d$/.test(char)) {
+                            inputs[i].value = char;
+                        }
+                    });
+                    const nextFocus = Math.min(pasteData.length, inputs.length - 1);
+                    inputs[nextFocus].focus();
+                });
+            });
+
+            // Button Loading State Simulation
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const btn = form.querySelector('button[type="submit"]');
+                const originalText = btn.innerHTML;
+                
+                btn.disabled = true;
+                btn.innerHTML = `
+                    <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Verifying...
+                `;
+
+                // Simulate API call
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                    // Actual implementation would redirect here
+                }, 1500);
+            });
+        });
+    </script>
+</body></html>

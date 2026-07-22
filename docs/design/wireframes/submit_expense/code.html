@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ExpenseFlow - Submit Expense</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .step-active { color: var(--tw-color-primary); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffddb8",
+                        "tertiary": "#583500",
+                        "surface": "#f7f9fb",
+                        "primary-container": "#475569",
+                        "secondary-container": "#6cf8bb",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "primary-fixed-dim": "#b9c7df",
+                        "background": "#f7f9fb",
+                        "secondary": "#006c49",
+                        "tertiary-container": "#774a00",
+                        "on-secondary-fixed-variant": "#005236",
+                        "primary-fixed": "#d5e3fc",
+                        "on-surface-variant": "#44474c",
+                        "primary": "#303e51",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-surface": "#191c1e",
+                        "on-tertiary-container": "#ffbb66",
+                        "inverse-primary": "#b9c7df",
+                        "on-tertiary-fixed": "#2a1700",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#0d1c2e",
+                        "outline-variant": "#c4c6cd",
+                        "surface-container-low": "#f2f4f6",
+                        "on-error": "#ffffff",
+                        "outline": "#75777d",
+                        "on-error-container": "#93000a",
+                        "on-background": "#191c1e",
+                        "on-secondary-container": "#00714d",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-tint": "#515f74",
+                        "surface-container": "#eceef0",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#f7f9fb",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#002113",
+                        "error-container": "#ffdad6",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-primary-container": "#bbcae1",
+                        "on-primary-fixed-variant": "#3a485b",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "surface-dim": "#d8dadc",
+                        "inverse-surface": "#2d3133"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container_max_width": "1440px",
+                        "header_height": "64px",
+                        "xl": "32px",
+                        "sm": "8px",
+                        "sidebar_width": "260px",
+                        "xs": "4px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "md": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-md": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-sm": ["10px", {"lineHeight": "12px", "fontWeight": "500"}],
+                        "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface font-body-md overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col border-r border-outline-variant bg-surface dark:bg-inverse-surface z-50">
+<div class="p-lg">
+<h1 class="text-headline-md font-headline-md font-bold text-primary dark:text-primary-fixed-dim">ExpenseFlow</h1>
+<p class="text-body-sm font-body-sm text-on-surface-variant opacity-70">Management System</p>
+</div>
+<nav class="flex-1 px-md overflow-y-auto hide-scrollbar space-y-1">
+<!-- Navigation Items Mapping from JSON -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-bold bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="font-label-md text-label-md">Submit Expense</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-md text-label-md">My Submissions</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="rule">rule</span>
+<span class="font-label-md text-label-md">Approval Queue</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-md text-label-md">Audit Log</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="p-lg border-t border-outline-variant">
+<div class="flex items-center gap-md">
+<img class="w-10 h-10 rounded-full border border-outline-variant" data-alt="A professional close-up studio portrait of a corporate employee for a user profile avatar. The person has a friendly expression, wearing a navy blue blazer. The lighting is soft and high-key, set against a neutral gray background. The aesthetic is modern, clean, and polished, reflecting a high-end business environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeNZ7TGPQLR7nXBLkvzRXMi0ExLCMoX25nM0PN24KkdlTmUvw1py2pmTzKhqgBGSbmF1MPqUDyEQlg_acYrDSGkrhiCbgPYxzcOOpLvFX2mA6FbRFfFkym6od8flLNN8y0yNxmjBKIpM4hCM6d5HoXAxKt-cHskzrEW_UH24ZcVXjS3Zwg2HXZIEEsJyNwLfoAjZx3TF4JqNk9iZpKG7wNQlh3eBgaDQgJOv-lcMrvEmdSmKoGBbg"/>
+<div>
+<p class="font-headline-sm text-headline-sm leading-none">Alex Rivera</p>
+<p class="text-body-sm text-on-surface-variant">Finance Lead</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-[260px] flex flex-col h-screen overflow-hidden">
+<!-- Top Navigation Bar -->
+<header class="flex justify-between items-center w-full h-[64px] px-lg bg-surface-container-lowest border-b border-outline-variant sticky top-0 z-40">
+<div class="flex items-center gap-lg">
+<h2 class="text-headline-md font-headline-md font-extrabold text-primary">New Report</h2>
+<div class="h-6 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-sm">
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container-high px-2 py-1 rounded">Role: Admin</span>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="relative">
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="help_outline">help_outline</span>
+<button class="font-label-md text-label-md text-primary font-bold px-md py-sm border border-outline hover:bg-surface-container-high transition-all">Logout</button>
+</div>
+</header>
+<!-- Form Scrollable Area -->
+<div class="flex-1 overflow-y-auto p-lg space-y-lg">
+<!-- 6-Stage Progress Stepper -->
+<div class="max-w-4xl mx-auto py-md">
+<div class="flex items-center justify-between relative">
+<div class="absolute top-1/2 left-0 w-full h-px bg-outline-variant -z-10 -translate-y-1/2"></div>
+<!-- Step 1: Active -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-primary bg-primary flex items-center justify-center text-on-primary">
+<span class="text-xs font-bold">01</span>
+</div>
+<span class="font-label-md text-label-md text-primary font-bold">Drafted</span>
+</div>
+<!-- Step 2: Pending -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant bg-surface flex items-center justify-center text-outline">
+<span class="text-xs font-bold">02</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Submitted</span>
+</div>
+<!-- Step 3: Pending -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant bg-surface flex items-center justify-center text-outline">
+<span class="text-xs font-bold">03</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Verified</span>
+</div>
+<!-- Step 4: Pending -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant bg-surface flex items-center justify-center text-outline">
+<span class="text-xs font-bold">04</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Approved</span>
+</div>
+<!-- Step 5: Pending -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant bg-surface flex items-center justify-center text-outline">
+<span class="text-xs font-bold">05</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Processing</span>
+</div>
+<!-- Step 6: Pending -->
+<div class="flex flex-col items-center gap-xs bg-surface px-sm">
+<div class="w-8 h-8 rounded-full border-2 border-outline-variant bg-surface flex items-center justify-center text-outline">
+<span class="text-xs font-bold">06</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Reimbursed</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-lg max-w-[1440px] mx-auto">
+<!-- Main Form Section -->
+<div class="col-span-9 space-y-lg">
+<!-- Report Header Card -->
+<div class="bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm flex justify-between items-end">
+<div>
+<p class="text-label-sm font-label-sm text-on-surface-variant mb-1">REPORT NAME</p>
+<h3 class="text-headline-lg font-headline-lg text-primary">Q3 Regional Travel - North</h3>
+<div class="flex items-center gap-md mt-sm">
+<span class="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="folder">folder</span>
+                                    Marketing Dept
+                                </span>
+<span class="text-body-sm text-on-surface-variant">Created on Oct 24, 2023</span>
+</div>
+</div>
+<div class="text-right">
+<p class="text-label-sm font-label-sm text-on-surface-variant">TOTAL AMOUNT</p>
+<p class="text-headline-lg font-headline-lg text-primary">$1,248.50</p>
+</div>
+</div>
+<!-- Multi-item builder -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden">
+<div class="p-md bg-surface-container-low border-b border-outline-variant flex justify-between items-center">
+<h4 class="font-headline-sm text-headline-sm">Line Items</h4>
+<button class="flex items-center gap-xs text-primary font-bold text-sm bg-white border border-outline-variant px-md py-sm rounded hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                                Add Row
+                            </button>
+</div>
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container border-b border-outline-variant">
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Merchant</th>
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Date</th>
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider w-1/4">Description</th>
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Category</th>
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">GL Code</th>
+<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+<th class="p-md w-12"></th>
+</tr>
+</thead>
+<tbody>
+<!-- Row 1 -->
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Delta Airlines"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-12"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Flight to NYC Conf"/></td>
+<td class="p-md">
+<select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
+<option>Airfare</option>
+<option>Lodging</option>
+<option>Meals</option>
+</select>
+</td>
+<td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6100-TRAVEL</span></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$642.00"/></td>
+<td class="p-md">
+<button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
+</td>
+</tr>
+<!-- Row 2 - Flagged -->
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors bg-error-container/10">
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Hilton Hotels"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-14"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="3 Nights stay"/></td>
+<td class="p-md">
+<select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
+<option>Lodging</option>
+<option>Airfare</option>
+</select>
+</td>
+<td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6100-TRAVEL</span></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$520.50"/></td>
+<td class="p-md">
+<button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Uber"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-15"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Airport Transfer"/></td>
+<td class="p-md">
+<select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
+<option>Ground Transport</option>
+<option>Meals</option>
+</select>
+</td>
+<td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6120-TAXI</span></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$86.00"/></td>
+<td class="p-md">
+<button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Receipt Cards Section -->
+<div class="space-y-md">
+<h4 class="font-headline-sm text-headline-sm flex items-center gap-sm">
+<span class="material-symbols-outlined" data-icon="attach_file">attach_file</span>
+                            Receipt Attachments
+                        </h4>
+<div class="grid grid-cols-4 gap-md">
+<!-- Dropzone -->
+<div class="border-2 border-dashed border-outline-variant rounded-lg p-lg flex flex-col items-center justify-center text-center hover:border-primary cursor-pointer transition-colors bg-surface-container-low">
+<span class="material-symbols-outlined text-primary mb-2" data-icon="cloud_upload">cloud_upload</span>
+<p class="text-body-sm font-bold text-primary">Upload Receipt</p>
+<p class="text-[10px] text-on-surface-variant">JPG, PNG, PDF</p>
+</div>
+<!-- Receipt Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-xs relative group">
+<div class="w-full h-32 bg-cover bg-center rounded" data-alt="A scanned image of a crumpled paper airline receipt showing Delta Airlines logo and flight details. The paper has a slight texture and warm lighting, presented in a minimalist, professional photography style against a neutral gray surface. The layout is centered and clean." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD5NDZMtxKgqzBfQ9QcPWwqBJylkHDBwfH0UC7CdTDgslLl4kMt9DGjLt_8ExPj8nSzmVRLD-jQQW85Pdycxgro5uqz8ElRE1XGozTl89pZJnau0wKUIhvhPUJMUg8mX2_MlCen6j7K1fUJuviT15_JxhLux4hiR_hYVRW-HiS-QoWCxRmXFKcUrooIrZlXqqKPqj6LgBwtHnNTPCNHRy1YNlQsPX7wP362aL-JDb-Z5v66ad97vrw')"></div>
+<div class="p-sm">
+<p class="text-[10px] font-bold truncate">delta-flight-102.pdf</p>
+<p class="text-[10px] text-outline">Oct 12, 1.2 MB</p>
+</div>
+<button class="absolute top-2 right-2 bg-error text-on-error w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-sm" data-icon="close">close</span>
+</button>
+</div>
+<!-- Receipt Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-xs relative group">
+<div class="w-full h-32 bg-cover bg-center rounded" data-alt="A clean, digital receipt from Uber displayed on a smartphone screen graphic. The receipt shows a route map and fare breakdown. The style is sharp and modern, with high-contrast typography and a bright corporate aesthetic. The background of the image is a soft, out-of-focus office environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDrZOObwcnPoLEqI1L9-samUiyhnrG6cAyPRXNbe51xM-Xz_Rl8lo1an1EnDHLdKF0gnZQIclxjK6uSiah-oj-C279c8uT3sC3I2ogEgKmNfThgBl3XKtZXQlyyLG85eAcLKADsKVmlOFXVsBTrCrWUcCNioquMhvqPUx5hYbWDDiS3107mYcjEB45FMazRKbVlXF32Z5I_6okDpgVRqdgMCNVO95anMkZgd8NRqQnx3197zdNGf5s')"></div>
+<div class="p-sm">
+<p class="text-[10px] font-bold truncate">uber-oct-15.jpg</p>
+<p class="text-[10px] text-outline">Oct 15, 450 KB</p>
+</div>
+<button class="absolute top-2 right-2 bg-error text-on-error w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-sm" data-icon="close">close</span>
+</button>
+</div>
+<!-- Empty Slot (Missing) -->
+<div class="bg-error-container/20 border border-error/20 rounded-lg p-lg flex flex-col items-center justify-center text-center opacity-70">
+<span class="material-symbols-outlined text-error mb-2" data-icon="no_photography">no_photography</span>
+<p class="text-body-sm font-bold text-error">Missing Receipt</p>
+<p class="text-[10px] text-error/60">Hilton Hotels</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Sidebar Analysis Section -->
+<aside class="col-span-3 space-y-lg">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
+<h5 class="text-label-md font-label-md text-on-surface-variant border-b border-outline-variant pb-sm mb-md flex items-center gap-sm">
+<span class="material-symbols-outlined text-sm" data-icon="policy">policy</span>
+                            POLICY FLAGS
+                        </h5>
+<div class="space-y-md">
+<!-- Critical Warning -->
+<div class="flex gap-md p-md bg-error-container/10 border-l-4 border-error rounded">
+<span class="material-symbols-outlined text-error" data-icon="warning">warning</span>
+<div>
+<p class="text-body-sm font-bold text-error">Missing Receipt</p>
+<p class="text-body-sm text-on-error-container">Line 2 (Hilton Hotels) requires a valid digital receipt attachment.</p>
+</div>
+</div>
+<!-- Info Flag -->
+<div class="flex gap-md p-md bg-surface-container-high border-l-4 border-primary rounded">
+<span class="material-symbols-outlined text-primary" data-icon="info">info</span>
+<div>
+<p class="text-body-sm font-bold text-primary">Over $500 Limit</p>
+<p class="text-body-sm text-on-surface-variant">Expenses exceeding $500 require secondary approval from the Department Head.</p>
+</div>
+</div>
+<!-- Success Flag -->
+<div class="flex gap-md p-md bg-secondary-container/10 border-l-4 border-secondary rounded">
+<span class="material-symbols-outlined text-secondary" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<div>
+<p class="text-body-sm font-bold text-secondary">GL Codes Mapped</p>
+<p class="text-body-sm text-on-secondary-container">All current items have been successfully matched to valid general ledger codes.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Summary Card -->
+<div class="bg-primary text-on-primary rounded-lg p-lg shadow-lg">
+<p class="text-label-sm font-label-sm opacity-70 mb-md uppercase">Submission Preview</p>
+<div class="space-y-sm">
+<div class="flex justify-between text-body-sm">
+<span class="opacity-80">Line Items</span>
+<span class="font-bold">3</span>
+</div>
+<div class="flex justify-between text-body-sm">
+<span class="opacity-80">Attachments</span>
+<span class="font-bold">2/3</span>
+</div>
+<div class="border-t border-white/10 my-md pt-md">
+<div class="flex justify-between items-end">
+<span class="text-body-md font-bold">Grand Total</span>
+<span class="text-headline-md">$1,248.50</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</div>
+<!-- Sticky Footer -->
+<footer class="p-lg bg-surface-container-lowest border-t border-outline-variant flex justify-end items-center gap-md">
+<button class="px-xl py-md text-primary font-bold hover:bg-surface-container-high transition-all rounded-lg">
+                Save Draft
+            </button>
+<button class="px-xl py-md bg-primary text-on-primary font-bold shadow-md hover:opacity-90 active:scale-95 transition-all rounded-lg flex items-center gap-md">
+                Submit Report
+                <span class="material-symbols-outlined text-sm" data-icon="send">send</span>
+</button>
+</footer>
+</main>
+<script>
+        // Simple micro-interaction for active state on sidebar
+        document.querySelectorAll('nav a').forEach(link => {
+            link.addEventListener('click', (e) => {
+                document.querySelectorAll('nav a').forEach(l => {
+                    l.classList.remove('text-primary', 'dark:text-primary-fixed-dim', 'font-bold', 'bg-surface-container-high');
+                    l.classList.add('text-on-surface-variant');
+                });
+                link.classList.add('text-primary', 'dark:text-primary-fixed-dim', 'font-bold', 'bg-surface-container-high');
+                link.classList.remove('text-on-surface-variant');
+            });
+        });
+    </script>
+</body></html>

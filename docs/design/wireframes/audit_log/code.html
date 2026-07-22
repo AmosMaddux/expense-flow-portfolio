@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Audit Log | ExpenseFlow Admin</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffddb8",
+                        "tertiary": "#583500",
+                        "surface": "#f7f9fb",
+                        "primary-container": "#475569",
+                        "secondary-container": "#6cf8bb",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "primary-fixed-dim": "#b9c7df",
+                        "background": "#f7f9fb",
+                        "secondary": "#006c49",
+                        "tertiary-container": "#774a00",
+                        "on-secondary-fixed-variant": "#005236",
+                        "primary-fixed": "#d5e3fc",
+                        "on-surface-variant": "#44474c",
+                        "primary": "#303e51",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-surface": "#191c1e",
+                        "on-tertiary-container": "#ffbb66",
+                        "inverse-primary": "#b9c7df",
+                        "on-tertiary-fixed": "#2a1700",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#0d1c2e",
+                        "outline-variant": "#c4c6cd",
+                        "surface-container-low": "#f2f4f6",
+                        "on-error": "#ffffff",
+                        "outline": "#75777d",
+                        "on-error-container": "#93000a",
+                        "on-background": "#191c1e",
+                        "on-secondary-container": "#00714d",
+                        "surface-container-high": "#e6e8ea",
+                        "surface-tint": "#515f74",
+                        "surface-container": "#eceef0",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#f7f9fb",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed": "#002113",
+                        "error-container": "#ffdad6",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-primary-container": "#bbcae1",
+                        "on-primary-fixed-variant": "#3a485b",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "surface-dim": "#d8dadc",
+                        "inverse-surface": "#2d3133"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "container_max_width": "1440px",
+                        "header_height": "64px",
+                        "xl": "32px",
+                        "sm": "8px",
+                        "sidebar_width": "260px",
+                        "xs": "4px",
+                        "lg": "24px",
+                        "base": "4px",
+                        "md": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-md": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "headline-lg": ["Inter"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            background-color: #f8fafc;
+            color: #191c1e;
+        }
+        /* Zebra striping for high-density tables */
+        .zebra-row:nth-child(even) {
+            background-color: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50">
+<div class="p-lg">
+<h1 class="text-headline-md font-headline-md font-bold text-primary">ExpenseFlow</h1>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Management System</p>
+</div>
+<nav class="flex-1 overflow-y-auto custom-scrollbar px-md space-y-1">
+<!-- Navigation Items Mapping from JSON -->
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span>My Submissions</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span>Submit Expense</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="directions_car">directions_car</span>
+<span>Log Mileage</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="rule">rule</span>
+<span>Approval Queue</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Team &amp; Users</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span>Reports</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span>GL Mapping</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="domain">domain</span>
+<span>Tenants</span>
+</a>
+<!-- ACTIVE NAV ITEM: Audit Log -->
+<a class="flex items-center gap-sm p-sm rounded-lg text-primary font-bold bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span>Audit Log</span>
+</a>
+<a class="flex items-center gap-sm p-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="p-lg border-t border-outline-variant mt-auto">
+<button class="w-full bg-[#475569] text-white py-sm px-md rounded font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all">
+                Submit Expense
+            </button>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 left-[260px] w-[calc(100%-260px)] h-[64px] bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center px-lg z-40">
+<div class="flex items-center gap-md">
+<span class="text-headline-sm font-headline-sm text-primary font-bold">Audit Log</span>
+<div class="h-6 w-[1px] bg-outline-variant"></div>
+<span class="text-body-md font-body-md text-on-surface-variant">System Activity Monitor</span>
+</div>
+<div class="flex items-center gap-lg">
+<div class="relative hidden md:block">
+<input class="bg-surface-container-low border border-outline-variant rounded px-md py-xs text-body-sm w-64 focus:ring-1 focus:ring-primary focus:outline-none" placeholder="Search system logs..." type="text"/>
+</div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary">help_outline</span>
+<div class="flex items-center gap-sm border-l border-outline-variant pl-md ml-xs">
+<img class="w-8 h-8 rounded-full bg-surface-container-highest" data-alt="A professional headshot of a corporate platform administrator, featuring a sharp-focused, neutral-lit portrait against a minimalist office background. The style is clean, modern, and grayscale, aligned with a high-density financial software aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDS5B0VZxHop4Qv08f0nPmg34OSMn8_sduh7D0N8TCOGN2-gxvnH3cDhKqtC6jKpte7qIiMp8cdoRiGC11-MTQbhp7jfLXKZorYi8X-FXnZ4xCCGupqzmnR-UfQVxBJrZj056rwjW_Y30RtHwkyDwMxnoFn6RUo-aEc2pclybpD-uJ05hFmpCb17T-hG9Xv8m6bUI4AwGFhGS8GsQoJrsloqI07ZLMiNtxuYMXIxyg9eLc2mV92YZc"/>
+<span class="text-label-md font-label-md text-on-surface">Platform Admin</span>
+</div>
+<button class="text-on-surface-variant font-label-md text-label-md hover:text-error transition-colors">Logout</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] mt-[64px] h-[calc(100vh-64px)] overflow-y-auto p-lg bg-surface-bright">
+<!-- Filter Header Section -->
+<section class="mb-lg space-y-md">
+<div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-md">
+<div class="flex flex-wrap gap-sm">
+<!-- Date Filter -->
+<div class="flex flex-col gap-xs">
+<label class="text-label-sm font-label-sm text-outline uppercase tracking-wider">Date Range</label>
+<input class="border border-outline-variant rounded p-xs text-body-sm focus:border-primary focus:ring-0" type="date"/>
+</div>
+<!-- User Filter -->
+<div class="flex flex-col gap-xs">
+<label class="text-label-sm font-label-sm text-outline uppercase tracking-wider">User</label>
+<select class="border border-outline-variant rounded p-xs text-body-sm focus:border-primary focus:ring-0 min-w-[140px]">
+<option>All Users</option>
+<option>m.rodriguez</option>
+<option>s.chen</option>
+<option>j.doe</option>
+</select>
+</div>
+<!-- Action Filter -->
+<div class="flex flex-col gap-xs">
+<label class="text-label-sm font-label-sm text-outline uppercase tracking-wider">Action Type</label>
+<select class="border border-outline-variant rounded p-xs text-body-sm focus:border-primary focus:ring-0 min-w-[140px]">
+<option>All Actions</option>
+<option>Login</option>
+<option>Expense Approval</option>
+<option>Policy Update</option>
+<option>User Deletion</option>
+</select>
+</div>
+<!-- Tenant Filter -->
+<div class="flex flex-col gap-xs">
+<label class="text-label-sm font-label-sm text-outline uppercase tracking-wider">Tenant</label>
+<select class="border border-outline-variant rounded p-xs text-body-sm focus:border-primary focus:ring-0 min-w-[140px]">
+<option>All Tenants</option>
+<option>Acme Corp</option>
+<option>Global Industries</option>
+<option>Stark Ent</option>
+</select>
+</div>
+</div>
+<div class="flex gap-sm self-end">
+<button class="flex items-center gap-xs px-md py-sm border border-outline-variant rounded text-on-surface-variant font-label-md text-label-md hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="filter_list">filter_list</span>
+                        Clear Filters
+                    </button>
+<button class="flex items-center gap-xs px-md py-sm bg-[#475569] text-white rounded font-label-md text-label-md hover:opacity-90 transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                        Export CSV
+                    </button>
+</div>
+</div>
+</section>
+<!-- KPI Summary Cards (Bento Style) -->
+<section class="grid grid-cols-1 md:grid-cols-4 gap-md mb-lg">
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded shadow-sm">
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-tighter">Total Events (24h)</p>
+<h3 class="text-headline-lg font-headline-lg text-primary">12,842</h3>
+<div class="text-body-sm text-secondary flex items-center gap-1 mt-xs">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_up">trending_up</span>
+<span>4.2% from yesterday</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded shadow-sm">
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-tighter">Critical Actions</p>
+<h3 class="text-headline-lg font-headline-lg text-error">42</h3>
+<div class="text-body-sm text-on-surface-variant mt-xs">Policy changes &amp; overrides</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded shadow-sm">
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-tighter">Active Users</p>
+<h3 class="text-headline-lg font-headline-lg text-primary">849</h3>
+<div class="text-body-sm text-on-surface-variant mt-xs">Currently authenticated</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded shadow-sm">
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-tighter">API Requests</p>
+<h3 class="text-headline-lg font-headline-lg text-primary">1.2M</h3>
+<div class="text-body-sm text-secondary mt-xs">Normal latency: 45ms</div>
+</div>
+</section>
+<!-- Audit Log Table -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded shadow-sm overflow-hidden flex flex-col h-[calc(100%-340px)]">
+<div class="overflow-x-auto overflow-y-auto custom-scrollbar flex-1">
+<table class="w-full text-left border-collapse min-w-[900px]">
+<thead class="bg-surface-container-high sticky top-0 z-10">
+<tr>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider">Timestamp</th>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider">User</th>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider">Action</th>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider">Tenant</th>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider">Details</th>
+<th class="px-md py-sm border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider text-right">Action</th>
+</tr>
+</thead>
+<tbody class="text-body-sm font-body-sm text-on-surface">
+<!-- Row 1 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 14:22:05</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">MR</div>
+<span>m.rodriguez</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold">POLICY_UPDATE</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Acme Corp</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Updated "Fuel Reimbursement" rate to 0.65 USD/mile.</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 14:18:12</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">SY</div>
+<span>SYSTEM</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-surface-variant text-on-surface-variant text-[11px] font-bold">DATA_EXPORT</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Global Industries</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Bulk export of Q3 Tax Summary triggered by Schedule #892.</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 13:55:40</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">JD</div>
+<span>j.doe</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-error-container text-on-error-container text-[11px] font-bold">USER_DELETE</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Acme Corp</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Removed user access for ID: 49201 (Terminated employee).</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 13:42:15</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">SC</div>
+<span>s.chen</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-primary-container text-on-primary-container text-[11px] font-bold">EXP_APPROVED</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Stark Ent</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Approved manual override for Expense #EX-9021 (OOB reason).</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 12:10:00</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">SY</div>
+<span>SYSTEM</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-surface-variant text-on-surface-variant text-[11px] font-bold">GL_SYNC</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Global Industries</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Automated Ledger sync completed (4,201 entries processed).</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+<!-- Row 6 -->
+<tr class="zebra-row hover:bg-surface-container transition-colors">
+<td class="px-md py-md border-b border-outline-variant font-label-md">2023-11-24 11:45:33</td>
+<td class="px-md py-md border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<div class="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold">AL</div>
+<span>a.lopez</span>
+</div>
+</td>
+<td class="px-md py-md border-b border-outline-variant">
+<span class="px-sm py-[2px] rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[11px] font-bold">LOGIN_FAIL</span>
+</td>
+<td class="px-md py-md border-b border-outline-variant">Acme Corp</td>
+<td class="px-md py-md border-b border-outline-variant truncate max-w-xs">Multiple failed login attempts from IP: 192.168.1.42.</td>
+<td class="px-md py-md border-b border-outline-variant text-right">
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors" data-icon="visibility">visibility</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<footer class="bg-surface-container-high px-lg py-sm flex justify-between items-center border-t border-outline-variant">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Showing 1 to 50 of 12,842 entries</span>
+<div class="flex items-center gap-xs">
+<button class="p-xs hover:bg-surface-container rounded transition-colors disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
+</button>
+<div class="flex items-center gap-1 px-sm">
+<button class="w-8 h-8 flex items-center justify-center bg-primary text-white rounded text-label-md">1</button>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container rounded text-label-md transition-colors">2</button>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container rounded text-label-md transition-colors">3</button>
+<span class="text-on-surface-variant px-xs">...</span>
+<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container rounded text-label-md transition-colors">257</button>
+</div>
+<button class="p-xs hover:bg-surface-container rounded transition-colors">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</footer>
+</section>
+</main>
+<script>
+        // Simple logic for micro-interactions
+        document.addEventListener('DOMContentLoaded', () => {
+            const rows = document.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                row.addEventListener('click', () => {
+                    // Logic for opening detail view could go here
+                });
+            });
+
+            // Handle date input appearance for wireframe feel
+            const dateInputs = document.querySelectorAll('input[type="date"]');
+            dateInputs.forEach(input => {
+                input.addEventListener('focus', () => {
+                    input.classList.add('border-primary');
+                });
+                input.addEventListener('blur', () => {
+                    input.classList.remove('border-primary');
+                });
+            });
+        });
+    </script>
+</body></html>
