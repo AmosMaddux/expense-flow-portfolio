@@ -267,7 +267,7 @@ Before merging any PR, reviewers must apply the AI-augmented checklist in [docs/
 
 ## Contribution Workflow
 
-ExpenseFlow uses a protected `main`, a `develop` integration branch, and short-lived `feature/*`, `release/*`, and `hotfix/*` branches with pull-request review for every change. See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, CI/CD pipeline conventions, PR conventions, ADR requirements, and review expectations.
+ExpenseFlow uses a protected `main`, a `development` integration branch, and short-lived `feature/*` and `hotfix/*` branches with pull-request review for every change. Planned work flows from `feature/*` to `development`, and `development` merges directly to `main` through a reviewed pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, PR conventions, ADR requirements, and review expectations.
 
 ## Governance Links
 

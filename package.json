@@ -7,7 +7,8 @@
         "doc": "docs"
     },
     "scripts": {
-        "test": "npm run build && npx vitest run && UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest",
+        "test": "npm run test:typescript && UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest",
+        "test:typescript": "npm run build && vitest run --coverage",
         "ci:provider": "npm ci && uv sync && npm run test:provider",
         "test:provider": "UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest tests/test_gl_coding_provider_pact.py",
         "build": "tsc --build && npm --workspace frontend/app run build",
@@ -30,6 +31,7 @@
     ],
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@vitest/coverage-v8": "^4.1.10",
         "drizzle-orm": "^0.45.2",
         "eslint": "^10.5.0",
         "eslint-config-prettier": "^10.1.8",

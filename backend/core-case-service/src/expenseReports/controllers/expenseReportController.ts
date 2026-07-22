@@ -58,6 +58,7 @@ export async function postExpenseReport(
             );
         }
 
+        const idempotencyKey = parseIdempotencyKey(req);
         const createReport = async () =>
             createDraftExpenseReport({
                 owner: parsedRequest.owner,
@@ -66,21 +67,7 @@ export async function postExpenseReport(
                 tenantId: auth.tenantId,
                 actorId: auth.userId,
             });
-        const idempotencyKey = parseIdempotencyKey(req);
         const requestHash = createIdempotencyRequestHash(parsedRequest);
-        if (idempotencyKey === undefined) {
-            const report = await createReport();
-
-            logExpenseReportAuditSuccess({
-                action: "report_created",
-                actorId: auth.userId,
-                expenseReportId: report.id,
-                route: createExpenseReportRouteLogName,
-                tenantId: auth.tenantId,
-            });
-            res.status(201).json(report);
-            return;
-        }
 
         const result = await runIdempotentSubmission({
             idempotencyKey,
