@@ -45,7 +45,6 @@ const idempotencyRecords = vi.hoisted(
 );
 const idempotencyStoreMock = vi.hoisted(() => ({
     acquireLock: vi.fn().mockResolvedValue("lock-token"),
-    clearReservation: vi.fn().mockResolvedValue(undefined),
     getResult: vi.fn(
         (tenantId: string, idempotencyKey: string, requestHash: string) => {
             const record = idempotencyRecords.get(
@@ -63,12 +62,10 @@ const idempotencyStoreMock = vi.hoisted(() => ({
         },
     ),
     releaseLock: vi.fn().mockResolvedValue(undefined),
-    reserveSubmission: vi.fn().mockResolvedValue(true),
     saveResult: vi.fn(
         (
             tenantId: string,
             idempotencyKey: string,
-            _token: string,
             requestHash: string,
             result: IdempotencyResult,
         ) => {
@@ -189,10 +186,8 @@ void describe("Expense Report routes", () => {
     beforeEach(() => {
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
-        idempotencyStoreMock.clearReservation.mockClear();
         idempotencyStoreMock.getResult.mockClear();
         idempotencyStoreMock.releaseLock.mockClear();
-        idempotencyStoreMock.reserveSubmission.mockClear();
         idempotencyStoreMock.saveResult.mockClear();
         glCodingClientMock.mockReset();
         redisCacheEntries.clear();
@@ -428,7 +423,7 @@ void describe("Expense Report routes", () => {
             title: "Bad Request",
             status: 400,
         });
-        expect(idempotencyStoreMock.reserveSubmission).not.toHaveBeenCalled();
+        expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
     });
 
     void test("replays the original result for a retried idempotent create", async () => {
@@ -819,7 +814,7 @@ void describe("Expense Report routes", () => {
         );
 
         expect(response.status).toBe(400);
-        expect(idempotencyStoreMock.reserveSubmission).not.toHaveBeenCalled();
+        expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
     });
 
     void test("rejects malformed submit request bodies", async () => {

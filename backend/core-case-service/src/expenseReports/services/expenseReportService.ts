@@ -43,6 +43,7 @@ import {
  */
 export async function createDraftExpenseReport(
     request: CreateExpenseReportRequest & {
+        id?: string;
         tenantId: string;
         actorId: string;
     },
@@ -50,6 +51,7 @@ export async function createDraftExpenseReport(
     const report = await insertDraftExpenseReport(
         request.tenantId,
         {
+            ...(request.id === undefined ? {} : { id: request.id }),
             tenantId: request.tenantId,
             owner: request.owner,
             dueDate: request.dueDate,
