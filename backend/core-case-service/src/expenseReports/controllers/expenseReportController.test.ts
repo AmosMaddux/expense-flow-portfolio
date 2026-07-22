@@ -10,14 +10,12 @@ const idempotencyRecords = vi.hoisted(
 );
 const idempotencyStoreMock = vi.hoisted(() => ({
     acquireLock: vi.fn().mockResolvedValue("lock-token"),
-    clearReservation: vi.fn().mockResolvedValue(undefined),
     getResult: vi.fn((tenantId: string, idempotencyKey: string) =>
         Promise.resolve(
             idempotencyRecords.get(`${tenantId}:${idempotencyKey}`),
         ),
     ),
     releaseLock: vi.fn().mockResolvedValue(undefined),
-    reserveSubmission: vi.fn().mockResolvedValue(true),
     saveResult: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -50,10 +48,8 @@ void describe("Expense Report controller authorization", () => {
         readCachedCaseQueueStageRollupsMock.mockReset();
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
-        idempotencyStoreMock.clearReservation.mockClear();
         idempotencyStoreMock.getResult.mockClear();
         idempotencyStoreMock.releaseLock.mockClear();
-        idempotencyStoreMock.reserveSubmission.mockClear();
         idempotencyStoreMock.saveResult.mockClear();
         logExpenseReportAuditErrorMock.mockClear();
         logExpenseReportAuditSuccessMock.mockClear();

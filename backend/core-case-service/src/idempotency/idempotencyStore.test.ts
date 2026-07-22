@@ -1,15 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
-    createIdempotencyStore,
+    createRedisIdempotencyStore,
     IdempotencyRequestMismatchError,
-    toDynamoPartitionKey,
     toRedisLockKey,
     toRedisResultKey,
 } from "./idempotencyStore.js";
 
 void describe("idempotency key builders", () => {
-    void test("scopes Redis and DynamoDB keys by tenant", () => {
+    void test("scopes Redis keys by tenant", () => {
         const tenantId = "40000000-0000-4000-8000-000000000201";
         const idempotencyKey = "expense-submit-1";
 
@@ -19,119 +18,17 @@ void describe("idempotency key builders", () => {
         expect(toRedisLockKey(tenantId, idempotencyKey)).toBe(
             "lock:40000000-0000-4000-8000-000000000201:expense-submit-1",
         );
-        expect(toDynamoPartitionKey(tenantId, idempotencyKey)).toBe(
-            "idem:40000000-0000-4000-8000-000000000201:expense-submit-1",
-        );
     });
 });
 
 void describe("idempotency store", () => {
-    void test("persists create recovery metadata in DynamoDB reservations", async () => {
-        const dynamoDb = {
-            send: vi.fn().mockResolvedValue({}),
-        };
+    void test("stores completed results in Redis for 24 hours", async () => {
         const redis = createRedisMock();
-        const store = createIdempotencyStore(
-            dynamoDb as never,
-            redis as never,
-            "idempotency-table",
-        );
-
-        const reserved = await store.reserveSubmission(
-            "tenant",
-            "key",
-            "lock-token",
-            "request-hash-one",
-            {
-                operation: "create_expense_report",
-                resourceId: "10000000-0000-4000-8000-000000000201",
-                tenantId: "tenant",
-            },
-        );
-
-        expect(reserved).toBe(true);
-        expect(dynamoDb.send).toHaveBeenCalledWith(
-            expect.objectContaining({
-                input: expect.objectContaining({
-                    ConditionExpression: "attribute_not_exists(pk)",
-                    Item: expect.objectContaining({
-                        operation: "create_expense_report",
-                        pk: "idem:tenant:key",
-                        requestHash: "request-hash-one",
-                        resourceId: "10000000-0000-4000-8000-000000000201",
-                        status: "in_progress",
-                        submissionToken: "lock-token",
-                        tenantId: "tenant",
-                    }),
-                }),
-            }),
-        );
-    });
-
-    void test("hydrates Redis for 24 hours from a durable DynamoDB result", async () => {
-        const dynamoDb = {
-            send: vi.fn().mockResolvedValue({
-                Item: {
-                    pk: "idem:tenant:key",
-                    requestHash: "request-hash-one",
-                    result: { body: { id: "report-1" }, statusCode: 201 },
-                    status: "completed",
-                },
-            }),
-        };
-        const redis = createRedisMock();
-        const store = createIdempotencyStore(
-            dynamoDb as never,
-            redis as never,
-            "idempotency-table",
-        );
-
-        const result = await store.getResult(
-            "tenant",
-            "key",
-            "request-hash-one",
-        );
-
-        expect(result).toEqual({ body: { id: "report-1" }, statusCode: 201 });
-        expect(redis.set).toHaveBeenCalledWith(
-            "idem:tenant:key",
-            JSON.stringify({
-                requestHash: "request-hash-one",
-                result: { body: { id: "report-1" }, statusCode: 201 },
-            }),
-            { EX: 86_400 },
-        );
-    });
-
-    void test("mirrors saved DynamoDB results into Redis for 24 hours", async () => {
-        const dynamoDb = {
-            send: vi.fn().mockResolvedValue({}),
-        };
-        const redis = createRedisMock();
-        const store = createIdempotencyStore(
-            dynamoDb as never,
-            redis as never,
-            "idempotency-table",
-        );
+        const store = createRedisIdempotencyStore(redis as never);
         const result = { body: { id: "report-1" }, statusCode: 201 };
 
-        await store.saveResult(
-            "tenant",
-            "key",
-            "lock-token",
-            "request-hash-one",
-            result,
-        );
+        await store.saveResult("tenant", "key", "request-hash-one", result);
 
-        expect(dynamoDb.send).toHaveBeenCalledWith(
-            expect.objectContaining({
-                input: expect.objectContaining({
-                    Key: { pk: "idem:tenant:key" },
-                    UpdateExpression:
-                        "SET #status = :completed, #result = :result",
-                }),
-            }),
-        );
         expect(redis.set).toHaveBeenCalledWith(
             "idem:tenant:key",
             JSON.stringify({
@@ -142,10 +39,7 @@ void describe("idempotency store", () => {
         );
     });
 
-    void test("rejects cached results for a different request hash", async () => {
-        const dynamoDb = {
-            send: vi.fn(),
-        };
+    void test("returns cached Redis results for the same request hash", async () => {
         const redis = createRedisMock({
             get: vi.fn().mockResolvedValue(
                 JSON.stringify({
@@ -154,42 +48,47 @@ void describe("idempotency store", () => {
                 }),
             ),
         });
-        const store = createIdempotencyStore(
-            dynamoDb as never,
-            redis as never,
-            "idempotency-table",
-        );
+        const store = createRedisIdempotencyStore(redis as never);
 
         await expect(
-            store.getResult("tenant", "key", "request-hash-two"),
-        ).rejects.toBeInstanceOf(IdempotencyRequestMismatchError);
-
-        expect(dynamoDb.send).not.toHaveBeenCalled();
+            store.getResult("tenant", "key", "request-hash-one"),
+        ).resolves.toEqual({
+            body: { id: "report-1" },
+            statusCode: 201,
+        });
     });
 
-    void test("rejects DynamoDB records for a different request hash", async () => {
-        const dynamoDb = {
-            send: vi.fn().mockResolvedValue({
-                Item: {
-                    pk: "idem:tenant:key",
+    void test("rejects cached results for a different request hash", async () => {
+        const redis = createRedisMock({
+            get: vi.fn().mockResolvedValue(
+                JSON.stringify({
                     requestHash: "request-hash-one",
                     result: { body: { id: "report-1" }, statusCode: 201 },
-                    status: "completed",
-                },
-            }),
-        };
-        const redis = createRedisMock();
-        const store = createIdempotencyStore(
-            dynamoDb as never,
-            redis as never,
-            "idempotency-table",
-        );
+                }),
+            ),
+        });
+        const store = createRedisIdempotencyStore(redis as never);
 
         await expect(
             store.getResult("tenant", "key", "request-hash-two"),
         ).rejects.toBeInstanceOf(IdempotencyRequestMismatchError);
+    });
 
-        expect(redis.set).not.toHaveBeenCalled();
+    void test("uses a short Redis lock to serialize concurrent retries", async () => {
+        const redis = createRedisMock();
+        const store = createRedisIdempotencyStore(redis as never);
+
+        const token = await store.acquireLock("tenant", "key");
+
+        expect(token).toEqual(expect.any(String));
+        expect(redis.set).toHaveBeenCalledWith(
+            "lock:tenant:key",
+            token,
+            {
+                NX: true,
+                PX: 30_000,
+            },
+        );
     });
 });
 

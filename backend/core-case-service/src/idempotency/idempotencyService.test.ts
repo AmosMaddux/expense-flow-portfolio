@@ -3,16 +3,17 @@ import { describe, expect, test, vi } from "vitest";
 import { ConflictError } from "../errors/problem-json.js";
 import {
     createIdempotencyRequestHash,
-    createIdempotencyResourceId,
     runIdempotentSubmission,
 } from "./idempotencyService.js";
-import { IdempotencyRequestMismatchError } from "./idempotencyStore.js";
-import type { IdempotencyStore } from "./idempotencyStore.js";
+import {
+    IdempotencyRequestMismatchError,
+    type IdempotencyStore,
+} from "./idempotencyStore.js";
 
 void describe("runIdempotentSubmission", () => {
     const requestHash = "synthetic-request-hash";
 
-    void test("returns a completed result without running the operation", async () => {
+    void test("returns a completed Redis result without running the operation", async () => {
         const store = createStore({
             getResult: vi.fn().mockResolvedValue({
                 body: { id: "cached-report" },
@@ -54,65 +55,7 @@ void describe("runIdempotentSubmission", () => {
         ).rejects.toBeInstanceOf(ConflictError);
     });
 
-    void test("does not run the operation when a durable reservation already exists", async () => {
-        const operation = vi.fn();
-        const store = createStore({
-            reserveSubmission: vi.fn().mockResolvedValue(false),
-        });
-
-        await expect(
-            runIdempotentSubmission({
-                idempotencyKey: "submit-3",
-                operation,
-                requestHash,
-                store,
-                tenantId: "40000000-0000-4000-8000-000000000204",
-            }),
-        ).rejects.toBeInstanceOf(ConflictError);
-
-        expect(operation).not.toHaveBeenCalled();
-    });
-
-    void test("recovers a stale create reservation with the stable resource id", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000210";
-        const resourceId = createIdempotencyResourceId(tenantId, "submit-9");
-        const operation = vi.fn().mockResolvedValue({ id: resourceId });
-        const store = createStore({
-            reserveSubmission: vi.fn().mockResolvedValue(false),
-        });
-
-        const result = await runIdempotentSubmission({
-            idempotencyKey: "submit-9",
-            operation,
-            requestHash,
-            reservationMetadata: {
-                operation: "create_expense_report",
-                resourceId,
-                tenantId,
-            },
-            store,
-            tenantId,
-        });
-
-        expect(result).toEqual({
-            body: { id: resourceId },
-            replayed: false,
-            statusCode: 201,
-        });
-        expect(operation).toHaveBeenCalledOnce();
-        expect(store.saveResult).toHaveBeenCalledWith(
-            tenantId,
-            "submit-9",
-            "lock-token",
-            requestHash,
-            {
-                body: { id: resourceId },
-                statusCode: 201,
-            },
-        );
-    });
-
-    void test("stores the original result as a JSON-safe response body", async () => {
+    void test("stores the original result as a JSON-safe Redis response body", async () => {
         const store = createStore({});
         const createdAt = new Date("2026-08-01T12:00:00.000Z");
 
@@ -132,92 +75,12 @@ void describe("runIdempotentSubmission", () => {
         expect(store.saveResult).toHaveBeenCalledWith(
             "40000000-0000-4000-8000-000000000205",
             "submit-4",
-            "lock-token",
             requestHash,
             {
                 body: { createdAt: "2026-08-01T12:00:00.000Z" },
                 statusCode: 201,
             },
         );
-    });
-
-    void test("clears a failed reservation so the same submission can retry", async () => {
-        const store = createStore({});
-        const firstOperation = vi
-            .fn()
-            .mockRejectedValue(new Error("synthetic create failure"));
-        const tenantId = "40000000-0000-4000-8000-000000000206";
-
-        await expect(
-            runIdempotentSubmission({
-                idempotencyKey: "submit-5",
-                operation: firstOperation,
-                requestHash,
-                store,
-                tenantId,
-            }),
-        ).rejects.toThrow("synthetic create failure");
-
-        expect(store.clearReservation).toHaveBeenCalledWith(
-            tenantId,
-            "submit-5",
-            "lock-token",
-        );
-
-        const retryResult = await runIdempotentSubmission({
-            idempotencyKey: "submit-5",
-            operation: () => Promise.resolve({ id: "retried-report" }),
-            requestHash,
-            store,
-            tenantId,
-        });
-
-        expect(retryResult).toEqual({
-            body: { id: "retried-report" },
-            replayed: false,
-            statusCode: 201,
-        });
-        expect(store.reserveSubmission).toHaveBeenCalledTimes(2);
-    });
-
-    void test("does not clear a reservation when result persistence fails after creation", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000207";
-        const store = createStore({
-            saveResult: vi
-                .fn()
-                .mockRejectedValueOnce(new Error("synthetic save failure")),
-        });
-        const operation = vi.fn().mockResolvedValue({ id: "created-report" });
-
-        await expect(
-            runIdempotentSubmission({
-                idempotencyKey: "submit-6",
-                operation,
-                requestHash,
-                store,
-                tenantId,
-            }),
-        ).rejects.toThrow("synthetic save failure");
-
-        expect(operation).toHaveBeenCalledTimes(1);
-        expect(store.clearReservation).not.toHaveBeenCalled();
-
-        const retryOperation = vi.fn().mockResolvedValue({ id: "duplicate" });
-        const retryStore = createStore({
-            reserveSubmission: vi.fn().mockResolvedValue(false),
-        });
-
-        await expect(
-            runIdempotentSubmission({
-                idempotencyKey: "submit-6",
-                operation: retryOperation,
-                requestHash,
-                store: retryStore,
-                tenantId,
-            }),
-        ).rejects.toBeInstanceOf(ConflictError);
-
-        expect(retryOperation).not.toHaveBeenCalled();
     });
 
     void test("rejects an idempotency key reused with a different request payload", async () => {
@@ -237,7 +100,6 @@ void describe("runIdempotentSubmission", () => {
                 tenantId: "40000000-0000-4000-8000-000000000208",
             }),
         ).rejects.toBeInstanceOf(ConflictError);
-
         expect(operation).not.toHaveBeenCalled();
     });
 
@@ -302,27 +164,11 @@ void describe("createIdempotencyRequestHash", () => {
     });
 });
 
-void describe("createIdempotencyResourceId", () => {
-    void test("scopes stable resource ids by tenant and key", () => {
-        const first = createIdempotencyResourceId("tenant-a", "submit-1");
-
-        expect(createIdempotencyResourceId("tenant-a", "submit-1")).toBe(first);
-        expect(createIdempotencyResourceId("tenant-b", "submit-1")).not.toBe(
-            first,
-        );
-        expect(first).toMatch(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-        );
-    });
-});
-
 function createStore(overrides: Partial<IdempotencyStore>): IdempotencyStore {
     return {
         acquireLock: vi.fn().mockResolvedValue("lock-token"),
-        clearReservation: vi.fn().mockResolvedValue(undefined),
         getResult: vi.fn().mockResolvedValue(undefined),
         releaseLock: vi.fn().mockResolvedValue(undefined),
-        reserveSubmission: vi.fn().mockResolvedValue(true),
         saveResult: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };

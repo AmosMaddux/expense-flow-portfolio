@@ -11,7 +11,6 @@ type RunIdempotentSubmissionRequest<TBody> = {
     idempotencyKey: string;
     operation: () => Promise<TBody>;
     requestHash: string;
-    reservationMetadata?: Record<string, unknown>;
     store: IdempotencyStore;
     tenantId: string;
 };
@@ -27,7 +26,6 @@ export async function runIdempotentSubmission<TBody>({
     idempotencyKey,
     operation,
     requestHash,
-    reservationMetadata,
     store,
     tenantId,
 }: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotentSubmissionRunResult> {
@@ -58,8 +56,6 @@ export async function runIdempotentSubmission<TBody>({
         );
     }
 
-    let shouldClearReservation = false;
-
     try {
         const completed = await getResultForRequest(
             store,
@@ -71,63 +67,17 @@ export async function runIdempotentSubmission<TBody>({
             return { ...completed, replayed: true };
         }
 
-        const reserved = await store.reserveSubmission(
-            tenantId,
-            idempotencyKey,
-            lockToken,
-            requestHash,
-            reservationMetadata,
-        );
-        if (!reserved) {
-            const reservedResult = await getResultForRequest(
-                store,
-                tenantId,
-                idempotencyKey,
-                requestHash,
-            );
-            if (reservedResult !== undefined) {
-                return { ...reservedResult, replayed: true };
-            }
-
-            if (isRecoverableCreateReservation(reservationMetadata)) {
-                const body = toJsonSafeBody(await operation());
-                const result = { body, statusCode: 201 };
-                await store.saveResult(
-                    tenantId,
-                    idempotencyKey,
-                    lockToken,
-                    requestHash,
-                    result,
-                );
-                return { ...result, replayed: false };
-            }
-
-            throw new ConflictError(
-                "A submission with this idempotency key is already in progress.",
-            );
-        }
-        shouldClearReservation = true;
-
         const body = toJsonSafeBody(await operation());
-        shouldClearReservation = false;
-
         const result = { body, statusCode: 201 };
 
         await store.saveResult(
             tenantId,
             idempotencyKey,
-            lockToken,
             requestHash,
             result,
         );
 
         return { ...result, replayed: false };
-    } catch (error: unknown) {
-        if (shouldClearReservation) {
-            await store.clearReservation(tenantId, idempotencyKey, lockToken);
-        }
-
-        throw error;
     } finally {
         await releaseLockAfterSubmission(
             store,
@@ -145,27 +95,6 @@ export function createIdempotencyRequestHash(payload: unknown): string {
     return createHash("sha256")
         .update(JSON.stringify(toCanonicalJsonValue(payload)))
         .digest("hex");
-}
-
-/**
- * Creates a stable UUID for a tenant-scoped idempotent create operation.
- */
-export function createIdempotencyResourceId(
-    tenantId: string,
-    idempotencyKey: string,
-): string {
-    const hex = createHash("sha256")
-        .update(`${tenantId}:${idempotencyKey}`)
-        .digest("hex")
-        .slice(0, 32)
-        .split("");
-
-    hex[12] = "4";
-    const variant = Number.parseInt(hex[16] ?? "0", 16);
-    hex[16] = ((variant & 0x3) | 0x8).toString(16);
-
-    const uuid = hex.join("");
-    return `${uuid.slice(0, 8)}-${uuid.slice(8, 12)}-${uuid.slice(12, 16)}-${uuid.slice(16, 20)}-${uuid.slice(20)}`;
 }
 
 async function getResultForRequest(
@@ -204,16 +133,6 @@ async function releaseLockAfterSubmission(
 
 function toJsonSafeBody(body: unknown): unknown {
     return JSON.parse(JSON.stringify(body)) as unknown;
-}
-
-function isRecoverableCreateReservation(
-    metadata: Record<string, unknown> | undefined,
-): boolean {
-    return (
-        metadata !== undefined &&
-        metadata.operation === "create_expense_report" &&
-        typeof metadata.resourceId === "string"
-    );
 }
 
 function toCanonicalJsonValue(value: unknown): unknown {

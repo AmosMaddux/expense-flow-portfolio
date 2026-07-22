@@ -18,7 +18,6 @@ import {
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
     createIdempotencyRequestHash,
-    createIdempotencyResourceId,
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
@@ -60,13 +59,8 @@ export async function postExpenseReport(
         }
 
         const idempotencyKey = parseIdempotencyKey(req);
-        const resourceId = createIdempotencyResourceId(
-            auth.tenantId,
-            idempotencyKey,
-        );
         const createReport = async () =>
             createDraftExpenseReport({
-                id: resourceId,
                 owner: parsedRequest.owner,
                 dueDate: parsedRequest.dueDate,
                 priority: parsedRequest.priority,
@@ -79,11 +73,6 @@ export async function postExpenseReport(
             idempotencyKey,
             operation: createReport,
             requestHash,
-            reservationMetadata: {
-                operation: "create_expense_report",
-                resourceId,
-                tenantId: auth.tenantId,
-            },
             store: getDefaultIdempotencyStore(),
             tenantId: auth.tenantId,
         });
