@@ -56,8 +56,6 @@ export async function runIdempotentSubmission<TBody>({
         );
     }
 
-    let shouldClearReservation = false;
-
     try {
         const completed = await getResultForRequest(
             store,
@@ -69,49 +67,17 @@ export async function runIdempotentSubmission<TBody>({
             return { ...completed, replayed: true };
         }
 
-        const reserved = await store.reserveSubmission(
-            tenantId,
-            idempotencyKey,
-            lockToken,
-            requestHash,
-        );
-        if (!reserved) {
-            const reservedResult = await getResultForRequest(
-                store,
-                tenantId,
-                idempotencyKey,
-                requestHash,
-            );
-            if (reservedResult !== undefined) {
-                return { ...reservedResult, replayed: true };
-            }
-
-            throw new ConflictError(
-                "A submission with this idempotency key is already in progress.",
-            );
-        }
-        shouldClearReservation = true;
-
         const body = toJsonSafeBody(await operation());
-        shouldClearReservation = false;
-
         const result = { body, statusCode: 201 };
 
         await store.saveResult(
             tenantId,
             idempotencyKey,
-            lockToken,
             requestHash,
             result,
         );
 
         return { ...result, replayed: false };
-    } catch (error: unknown) {
-        if (shouldClearReservation) {
-            await store.clearReservation(tenantId, idempotencyKey, lockToken);
-        }
-
-        throw error;
     } finally {
         await releaseLockAfterSubmission(
             store,

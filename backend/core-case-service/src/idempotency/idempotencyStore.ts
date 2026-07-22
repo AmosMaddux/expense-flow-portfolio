@@ -1,11 +1,3 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import {
-    DeleteCommand,
-    GetCommand,
-    PutCommand,
-    UpdateCommand,
-    type DynamoDBDocumentClient,
-} from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "node:crypto";
 import type { RedisClientType } from "redis";
 
@@ -32,11 +24,6 @@ export type IdempotencyStore = {
         tenantId: string,
         idempotencyKey: string,
     ) => Promise<string | undefined>;
-    clearReservation: (
-        tenantId: string,
-        idempotencyKey: string,
-        token: string,
-    ) => Promise<void>;
     getResult: (
         tenantId: string,
         idempotencyKey: string,
@@ -47,28 +34,12 @@ export type IdempotencyStore = {
         idempotencyKey: string,
         token: string,
     ) => Promise<void>;
-    reserveSubmission: (
-        tenantId: string,
-        idempotencyKey: string,
-        token: string,
-        requestHash: string,
-    ) => Promise<boolean>;
     saveResult: (
         tenantId: string,
         idempotencyKey: string,
-        token: string,
         requestHash: string,
         result: IdempotencyResult,
     ) => Promise<void>;
-};
-
-type StoredIdempotencyRecord = {
-    pk: string;
-    requestHash: string;
-    result?: IdempotencyResult;
-    status: "completed" | "in_progress";
-    submissionToken?: string;
-    ttl: number;
 };
 
 type CachedIdempotencyRecord = {
@@ -76,13 +47,20 @@ type CachedIdempotencyRecord = {
     result: IdempotencyResult;
 };
 
+type LockRecord = {
+    token: string;
+    expiresAt: number;
+};
+
+type MemoryRecord = CachedIdempotencyRecord & {
+    expiresAt: number;
+};
+
 /**
- * Persists idempotency results in DynamoDB and mirrors completed results in Redis.
+ * Stores completed idempotency results and active locks in Redis.
  */
-export function createIdempotencyStore(
-    dynamoDb: DynamoDBDocumentClient,
+export function createRedisIdempotencyStore(
     redis: RedisClientType,
-    tableName: string,
 ): IdempotencyStore {
     return {
         async acquireLock(tenantId, idempotencyKey) {
@@ -100,91 +78,22 @@ export function createIdempotencyStore(
 
             return lock === "OK" ? token : undefined;
         },
-        async clearReservation(tenantId, idempotencyKey, token) {
-            try {
-                await dynamoDb.send(
-                    new DeleteCommand({
-                        TableName: tableName,
-                        Key: {
-                            pk: toDynamoPartitionKey(tenantId, idempotencyKey),
-                        },
-                        ConditionExpression:
-                            "#status = :inProgress AND submissionToken = :token",
-                        ExpressionAttributeNames: {
-                            "#status": "status",
-                        },
-                        ExpressionAttributeValues: {
-                            ":inProgress": "in_progress",
-                            ":token": token,
-                        },
-                    }),
-                );
-            } catch (error: unknown) {
-                if (error instanceof ConditionalCheckFailedException) {
-                    return;
-                }
-
-                throw error;
-            }
-        },
         async getResult(tenantId, idempotencyKey, requestHash) {
             await connectRedis(redis);
 
-            const redisKey = toRedisResultKey(tenantId, idempotencyKey);
-            const cached = await redis.get(redisKey);
-            if (cached !== null) {
-                const cachedRecord = JSON.parse(
-                    cached,
-                ) as CachedIdempotencyRecord;
-                if (cachedRecord.requestHash !== requestHash) {
-                    throw new IdempotencyRequestMismatchError();
-                }
-
-                return cachedRecord.result;
+            const cached = await redis.get(
+                toRedisResultKey(tenantId, idempotencyKey),
+            );
+            if (cached === null) {
+                return undefined;
             }
 
-            const record = await dynamoDb.send(
-                new GetCommand({
-                    TableName: tableName,
-                    Key: {
-                        pk: toDynamoPartitionKey(tenantId, idempotencyKey),
-                    },
-                }),
-            );
-            const item = record.Item as StoredIdempotencyRecord | undefined;
-            if (
-                item !== undefined &&
-                item.ttl > getCurrentEpochSeconds() &&
-                item.requestHash !== requestHash
-            ) {
+            const cachedRecord = JSON.parse(cached) as CachedIdempotencyRecord;
+            if (cachedRecord.requestHash !== requestHash) {
                 throw new IdempotencyRequestMismatchError();
             }
 
-            if (
-                item === undefined ||
-                item.status !== "completed" ||
-                item.result === undefined
-            ) {
-                return undefined;
-            }
-
-            const remainingTtlSeconds = item.ttl - getCurrentEpochSeconds();
-            if (remainingTtlSeconds <= 0) {
-                return undefined;
-            }
-
-            await redis.set(
-                redisKey,
-                JSON.stringify({
-                    requestHash: item.requestHash,
-                    result: item.result,
-                } satisfies CachedIdempotencyRecord),
-                {
-                    EX: remainingTtlSeconds,
-                },
-            );
-
-            return item.result;
+            return cachedRecord.result;
         },
         async releaseLock(tenantId, idempotencyKey, token) {
             await connectRedis(redis);
@@ -197,80 +106,9 @@ export function createIdempotencyStore(
                 },
             );
         },
-        async reserveSubmission(tenantId, idempotencyKey, token, requestHash) {
-            try {
-                const now = getCurrentEpochSeconds();
-
-                await dynamoDb.send(
-                    new PutCommand({
-                        TableName: tableName,
-                        Item: {
-                            pk: toDynamoPartitionKey(tenantId, idempotencyKey),
-                            requestHash,
-                            status: "in_progress",
-                            submissionToken: token,
-                            ttl: now + IDEMPOTENCY_RESULT_TTL_SECONDS,
-                        } satisfies StoredIdempotencyRecord,
-                        ConditionExpression:
-                            "attribute_not_exists(pk) OR #ttl <= :now",
-                        ExpressionAttributeNames: {
-                            "#ttl": "ttl",
-                        },
-                        ExpressionAttributeValues: {
-                            ":now": now,
-                        },
-                    }),
-                );
-
-                return true;
-            } catch (error: unknown) {
-                if (error instanceof ConditionalCheckFailedException) {
-                    return false;
-                }
-
-                throw error;
-            }
-        },
-        async saveResult(tenantId, idempotencyKey, token, requestHash, result) {
-            const pk = toDynamoPartitionKey(tenantId, idempotencyKey);
-
-            await dynamoDb.send(
-                new UpdateCommand({
-                    TableName: tableName,
-                    Key: { pk },
-                    UpdateExpression:
-                        "SET #status = :completed, #result = :result",
-                    ConditionExpression:
-                        "#status = :inProgress AND submissionToken = :token AND requestHash = :requestHash",
-                    ExpressionAttributeNames: {
-                        "#result": "result",
-                        "#status": "status",
-                    },
-                    ExpressionAttributeValues: {
-                        ":completed": "completed",
-                        ":inProgress": "in_progress",
-                        ":requestHash": requestHash,
-                        ":result": result,
-                        ":token": token,
-                    },
-                }),
-            );
-
-            const record = await dynamoDb.send(
-                new GetCommand({
-                    TableName: tableName,
-                    Key: { pk },
-                }),
-            );
-            const item = record.Item as StoredIdempotencyRecord | undefined;
-            const remainingTtlSeconds =
-                item === undefined ? 0 : item.ttl - getCurrentEpochSeconds();
-
-            if (remainingTtlSeconds <= 0) {
-                return;
-            }
-
+        async saveResult(tenantId, idempotencyKey, requestHash, result) {
             await connectRedis(redis);
+
             await redis.set(
                 toRedisResultKey(tenantId, idempotencyKey),
                 JSON.stringify({
@@ -278,17 +116,84 @@ export function createIdempotencyStore(
                     result,
                 } satisfies CachedIdempotencyRecord),
                 {
-                    EX: remainingTtlSeconds,
+                    EX: IDEMPOTENCY_RESULT_TTL_SECONDS,
                 },
             );
         },
     };
 }
 
-export function getCurrentEpochSeconds(): number {
-    return Math.floor(Date.now() / 1000);
+/**
+ * Provides the same Redis idempotency semantics for local tests.
+ */
+export function createInMemoryIdempotencyStore(): IdempotencyStore & {
+    clear(): void;
+} {
+    const records = new Map<string, MemoryRecord>();
+    const locks = new Map<string, LockRecord>();
+
+    return {
+        async acquireLock(tenantId, idempotencyKey) {
+            const lockKey = toRedisLockKey(tenantId, idempotencyKey);
+            const now = Date.now();
+            const existing = locks.get(lockKey);
+
+            if (existing !== undefined && existing.expiresAt > now) {
+                return undefined;
+            }
+
+            const token = randomUUID();
+            locks.set(lockKey, {
+                token,
+                expiresAt: now + IDEMPOTENCY_LOCK_TTL_MILLISECONDS,
+            });
+            return token;
+        },
+        clear() {
+            locks.clear();
+            records.clear();
+        },
+        async getResult(tenantId, idempotencyKey, requestHash) {
+            const key = toRedisResultKey(tenantId, idempotencyKey);
+            const record = records.get(key);
+
+            if (record === undefined) {
+                return undefined;
+            }
+
+            if (record.expiresAt <= Date.now()) {
+                records.delete(key);
+                return undefined;
+            }
+
+            if (record.requestHash !== requestHash) {
+                throw new IdempotencyRequestMismatchError();
+            }
+
+            return record.result;
+        },
+        async releaseLock(tenantId, idempotencyKey, token) {
+            const lockKey = toRedisLockKey(tenantId, idempotencyKey);
+            const lock = locks.get(lockKey);
+
+            if (lock?.token === token) {
+                locks.delete(lockKey);
+            }
+        },
+        async saveResult(tenantId, idempotencyKey, requestHash, result) {
+            records.set(toRedisResultKey(tenantId, idempotencyKey), {
+                requestHash,
+                result,
+                expiresAt:
+                    Date.now() + IDEMPOTENCY_RESULT_TTL_SECONDS * 1000,
+            });
+        },
+    };
 }
 
+/**
+ * Builds the tenant-scoped Redis key for a completed idempotency result.
+ */
 export function toRedisResultKey(
     tenantId: string,
     idempotencyKey: string,
@@ -296,18 +201,14 @@ export function toRedisResultKey(
     return `idem:${tenantId}:${idempotencyKey}`;
 }
 
+/**
+ * Builds the tenant-scoped Redis key for an active idempotency lock.
+ */
 export function toRedisLockKey(
     tenantId: string,
     idempotencyKey: string,
 ): string {
     return `lock:${tenantId}:${idempotencyKey}`;
-}
-
-export function toDynamoPartitionKey(
-    tenantId: string,
-    idempotencyKey: string,
-): string {
-    return `idem:${tenantId}:${idempotencyKey}`;
 }
 
 async function connectRedis(redis: RedisClientType): Promise<void> {
