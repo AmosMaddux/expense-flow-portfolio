@@ -15,6 +15,8 @@ const coreCaseSourceRoot = new URL(
 ).pathname;
 const coreCaseIntegrationTestGlob = `${coreCaseSourceRoot}**/*.integration.test.ts`;
 const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
+const frontendSourceRoot = new URL("./frontend/app/src/", import.meta.url)
+    .pathname;
 const testEnvironment = {
     AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",
@@ -74,6 +76,14 @@ export default defineConfig({
                     pool: "forks",
                     root: repositoryRoot,
                     testTimeout: 60_000,
+                },
+            },
+            {
+                test: {
+                    name: "frontend",
+                    environment: "jsdom",
+                    include: [`${frontendSourceRoot}**/*.test.{ts,tsx}`],
+                    root: repositoryRoot,
                 },
             },
         ],
