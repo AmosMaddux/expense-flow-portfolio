@@ -131,11 +131,11 @@ The typography system relies on **Inter** for its exceptional legibility in data
 Text styles are strictly hierarchical. Headlines use tighter letter-spacing for a grounded appearance, while labels use monospaced formatting to ensure that numbers align perfectly in vertical lists.
 
 ## Layout & Spacing
-The design system is built on a rigorous **8px grid** (with a 4px sub-step for fine-tuning). 
+The design system is built on a rigorous **8px grid** (with a 4px sub-step for fine-tuning).
 
 - **Layout Structure:** A persistent 260px left sidebar houses the primary navigation. The top header (64px) provides global context including the current tenant/organization and user profile.
 - **Grid:** A 12-column fluid grid is used for the main content area. Data tables typically span the full 12 columns, while KPI cards and form inputs are grouped into 3 or 4-column clusters.
-- **Responsive Behavior:** 
+- **Responsive Behavior:**
   - **Desktop (>1024px):** Fixed sidebar, full 12-column grid.
   - **Tablet (768px - 1023px):** Sidebar collapses to icons; margins reduce to 16px.
   - **Mobile (<768px):** Sidebar becomes a hidden drawer; 4-column grid; vertical stacking for KPI cards and form groups.
@@ -149,7 +149,7 @@ To maintain a clean, "flat-plus" aesthetic, this design system avoids heavy drop
 - **Level 3 (Modals/Overlays):** White background with a 12px blur shadow (Opacity: 8%) to draw focus over the dimming backdrop.
 
 ## Shapes
-A "Soft" shape language is applied to bridge the gap between rigid corporate structures and modern accessibility. 
+A "Soft" shape language is applied to bridge the gap between rigid corporate structures and modern accessibility.
 
 - **Standard Elements (Inputs, Buttons):** 0.25rem (4px) corner radius.
 - **Containers (Cards, Modals):** 0.5rem (8px) corner radius.

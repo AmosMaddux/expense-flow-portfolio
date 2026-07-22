@@ -14,11 +14,6 @@ body {
     margin: 0;
 }
 
-a {
-    color: inherit;
-    text-decoration: none;
-}
-
 .app-shell {
     display: grid;
     min-height: 100vh;
@@ -48,6 +43,7 @@ a {
 .sidebar__link {
     border-radius: 6px;
     color: #d9e2ec;
+    cursor: default;
     padding: 10px 12px;
 }
 

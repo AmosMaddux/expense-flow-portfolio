@@ -10,9 +10,9 @@ export default function App(): JSX.Element {
                 <div className="sidebar__brand">ExpenseFlow</div>
                 <nav className="sidebar__nav" aria-label="Workspace sections">
                     {navigationItems.map((item) => (
-                        <a className="sidebar__link" href="/" key={item}>
+                        <span aria-disabled="true" className="sidebar__link" key={item}>
                             {item}
-                        </a>
+                        </span>
                     ))}
                 </nav>
             </aside>

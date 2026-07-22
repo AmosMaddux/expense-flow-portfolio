@@ -160,7 +160,7 @@
 <!-- Secondary Actions -->
 <div class="flex flex-col items-center gap-md pt-md border-t border-outline-variant">
 <button class="text-on-surface-variant hover:text-primary transition-colors font-body-md text-body-md flex items-center gap-xs" type="button">
-                        Didn't receive a code? 
+                        Didn't receive a code?
                         <span class="text-primary font-bold decoration-2 hover:underline">Resend Code</span>
 </button>
 <a class="text-on-surface-variant hover:text-primary transition-colors font-body-sm text-body-sm flex items-center gap-xs" href="#">
@@ -187,7 +187,7 @@
             inputs.forEach((input, index) => {
                 input.addEventListener('input', (e) => {
                     if (e.inputType === "deleteContentBackward") return;
-                    
+
                     const value = e.target.value;
                     if (value && index < inputs.length - 1) {
                         inputs[index + 1].focus();
@@ -219,7 +219,7 @@
                 e.preventDefault();
                 const btn = form.querySelector('button[type="submit"]');
                 const originalText = btn.innerHTML;
-                
+
                 btn.disabled = true;
                 btn.innerHTML = `
                     <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

@@ -1,14 +1,4 @@
-<!DOCTYPE html>
-
-<html class="light" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Approval Queue - ExpenseFlow</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
+<!DOCTYPE html><html lang="en" class="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
       tailwind.config = {
         darkMode: "class",
         theme: {
@@ -102,25 +92,7 @@
           },
         },
       }
-    </script>
-<style>
-        body { background-color: #f8fafc; font-family: 'Inter', sans-serif; }
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-            display: inline-block;
-            line-height: 1;
-            text-transform: none;
-            letter-spacing: normal;
-            word-wrap: normal;
-            white-space: nowrap;
-            direction: ltr;
-        }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-    </style>
-</head>
-<body class="flex min-h-screen text-on-surface">
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="flex min-h-screen text-on-surface">
 <!-- SideNavBar -->
 <aside class="fixed left-0 top-0 h-full w-[260px] bg-surface border-r border-outline-variant flex flex-col z-50">
 <div class="p-lg flex flex-col gap-xs">
@@ -129,48 +101,48 @@
 </div>
 <nav class="flex-1 px-md py-sm overflow-y-auto custom-scrollbar space-y-1">
 <!-- Navigation Items Mapping -->
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high group" href="#">
-<span class="material-symbols-outlined text-[20px]">description</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high group">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="description">description</span>
 <span class="font-label-md text-label-md">My Submissions</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
-<span class="material-symbols-outlined text-[20px]">add_circle</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="add_circle">add_circle</span>
 <span class="font-label-md text-label-md">Submit Expense</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
-<span class="material-symbols-outlined text-[20px]">directions_car</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="directions_car">directions_car</span>
 <span class="font-label-md text-label-md">Log Mileage</span>
 </a>
 <!-- Active State: Approval Queue -->
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors bg-surface-container-high text-primary font-bold" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors bg-surface-container-high text-primary font-bold">
 <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">rule</span>
 <span class="font-label-md text-label-md">Approval Queue</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
 <span class="material-symbols-outlined text-[20px]">group</span>
 <span class="font-label-md text-label-md">Team &amp; Users</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
-<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="dashboard">dashboard</span>
 <span class="font-label-md text-label-md">Dashboard</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
-<span class="material-symbols-outlined text-[20px]">assessment</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="assessment">assessment</span>
 <span class="font-label-md text-label-md">Reports</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
-<span class="material-symbols-outlined text-[20px]">account_tree</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[20px]" data-original-icon="account_tree">account_tree</span>
 <span class="font-label-md text-label-md">GL Mapping</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
 <span class="material-symbols-outlined text-[20px]">domain</span>
 <span class="font-label-md text-label-md">Tenants</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
 <span class="material-symbols-outlined text-[20px]">history</span>
 <span class="font-label-md text-label-md">Audit Log</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container-high">
 <span class="material-symbols-outlined text-[20px]">settings</span>
 <span class="font-label-md text-label-md">Settings</span>
 </a>
@@ -188,25 +160,25 @@
 <header class="h-[64px] bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center px-lg sticky top-0 z-40">
 <div class="flex items-center gap-lg">
 <div class="flex items-center gap-sm">
-<span class="font-headline-sm text-headline-sm text-primary font-bold">Acme Corp</span>
-<span class="material-symbols-outlined text-outline">chevron_right</span>
+<span class="font-headline-sm text-headline-sm text-primary font-bold">Tenant-X</span>
+<span class="material-symbols-outlined text-outline" data-original-icon="chevron_right">chevron_right</span>
 <span class="font-body-md text-body-md text-on-surface-variant">Approval Queue</span>
 </div>
 <nav class="hidden md:flex items-center gap-md">
-<a class="text-primary font-bold border-b-2 border-primary py-xs font-body-md text-body-md transition-opacity hover:opacity-80" href="#">Role Switcher</a>
+<a href="#" class="text-primary font-bold border-b-2 border-primary py-xs font-body-md text-body-md transition-opacity hover:opacity-80">Role Switcher (Design Review Aid)</a>
 </nav>
 </div>
 <div class="flex items-center gap-md">
 <div class="relative flex items-center bg-surface-container px-sm py-1.5 rounded-lg border border-outline-variant">
 <span class="material-symbols-outlined text-[20px] text-outline">search</span>
-<input class="bg-transparent border-none focus:ring-0 text-body-md font-body-md w-48" placeholder="Search reports..." type="text"/>
+<input type="text" placeholder="Search reports..." class="bg-transparent border-none focus:ring-0 text-body-md font-body-md w-48">
 </div>
-<button class="material-symbols-outlined p-sm hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant">notifications</button>
-<button class="material-symbols-outlined p-sm hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant">help_outline</button>
+<button class="material-symbols-outlined p-sm hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant" data-original-icon="notifications">notifications</button>
+<button class="material-symbols-outlined p-sm hover:bg-surface-container-high rounded-full transition-colors text-on-surface-variant" data-original-icon="help_outline">help_outline</button>
 <div class="h-8 w-[1px] bg-outline-variant mx-xs"></div>
 <div class="flex items-center gap-sm group cursor-pointer">
 <div class="w-8 h-8 rounded-full bg-primary-fixed-dim overflow-hidden border border-outline-variant">
-<img class="w-full h-full object-cover" data-alt="A professional headshot of a corporate manager in a well-lit modern office environment. The subject is wearing a crisp slate blue blazer and has a friendly yet authoritative expression. The background shows soft-focus architectural glass and greenery typical of a high-end corporate setting in a clean, daylight-heavy aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcrLlkkSyug6N86p91qPE3VkHGxzkWeUSIFxzJiUzkF34CFX6PpfJy2Ot-UAgQK5ognH4mZbxImAGMagBtzykkIIS6z4JncRTBFvwqsd9chNY-ZMbGQRXQPuPEzomEvAiWInliXwKVEjvKm8jQ-cdssZY2TYiNauYGvDVnE83TtXZ3X9gW2GIa7duC7US-zNHODReSC69y5IT3tJ6-BUoPV83At9-3Z1i7aqqficmAdbNoNAlEba8"/>
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a corporate manager in a well-lit modern office environment. The subject is wearing a crisp slate blue blazer and has a friendly yet authoritative expression. The background shows soft-focus architectural glass and greenery typical of a high-end corporate setting in a clean, daylight-heavy aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcrLlkkSyug6N86p91qPE3VkHGxzkWeUSIFxzJiUzkF34CFX6PpfJy2Ot-UAgQK5ognH4mZbxImAGMagBtzykkIIS6z4JncRTBFvwqsd9chNY-ZMbGQRXQPuPEzomEvAiWInliXwKVEjvKm8jQ-cdssZY2TYiNauYGvDVnE83TtXZ3X9gW2GIa7duC7US-zNHODReSC69y5IT3tJ6-BUoPV83At9-3Z1i7aqqficmAdbNoNAlEba8">
 </div>
 <span class="font-label-md text-label-md text-on-surface-variant group-hover:text-primary transition-colors">Logout</span>
 </div>
@@ -220,8 +192,8 @@
 <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Pending Approval</p>
 <h3 class="font-headline-lg text-headline-lg text-primary mt-xs">24</h3>
 <div class="flex items-center gap-xs mt-sm text-secondary font-label-md">
-<span class="material-symbols-outlined text-[16px]">trending_up</span>
-<span>12% from last week</span>
+<span class="material-symbols-outlined text-[16px]" data-original-icon="trending_up">trending_up</span>
+<span class="">12% from last week</span>
 </div>
 </div>
 <div class="bg-white p-lg rounded border border-outline-variant">
@@ -229,7 +201,7 @@
 <h3 class="font-headline-lg text-headline-lg text-primary mt-xs">$14,280.50</h3>
 <div class="flex items-center gap-xs mt-sm text-on-surface-variant font-label-md">
 <span class="material-symbols-outlined text-[16px]">schedule</span>
-<span>Avg processing: 1.2 days</span>
+<span class="">Avg processing: 1.2 days</span>
 </div>
 </div>
 <div class="bg-white p-lg rounded border border-outline-variant relative overflow-hidden group">
@@ -238,7 +210,7 @@
 <h3 class="font-headline-lg text-headline-lg text-error mt-xs">7</h3>
 <div class="flex items-center gap-xs mt-sm text-error font-label-md">
 <span class="material-symbols-outlined text-[16px]">warning</span>
-<span>Requires immediate review</span>
+<span class="">Requires immediate review</span>
 </div>
 </div>
 <div class="bg-white p-lg rounded border border-outline-variant">
@@ -246,7 +218,7 @@
 <h3 class="font-headline-lg text-headline-lg text-primary mt-xs">3</h3>
 <div class="flex items-center gap-xs mt-sm text-on-surface-variant font-label-md">
 <span class="material-symbols-outlined text-[16px]">block</span>
-<span>Policy violations detected</span>
+<span class="">Policy violations detected</span>
 </div>
 </div>
 </div>
@@ -260,9 +232,9 @@
 <div class="relative">
 <select class="appearance-none bg-surface-container-low border border-outline-variant rounded-lg px-md py-1.5 pr-xl font-body-md text-body-md focus:border-primary focus:ring-0 cursor-pointer">
 <option>Role: All</option>
-<option>Department Manager</option>
-<option>Senior Executive</option>
-<option>Project Lead</option>
+<option class="">Department Manager</option>
+<option class="">Senior Executive</option>
+<option class="">Project Lead</option>
 </select>
 <span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-outline text-[18px]">expand_more</span>
 </div>
@@ -279,7 +251,7 @@
 </div>
 <!-- Checkbox Filter -->
 <label class="flex items-center gap-sm cursor-pointer group">
-<input checked="" class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary" type="checkbox"/>
+<input checked="" class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary" type="checkbox">
 <span class="font-body-md text-body-md text-on-surface group-hover:text-primary">Amount &gt; $500</span>
 </label>
 </div>
@@ -320,7 +292,7 @@
 <div class="flex items-center gap-md">
 <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-primary text-[10px]">JD</div>
 <div>
-<p class="font-headline-sm text-headline-sm text-primary">Jane Doe</p>
+<p class="font-headline-sm text-headline-sm text-primary">User Alpha</p>
 <p class="text-body-sm text-on-surface-variant">Senior UX Designer</p>
 </div>
 </div>
@@ -344,7 +316,7 @@
 <div class="flex items-center gap-md">
 <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-primary text-[10px]">MS</div>
 <div>
-<p class="font-headline-sm text-headline-sm text-primary">Marcus Smith</p>
+<p class="font-headline-sm text-headline-sm text-primary">User Beta</p>
 <p class="text-body-sm text-on-surface-variant">Software Engineer</p>
 </div>
 </div>
@@ -368,7 +340,7 @@
 <div class="flex items-center gap-md">
 <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-primary text-[10px]">AH</div>
 <div>
-<p class="font-headline-sm text-headline-sm text-primary">Aisha Huang</p>
+<p class="font-headline-sm text-headline-sm text-primary">User Gamma</p>
 <p class="text-body-sm text-on-surface-variant">Product Manager</p>
 </div>
 </div>
@@ -391,8 +363,8 @@
 <td class="p-lg">
 <div class="flex items-center gap-md">
 <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-primary text-[10px]">RT</div>
-<div>
-<p class="font-headline-sm text-headline-sm text-primary">Robert Taylor</p>
+<div class="">
+<p class="font-headline-sm text-headline-sm text-primary">User Delta</p>
 <p class="text-body-sm text-on-surface-variant">Sales Account Exec</p>
 </div>
 </div>
@@ -428,7 +400,7 @@
 <button class="w-8 h-8 rounded hover:bg-surface-container-high font-label-md flex items-center justify-center">6</button>
 </div>
 <button class="p-1 rounded hover:bg-surface-container-high transition-colors text-outline">
-<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+<span class="material-symbols-outlined text-[20px]" data-original-icon="chevron_">chevron_right</span>
 </button>
 </div>
 </div>
@@ -460,7 +432,7 @@
 </main>
 </div>
 <!-- Micro-interaction Scripts -->
-<script>
+<script class="">
         document.querySelectorAll('button, a').forEach(el => {
             el.addEventListener('click', (e) => {
                 if (e.target.tagName === 'A' && e.target.getAttribute('href') === '#') e.preventDefault();
@@ -477,4 +449,5 @@
             searchInput.parentElement.classList.remove('border-primary');
         });
     </script>
+
 </body></html>

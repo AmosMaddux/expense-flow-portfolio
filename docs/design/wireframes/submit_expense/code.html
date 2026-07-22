@@ -1,22 +1,4 @@
-<!DOCTYPE html>
-
-<html class="light" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>ExpenseFlow - Submit Expense</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .step-active { color: var(--tw-color-primary); }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    </style>
-<script id="tailwind-config">
+<!DOCTYPE html><html lang="en" class="light" style=""><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
         tailwind.config = {
             darkMode: "class",
             theme: {
@@ -110,9 +92,7 @@
                 },
             },
         }
-    </script>
-</head>
-<body class="bg-surface text-on-surface font-body-md overflow-hidden">
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="bg-surface text-on-surface font-body-md overflow-hidden">
 <!-- Sidebar Navigation -->
 <aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col border-r border-outline-variant bg-surface dark:bg-inverse-surface z-50">
 <div class="p-lg">
@@ -121,27 +101,27 @@
 </div>
 <nav class="flex-1 px-md overflow-y-auto hide-scrollbar space-y-1">
 <!-- Navigation Items Mapping from JSON -->
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-bold bg-surface-container-high transition-colors" href="#">
-<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-bold bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="add_circle" data-original-icon="add_circle">add_circle</span>
 <span class="font-label-md text-label-md">Submit Expense</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
-<span class="material-symbols-outlined" data-icon="description">description</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="description" data-original-icon="description">description</span>
 <span class="font-label-md text-label-md">My Submissions</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
-<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="dashboard" data-original-icon="dashboard">dashboard</span>
 <span class="font-label-md text-label-md">Dashboard</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
-<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined" data-icon="assessment" data-original-icon="assessment">assessment</span>
 <span class="font-label-md text-label-md">Reports</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
 <span class="material-symbols-outlined" data-icon="rule">rule</span>
 <span class="font-label-md text-label-md">Approval Queue</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors" href="#">
+<a href="#" class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
 <span class="material-symbols-outlined" data-icon="history">history</span>
 <span class="font-label-md text-label-md">Audit Log</span>
 </a>
@@ -152,9 +132,9 @@
 </nav>
 <div class="p-lg border-t border-outline-variant">
 <div class="flex items-center gap-md">
-<img class="w-10 h-10 rounded-full border border-outline-variant" data-alt="A professional close-up studio portrait of a corporate employee for a user profile avatar. The person has a friendly expression, wearing a navy blue blazer. The lighting is soft and high-key, set against a neutral gray background. The aesthetic is modern, clean, and polished, reflecting a high-end business environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeNZ7TGPQLR7nXBLkvzRXMi0ExLCMoX25nM0PN24KkdlTmUvw1py2pmTzKhqgBGSbmF1MPqUDyEQlg_acYrDSGkrhiCbgPYxzcOOpLvFX2mA6FbRFfFkym6od8flLNN8y0yNxmjBKIpM4hCM6d5HoXAxKt-cHskzrEW_UH24ZcVXjS3Zwg2HXZIEEsJyNwLfoAjZx3TF4JqNk9iZpKG7wNQlh3eBgaDQgJOv-lcMrvEmdSmKoGBbg"/>
+<img class="w-10 h-10 rounded-full border border-outline-variant" data-alt="A professional close-up studio portrait of a corporate employee for a user profile avatar. The person has a friendly expression, wearing a navy blue blazer. The lighting is soft and high-key, set against a neutral gray background. The aesthetic is modern, clean, and polished, reflecting a high-end business environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeNZ7TGPQLR7nXBLkvzRXMi0ExLCMoX25nM0PN24KkdlTmUvw1py2pmTzKhqgBGSbmF1MPqUDyEQlg_acYrDSGkrhiCbgPYxzcOOpLvFX2mA6FbRFfFkym6od8flLNN8y0yNxmjBKIpM4hCM6d5HoXAxKt-cHskzrEW_UH24ZcVXjS3Zwg2HXZIEEsJyNwLfoAjZx3TF4JqNk9iZpKG7wNQlh3eBgaDQgJOv-lcMrvEmdSmKoGBbg">
 <div>
-<p class="font-headline-sm text-headline-sm leading-none">Alex Rivera</p>
+<p class="font-headline-sm text-headline-sm leading-none">System User 01</p>
 <p class="text-body-sm text-on-surface-variant">Finance Lead</p>
 </div>
 </div>
@@ -169,14 +149,14 @@
 <div class="h-6 w-px bg-outline-variant"></div>
 <div class="flex items-center gap-sm">
 <span class="font-label-md text-label-md text-on-surface-variant bg-surface-container-high px-2 py-1 rounded">Role: Admin</span>
-</div>
+<span class="font-label-md text-label-md text-on-surface-variant bg-surface-container-high px-2 py-1 rounded">Design Review Aid</span></div>
 </div>
 <div class="flex items-center gap-md">
 <div class="relative">
-<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="notifications" data-original-icon="notifications">notifications</span>
 <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface-container-lowest"></span>
 </div>
-<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="help_outline">help_outline</span>
+<span class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-2 rounded-full cursor-pointer" data-icon="help_outline" data-original-icon="help_outline">help_outline</span>
 <button class="font-label-md text-label-md text-primary font-bold px-md py-sm border border-outline hover:bg-surface-container-high transition-all">Logout</button>
 </div>
 </header>
@@ -239,10 +219,7 @@
 <p class="text-label-sm font-label-sm text-on-surface-variant mb-1">REPORT NAME</p>
 <h3 class="text-headline-lg font-headline-lg text-primary">Q3 Regional Travel - North</h3>
 <div class="flex items-center gap-md mt-sm">
-<span class="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-<span class="material-symbols-outlined text-sm" data-icon="folder">folder</span>
-                                    Marketing Dept
-                                </span>
+<span class="bg-surface-container-high text-on-surface-variant px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"><span class="material-symbols-outlined text-sm" data-icon="folder">folder</span>Cost Center Alpha</span>
 <span class="text-body-sm text-on-surface-variant">Created on Oct 24, 2023</span>
 </div>
 </div>
@@ -272,12 +249,12 @@
 <th class="p-md w-12"></th>
 </tr>
 </thead>
-<tbody>
+<tbody class="">
 <!-- Row 1 -->
 <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Delta Airlines"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-12"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Flight to NYC Conf"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Merchant Alpha"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-12"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Service Beta"></td>
 <td class="p-md">
 <select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
 <option>Airfare</option>
@@ -286,16 +263,16 @@
 </select>
 </td>
 <td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6100-TRAVEL</span></td>
-<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$642.00"/></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$642.00"></td>
 <td class="p-md">
 <button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
 </td>
 </tr>
 <!-- Row 2 - Flagged -->
 <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors bg-error-container/10">
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Hilton Hotels"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-14"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="3 Nights stay"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Merchant Gamma"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-14"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Service Delta"></td>
 <td class="p-md">
 <select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
 <option>Lodging</option>
@@ -303,16 +280,16 @@
 </select>
 </td>
 <td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6100-TRAVEL</span></td>
-<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$520.50"/></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$520.50"></td>
 <td class="p-md">
 <button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
 </td>
 </tr>
 <!-- Row 3 -->
 <tr class="border-b border-outline-variant hover:bg-surface-container-low transition-colors">
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Uber"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-15"/></td>
-<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Airport Transfer"/></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Merchant Epsilon"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="date" value="2023-10-15"></td>
+<td class="p-md"><input class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md" type="text" value="Service Zeta"></td>
 <td class="p-md">
 <select class="w-full bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-body-md">
 <option>Ground Transport</option>
@@ -320,7 +297,7 @@
 </select>
 </td>
 <td class="p-md"><span class="text-label-sm font-label-sm font-bold text-on-surface-variant">6120-TAXI</span></td>
-<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$86.00"/></td>
+<td class="p-md text-right"><input class="w-24 bg-transparent border-0 focus:ring-1 focus:ring-primary rounded p-1 text-right font-bold text-primary" type="text" value="$86.00"></td>
 <td class="p-md">
 <button class="material-symbols-outlined text-outline hover:text-error" data-icon="delete">delete</button>
 </td>
@@ -328,7 +305,7 @@
 </tbody>
 </table>
 </div>
-<!-- Receipt Cards Section -->
+<!-- Receipt Cards-->
 <div class="space-y-md">
 <h4 class="font-headline-sm text-headline-sm flex items-center gap-sm">
 <span class="material-symbols-outlined" data-icon="attach_file">attach_file</span>
@@ -401,7 +378,7 @@
 <span class="material-symbols-outlined text-secondary" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
 <div>
 <p class="text-body-sm font-bold text-secondary">GL Codes Mapped</p>
-<p class="text-body-sm text-on-secondary-container">All current items have been successfully matched to valid general ledger codes.</p>
+<p class="text-body-sm text-on-secondary-container">All current items have been successfully matched to valid GL-Ready Codes.</p>
 </div>
 </div>
 </div>
@@ -453,4 +430,5 @@
             });
         });
     </script>
+
 </body></html>

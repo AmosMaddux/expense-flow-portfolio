@@ -19,7 +19,6 @@ export default [
         files: ["**/*.{js,mjs,cjs,ts,tsx}"],
         languageOptions: {
             globals: {
-                ...globals.browser,
                 ...globals.node,
             },
             parserOptions: {
@@ -34,6 +33,14 @@ export default [
         },
         rules: {
             "@typescript-eslint/no-floating-promises": "error",
+        },
+    },
+    {
+        files: ["frontend/app/**/*.{ts,tsx}"],
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
         },
     },
     {
