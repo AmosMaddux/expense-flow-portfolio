@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Log Mileage - ExpenseFlow</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .mileage-bg-pattern {
+            background-color: #f7f9fb;
+            background-image: radial-gradient(#e2e8f0 0.5px, transparent 0.5px);
+            background-size: 16px 16px;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed": "#ffddb8",
+                    "tertiary": "#583500",
+                    "surface": "#f7f9fb",
+                    "primary-container": "#475569",
+                    "secondary-container": "#6cf8bb",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb95f",
+                    "primary-fixed-dim": "#b9c7df",
+                    "background": "#f7f9fb",
+                    "secondary": "#006c49",
+                    "tertiary-container": "#774a00",
+                    "on-secondary-fixed-variant": "#005236",
+                    "primary-fixed": "#d5e3fc",
+                    "on-surface-variant": "#44474c",
+                    "primary": "#303e51",
+                    "inverse-on-surface": "#eff1f3",
+                    "on-surface": "#191c1e",
+                    "on-tertiary-container": "#ffbb66",
+                    "inverse-primary": "#b9c7df",
+                    "on-tertiary-fixed": "#2a1700",
+                    "on-primary": "#ffffff",
+                    "on-primary-fixed": "#0d1c2e",
+                    "outline-variant": "#c4c6cd",
+                    "surface-container-low": "#f2f4f6",
+                    "on-error": "#ffffff",
+                    "outline": "#75777d",
+                    "on-error-container": "#93000a",
+                    "on-background": "#191c1e",
+                    "on-secondary-container": "#00714d",
+                    "surface-container-high": "#e6e8ea",
+                    "surface-tint": "#515f74",
+                    "surface-container": "#eceef0",
+                    "secondary-fixed-dim": "#4edea3",
+                    "on-tertiary": "#ffffff",
+                    "error": "#ba1a1a",
+                    "surface-bright": "#f7f9fb",
+                    "surface-variant": "#e0e3e5",
+                    "surface-container-highest": "#e0e3e5",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed": "#002113",
+                    "error-container": "#ffdad6",
+                    "secondary-fixed": "#6ffbbe",
+                    "on-primary-container": "#bbcae1",
+                    "on-primary-fixed-variant": "#3a485b",
+                    "on-tertiary-fixed-variant": "#653e00",
+                    "surface-dim": "#d8dadc",
+                    "inverse-surface": "#2d3133"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "container_max_width": "1440px",
+                    "header_height": "64px",
+                    "xl": "32px",
+                    "sm": "8px",
+                    "sidebar_width": "260px",
+                    "xs": "4px",
+                    "lg": "24px",
+                    "base": "4px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-md": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "label-md": ["JetBrains Mono"],
+                    "headline-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-sm": ["10px", {"lineHeight": "12px", "fontWeight": "500"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                    "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-surface text-on-surface font-body-md selection:bg-primary-fixed selection:text-on-primary-fixed overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col bg-surface dark:bg-inverse-surface border-r border-outline-variant dark:border-outline z-50">
+<div class="p-lg">
+<h1 class="text-headline-md font-headline-md font-bold text-primary dark:text-primary-fixed-dim">ExpenseFlow</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Management System</p>
+</div>
+<nav class="flex-1 px-md overflow-y-auto">
+<ul class="space-y-xs">
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-md text-label-md">My Submissions</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="font-label-md text-label-md">Submit Expense</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-primary-fixed-dim font-bold bg-surface-container-high dark:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="directions_car">directions_car</span>
+<span class="font-label-md text-label-md">Log Mileage</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="rule">rule</span>
+<span class="font-label-md text-label-md">Approval Queue</span>
+</a>
+</li>
+<div class="my-md border-t border-outline-variant"></div>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-md text-label-md">Team & Users</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-primary-container transition-colors group" href="#">
+<span class="material-symbols-outlined" data-icon="assessment">assessment</span>
+<span class="font-label-md text-label-md">Reports</span>
+</a>
+</li>
+</ul>
+</nav>
+<div class="p-md mt-auto border-t border-outline-variant">
+<button class="w-full bg-primary-container text-on-primary-container py-md rounded-lg font-headline-sm text-headline-sm hover:opacity-90 active:scale-95 duration-150 transition-all">
+                Submit Expense
+            </button>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 h-[64px] left-[260px] bg-surface-container-lowest dark:bg-surface-container flex justify-between items-center px-lg border-b border-outline-variant dark:border-outline z-40">
+<div class="flex items-center gap-md">
+<span class="font-headline-sm text-headline-sm text-primary">Log Mileage</span>
+</div>
+<div class="flex items-center gap-lg">
+<div class="relative flex items-center bg-surface-container rounded-full px-md py-xs border border-outline-variant">
+<span class="material-symbols-outlined text-outline" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-md w-48" placeholder="Search entries..." type="text"/>
+</div>
+<div class="flex items-center gap-md">
+<button class="p-xs text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-xs text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional corporate headshot of a mid-30s male employee wearing a neutral business casual outfit. He has a friendly expression and is positioned against a clean, softly lit studio background that fits a high-end light-mode financial software aesthetic. The lighting is balanced, emphasizing professional reliability and clarity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzw1itO_bta9Pg7IDjtWEapQeHh-ObPLxDOp9cKpT9dUCO81xPvZ8X6rOwoJKIgS8DJBNXcim7bt1qb0C0DC962kLr4SgzUFlrin768FpaDsg7R_4pPXsDVWFroOgiWMQQ7W7GYa7ew0n9TvBa0bsrDZl19qJSdXDcIxpyHbR5SRoAJMnzgvu16aG5uPd2P3Xz4Q9bmmeem1enXsCMuwcGWS-TS6vJggnJHG-jXAT-QmZ8cC35des"/>
+</div>
+<button class="text-on-surface-variant font-label-md text-label-md hover:text-primary transition-colors">Logout</button>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="ml-[260px] pt-[64px] min-h-screen mileage-bg-pattern">
+<!-- Modal Overlay / Content Container -->
+<div class="p-xl flex justify-center items-start">
+<div class="w-full max-w-4xl bg-white border border-outline-variant shadow-lg rounded-xl overflow-hidden flex flex-col md:flex-row min-h-[600px]">
+<!-- Left Panel: Form Section -->
+<div class="flex-1 p-lg lg:p-xl space-y-xl">
+<div class="space-y-xs">
+<h2 class="text-headline-lg font-headline-lg text-primary">New Mileage Log</h2>
+<p class="text-body-md text-on-surface-variant">Enter details of your business trip for reimbursement.</p>
+</div>
+<form class="space-y-lg">
+<!-- Date -->
+<div class="space-y-xs">
+<label class="block font-label-md text-label-md text-on-surface-variant">Trip Date</label>
+<div class="relative">
+<input class="w-full h-12 px-md border border-outline-variant rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-fixed-dim transition-all bg-surface-container-lowest" type="date"/>
+</div>
+</div>
+<!-- Route Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+<div class="space-y-xs">
+<label class="block font-label-md text-label-md text-on-surface-variant">Route (From)</label>
+<div class="relative group">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline" data-icon="location_on">location_on</span>
+<input class="w-full h-12 pl-10 pr-md border border-outline-variant rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-fixed-dim transition-all" placeholder="Office / Starting point" type="text"/>
+</div>
+</div>
+<div class="space-y-xs">
+<label class="block font-label-md text-label-md text-on-surface-variant">Route (To)</label>
+<div class="relative group">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline" data-icon="sports_score">sports_score</span>
+<input class="w-full h-12 pl-10 pr-md border border-outline-variant rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-fixed-dim transition-all" placeholder="Client site / Destination" type="text"/>
+</div>
+</div>
+</div>
+<!-- Business Purpose -->
+<div class="space-y-xs">
+<label class="block font-label-md text-label-md text-on-surface-variant">Business Purpose</label>
+<textarea class="w-full p-md border border-outline-variant rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-fixed-dim transition-all resize-none" placeholder="Explain the nature of this trip..." rows="3"></textarea>
+</div>
+<!-- Distance & Calculation Section -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-lg items-end">
+<div class="md:col-span-2 space-y-xs">
+<label class="block font-label-md text-label-md text-on-surface-variant">Distance (miles)</label>
+<div class="relative">
+<input class="w-full h-12 px-md border border-outline-variant rounded-lg focus:border-primary-container focus:ring-2 focus:ring-primary-fixed-dim transition-all text-headline-sm font-headline-sm" id="distanceInput" placeholder="0.0" step="0.1" type="number"/>
+<span class="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-label-md">mi</span>
+</div>
+</div>
+<div class="bg-secondary-container/10 border border-secondary/20 p-md rounded-lg flex flex-col justify-center min-h-[48px]">
+<span class="text-label-sm font-label-sm text-secondary uppercase tracking-wider">Reimbursement</span>
+<div class="flex items-baseline gap-xs">
+<span class="text-headline-md font-headline-md text-secondary" id="reimbursementPreview">$0.00</span>
+</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-col-reverse md:flex-row gap-md pt-lg">
+<button class="flex-1 h-12 border border-outline-variant text-primary font-headline-sm rounded-lg hover:bg-surface-container-high transition-colors" type="button">
+                                Cancel
+                            </button>
+<button class="flex-[2] h-12 bg-primary-container text-on-primary font-headline-sm rounded-lg hover:bg-primary shadow-sm hover:shadow-md transition-all active:scale-[0.98]" type="submit">
+                                Add to Draft
+                            </button>
+</div>
+</form>
+</div>
+<!-- Right Panel: Visual Context / Data -->
+<div class="hidden lg:flex w-80 bg-surface-container-low border-l border-outline-variant p-lg flex-col gap-xl">
+<!-- Context Map Placeholder -->
+<div class="space-y-md">
+<span class="font-label-md text-label-md text-on-surface-variant">Route Visualization</span>
+<div class="aspect-square bg-surface-container-high rounded-xl relative overflow-hidden group">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" data-alt="A clean, minimalist topographical map section showing a suburban office park and connecting highways. The aesthetic is monochromatic with slate and soft gray tones, featuring sleek vector-style route lines and modern map markers in primary slate blue. High-density data visualization style for a corporate fintech application." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCVqmkOI8hVqh2S3NZMw_lHIFf0L9rvPk0zJIW2CKaYgWvMaG1ceBuFiCoME0K6pKwV0PmUviYQdxLiEgzHEmN-ZLzFpqYU2tUefR8sE4zU8viX3dyIQU54Gco66o97oia5xsPS3_9QWVnUlidlVFI1rBM_pPFAiar8YMPITyaxp9C8sDyu-mmLdWdIXQWc9g9Kz6wngER8X9gfOJ9MJAYGziwrmoeRJADUzvjfMVBTwmY-ODEihik')"></div>
+<div class="absolute inset-0 bg-primary/5 pointer-events-none"></div>
+<div class="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-sm p-sm rounded-lg border border-outline-variant/30 text-center">
+<p class="text-body-sm font-label-sm text-primary">Map Preview (Mock)</p>
+</div>
+</div>
+</div>
+<!-- Policy Box -->
+<div class="bg-white border border-outline-variant p-md rounded-xl space-y-md">
+<div class="flex items-center gap-sm text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]" data-icon="info">info</span>
+<span class="font-label-md text-label-md font-bold">Policy Guide</span>
+</div>
+<ul class="space-y-sm">
+<li class="flex gap-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]" data-icon="check_circle">check_circle</span>
+<p class="text-body-sm">Standard rate: <span class="font-bold text-primary">$0.67 / mi</span></p>
+</li>
+<li class="flex gap-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]" data-icon="check_circle">check_circle</span>
+<p class="text-body-sm">Automatic tolls are handled via GL Mapping.</p>
+</li>
+<li class="flex gap-sm">
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="help">help</span>
+<p class="text-body-sm">Commuting distance is not reimbursable.</p>
+</li>
+</ul>
+</div>
+<!-- History / Recent Logs -->
+<div class="space-y-md">
+<span class="font-label-md text-label-md text-on-surface-variant">Recent Trips</span>
+<div class="space-y-sm">
+<div class="flex justify-between items-center p-sm bg-white border-b border-outline-variant">
+<div>
+<p class="text-label-md font-bold text-primary">Oct 12</p>
+<p class="text-body-sm text-on-surface-variant">Client A Site</p>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">42.5 mi</span>
+</div>
+<div class="flex justify-between items-center p-sm bg-white border-b border-outline-variant">
+<div>
+<p class="text-label-md font-bold text-primary">Oct 08</p>
+<p class="text-body-sm text-on-surface-variant">Airport Transfer</p>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">18.2 mi</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Simple logic for the reimbursement preview calculation
+        const distanceInput = document.getElementById('distanceInput');
+        const reimbursementPreview = document.getElementById('reimbursementPreview');
+        const RATE = 0.67; // Standard IRS rate as per mockup
+
+        distanceInput.addEventListener('input', (e) => {
+            const distance = parseFloat(e.target.value);
+            if (!isNaN(distance) && distance > 0) {
+                const calculated = (distance * RATE).toFixed(2);
+                reimbursementPreview.textContent = `$${calculated}`;
+            } else {
+                reimbursementPreview.textContent = '$0.00';
+            }
+        });
+
+        // Add visual micro-interaction for buttons
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => btn.classList.add('scale-95'));
+            btn.addEventListener('mouseup', () => btn.classList.remove('scale-95'));
+            btn.addEventListener('mouseleave', () => btn.classList.remove('scale-95'));
+        });
+    </script>
+</body></html>

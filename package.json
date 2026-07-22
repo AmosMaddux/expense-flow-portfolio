@@ -11,7 +11,7 @@
         "test:typescript": "npm run build && vitest run --coverage",
         "ci:provider": "npm ci && uv sync && npm run test:provider",
         "test:provider": "UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest tests/test_gl_coding_provider_pact.py",
-        "build": "tsc --build",
+        "build": "tsc --build && npm --workspace frontend/app run build",
         "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
     },
@@ -26,7 +26,8 @@
     "author": "",
     "license": "ISC",
     "workspaces": [
-        "backend/core-case-service"
+        "backend/core-case-service",
+        "frontend/app"
     ],
     "devDependencies": {
         "@eslint/js": "^10.0.1",

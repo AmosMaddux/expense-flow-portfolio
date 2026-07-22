@@ -1,0 +1,35 @@
+# ExpenseFlow Wireframe Project
+
+## Overview
+ExpenseFlow is a multi-tenant expense-report management system. This project covers the full user journey for Employees, Managers, Finance Admins, and Platform Admins.
+
+## Screen List
+
+### Authentication
+1. **Sign In**: Email/Password fields with validation errors.
+2. **MFA Challenge**: 6-digit code entry.
+3. **Password Reset**: Email collection and confirmation state.
+
+### Employee Experience
+4. **Employee Dashboard / My Submissions**: Overview of current status and history.
+5. **Submit Expense**: Multi-item report builder with merchant, date, description, category, amount, GL info, and receipt attachments. Includes policy flags and validation.
+6. **Log Mileage**: Trip details, route, purpose, distance, and reimbursement preview.
+
+### Department Manager Experience
+7. **Approval Queue**: Sortable table of reports with "over $500" flags and stage indicators.
+8. **Report Review Detail**: Full summary, line items, mileage, receipts, policy info, and actions (Approve, Reject, Hold).
+
+### Finance Admin Experience
+9. **Finance Dashboard**: KPI cards (Drafted, Submitted, etc.), spend trend chart, and prioritized work queue.
+
+### Platform Admin Experience
+10. **Tenant & User Management**: List of tenants and users with permission controls.
+11. **Audit Log**: System-wide activity tracking.
+
+### Shared Components
+- Persistent Left Sidebar (contextual based on role)
+- Top Application Header (User/Tenant/Role)
+- 6-Stage Progress Stepper (Drafted -> Reconciled)
+- Policy Flag Indicators
+- Receipt Cards
+- Loading Skeletons and Empty States
