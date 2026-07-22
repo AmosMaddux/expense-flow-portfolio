@@ -125,6 +125,18 @@ To run only the provider Pact tests with the same reproducible setup CI should u
 npm run ci:provider
 ```
 
+The Core Case Vitest integration suite includes a cross-service submission test that starts the FastAPI GL-coding service with `uv run uvicorn`. The workspace test script runs `uv sync --project ../..` first so the Python runtime dependencies are present before Vitest starts:
+
+```sh
+npm --workspace backend/core-case-service test
+```
+
+For a TypeScript-only Core Case run that excludes the cross-service FastAPI integration test, use:
+
+```sh
+npm --workspace backend/core-case-service run test:node-only
+```
+
 Utility function to run linter, typing, and test checks:
 
 ```sh
