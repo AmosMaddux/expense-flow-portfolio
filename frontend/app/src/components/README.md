@@ -39,10 +39,10 @@ The default stage order is `Drafted`, `Submitted`, `Manager Approval`, `AP Revie
 ```tsx
 import { useStageStepper } from "../hooks";
 
-const steps = useStageStepper({
+const stepperState = useStageStepper({
     currentStage: "AP Review",
     onHold: true,
 });
 ```
 
-The hook returns each stage with a `done`, `current`, or `upcoming` state. When `onHold` is true, the current stage also receives `isPaused: true`.
+The hook returns a `valid` result containing each stage with a `done`, `current`, or `upcoming` state. When `onHold` is true, the current stage also receives `isPaused: true`. Unknown runtime stage values return an explicit `invalid` result.

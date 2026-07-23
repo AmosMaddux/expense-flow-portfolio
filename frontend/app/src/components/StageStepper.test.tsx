@@ -1,13 +1,73 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { EXPENSE_REPORT_STAGES, StageStepper } from ".";
+import {
+    useStageStepper,
+    type StageStepperItem,
+    type UseStageStepperResult,
+} from "../hooks/useStageStepper";
+
+vi.mock("../hooks/useStageStepper", async (importOriginal) => {
+    const actual =
+        await importOriginal<typeof import("../hooks/useStageStepper")>();
+
+    return {
+        ...actual,
+        useStageStepper: vi.fn(actual.useStageStepper),
+    };
+});
 
 afterEach(() => {
     cleanup();
+    vi.mocked(useStageStepper).mockClear();
 });
 
 describe("StageStepper", () => {
+    test("renders the step states returned by useStageStepper", () => {
+        const mockedSteps = EXPENSE_REPORT_STAGES.map((stage) => ({
+            isPaused: stage === "Reconciled",
+            stage,
+            state: stage === "Reconciled" ? "current" : "upcoming",
+        })) satisfies readonly StageStepperItem[];
+        const mockedResult = {
+            status: "valid",
+            steps: mockedSteps,
+        } satisfies UseStageStepperResult;
+
+        vi.mocked(useStageStepper).mockReturnValueOnce(mockedResult);
+
+        const { getAllByRole, getByRole } = render(
+            <StageStepper currentStage="Drafted" />,
+        );
+        const steps = getAllByRole("listitem");
+
+        expect(useStageStepper).toHaveBeenCalledWith({
+            currentStage: "Drafted",
+            onHold: false,
+        });
+        expect(steps.map((step) => step.dataset.state)).toEqual(
+            mockedSteps.map((step) => step.state),
+        );
+        expect(steps[0]?.hasAttribute("aria-current")).toBe(false);
+        expect(steps[5]?.getAttribute("aria-current")).toBe("step");
+        expect(steps[5]?.className).toContain("ef-stage-stepper__item--paused");
+        expect(getByRole("status").textContent).toBe("Paused");
+    });
+
+    test("renders the invalid state returned by useStageStepper", () => {
+        vi.mocked(useStageStepper).mockReturnValueOnce({
+            status: "invalid",
+            steps: [],
+        });
+
+        const { getByRole } = render(<StageStepper currentStage="Drafted" />);
+
+        expect(getByRole("listitem").textContent).toBe(
+            "!Unknown workflow stage",
+        );
+    });
+
     test.each(EXPENSE_REPORT_STAGES)(
         "renders hook-derived progress for %s",
         (currentStage) => {

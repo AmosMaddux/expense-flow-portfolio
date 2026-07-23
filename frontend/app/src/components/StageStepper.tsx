@@ -1,12 +1,10 @@
 import type { HTMLAttributes } from "react";
 
-import {
-    EXPENSE_REPORT_STAGES,
-    useStageStepper,
-    type ExpenseReportStage,
-} from "../hooks/useStageStepper";
+import { useStageStepper } from "../hooks/useStageStepper";
+import type { ExpenseReportStage } from "../hooks/useStageStepper";
 
-export { EXPENSE_REPORT_STAGES, type ExpenseReportStage };
+export { EXPENSE_REPORT_STAGES } from "../hooks/useStageStepper";
+export type { ExpenseReportStage } from "../hooks/useStageStepper";
 
 export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
     currentStage: ExpenseReportStage;
@@ -22,11 +20,10 @@ export function StageStepper({
     onHold = false,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
-    const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
-    const steps = useStageStepper({ currentStage, onHold });
+    const stepperState = useStageStepper({ currentStage, onHold });
 
-    if (currentStageIndex === -1) {
+    if (stepperState.status === "invalid") {
         return (
             <ol
                 aria-label="Expense Report stage progress"
@@ -42,6 +39,8 @@ export function StageStepper({
             </ol>
         );
     }
+
+    const { steps } = stepperState;
 
     return (
         <ol

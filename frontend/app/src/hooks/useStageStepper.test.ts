@@ -49,13 +49,21 @@ describe("useStageStepper", () => {
                 useStageStepper({ currentStage }),
             );
 
-            expect(result.current.map((step) => step.stage)).toEqual(
+            expect(result.current.status).toBe("valid");
+
+            if (result.current.status !== "valid") {
+                throw new Error("Expected a valid stage-stepper result.");
+            }
+
+            expect(result.current.steps.map((step) => step.stage)).toEqual(
                 EXPENSE_REPORT_STAGES,
             );
-            expect(result.current.map((step) => step.state)).toEqual(
+            expect(result.current.steps.map((step) => step.state)).toEqual(
                 expectedStatesByStage[currentStage],
             );
-            expect(result.current.every((step) => !step.isPaused)).toBe(true);
+            expect(result.current.steps.every((step) => !step.isPaused)).toBe(
+                true,
+            );
         },
     );
 
@@ -67,10 +75,16 @@ describe("useStageStepper", () => {
             }),
         );
 
-        expect(result.current.map((step) => step.state)).toEqual(
+        expect(result.current.status).toBe("valid");
+
+        if (result.current.status !== "valid") {
+            throw new Error("Expected a valid stage-stepper result.");
+        }
+
+        expect(result.current.steps.map((step) => step.state)).toEqual(
             expectedStatesByStage["AP Review"],
         );
-        expect(result.current.map((step) => step.isPaused)).toEqual([
+        expect(result.current.steps.map((step) => step.isPaused)).toEqual([
             false,
             false,
             false,
@@ -78,5 +92,18 @@ describe("useStageStepper", () => {
             false,
             false,
         ]);
+    });
+
+    test("returns an explicit invalid result for an unknown stage", () => {
+        const { result } = renderHook(() =>
+            useStageStepper({
+                currentStage: "Archived" as ExpenseReportStage,
+            }),
+        );
+
+        expect(result.current).toEqual({
+            status: "invalid",
+            steps: [],
+        });
     });
 });

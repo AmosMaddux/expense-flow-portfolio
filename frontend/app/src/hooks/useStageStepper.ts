@@ -23,7 +23,18 @@ export interface StageStepperItem {
     state: StageStepState;
 }
 
-export type UseStageStepperResult = readonly StageStepperItem[];
+export interface ValidStageStepperResult {
+    status: "valid";
+    steps: readonly StageStepperItem[];
+}
+
+export interface InvalidStageStepperResult {
+    status: "invalid";
+    steps: readonly [];
+}
+
+export type UseStageStepperResult =
+    ValidStageStepperResult | InvalidStageStepperResult;
 
 /**
  * Derives the six visual step states from an Expense Report's current state.
@@ -32,14 +43,24 @@ export function useStageStepper({
     currentStage,
     onHold = false,
 }: UseStageStepperInput): UseStageStepperResult {
-    return useMemo(() => {
+    return useMemo<UseStageStepperResult>(() => {
         const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
 
-        return EXPENSE_REPORT_STAGES.map((stage, index) => ({
-            isPaused: onHold && index === currentStageIndex,
-            stage,
-            state: getStageState(index, currentStageIndex),
-        }));
+        if (currentStageIndex === -1) {
+            return {
+                status: "invalid",
+                steps: [],
+            };
+        }
+
+        return {
+            status: "valid",
+            steps: EXPENSE_REPORT_STAGES.map((stage, index) => ({
+                isPaused: onHold && index === currentStageIndex,
+                stage,
+                state: getStageState(index, currentStageIndex),
+            })),
+        };
     }, [currentStage, onHold]);
 }
 
