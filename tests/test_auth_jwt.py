@@ -398,6 +398,13 @@ def test_tracked_test_sources_do_not_commit_jwt_secrets_or_tokens() -> None:
             assert pattern.search(content) is None, relative_path
 
 
+def test_secret_scan_png_skip_is_limited_to_design_wireframes() -> None:
+    assert should_skip_secret_scan("docs/design/wireframes/sign_in/screen.png") is True
+    assert (
+        should_skip_secret_scan("frontend/app/src/assets/exported-secret.png") is False
+    )
+
+
 def test_jwt_key_generator_rejects_repo_tracked_output_paths(tmp_path: Path) -> None:
     blocked_env_file = ROOT_DIR / "tests" / "support" / "blocked-jwt.env"
 
@@ -486,8 +493,8 @@ def mint_node_access_token(
     ttl_seconds: int,
 ) -> str:
     script = ROOT_DIR / "tests" / "support" / "mint-node-access-token.mjs"
-    resolved_key_id = key_id if key_id is not None else environment.get(
-        "AUTH_JWT_KEY_ID", "default"
+    resolved_key_id = (
+        key_id if key_id is not None else environment.get("AUTH_JWT_KEY_ID", "default")
     )
     with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
         subprocess.run(
@@ -528,8 +535,8 @@ def mint_raw_access_token(
         "exp": issued_at + ttl_seconds,
         **claim_overrides,
     }
-    resolved_key_id = key_id if key_id is not None else environment.get(
-        "AUTH_JWT_KEY_ID", "default"
+    resolved_key_id = (
+        key_id if key_id is not None else environment.get("AUTH_JWT_KEY_ID", "default")
     )
     script = ROOT_DIR / "tests" / "support" / "mint-raw-access-token.mjs"
     with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
@@ -558,8 +565,8 @@ def mint_node_refresh_token(
     ttl_seconds: int,
 ) -> str:
     script = ROOT_DIR / "tests" / "support" / "mint-node-refresh-token.mjs"
-    resolved_key_id = key_id if key_id is not None else environment.get(
-        "AUTH_JWT_KEY_ID", "default"
+    resolved_key_id = (
+        key_id if key_id is not None else environment.get("AUTH_JWT_KEY_ID", "default")
     )
     with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as token_file:
         subprocess.run(
@@ -602,11 +609,8 @@ def encode_base64url_json(value: dict[str, Any]) -> str:
 
 
 def should_skip_secret_scan(relative_path: str) -> bool:
-    binary_asset_suffixes = {
-        ".png",
-    }
-
-    if Path(relative_path).suffix in binary_asset_suffixes:
+    path = Path(relative_path)
+    if path.suffix == ".png" and relative_path.startswith("docs/design/wireframes/"):
         return True
 
     return relative_path in {

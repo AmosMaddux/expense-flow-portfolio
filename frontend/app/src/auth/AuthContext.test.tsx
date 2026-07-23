@@ -6,7 +6,11 @@ import {
     useSession,
     type SessionContextValue,
 } from "./AuthContext";
-import { createAuthClient, type AuthClient } from "./authClient";
+import {
+    AuthRequestError,
+    createAuthClient,
+    type AuthClient,
+} from "./authClient";
 import type { AuthSession } from "./authSchemas";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
@@ -197,6 +201,47 @@ describe("AuthProvider", () => {
         );
     });
 
+    test("invalidates the session and cache when a refreshed request still returns 401", async () => {
+        const refreshedSession = createSession({
+            accessToken: "synthetic-refreshed-access-token",
+        });
+        const authClient = createAuthClientMock();
+        const clearCache = vi.fn(() => Promise.resolve());
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(new Response(null, { status: 401 }))
+            .mockResolvedValueOnce(new Response(null, { status: 401 }));
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                fetchImplementation={fetchImplementation}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        clearCache.mockClear();
+        vi.mocked(authClient.refresh).mockResolvedValue(refreshedSession);
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+
+        await act(async () => {
+            await expect(
+                sessionApi.authenticatedFetch("/v1/case-queue"),
+            ).rejects.toBeInstanceOf(AuthRequestError);
+        });
+
+        expect(sessionApi.isAuthenticated).toBe(false);
+        expect(clearCache).toHaveBeenCalledOnce();
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    });
     test("clears session and cached query data even when remote logout fails", async () => {
         const authClient = createAuthClientMock();
         vi.mocked(authClient.logout).mockRejectedValue(

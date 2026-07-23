@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Outlet } from "@tanstack/react-router";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
     AuthRequestError,
@@ -12,7 +13,7 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
-import { getNavigationItemsForRole } from "./navigation";
+import { getNavigationItemsForRoles } from "./navigation";
 
 type UnauthenticatedView = "sign-in" | "mfa" | "reset" | "reset-confirmation";
 type PendingCredentials = Omit<LoginRequest, "totpCode">;
@@ -73,7 +74,7 @@ export default function App({
                 <div className="brand-mark" aria-hidden="true">
                     EF
                 </div>
-                <p>Restoring your secure session…</p>
+                <p>Restoring your secure session...</p>
             </main>
         );
     }
@@ -81,7 +82,9 @@ export default function App({
     if (session.isAuthenticated && session.user !== null) {
         return (
             <AppShell
+                currentPath={window.location.pathname}
                 signedInRole={session.user.role}
+                signedInRoles={session.user.roles}
                 onLogout={async () => {
                     await session.logout();
                     window.history.replaceState(window.history.state, "", "/");
@@ -158,21 +161,25 @@ export default function App({
 }
 
 type AppShellProps = {
-    signedInRole: Role;
+    children?: ReactNode;
     currentPath?: string;
     onLogout?: () => Promise<void>;
+    signedInRole: Role;
+    signedInRoles?: readonly Role[];
 };
 
 /**
  * Renders the persistent ExpenseFlow application shell for the signed-in role.
  */
 export function AppShell({
-    signedInRole,
+    children,
     currentPath,
     onLogout,
+    signedInRole,
+    signedInRoles = [signedInRole],
 }: AppShellProps): JSX.Element {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const visibleNavigationItems = getNavigationItemsForRole(signedInRole);
+    const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
     const landing = roleLandings[signedInRole];
     const activeNavigationPath =
         currentPath ??
@@ -226,24 +233,35 @@ export function AppShell({
                             }}
                             type="button"
                         >
-                            {isLoggingOut ? "Signing out…" : "Sign out"}
+                            {isLoggingOut ? "Signing out..." : "Sign out"}
                         </button>
                     )}
                 </header>
                 <main className="workspace__content">
-                    <section
-                        className="screen-placeholder"
-                        aria-label={`${landing.label} content`}
-                    >
-                        <p className="screen-placeholder__label">Workspace</p>
-                        <h2>{landing.label}</h2>
-                        <p>
-                            You are signed in with the permissions assigned to
-                            the {signedInRole} role.
-                        </p>
-                    </section>
+                    {children ?? (
+                        <section
+                            className="screen-placeholder"
+                            aria-label={`${landing.label} content`}
+                        >
+                            <p className="screen-placeholder__label">
+                                Workspace
+                            </p>
+                            <h2>{landing.label}</h2>
+                            <p>
+                                You are signed in with the permissions assigned
+                                to the {signedInRole} role.
+                            </p>
+                        </section>
+                    )}
                 </main>
             </div>
         </div>
     );
+}
+
+/**
+ * Renders nested TanStack route content inside the app shell.
+ */
+export function RoutedWorkspaceOutlet(): JSX.Element {
+    return <Outlet />;
 }
