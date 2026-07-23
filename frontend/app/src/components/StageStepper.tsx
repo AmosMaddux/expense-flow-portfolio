@@ -22,8 +22,26 @@ export function StageStepper({
     onHold = false,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
+    const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
     const steps = useStageStepper({ currentStage, onHold });
+
+    if (currentStageIndex === -1) {
+        return (
+            <ol
+                aria-label="Expense Report stage progress"
+                className={`${classes} ef-stage-stepper--invalid`}
+                {...stepperProps}
+            >
+                <li className="ef-stage-stepper__item ef-stage-stepper__item--invalid">
+                    <span className="ef-stage-stepper__marker">!</span>
+                    <span className="ef-stage-stepper__label">
+                        Unknown workflow stage
+                    </span>
+                </li>
+            </ol>
+        );
+    }
 
     return (
         <ol

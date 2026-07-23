@@ -158,6 +158,10 @@
     padding: 0;
 }
 
+.ef-stage-stepper--invalid {
+    grid-template-columns: minmax(180px, max-content);
+}
+
 .ef-stage-stepper__item {
     display: grid;
     position: relative;
@@ -199,6 +203,11 @@
     background: #0b5fff;
 }
 
+.ef-stage-stepper__item--invalid::before,
+.ef-stage-stepper__item--invalid::after {
+    display: none;
+}
+
 .ef-stage-stepper__marker {
     display: inline-flex;
     z-index: 1;
@@ -232,6 +241,11 @@
     box-shadow: 0 0 0 4px #fff3c4;
 }
 
+.ef-stage-stepper__item--invalid .ef-stage-stepper__marker {
+    border-color: #f29b9b;
+    color: #8a1c1c;
+}
+
 .ef-stage-stepper__label {
     max-width: 112px;
     color: #52606d;
@@ -243,6 +257,10 @@
 .ef-stage-stepper__item--done .ef-stage-stepper__label,
 .ef-stage-stepper__item--current .ef-stage-stepper__label {
     color: #102a43;
+}
+
+.ef-stage-stepper__item--invalid .ef-stage-stepper__label {
+    color: #8a1c1c;
 }
 
 .ef-stage-stepper__paused {
