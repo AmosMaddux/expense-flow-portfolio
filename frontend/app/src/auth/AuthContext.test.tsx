@@ -193,6 +193,12 @@ describe("AuthProvider", () => {
         expect(response.status).toBe(200);
         expect(fetchImplementation).toHaveBeenCalledTimes(2);
         expect(authClient.refresh).toHaveBeenCalledTimes(2);
+        const initialHeaders = new Headers(
+            vi.mocked(fetchImplementation).mock.calls[0]?.[1]?.headers,
+        );
+        expect(initialHeaders.get("Authorization")).toBe(
+            "Bearer synthetic-access-token",
+        );
         const retryHeaders = new Headers(
             vi.mocked(fetchImplementation).mock.calls[1]?.[1]?.headers,
         );
@@ -242,6 +248,47 @@ describe("AuthProvider", () => {
         expect(clearCache).toHaveBeenCalledOnce();
         expect(fetchImplementation).toHaveBeenCalledTimes(2);
     });
+
+    test("invalidates the session and cache when request refresh fails after a 401", async () => {
+        const authClient = createAuthClientMock();
+        const clearCache = vi.fn(() => Promise.resolve());
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(new Response(null, { status: 401 }));
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                fetchImplementation={fetchImplementation}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        clearCache.mockClear();
+        vi.mocked(authClient.refresh).mockRejectedValue(
+            new Error("Synthetic refresh rejection."),
+        );
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+
+        await act(async () => {
+            await expect(
+                sessionApi.authenticatedFetch("/v1/case-queue"),
+            ).rejects.toBeInstanceOf(AuthRequestError);
+        });
+
+        expect(sessionApi.isAuthenticated).toBe(false);
+        expect(clearCache).toHaveBeenCalledOnce();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+    });
+
     test("clears session and cached query data even when remote logout fails", async () => {
         const authClient = createAuthClientMock();
         vi.mocked(authClient.logout).mockRejectedValue(
