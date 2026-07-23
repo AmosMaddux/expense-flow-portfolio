@@ -1,15 +1,20 @@
-import { useSession } from "./auth";
+import { Outlet } from "@tanstack/react-router";
+import type { ReactNode } from "react";
+
 import { getNavigationItemsForRole, type RoleName } from "./navigation";
 
 type AppShellProps = {
     signedInRole: RoleName;
-    currentPath?: string;
+    children?: ReactNode;
 };
 
 /**
  * Renders the persistent ExpenseFlow application shell for the signed-in role.
  */
-export function AppShell({ signedInRole, currentPath }: AppShellProps): JSX.Element {
+export function AppShell({
+    children = <DefaultWorkspaceScreen />,
+    signedInRole,
+}: AppShellProps): JSX.Element {
     const visibleNavigationItems = getNavigationItemsForRole(signedInRole);
     const activeNavigationPath = currentPath ?? window.location.pathname;
 
@@ -79,24 +84,22 @@ export default function App(): JSX.Element {
 }
 
 function AppStatus({ message }: { message: string }): JSX.Element {
+function DefaultWorkspaceScreen(): JSX.Element {
     return (
-        <div className="app-shell">
-            <aside className="sidebar" aria-label="Primary navigation">
-                <div className="sidebar__brand">ExpenseFlow</div>
-            </aside>
-            <div className="workspace">
-                <header className="topbar">
-                    <div>
-                        <p className="topbar__eyebrow">Read-models/BFF</p>
-                        <h1>ExpenseFlow Workspace</h1>
-                    </div>
-                </header>
-                <main className="workspace__content">
-                    <section className="screen-placeholder" aria-label="Screen content">
-                        <p className="screen-placeholder__label">{message}</p>
-                    </section>
-                </main>
-            </div>
-        </div>
+        <section className="screen-placeholder" aria-label="Screen content">
+            <p className="screen-placeholder__label">Screen Region</p>
+            <h2>Navigation-ready app shell</h2>
+            <p>
+                Operator and portal screens will render inside this shared
+                frame.
+            </p>
+        </section>
     );
+}
+
+/**
+ * Renders nested TanStack route content inside the app shell.
+ */
+export function RoutedWorkspaceOutlet(): JSX.Element {
+    return <Outlet />;
 }

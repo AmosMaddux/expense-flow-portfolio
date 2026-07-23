@@ -23,6 +23,16 @@ const departmentManagerNavigationLabels = [
     "GL Mapping",
 ];
 
+const departmentManagerNavigationLabels = [
+    "Finance Dashboard",
+    "Expense Reports",
+    "All Transactions",
+    "Approval Queue",
+    "Receipts",
+    "Policy Reference",
+    "GL Mapping",
+];
+
 function labelsForRole(role: RoleName): string[] {
     return getNavigationItemsForRole(role).map((item) => item.label);
 }

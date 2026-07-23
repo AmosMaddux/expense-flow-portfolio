@@ -10,6 +10,8 @@
         "test": "vitest run --environment jsdom"
     },
     "dependencies": {
+        "@tanstack/react-query": "^5.101.4",
+        "@tanstack/react-router": "^1.170.18",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "zod": "^4.4.3"

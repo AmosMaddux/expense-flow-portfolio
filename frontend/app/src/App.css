@@ -124,6 +124,13 @@ body {
     line-height: 1.6;
 }
 
+.status-page {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    padding: 24px;
+}
+
 @media (max-width: 760px) {
     .app-shell {
         grid-template-columns: 1fr;
