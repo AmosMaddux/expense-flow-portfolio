@@ -11,7 +11,6 @@ export { EXPENSE_REPORT_STAGES, type ExpenseReportStage };
 export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
     currentStage: ExpenseReportStage;
     onHold?: boolean;
-    stages?: readonly ExpenseReportStage[];
 }
 
 /**
@@ -21,11 +20,10 @@ export function StageStepper({
     className,
     currentStage,
     onHold = false,
-    stages = EXPENSE_REPORT_STAGES,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
-    const steps = useStageStepper({ currentStage, onHold, stages });
+    const steps = useStageStepper({ currentStage, onHold });
 
     return (
         <ol

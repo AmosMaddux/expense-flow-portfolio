@@ -15,7 +15,6 @@ export type StageStepState = "done" | "current" | "upcoming";
 export interface UseStageStepperInput {
     currentStage: ExpenseReportStage;
     onHold?: boolean;
-    stages?: readonly ExpenseReportStage[];
 }
 
 export interface StageStepperItem {
@@ -32,17 +31,16 @@ export type UseStageStepperResult = readonly StageStepperItem[];
 export function useStageStepper({
     currentStage,
     onHold = false,
-    stages = EXPENSE_REPORT_STAGES,
 }: UseStageStepperInput): UseStageStepperResult {
     return useMemo(() => {
-        const currentStageIndex = stages.indexOf(currentStage);
+        const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
 
-        return stages.map((stage, index) => ({
+        return EXPENSE_REPORT_STAGES.map((stage, index) => ({
             isPaused: onHold && index === currentStageIndex,
             stage,
             state: getStageState(index, currentStageIndex),
         }));
-    }, [currentStage, onHold, stages]);
+    }, [currentStage, onHold]);
 }
 
 function getStageState(

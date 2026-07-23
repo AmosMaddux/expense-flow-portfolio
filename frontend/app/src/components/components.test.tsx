@@ -27,4 +27,19 @@ describe("shared component primitives", () => {
             getByRole("list", { name: "Expense Report stage progress" }),
         ).toBeTruthy();
     });
+
+    test("renders a paused indicator on the current stage for on-hold cases", () => {
+        const { getAllByRole, getByText } = render(
+            <StageStepper currentStage="Manager Approval" onHold />,
+        );
+
+        const stages = getAllByRole("listitem");
+
+        expect(stages).toHaveLength(6);
+        expect(stages[2]?.getAttribute("aria-current")).toBe("step");
+        expect(stages[2]?.className).toContain(
+            "ef-stage-stepper__item--paused",
+        );
+        expect(getByText("Paused")).toBeTruthy();
+    });
 });
