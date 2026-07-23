@@ -1,0 +1,111 @@
+.ef-stage-stepper {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(96px, 1fr));
+    gap: 0;
+    margin: 0;
+    overflow-x: auto;
+    padding: 0;
+}
+
+.ef-stage-stepper__item {
+    display: grid;
+    position: relative;
+    min-width: 96px;
+    gap: 8px;
+    justify-items: center;
+    padding-top: 2px;
+    text-align: center;
+}
+
+.ef-stage-stepper__item::before,
+.ef-stage-stepper__item::after {
+    position: absolute;
+    top: 16px;
+    width: 50%;
+    height: 2px;
+    background: #d9e2ec;
+    content: "";
+}
+
+.ef-stage-stepper__item::before {
+    left: 0;
+}
+
+.ef-stage-stepper__item::after {
+    right: 0;
+}
+
+.ef-stage-stepper__item:first-child::before,
+.ef-stage-stepper__item:last-child::after {
+    display: none;
+}
+
+.ef-stage-stepper__item--done::before,
+.ef-stage-stepper__item--done::after,
+.ef-stage-stepper__item--current::before {
+    background: #0b5fff;
+}
+
+.ef-stage-stepper__marker {
+    display: inline-flex;
+    z-index: 1;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #bcccdc;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #52606d;
+    font-size: 0.8125rem;
+    font-weight: 800;
+}
+
+.ef-stage-stepper__item--done .ef-stage-stepper__marker {
+    border-color: #0b5fff;
+    background: #0b5fff;
+    color: #ffffff;
+}
+
+.ef-stage-stepper__item--current .ef-stage-stepper__marker {
+    border-color: #0b5fff;
+    color: #0b5fff;
+    box-shadow: 0 0 0 4px #d9e8ff;
+}
+
+.ef-stage-stepper__item--on-hold .ef-stage-stepper__marker {
+    border-color: #f7c948;
+    color: #8d2b0b;
+    box-shadow: 0 0 0 4px #fff3c4;
+}
+
+.ef-stage-stepper__label {
+    max-width: 112px;
+    color: #52606d;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.ef-stage-stepper__item--done .ef-stage-stepper__label,
+.ef-stage-stepper__item--current .ef-stage-stepper__label {
+    color: #102a43;
+}
+
+.ef-stage-stepper__on-hold {
+    min-height: 22px;
+    border: 1px solid #f7c948;
+    border-radius: 999px;
+    background: #fff3c4;
+    color: #8d2b0b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 5px 8px;
+}
+
+@media (max-width: 760px) {
+    .ef-stage-stepper {
+        grid-template-columns: repeat(6, 112px);
+    }
+}
