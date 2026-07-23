@@ -1,18 +1,16 @@
 import type { HTMLAttributes } from "react";
 
-export const EXPENSE_REPORT_STAGES = [
-    "Drafted",
-    "Submitted",
-    "Manager Approval",
-    "AP Review",
-    "Paid",
-    "Reconciled",
-] as const;
+import {
+    EXPENSE_REPORT_STAGES,
+    useStageStepper,
+    type ExpenseReportStage,
+} from "../hooks/useStageStepper";
 
-export type ExpenseReportStage = (typeof EXPENSE_REPORT_STAGES)[number];
+export { EXPENSE_REPORT_STAGES, type ExpenseReportStage };
 
 export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
     currentStage: ExpenseReportStage;
+    onHold?: boolean;
     stages?: readonly ExpenseReportStage[];
 }
 
@@ -22,11 +20,12 @@ export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
 export function StageStepper({
     className,
     currentStage,
+    onHold = false,
     stages = EXPENSE_REPORT_STAGES,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
-    const currentStageIndex = stages.indexOf(currentStage);
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
+    const steps = useStageStepper({ currentStage, onHold, stages });
 
     return (
         <ol
@@ -34,37 +33,33 @@ export function StageStepper({
             className={classes}
             {...stepperProps}
         >
-            {stages.map((stage, index) => {
-                const state = getStageState(index, currentStageIndex);
+            {steps.map(({ isPaused, stage, state }, index) => {
+                const itemClasses = [
+                    "ef-stage-stepper__item",
+                    `ef-stage-stepper__item--${state}`,
+                    isPaused ? "ef-stage-stepper__item--paused" : undefined,
+                ]
+                    .filter(Boolean)
+                    .join(" ");
 
                 return (
                     <li
                         aria-current={state === "current" ? "step" : undefined}
-                        className={`ef-stage-stepper__item ef-stage-stepper__item--${state}`}
+                        className={itemClasses}
                         key={stage}
                     >
                         <span className="ef-stage-stepper__marker">
                             {index + 1}
                         </span>
                         <span className="ef-stage-stepper__label">{stage}</span>
+                        {isPaused ? (
+                            <span className="ef-stage-stepper__paused">
+                                Paused
+                            </span>
+                        ) : null}
                     </li>
                 );
             })}
         </ol>
     );
-}
-
-function getStageState(
-    stageIndex: number,
-    currentStageIndex: number,
-): "complete" | "current" | "upcoming" {
-    if (stageIndex < currentStageIndex) {
-        return "complete";
-    }
-
-    if (stageIndex === currentStageIndex) {
-        return "current";
-    }
-
-    return "upcoming";
 }
