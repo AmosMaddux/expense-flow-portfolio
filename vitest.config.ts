@@ -37,6 +37,7 @@ export default defineConfig({
             exclude: [
                 "backend/core-case-service/src/**/*.test.ts",
                 "backend/core-case-service/src/**/*.d.ts",
+                "backend/core-case-service/src/dev/**",
                 "backend/core-case-service/src/testSupport/**",
             ],
             thresholds: {

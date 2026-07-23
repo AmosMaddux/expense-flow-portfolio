@@ -1,9 +1,11 @@
 import {
+    authErrorResponseSchema,
     createAuthSession,
     loginRequestSchema,
     logoutRequestSchema,
     refreshRequestSchema,
     type AuthSession,
+    type AuthErrorCode,
     type LoginRequest,
 } from "./authSchemas";
 
@@ -18,12 +20,14 @@ export type AuthClient = {
 /** Represents a rejected request to the authentication API. */
 export class AuthRequestError extends Error {
     public readonly status: number;
+    public readonly code: AuthErrorCode | undefined;
 
     /** Creates an auth error with its HTTP response status. */
-    public constructor(status: number, message: string) {
+    public constructor(status: number, message: string, code?: AuthErrorCode) {
         super(message);
         this.name = "AuthRequestError";
         this.status = status;
+        this.code = code;
     }
 }
 
@@ -82,11 +86,19 @@ export function createAuthClient(
 
 async function readSessionResponse(response: Response): Promise<AuthSession> {
     if (!response.ok) {
+        const responseBody: unknown = await response
+            .json()
+            .catch(() => undefined);
+        const parsedError = authErrorResponseSchema.safeParse(responseBody);
+
         throw new AuthRequestError(
             response.status,
-            response.status === 401
-                ? "Authentication was rejected."
-                : "Authentication service request failed.",
+            parsedError.success
+                ? parsedError.data.message
+                : response.status === 401
+                  ? "Authentication was rejected."
+                  : "Authentication service request failed.",
+            parsedError.success ? parsedError.data.code : undefined,
         );
     }
 

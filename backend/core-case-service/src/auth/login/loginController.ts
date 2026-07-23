@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
     InvalidCredentialsError,
     InvalidMfaCodeError,
+    MfaRequiredError,
 } from "../shared/authenticationErrors.js";
 import {
     loginRequestSchema,
@@ -11,12 +12,23 @@ import {
     type LoginService,
 } from "./loginService.js";
 
-const invalidCredentialsResponse = {
+export const loginErrorResponseSchema = z.object({
+    code: z.enum(["INVALID_CREDENTIALS", "MFA_REQUIRED", "INVALID_MFA_CODE"]),
+    message: z.string().min(1),
+});
+
+const invalidCredentialsResponse = loginErrorResponseSchema.parse({
+    code: "INVALID_CREDENTIALS",
     message: "Invalid email or password.",
-};
-const invalidMfaCodeResponse = {
+});
+const mfaRequiredResponse = loginErrorResponseSchema.parse({
+    code: "MFA_REQUIRED",
+    message: "MFA code is required.",
+});
+const invalidMfaCodeResponse = loginErrorResponseSchema.parse({
+    code: "INVALID_MFA_CODE",
     message: "Invalid or expired MFA code.",
-};
+});
 
 export const unsupportedAuthProblemResponseSchema = z.object({
     type: z.literal("about:blank"),
@@ -44,6 +56,11 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
                 res.status(401).json(invalidCredentialsResponse);
+                return;
+            }
+
+            if (error instanceof MfaRequiredError) {
+                res.status(401).json(mfaRequiredResponse);
                 return;
             }
 

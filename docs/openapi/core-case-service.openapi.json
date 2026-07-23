@@ -297,6 +297,24 @@
                     "updatedAt"
                 ]
             },
+            "LoginErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "INVALID_CREDENTIALS",
+                            "MFA_REQUIRED",
+                            "INVALID_MFA_CODE"
+                        ]
+                    },
+                    "message": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["code", "message"]
+            },
             "LoginRequest": {
                 "type": "object",
                 "properties": {
@@ -554,7 +572,14 @@
                         }
                     },
                     "401": {
-                        "description": "Invalid credentials or MFA code."
+                        "description": "Invalid credentials, MFA required, or invalid MFA code.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginErrorResponse"
+                                }
+                            }
+                        }
                     },
                     "500": {
                         "description": "Unexpected server error.",
