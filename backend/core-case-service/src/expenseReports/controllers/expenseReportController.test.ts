@@ -122,8 +122,7 @@ void describe("Expense Report controller authorization", () => {
 
         expect(logExpenseReportAuditErrorMock).toHaveBeenCalledOnce();
         const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[0] as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
 
         expect(payload).toMatchObject({
             route: "POST /v1/expense-reports",
@@ -148,8 +147,7 @@ void describe("Expense Report controller authorization", () => {
 
         expect(logExpenseReportAuditErrorMock).toHaveBeenCalledOnce();
         const payload = logExpenseReportAuditErrorMock.mock.calls[0]?.[0] as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
 
         expect(payload).toMatchObject({
             expenseReportId: undefined,

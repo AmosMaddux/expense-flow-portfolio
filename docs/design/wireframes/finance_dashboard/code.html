@@ -1,447 +1,960 @@
-<!DOCTYPE html><html lang="en" class="light" style=""><svg class="inline-defs-container" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "tertiary-fixed": "#ffddb8",
-                        "tertiary": "#583500",
-                        "surface": "#f7f9fb",
-                        "primary-container": "#475569",
-                        "secondary-container": "#6cf8bb",
-                        "surface-container-lowest": "#ffffff",
-                        "tertiary-fixed-dim": "#ffb95f",
-                        "primary-fixed-dim": "#b9c7df",
-                        "background": "#f7f9fb",
-                        "secondary": "#006c49",
-                        "tertiary-container": "#774a00",
-                        "on-secondary-fixed-variant": "#005236",
-                        "primary-fixed": "#d5e3fc",
-                        "on-surface-variant": "#44474c",
-                        "primary": "#303e51",
-                        "inverse-on-surface": "#eff1f3",
-                        "on-surface": "#191c1e",
-                        "on-tertiary-container": "#ffbb66",
-                        "inverse-primary": "#b9c7df",
-                        "on-tertiary-fixed": "#2a1700",
-                        "on-primary": "#ffffff",
-                        "on-primary-fixed": "#0d1c2e",
-                        "outline-variant": "#c4c6cd",
-                        "surface-container-low": "#f2f4f6",
-                        "on-error": "#ffffff",
-                        "outline": "#75777d",
-                        "on-error-container": "#93000a",
-                        "on-background": "#191c1e",
-                        "on-secondary-container": "#00714d",
-                        "surface-container-high": "#e6e8ea",
-                        "surface-tint": "#515f74",
-                        "surface-container": "#eceef0",
-                        "secondary-fixed-dim": "#4edea3",
-                        "on-tertiary": "#ffffff",
-                        "error": "#ba1a1a",
-                        "surface-bright": "#f7f9fb",
-                        "surface-variant": "#e0e3e5",
-                        "surface-container-highest": "#e0e3e5",
-                        "on-secondary": "#ffffff",
-                        "on-secondary-fixed": "#002113",
-                        "error-container": "#ffdad6",
-                        "secondary-fixed": "#6ffbbe",
-                        "on-primary-container": "#bbcae1",
-                        "on-primary-fixed-variant": "#3a485b",
-                        "on-tertiary-fixed-variant": "#653e00",
-                        "surface-dim": "#d8dadc",
-                        "inverse-surface": "#2d3133"
+<!doctype html>
+<html lang="en" class="light" style="">
+    <svg
+        class="inline-defs-container"
+        aria-hidden="true"
+        style="position: absolute; width: 0; height: 0; overflow: hidden"
+    ></svg
+    ><head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+        <script id="tailwind-config">
+            try {
+                tailwind.config = {
+                    darkMode: "class",
+                    theme: {
+                        extend: {
+                            colors: {
+                                "tertiary-fixed": "#ffddb8",
+                                tertiary: "#583500",
+                                surface: "#f7f9fb",
+                                "primary-container": "#475569",
+                                "secondary-container": "#6cf8bb",
+                                "surface-container-lowest": "#ffffff",
+                                "tertiary-fixed-dim": "#ffb95f",
+                                "primary-fixed-dim": "#b9c7df",
+                                background: "#f7f9fb",
+                                secondary: "#006c49",
+                                "tertiary-container": "#774a00",
+                                "on-secondary-fixed-variant": "#005236",
+                                "primary-fixed": "#d5e3fc",
+                                "on-surface-variant": "#44474c",
+                                primary: "#303e51",
+                                "inverse-on-surface": "#eff1f3",
+                                "on-surface": "#191c1e",
+                                "on-tertiary-container": "#ffbb66",
+                                "inverse-primary": "#b9c7df",
+                                "on-tertiary-fixed": "#2a1700",
+                                "on-primary": "#ffffff",
+                                "on-primary-fixed": "#0d1c2e",
+                                "outline-variant": "#c4c6cd",
+                                "surface-container-low": "#f2f4f6",
+                                "on-error": "#ffffff",
+                                outline: "#75777d",
+                                "on-error-container": "#93000a",
+                                "on-background": "#191c1e",
+                                "on-secondary-container": "#00714d",
+                                "surface-container-high": "#e6e8ea",
+                                "surface-tint": "#515f74",
+                                "surface-container": "#eceef0",
+                                "secondary-fixed-dim": "#4edea3",
+                                "on-tertiary": "#ffffff",
+                                error: "#ba1a1a",
+                                "surface-bright": "#f7f9fb",
+                                "surface-variant": "#e0e3e5",
+                                "surface-container-highest": "#e0e3e5",
+                                "on-secondary": "#ffffff",
+                                "on-secondary-fixed": "#002113",
+                                "error-container": "#ffdad6",
+                                "secondary-fixed": "#6ffbbe",
+                                "on-primary-container": "#bbcae1",
+                                "on-primary-fixed-variant": "#3a485b",
+                                "on-tertiary-fixed-variant": "#653e00",
+                                "surface-dim": "#d8dadc",
+                                "inverse-surface": "#2d3133",
+                            },
+                            borderRadius: {
+                                DEFAULT: "0.125rem",
+                                lg: "0.25rem",
+                                xl: "0.5rem",
+                                full: "0.75rem",
+                            },
+                            spacing: {
+                                container_max_width: "1440px",
+                                header_height: "64px",
+                                xl: "32px",
+                                sm: "8px",
+                                sidebar_width: "260px",
+                                xs: "4px",
+                                lg: "24px",
+                                base: "4px",
+                                md: "16px",
+                            },
+                            fontFamily: {
+                                "headline-sm": ["Inter"],
+                                "body-sm": ["Inter"],
+                                "body-md": ["Inter"],
+                                "label-sm": ["JetBrains Mono"],
+                                "headline-md": ["Inter"],
+                                "body-lg": ["Inter"],
+                                "label-md": ["JetBrains Mono"],
+                                "headline-lg": ["Inter"],
+                            },
+                            fontSize: {
+                                "headline-sm": [
+                                    "16px",
+                                    { lineHeight: "24px", fontWeight: "600" },
+                                ],
+                                "body-sm": [
+                                    "12px",
+                                    { lineHeight: "16px", fontWeight: "400" },
+                                ],
+                                "body-md": [
+                                    "14px",
+                                    { lineHeight: "20px", fontWeight: "400" },
+                                ],
+                                "label-sm": [
+                                    "10px",
+                                    { lineHeight: "12px", fontWeight: "500" },
+                                ],
+                                "headline-md": [
+                                    "20px",
+                                    {
+                                        lineHeight: "28px",
+                                        letterSpacing: "-0.01em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                                "body-lg": [
+                                    "16px",
+                                    { lineHeight: "24px", fontWeight: "400" },
+                                ],
+                                "label-md": [
+                                    "12px",
+                                    {
+                                        lineHeight: "16px",
+                                        letterSpacing: "0.02em",
+                                        fontWeight: "500",
+                                    },
+                                ],
+                                "headline-lg": [
+                                    "24px",
+                                    {
+                                        lineHeight: "32px",
+                                        letterSpacing: "-0.02em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                            },
+                        },
                     },
-                    "borderRadius": {
-                        "DEFAULT": "0.125rem",
-                        "lg": "0.25rem",
-                        "xl": "0.5rem",
-                        "full": "0.75rem"
-                    },
-                    "spacing": {
-                        "container_max_width": "1440px",
-                        "header_height": "64px",
-                        "xl": "32px",
-                        "sm": "8px",
-                        "sidebar_width": "260px",
-                        "xs": "4px",
-                        "lg": "24px",
-                        "base": "4px",
-                        "md": "16px"
-                    },
-                    "fontFamily": {
-                        "headline-sm": ["Inter"],
-                        "body-sm": ["Inter"],
-                        "body-md": ["Inter"],
-                        "label-sm": ["JetBrains Mono"],
-                        "headline-md": ["Inter"],
-                        "body-lg": ["Inter"],
-                        "label-md": ["JetBrains Mono"],
-                        "headline-lg": ["Inter"]
-                    },
-                    "fontSize": {
-                        "headline-sm": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
-                        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
-                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                        "label-sm": ["10px", {"lineHeight": "12px", "fontWeight": "500"}],
-                        "headline-md": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
-                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                        "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500"}],
-                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
-                    }
-                },
-            },
-        }
-    }catch(_e){}</script><meta charset="utf-8"></head><body class="text-on-surface">
-<!-- SideNavBar Shell -->
-<aside class="fixed left-0 top-0 h-full w-[260px] flex flex-col bg-surface border-r border-outline-variant z-50">
-<div class="p-lg flex flex-col gap-xs">
-<h1 class="text-headline-md font-headline-md font-bold text-primary">ExpenseFlow</h1>
-<p class="font-body-sm text-body-sm text-on-surface-variant">Management System</p>
-</div>
-<nav class="flex-1 px-md py-sm space-y-1 overflow-y-auto">
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined" data-original-icon="description">description</span> My Submissions
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined" data-original-icon="add_circle">add_circle</span> Submit Expense
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined" data-original-icon="directions_car">directions_car</span> Log Mileage
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined">rule</span> Approval Queue
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined">group</span> Team &amp; Users
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-headline-sm text-headline-sm text-primary font-bold bg-surface-container-high scale-95 duration-150">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;" data-original-icon="dashboard">dashboard</span> Dashboard
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined" data-original-icon="assessment">assessment</span> Reports
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined" data-original-icon="account_tree">account_tree</span> GL Mapping
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined">domain</span> Tenants
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined">history</span> Audit Log
-            </a>
-<a href="#" class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors">
-<span class="material-symbols-outlined">settings</span> Settings
-            </a>
-</nav>
-<div class="p-lg">
-<button class="w-full py-md bg-primary-container text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-opacity">
-                Submit Expense
-            </button>
-</div>
-</aside>
-<!-- TopNavBar Shell -->
-<header class="fixed top-0 left-[260px] right-0 h-[64px] bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-lg z-40">
-<div class="flex items-center gap-lg">
-<span class="text-headline-md font-headline-md font-extrabold text-primary">Tenant-001</span>
-<div class="h-8 w-[1px] bg-outline-variant"></div>
-<nav class="flex items-center gap-md">
-<button class="font-headline-sm text-headline-sm text-primary font-bold border-b-2 border-primary py-2 px-2">Role Switcher (Design Review Only)</button>
-</nav>
-</div>
-<div class="flex items-center gap-lg">
-<div class="relative flex items-center bg-surface-container rounded-full px-md py-xs border border-outline-variant">
-<span class="material-symbols-outlined text-outline">search</span>
-<input type="text" placeholder="Search expenses..." class="bg-transparent border-none focus:ring-0 text-body-md font-body-md w-64">
-</div>
-<div class="flex items-center gap-md">
-<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-sm rounded-full transition-colors">notifications</button>
-<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-sm rounded-full transition-colors">help_outline</button>
-</div>
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full bg-primary-fixed-dim border border-outline overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="A professional corporate headshot of a finance executive, clean studio lighting, neutral background, sharp focus, digital photography, modern corporate aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7bTJYVyP0Du0cFgczQ4AT362sDHX9289EXe47BvG9iG-qZMP9LaIDPSzheUyeRx66eiE2_zCbVpEuY6Xdhjd9fpWtsImr6dWblISCQ82kLhI9wBtUoDD3qFdj93bXqFY3x9K_7qdWOwPUqKHKVMVykrFqAIBlCeDPz3nvRmF3MdkvikzGtzhMI45ahCKbhTI3XFq2P62nc8k-6aE8LpuQOo6vYE8K7taz0BLGPyEIzETUwOYEa3w">
-</div>
-<button class="font-body-md text-body-md text-primary font-semibold hover:opacity-80">Logout</button>
-</div>
-</div>
-</header>
-<!-- Main Content Canvas -->
-<main class="ml-[260px] pt-[64px] min-h-screen p-lg space-y-lg">
-<!-- Page Header -->
-<section class="flex justify-between items-end">
-<div>
-<h2 class="font-headline-lg text-headline-lg text-primary">Finance Dashboard</h2>
-<p class="font-body-md text-body-md text-on-surface-variant">Real-time expense oversight and reconciliation status</p>
-</div>
-<div class="flex gap-sm">
-<button class="px-md py-sm bg-white border border-outline-variant rounded-lg font-label-md text-label-md text-primary flex items-center gap-sm hover:bg-surface-container-low">
-<span class="material-symbols-outlined text-[18px]">download</span> Export Report
+                };
+            } catch (_e) {}
+        </script>
+        <meta charset="utf-8" />
+    </head>
+    <body class="text-on-surface">
+        <!-- SideNavBar Shell -->
+        <aside
+            class="fixed left-0 top-0 h-full w-[260px] flex flex-col bg-surface border-r border-outline-variant z-50"
+        >
+            <div class="p-lg flex flex-col gap-xs">
+                <h1
+                    class="text-headline-md font-headline-md font-bold text-primary"
+                >
+                    ExpenseFlow
+                </h1>
+                <p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Management System
+                </p>
+            </div>
+            <nav class="flex-1 px-md py-sm space-y-1 overflow-y-auto">
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="description"
+                        >description</span
+                    >
+                    My Submissions
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="add_circle"
+                        >add_circle</span
+                    >
+                    Submit Expense
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="directions_car"
+                        >directions_car</span
+                    >
+                    Log Mileage
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span class="material-symbols-outlined">rule</span> Approval
+                    Queue
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span class="material-symbols-outlined">group</span> Team
+                    &amp; Users
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-headline-sm text-headline-sm text-primary font-bold bg-surface-container-high scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        style="font-variation-settings: &quot;FILL&quot; 1"
+                        data-original-icon="dashboard"
+                        >dashboard</span
+                    >
+                    Dashboard
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="assessment"
+                        >assessment</span
+                    >
+                    Reports
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="account_tree"
+                        >account_tree</span
+                    >
+                    GL Mapping
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span class="material-symbols-outlined">domain</span>
+                    Tenants
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span class="material-symbols-outlined">history</span> Audit
+                    Log
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                >
+                    <span class="material-symbols-outlined">settings</span>
+                    Settings
+                </a>
+            </nav>
+            <div class="p-lg">
+                <button
+                    class="w-full py-md bg-primary-container text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-opacity"
+                >
+                    Submit Expense
                 </button>
-<button class="px-md py-sm bg-primary text-on-primary rounded-lg font-label-md text-label-md flex items-center gap-sm hover:opacity-90">
-<span class="material-symbols-outlined text-[18px]">add</span> New Batch
-                </button>
-</div>
-</section>
-<!-- KPI Row -->
-<section class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-md">
-<!-- Drafted -->
-<div class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Drafted</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">142</h3>
-<span class="font-label-sm text-label-sm bg-surface-container text-on-surface-variant px-sm py-xs rounded">Total 42k</span>
-</div>
-</div>
-<!-- Submitted -->
-<div class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Submitted</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">89</h3>
-<span class="text-secondary font-label-sm text-label-sm">+12%</span>
-</div>
-</div>
-<!-- Manager Approval -->
-<div class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Manager Approval</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">56</h3>
-<div class="w-12 h-1 bg-surface-container rounded-full overflow-hidden">
-<div class="bg-secondary h-full w-[70%]"></div>
-</div>
-</div>
-</div>
-<!-- AP Review -->
-<div class="bg-white border border-outline-variant p-md rounded-lg border-l-4 border-l-primary hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-primary font-bold uppercase tracking-wider">AP Review</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">23</h3>
-<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">priority_high</span>
-</div>
-</div>
-<!-- Paid -->
-<div class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Paid</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">312</h3>
-<span class="font-label-sm text-label-sm text-secondary">Processed</span>
-</div>
-</div>
-<!-- Reconciled -->
-<div class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow">
-<p class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Reconciled</p>
-<div class="flex justify-between items-end mt-sm">
-<h3 class="font-headline-lg text-headline-lg text-primary">98%</h3>
-<span class="material-symbols-outlined text-secondary">check_circle</span>
-</div>
-</div>
-</section>
-<!-- Middle Section: Spend Trends -->
-<section class="grid grid-cols-12 gap-lg">
-<div class="col-span-12 lg:col-span-12 bg-white border border-outline-variant rounded-lg p-lg">
-<div class="flex justify-between items-center mb-lg">
-<div>
-<h4 class="font-headline-sm text-headline-sm text-primary">Spend Trends</h4>
-<p class="font-body-sm text-body-sm text-on-surface-variant">Comparative analysis of monthly spend across departments</p>
-</div>
-<div class="flex items-center gap-md">
-<select class="bg-surface-container border-none rounded-lg font-label-md text-label-md py-xs px-md focus:ring-primary">
-<option>Last 6 Months</option>
-<option>Year to Date</option>
-<option>Custom Range</option>
-</select>
-<div class="flex border border-outline-variant rounded-lg overflow-hidden">
-<button class="px-md py-xs bg-surface-container-high font-label-md text-label-md">Line</button>
-<button class="px-md py-xs font-label-md text-label-md border-l border-outline-variant">Bar</button>
-</div>
-</div>
-</div>
-<div class="h-[300px] w-full relative">
-<!-- Faux Line Chart Visualization -->
-<svg class="w-full h-full" viewBox="0 0 1000 300">
-<defs>
-<linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-<stop offset="0%" stop-color="#475569" stop-opacity="0.1"></stop>
-<stop offset="100%" stop-color="#475569" stop-opacity="0"></stop>
-</linearGradient>
-</defs>
-<path d="M0,250 Q150,230 250,180 T500,100 T750,150 T1000,50" fill="none" stroke="#475569" stroke-linecap="round" stroke-width="3"></path>
-<path d="M0,250 Q150,230 250,180 T500,100 T750,150 T1000,50 V300 H0 Z" fill="url(#chartGradient)"></path>
-<!-- Grid Lines -->
-<line stroke="#e2e8f0" stroke-dasharray="4" x1="0" x2="1000" y1="50" y2="50"></line>
-<line stroke="#e2e8f0" stroke-dasharray="4" x1="0" x2="1000" y1="150" y2="150" class=""></line>
-<line stroke="#e2e8f0" stroke-dasharray="4" x1="0" x2="1000" y1="250" y2="250" class=""></line>
-</svg>
-<!-- Tooltip Simulation -->
-<div class="absolute top-12 left-[50%] -translate-x-1/2 glass-card border border-primary p-sm rounded shadow-lg pointer-events-none">
-<p class="font-label-sm text-label-sm font-bold">Aug 2023</p>
-<p class="font-body-sm text-body-sm">$142,500.00</p>
-</div>
-</div>
-<div class="flex justify-between mt-md px-md">
-<span class="font-label-sm text-label-sm text-outline">MAR</span>
-<span class="font-label-sm text-label-sm text-outline">APR</span>
-<span class="font-label-sm text-label-sm text-outline">MAY</span>
-<span class="font-label-sm text-label-sm text-outline">JUN</span>
-<span class="font-label-sm text-label-sm text-outline">JUL</span>
-<span class="font-label-sm text-label-sm text-outline">AUG</span>
-</div>
-</div>
-</section>
-<!-- Bottom Section: Work Queue -->
-<section class="bg-white border border-outline-variant rounded-lg overflow-hidden">
-<div class="p-lg border-b border-outline-variant flex justify-between items-center">
-<div class="flex items-center gap-md">
-<h4 class="font-headline-sm text-headline-sm text-primary">Prioritized Work Queue</h4>
-<span class="bg-error text-on-error font-label-sm text-label-sm px-md py-xs rounded-full">6 Urgent Tasks</span>
-</div>
-<div class="flex gap-md">
-<button class="font-label-md text-label-md text-primary hover:underline">View All Queue</button>
-<span class="material-symbols-outlined text-outline">filter_list</span>
-</div>
-</div>
-<table class="w-full text-left high-density-table">
-<thead class="bg-surface-container-low border-b border-outline-variant">
-<tr>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Report Name</th>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Employee</th>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Amount</th>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Status</th>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Priority</th>
-<th class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
-</tr>
-</thead>
-<tbody class="font-body-md text-body-md">
-<tr class="border-b border-outline-variant">
-<td class="p-md">
-<div class="font-bold text-primary">Q3 Marketing Offsite</div>
-<div class="text-body-sm text-outline">ID: 550e8400-e29b-41d4-a716-446655440000</div>
-</td>
-<td class="p-md">
-<div class="flex items-center gap-sm">
-<div class="w-6 h-6 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center text-[10px] font-bold">AS</div>
-<span class="">Employee-01</span>
-</div>
-</td>
-<td class="p-md font-label-md">$12,450.00</td>
-<td class="p-md">
-<span class="bg-error-container text-error font-label-sm text-label-sm px-md py-xs rounded-full font-bold">OVERDUE (3d)</span>
-</td>
-<td class="p-md">
-<span class="flex items-center gap-xs text-error">
-<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">flag</span> High
-                            </span>
-</td>
-<td class="p-md text-right">
-<button class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95">Review</button>
-</td>
-</tr>
-<tr class="border-b border-outline-variant">
-<td class="p-md">
-<div class="font-bold text-primary">Software Licenses Renewal</div>
-<div class="text-body-sm text-outline">ID: 7c9e6679-7425-40de-944b-e07fc1f90ae7</div>
-</td>
-<td class="p-md">
-<div class="flex items-center gap-sm">
-<div class="w-6 h-6 rounded-full bg-primary-fixed-dim text-on-primary-fixed flex items-center justify-center text-[10px] font-bold">JL</div>
-<span class="">Employee-02</span>
-</div>
-</td>
-<td class="p-md font-label-md">$8,900.00</td>
-<td class="p-md">
-<span class="bg-tertiary-fixed text-tertiary font-label-sm text-label-sm px-md py-xs rounded-full font-bold">FLAGGED: Duplicate</span>
-</td>
-<td class="p-md">
-<span class="flex items-center gap-xs text-tertiary">
-<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">flag</span> Medium
-                            </span>
-</td>
-<td class="p-md text-right">
-<button class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95">Review</button>
-</td>
-</tr>
-<tr class="border-b border-outline-variant">
-<td class="p-md">
-<div class="font-bold text-primary">Client Dinner - NYC</div>
-<div class="text-body-sm text-outline">ID: 123e4567-e89b-12d3-a456-426614174000</div>
-</td>
-<td class="p-md">
-<div class="flex items-center gap-sm">
-<div class="w-6 h-6 rounded-full bg-secondary-fixed-dim text-on-secondary-fixed flex items-center justify-center text-[10px] font-bold">MW</div>
-<span class="">Employee-03</span>
-</div>
-</td>
-<td class="p-md font-label-md">$450.25</td>
-<td class="p-md">
-<span class="bg-error-container text-error font-label-sm text-label-sm px-md py-xs rounded-full font-bold">OVERDUE (1d)</span>
-</td>
-<td class="p-md">
-<span class="flex items-center gap-xs text-error">
-<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">flag</span> High
-                            </span>
-</td>
-<td class="p-md text-right">
-<button class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95">Review</button>
-</td>
-</tr>
-<tr class="border-b border-outline-variant">
-<td class="p-md">
-<div class="font-bold text-primary">Travel Reimb: Chicago Conference</div>
-<div class="text-body-sm text-outline">ID: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11</div>
-</td>
-<td class="p-md">
-<div class="flex items-center gap-sm">
-<div class="w-6 h-6 rounded-full bg-outline-variant flex items-center justify-center text-[10px] font-bold">SK</div>
-<span class="">Employee-04</span>
-</div>
-</td>
-<td class="p-md font-label-md">$1,230.50</td>
-<td class="p-md">
-<span class="bg-primary-fixed text-primary font-label-sm text-label-sm px-md py-xs rounded-full">Pending Review</span>
-</td>
-<td class="p-md">
-<span class="flex items-center gap-xs text-on-surface-variant">
-<span class="material-symbols-outlined text-[16px]">flag</span> Low
-                            </span>
-</td>
-<td class="p-md text-right">
-<button class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95">Review</button>
-</td>
-</tr>
-</tbody>
-</table>
-<!-- Empty state check simulation -->
-<div class="hidden flex-col items-center justify-center py-xl text-center" id="empty-state">
-<span class="material-symbols-outlined text-[64px] text-outline opacity-20">inventory_2</span>
-<p class="font-headline-sm text-headline-sm text-primary mt-md">Queue is clear</p>
-<p class="font-body-md text-body-md text-on-surface-variant">All prioritized expenses have been reviewed.</p>
-<button class="mt-lg px-lg py-md bg-primary text-on-primary rounded-lg font-label-md text-label-md">Add New Task</button>
-</div>
-</section>
-</main>
-<script>
-        // Simple Micro-interactions
-        document.querySelectorAll('button, a').forEach(el => {
-            el.addEventListener('mousedown', () => {
-                el.classList.add('scale-95');
+            </div>
+        </aside>
+        <!-- TopNavBar Shell -->
+        <header
+            class="fixed top-0 left-[260px] right-0 h-[64px] bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-lg z-40"
+        >
+            <div class="flex items-center gap-lg">
+                <span
+                    class="text-headline-md font-headline-md font-extrabold text-primary"
+                    >Tenant-001</span
+                >
+                <div class="h-8 w-[1px] bg-outline-variant"></div>
+                <nav class="flex items-center gap-md">
+                    <button
+                        class="font-headline-sm text-headline-sm text-primary font-bold border-b-2 border-primary py-2 px-2"
+                    >
+                        Role Switcher (Design Review Only)
+                    </button>
+                </nav>
+            </div>
+            <div class="flex items-center gap-lg">
+                <div
+                    class="relative flex items-center bg-surface-container rounded-full px-md py-xs border border-outline-variant"
+                >
+                    <span class="material-symbols-outlined text-outline"
+                        >search</span
+                    >
+                    <input
+                        type="text"
+                        placeholder="Search expenses..."
+                        class="bg-transparent border-none focus:ring-0 text-body-md font-body-md w-64"
+                    />
+                </div>
+                <div class="flex items-center gap-md">
+                    <button
+                        class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-sm rounded-full transition-colors"
+                    >
+                        notifications
+                    </button>
+                    <button
+                        class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-high p-sm rounded-full transition-colors"
+                    >
+                        help_outline
+                    </button>
+                </div>
+                <div class="flex items-center gap-sm">
+                    <div
+                        class="w-8 h-8 rounded-full bg-primary-fixed-dim border border-outline overflow-hidden"
+                    >
+                        <img
+                            class="w-full h-full object-cover"
+                            data-alt="A professional corporate headshot of a finance executive, clean studio lighting, neutral background, sharp focus, digital photography, modern corporate aesthetic."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7bTJYVyP0Du0cFgczQ4AT362sDHX9289EXe47BvG9iG-qZMP9LaIDPSzheUyeRx66eiE2_zCbVpEuY6Xdhjd9fpWtsImr6dWblISCQ82kLhI9wBtUoDD3qFdj93bXqFY3x9K_7qdWOwPUqKHKVMVykrFqAIBlCeDPz3nvRmF3MdkvikzGtzhMI45ahCKbhTI3XFq2P62nc8k-6aE8LpuQOo6vYE8K7taz0BLGPyEIzETUwOYEa3w"
+                        />
+                    </div>
+                    <button
+                        class="font-body-md text-body-md text-primary font-semibold hover:opacity-80"
+                    >
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+        <!-- Main Content Canvas -->
+        <main class="ml-[260px] pt-[64px] min-h-screen p-lg space-y-lg">
+            <!-- Page Header -->
+            <section class="flex justify-between items-end">
+                <div>
+                    <h2 class="font-headline-lg text-headline-lg text-primary">
+                        Finance Dashboard
+                    </h2>
+                    <p
+                        class="font-body-md text-body-md text-on-surface-variant"
+                    >
+                        Real-time expense oversight and reconciliation status
+                    </p>
+                </div>
+                <div class="flex gap-sm">
+                    <button
+                        class="px-md py-sm bg-white border border-outline-variant rounded-lg font-label-md text-label-md text-primary flex items-center gap-sm hover:bg-surface-container-low"
+                    >
+                        <span class="material-symbols-outlined text-[18px]"
+                            >download</span
+                        >
+                        Export Report
+                    </button>
+                    <button
+                        class="px-md py-sm bg-primary text-on-primary rounded-lg font-label-md text-label-md flex items-center gap-sm hover:opacity-90"
+                    >
+                        <span class="material-symbols-outlined text-[18px]"
+                            >add</span
+                        >
+                        New Batch
+                    </button>
+                </div>
+            </section>
+            <!-- KPI Row -->
+            <section
+                class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-md"
+            >
+                <!-- Drafted -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                    >
+                        Drafted
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            142
+                        </h3>
+                        <span
+                            class="font-label-sm text-label-sm bg-surface-container text-on-surface-variant px-sm py-xs rounded"
+                            >Total 42k</span
+                        >
+                    </div>
+                </div>
+                <!-- Submitted -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                    >
+                        Submitted
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            89
+                        </h3>
+                        <span class="text-secondary font-label-sm text-label-sm"
+                            >+12%</span
+                        >
+                    </div>
+                </div>
+                <!-- Manager Approval -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                    >
+                        Manager Approval
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            56
+                        </h3>
+                        <div
+                            class="w-12 h-1 bg-surface-container rounded-full overflow-hidden"
+                        >
+                            <div class="bg-secondary h-full w-[70%]"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- AP Review -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg border-l-4 border-l-primary hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-primary font-bold uppercase tracking-wider"
+                    >
+                        AP Review
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            23
+                        </h3>
+                        <span
+                            class="material-symbols-outlined text-error"
+                            style="font-variation-settings: &quot;FILL&quot; 1"
+                            >priority_high</span
+                        >
+                    </div>
+                </div>
+                <!-- Paid -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                    >
+                        Paid
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            312
+                        </h3>
+                        <span class="font-label-sm text-label-sm text-secondary"
+                            >Processed</span
+                        >
+                    </div>
+                </div>
+                <!-- Reconciled -->
+                <div
+                    class="bg-white border border-outline-variant p-md rounded-lg hover:shadow-md transition-shadow"
+                >
+                    <p
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                    >
+                        Reconciled
+                    </p>
+                    <div class="flex justify-between items-end mt-sm">
+                        <h3
+                            class="font-headline-lg text-headline-lg text-primary"
+                        >
+                            98%
+                        </h3>
+                        <span class="material-symbols-outlined text-secondary"
+                            >check_circle</span
+                        >
+                    </div>
+                </div>
+            </section>
+            <!-- Middle Section: Spend Trends -->
+            <section class="grid grid-cols-12 gap-lg">
+                <div
+                    class="col-span-12 lg:col-span-12 bg-white border border-outline-variant rounded-lg p-lg"
+                >
+                    <div class="flex justify-between items-center mb-lg">
+                        <div>
+                            <h4
+                                class="font-headline-sm text-headline-sm text-primary"
+                            >
+                                Spend Trends
+                            </h4>
+                            <p
+                                class="font-body-sm text-body-sm text-on-surface-variant"
+                            >
+                                Comparative analysis of monthly spend across
+                                departments
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-md">
+                            <select
+                                class="bg-surface-container border-none rounded-lg font-label-md text-label-md py-xs px-md focus:ring-primary"
+                            >
+                                <option>Last 6 Months</option>
+                                <option>Year to Date</option>
+                                <option>Custom Range</option>
+                            </select>
+                            <div
+                                class="flex border border-outline-variant rounded-lg overflow-hidden"
+                            >
+                                <button
+                                    class="px-md py-xs bg-surface-container-high font-label-md text-label-md"
+                                >
+                                    Line
+                                </button>
+                                <button
+                                    class="px-md py-xs font-label-md text-label-md border-l border-outline-variant"
+                                >
+                                    Bar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="h-[300px] w-full relative">
+                        <!-- Faux Line Chart Visualization -->
+                        <svg class="w-full h-full" viewBox="0 0 1000 300">
+                            <defs>
+                                <linearGradient
+                                    id="chartGradient"
+                                    x1="0"
+                                    x2="0"
+                                    y1="0"
+                                    y2="1"
+                                >
+                                    <stop
+                                        offset="0%"
+                                        stop-color="#475569"
+                                        stop-opacity="0.1"
+                                    ></stop>
+                                    <stop
+                                        offset="100%"
+                                        stop-color="#475569"
+                                        stop-opacity="0"
+                                    ></stop>
+                                </linearGradient>
+                            </defs>
+                            <path
+                                d="M0,250 Q150,230 250,180 T500,100 T750,150 T1000,50"
+                                fill="none"
+                                stroke="#475569"
+                                stroke-linecap="round"
+                                stroke-width="3"
+                            ></path>
+                            <path
+                                d="M0,250 Q150,230 250,180 T500,100 T750,150 T1000,50 V300 H0 Z"
+                                fill="url(#chartGradient)"
+                            ></path>
+                            <!-- Grid Lines -->
+                            <line
+                                stroke="#e2e8f0"
+                                stroke-dasharray="4"
+                                x1="0"
+                                x2="1000"
+                                y1="50"
+                                y2="50"
+                            ></line>
+                            <line
+                                stroke="#e2e8f0"
+                                stroke-dasharray="4"
+                                x1="0"
+                                x2="1000"
+                                y1="150"
+                                y2="150"
+                                class=""
+                            ></line>
+                            <line
+                                stroke="#e2e8f0"
+                                stroke-dasharray="4"
+                                x1="0"
+                                x2="1000"
+                                y1="250"
+                                y2="250"
+                                class=""
+                            ></line>
+                        </svg>
+                        <!-- Tooltip Simulation -->
+                        <div
+                            class="absolute top-12 left-[50%] -translate-x-1/2 glass-card border border-primary p-sm rounded shadow-lg pointer-events-none"
+                        >
+                            <p class="font-label-sm text-label-sm font-bold">
+                                Aug 2023
+                            </p>
+                            <p class="font-body-sm text-body-sm">$142,500.00</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between mt-md px-md">
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >MAR</span
+                        >
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >APR</span
+                        >
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >MAY</span
+                        >
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >JUN</span
+                        >
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >JUL</span
+                        >
+                        <span class="font-label-sm text-label-sm text-outline"
+                            >AUG</span
+                        >
+                    </div>
+                </div>
+            </section>
+            <!-- Bottom Section: Work Queue -->
+            <section
+                class="bg-white border border-outline-variant rounded-lg overflow-hidden"
+            >
+                <div
+                    class="p-lg border-b border-outline-variant flex justify-between items-center"
+                >
+                    <div class="flex items-center gap-md">
+                        <h4
+                            class="font-headline-sm text-headline-sm text-primary"
+                        >
+                            Prioritized Work Queue
+                        </h4>
+                        <span
+                            class="bg-error text-on-error font-label-sm text-label-sm px-md py-xs rounded-full"
+                            >6 Urgent Tasks</span
+                        >
+                    </div>
+                    <div class="flex gap-md">
+                        <button
+                            class="font-label-md text-label-md text-primary hover:underline"
+                        >
+                            View All Queue
+                        </button>
+                        <span class="material-symbols-outlined text-outline"
+                            >filter_list</span
+                        >
+                    </div>
+                </div>
+                <table class="w-full text-left high-density-table">
+                    <thead
+                        class="bg-surface-container-low border-b border-outline-variant"
+                    >
+                        <tr>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Report Name
+                            </th>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Employee
+                            </th>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Amount
+                            </th>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Status
+                            </th>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Priority
+                            </th>
+                            <th
+                                class="p-md font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-right"
+                            >
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="font-body-md text-body-md">
+                        <tr class="border-b border-outline-variant">
+                            <td class="p-md">
+                                <div class="font-bold text-primary">
+                                    Q3 Marketing Offsite
+                                </div>
+                                <div class="text-body-sm text-outline">
+                                    ID: 550e8400-e29b-41d4-a716-446655440000
+                                </div>
+                            </td>
+                            <td class="p-md">
+                                <div class="flex items-center gap-sm">
+                                    <div
+                                        class="w-6 h-6 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center text-[10px] font-bold"
+                                    >
+                                        AS
+                                    </div>
+                                    <span class="">Employee-01</span>
+                                </div>
+                            </td>
+                            <td class="p-md font-label-md">$12,450.00</td>
+                            <td class="p-md">
+                                <span
+                                    class="bg-error-container text-error font-label-sm text-label-sm px-md py-xs rounded-full font-bold"
+                                    >OVERDUE (3d)</span
+                                >
+                            </td>
+                            <td class="p-md">
+                                <span
+                                    class="flex items-center gap-xs text-error"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-[16px]"
+                                        style="
+                                            font-variation-settings: &quot;FILL&quot;
+                                                1;
+                                        "
+                                        >flag</span
+                                    >
+                                    High
+                                </span>
+                            </td>
+                            <td class="p-md text-right">
+                                <button
+                                    class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95"
+                                >
+                                    Review
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="border-b border-outline-variant">
+                            <td class="p-md">
+                                <div class="font-bold text-primary">
+                                    Software Licenses Renewal
+                                </div>
+                                <div class="text-body-sm text-outline">
+                                    ID: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                                </div>
+                            </td>
+                            <td class="p-md">
+                                <div class="flex items-center gap-sm">
+                                    <div
+                                        class="w-6 h-6 rounded-full bg-primary-fixed-dim text-on-primary-fixed flex items-center justify-center text-[10px] font-bold"
+                                    >
+                                        JL
+                                    </div>
+                                    <span class="">Employee-02</span>
+                                </div>
+                            </td>
+                            <td class="p-md font-label-md">$8,900.00</td>
+                            <td class="p-md">
+                                <span
+                                    class="bg-tertiary-fixed text-tertiary font-label-sm text-label-sm px-md py-xs rounded-full font-bold"
+                                    >FLAGGED: Duplicate</span
+                                >
+                            </td>
+                            <td class="p-md">
+                                <span
+                                    class="flex items-center gap-xs text-tertiary"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-[16px]"
+                                        style="
+                                            font-variation-settings: &quot;FILL&quot;
+                                                1;
+                                        "
+                                        >flag</span
+                                    >
+                                    Medium
+                                </span>
+                            </td>
+                            <td class="p-md text-right">
+                                <button
+                                    class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95"
+                                >
+                                    Review
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="border-b border-outline-variant">
+                            <td class="p-md">
+                                <div class="font-bold text-primary">
+                                    Client Dinner - NYC
+                                </div>
+                                <div class="text-body-sm text-outline">
+                                    ID: 123e4567-e89b-12d3-a456-426614174000
+                                </div>
+                            </td>
+                            <td class="p-md">
+                                <div class="flex items-center gap-sm">
+                                    <div
+                                        class="w-6 h-6 rounded-full bg-secondary-fixed-dim text-on-secondary-fixed flex items-center justify-center text-[10px] font-bold"
+                                    >
+                                        MW
+                                    </div>
+                                    <span class="">Employee-03</span>
+                                </div>
+                            </td>
+                            <td class="p-md font-label-md">$450.25</td>
+                            <td class="p-md">
+                                <span
+                                    class="bg-error-container text-error font-label-sm text-label-sm px-md py-xs rounded-full font-bold"
+                                    >OVERDUE (1d)</span
+                                >
+                            </td>
+                            <td class="p-md">
+                                <span
+                                    class="flex items-center gap-xs text-error"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-[16px]"
+                                        style="
+                                            font-variation-settings: &quot;FILL&quot;
+                                                1;
+                                        "
+                                        >flag</span
+                                    >
+                                    High
+                                </span>
+                            </td>
+                            <td class="p-md text-right">
+                                <button
+                                    class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95"
+                                >
+                                    Review
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="border-b border-outline-variant">
+                            <td class="p-md">
+                                <div class="font-bold text-primary">
+                                    Travel Reimb: Chicago Conference
+                                </div>
+                                <div class="text-body-sm text-outline">
+                                    ID: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+                                </div>
+                            </td>
+                            <td class="p-md">
+                                <div class="flex items-center gap-sm">
+                                    <div
+                                        class="w-6 h-6 rounded-full bg-outline-variant flex items-center justify-center text-[10px] font-bold"
+                                    >
+                                        SK
+                                    </div>
+                                    <span class="">Employee-04</span>
+                                </div>
+                            </td>
+                            <td class="p-md font-label-md">$1,230.50</td>
+                            <td class="p-md">
+                                <span
+                                    class="bg-primary-fixed text-primary font-label-sm text-label-sm px-md py-xs rounded-full"
+                                    >Pending Review</span
+                                >
+                            </td>
+                            <td class="p-md">
+                                <span
+                                    class="flex items-center gap-xs text-on-surface-variant"
+                                >
+                                    <span
+                                        class="material-symbols-outlined text-[16px]"
+                                        >flag</span
+                                    >
+                                    Low
+                                </span>
+                            </td>
+                            <td class="p-md text-right">
+                                <button
+                                    class="bg-primary-container text-on-primary px-md py-sm rounded-lg font-label-md text-label-md transition-transform active:scale-95"
+                                >
+                                    Review
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <!-- Empty state check simulation -->
+                <div
+                    class="hidden flex-col items-center justify-center py-xl text-center"
+                    id="empty-state"
+                >
+                    <span
+                        class="material-symbols-outlined text-[64px] text-outline opacity-20"
+                        >inventory_2</span
+                    >
+                    <p
+                        class="font-headline-sm text-headline-sm text-primary mt-md"
+                    >
+                        Queue is clear
+                    </p>
+                    <p
+                        class="font-body-md text-body-md text-on-surface-variant"
+                    >
+                        All prioritized expenses have been reviewed.
+                    </p>
+                    <button
+                        class="mt-lg px-lg py-md bg-primary text-on-primary rounded-lg font-label-md text-label-md"
+                    >
+                        Add New Task
+                    </button>
+                </div>
+            </section>
+        </main>
+        <script>
+            // Simple Micro-interactions
+            document.querySelectorAll("button, a").forEach((el) => {
+                el.addEventListener("mousedown", () => {
+                    el.classList.add("scale-95");
+                });
+                el.addEventListener("mouseup", () => {
+                    el.classList.remove("scale-95");
+                });
+                el.addEventListener("mouseleave", () => {
+                    el.classList.remove("scale-95");
+                });
             });
-            el.addEventListener('mouseup', () => {
-                el.classList.remove('scale-95');
-            });
-            el.addEventListener('mouseleave', () => {
-                el.classList.remove('scale-95');
-            });
-        });
 
-        // Search Bar Focus Effect
-        const searchInput = document.querySelector('input[type="text"]');
-        const searchContainer = searchInput.parentElement;
-        searchInput.addEventListener('focus', () => {
-            searchContainer.classList.add('border-primary', 'ring-2', 'ring-primary-fixed');
-        });
-        searchInput.addEventListener('blur', () => {
-            searchContainer.classList.remove('border-primary', 'ring-2', 'ring-primary-fixed');
-        });
-    </script>
-
-</body></html>
+            // Search Bar Focus Effect
+            const searchInput = document.querySelector('input[type="text"]');
+            const searchContainer = searchInput.parentElement;
+            searchInput.addEventListener("focus", () => {
+                searchContainer.classList.add(
+                    "border-primary",
+                    "ring-2",
+                    "ring-primary-fixed",
+                );
+            });
+            searchInput.addEventListener("blur", () => {
+                searchContainer.classList.remove(
+                    "border-primary",
+                    "ring-2",
+                    "ring-primary-fixed",
+                );
+            });
+        </script>
+    </body>
+</html>

@@ -55,11 +55,11 @@ describe("useStageStepper", () => {
             expect(result.current.map((step) => step.state)).toEqual(
                 expectedStatesByStage[currentStage],
             );
-            expect(result.current.every((step) => !step.isOnHold)).toBe(true);
+            expect(result.current.every((step) => !step.isPaused)).toBe(true);
         },
     );
 
-    test("places the on-hold state only on the current step", () => {
+    test("marks an on-hold case as paused without changing its stage position", () => {
         const { result } = renderHook(() =>
             useStageStepper({
                 currentStage: "AP Review",
@@ -67,7 +67,10 @@ describe("useStageStepper", () => {
             }),
         );
 
-        expect(result.current.map((step) => step.isOnHold)).toEqual([
+        expect(result.current.map((step) => step.state)).toEqual(
+            expectedStatesByStage["AP Review"],
+        );
+        expect(result.current.map((step) => step.isPaused)).toEqual([
             false,
             false,
             false,

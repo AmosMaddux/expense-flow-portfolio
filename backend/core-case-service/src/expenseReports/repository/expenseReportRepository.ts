@@ -698,8 +698,7 @@ async function readCurrentReportForTransition(
         ? await query.for("update")
         : await query;
     const currentStage = currentReport[0]?.currentStage as
-        | ExpenseReportStage
-        | undefined;
+        ExpenseReportStage | undefined;
 
     return currentStage === undefined ? undefined : { currentStage };
 }
@@ -732,9 +731,7 @@ async function writeTransitionAuditEntry(
     request: TransitionExpenseReportStageRequest,
     stageBeforeAction: ExpenseReportStage,
     action:
-        | "transition_approved"
-        | "transition_denied"
-        | "transition_sent_back",
+        "transition_approved" | "transition_denied" | "transition_sent_back",
     denialReason?: string,
     outcomeReason?: string,
 ): Promise<void> {

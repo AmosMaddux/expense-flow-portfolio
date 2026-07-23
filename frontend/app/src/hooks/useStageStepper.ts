@@ -18,7 +18,7 @@ export interface UseStageStepperInput {
 }
 
 export interface StageStepperItem {
-    isOnHold: boolean;
+    isPaused: boolean;
     stage: ExpenseReportStage;
     state: StageStepState;
 }
@@ -36,7 +36,7 @@ export function useStageStepper({
         const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
 
         return EXPENSE_REPORT_STAGES.map((stage, index) => ({
-            isOnHold: onHold && index === currentStageIndex,
+            isPaused: onHold && index === currentStageIndex,
             stage,
             state: getStageState(index, currentStageIndex),
         }));

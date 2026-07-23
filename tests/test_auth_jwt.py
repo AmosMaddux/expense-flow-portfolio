@@ -602,6 +602,13 @@ def encode_base64url_json(value: dict[str, Any]) -> str:
 
 
 def should_skip_secret_scan(relative_path: str) -> bool:
+    binary_asset_suffixes = {
+        ".png",
+    }
+
+    if Path(relative_path).suffix in binary_asset_suffixes:
+        return True
+
     return relative_path in {
         "package-lock.json",
         "uv.lock",

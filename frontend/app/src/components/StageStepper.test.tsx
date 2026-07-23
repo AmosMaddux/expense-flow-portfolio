@@ -47,13 +47,11 @@ describe("StageStepper", () => {
         );
         const steps = getAllByRole("listitem");
 
-        expect(getByRole("status").textContent).toBe("On hold");
-        expect(steps[2]?.className).toContain(
-            "ef-stage-stepper__item--on-hold",
-        );
+        expect(getByRole("status").textContent).toBe("Paused");
+        expect(steps[2]?.className).toContain("ef-stage-stepper__item--paused");
         expect(
             steps.filter((step) =>
-                step.className.includes("ef-stage-stepper__item--on-hold"),
+                step.className.includes("ef-stage-stepper__item--paused"),
             ),
         ).toHaveLength(1);
     });

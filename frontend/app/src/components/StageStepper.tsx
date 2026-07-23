@@ -4,8 +4,9 @@ import {
     EXPENSE_REPORT_STAGES,
     useStageStepper,
     type ExpenseReportStage,
-} from "../hooks";
-import "./StageStepper.css";
+} from "../hooks/useStageStepper";
+
+export { EXPENSE_REPORT_STAGES, type ExpenseReportStage };
 
 export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
     currentStage: ExpenseReportStage;
@@ -21,8 +22,26 @@ export function StageStepper({
     onHold = false,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
-    const steps = useStageStepper({ currentStage, onHold });
+    const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
+    const steps = useStageStepper({ currentStage, onHold });
+
+    if (currentStageIndex === -1) {
+        return (
+            <ol
+                aria-label="Expense Report stage progress"
+                className={`${classes} ef-stage-stepper--invalid`}
+                {...stepperProps}
+            >
+                <li className="ef-stage-stepper__item ef-stage-stepper__item--invalid">
+                    <span className="ef-stage-stepper__marker">!</span>
+                    <span className="ef-stage-stepper__label">
+                        Unknown workflow stage
+                    </span>
+                </li>
+            </ol>
+        );
+    }
 
     return (
         <ol
@@ -30,11 +49,11 @@ export function StageStepper({
             className={classes}
             {...stepperProps}
         >
-            {steps.map(({ isOnHold, stage, state }, index) => {
+            {steps.map(({ isPaused, stage, state }, index) => {
                 const itemClasses = [
                     "ef-stage-stepper__item",
                     `ef-stage-stepper__item--${state}`,
-                    isOnHold ? "ef-stage-stepper__item--on-hold" : undefined,
+                    isPaused ? "ef-stage-stepper__item--paused" : undefined,
                 ]
                     .filter(Boolean)
                     .join(" ");
@@ -46,19 +65,16 @@ export function StageStepper({
                         data-state={state}
                         key={stage}
                     >
-                        <span
-                            aria-hidden="true"
-                            className="ef-stage-stepper__marker"
-                        >
+                        <span className="ef-stage-stepper__marker">
                             {index + 1}
                         </span>
                         <span className="ef-stage-stepper__label">{stage}</span>
-                        {isOnHold ? (
+                        {isPaused ? (
                             <span
-                                className="ef-stage-stepper__on-hold"
+                                className="ef-stage-stepper__paused"
                                 role="status"
                             >
-                                On hold
+                                Paused
                             </span>
                         ) : null}
                     </li>
@@ -67,5 +83,3 @@ export function StageStepper({
         </ol>
     );
 }
-
-export { EXPENSE_REPORT_STAGES, type ExpenseReportStage };
