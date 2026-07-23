@@ -3,14 +3,15 @@ import { getNavigationItemsForRole, type RoleName } from "./navigation";
 
 type AppShellProps = {
     signedInRole: RoleName;
+    currentPath?: string;
 };
 
 /**
  * Renders the persistent ExpenseFlow application shell for the signed-in role.
  */
-export function AppShell({ signedInRole }: AppShellProps): JSX.Element {
+export function AppShell({ signedInRole, currentPath }: AppShellProps): JSX.Element {
     const visibleNavigationItems = getNavigationItemsForRole(signedInRole);
-    const activeNavigationPath = visibleNavigationItems[0]?.path;
+    const activeNavigationPath = currentPath ?? window.location.pathname;
 
     return (
         <div className="app-shell">
@@ -18,18 +19,16 @@ export function AppShell({ signedInRole }: AppShellProps): JSX.Element {
                 <div className="sidebar__brand">ExpenseFlow</div>
                 <nav className="sidebar__nav" aria-label="Workspace sections">
                     {visibleNavigationItems.map((item) => (
-                        <span
+                        <a
                             aria-current={
-                                item.path === activeNavigationPath
-                                    ? "page"
-                                    : undefined
+                                item.path === activeNavigationPath ? "page" : undefined
                             }
-                            aria-disabled="true"
                             className="sidebar__link"
+                            href={item.path}
                             key={item.path}
                         >
                             {item.label}
-                        </span>
+                        </a>
                     ))}
                 </nav>
             </aside>
@@ -42,17 +41,11 @@ export function AppShell({ signedInRole }: AppShellProps): JSX.Element {
                     <div className="topbar__tenant">{signedInRole}</div>
                 </header>
                 <main className="workspace__content">
-                    <section
-                        className="screen-placeholder"
-                        aria-label="Screen content"
-                    >
-                        <p className="screen-placeholder__label">
-                            Screen Region
-                        </p>
+                    <section className="screen-placeholder" aria-label="Screen content">
+                        <p className="screen-placeholder__label">Screen Region</p>
                         <h2>Navigation-ready app shell</h2>
                         <p>
-                            Operator and portal screens will render inside this
-                            shared frame.
+                            Operator and portal screens will render inside this shared frame.
                         </p>
                     </section>
                 </main>
@@ -70,21 +63,6 @@ export default function App(): JSX.Element {
     if (isRestoring) {
         return <AppStatus message="Restoring session" />;
     }
-
-    // return (<>
-    //     <h1>USING BYPASS DO NOT COMMIT IN THIS STATE</h1>
-    //     <AppShell signedInRole="Employee" />
-    // </>);
-
-    // return (<>
-    //     <h1>USING BYPASS DO NOT COMMIT IN THIS STATE</h1>
-    //     <AppShell signedInRole="Department Manager" />
-    // </>);
-
-    // return (<>
-    //     <h1>USING BYPASS DO NOT COMMIT IN THIS STATE</h1>
-    //     <AppShell signedInRole="Finance Admin" />
-    // </>);
 
     if (user === null) {
         return <AppStatus message="Sign in to continue" />;
@@ -107,10 +85,7 @@ function AppStatus({ message }: { message: string }): JSX.Element {
                     </div>
                 </header>
                 <main className="workspace__content">
-                    <section
-                        className="screen-placeholder"
-                        aria-label="Screen content"
-                    >
+                    <section className="screen-placeholder" aria-label="Screen content">
                         <p className="screen-placeholder__label">{message}</p>
                     </section>
                 </main>

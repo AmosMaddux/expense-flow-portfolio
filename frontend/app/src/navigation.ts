@@ -16,6 +16,7 @@ export type NavigationItem = {
 };
 
 const internalRoles = ["Finance Admin", "Department Manager"] as const;
+const financeAdminOnlyRoles = ["Finance Admin"] as const;
 
 export const navigationItems = [
     {
@@ -56,7 +57,7 @@ export const navigationItems = [
     {
         label: "Team & Users",
         path: "/team-users",
-        allowedRoles: internalRoles,
+        allowedRoles: financeAdminOnlyRoles,
     },
     {
         label: "My Submissions",

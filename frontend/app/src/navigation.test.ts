@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { getNavigationItemsForRole, type RoleName } from "./navigation";
 
-const internalNavigationLabels = [
+const financeAdminNavigationLabels = [
     "Finance Dashboard",
     "Expense Reports",
     "All Transactions",
@@ -13,20 +13,30 @@ const internalNavigationLabels = [
     "Team & Users",
 ];
 
+const departmentManagerNavigationLabels = [
+    "Finance Dashboard",
+    "Expense Reports",
+    "All Transactions",
+    "Approval Queue",
+    "Receipts",
+    "Policy Reference",
+    "GL Mapping",
+];
+
 function labelsForRole(role: RoleName): string[] {
     return getNavigationItemsForRole(role).map((item) => item.label);
 }
 
 describe("sidebar navigation", () => {
-    test("renders all internal navigation items for Finance Admin", () => {
+    test("renders Finance Admin navigation including Team & Users", () => {
         expect(labelsForRole("Finance Admin")).toStrictEqual(
-            internalNavigationLabels,
+            financeAdminNavigationLabels,
         );
     });
 
-    test("renders all internal navigation items for Department Manager", () => {
+    test("renders Department Manager navigation without user management", () => {
         expect(labelsForRole("Department Manager")).toStrictEqual(
-            internalNavigationLabels,
+            departmentManagerNavigationLabels,
         );
     });
 
