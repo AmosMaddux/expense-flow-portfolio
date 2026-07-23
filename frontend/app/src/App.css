@@ -381,12 +381,15 @@ button:disabled {
 }
 
 .sidebar__link {
+    display: block;
     border-radius: 6px;
     color: #d9e2ec;
     padding: 10px 12px;
+    text-decoration: none;
 }
 
-.sidebar__link[aria-current="page"] {
+.sidebar__link[aria-current="page"],
+.sidebar__link:hover {
     background: #243b53;
     color: #fff;
 }
@@ -426,7 +429,7 @@ button:disabled {
 }
 
 .screen-placeholder {
-    min-height: 320px;
+    min-height: 480px;
     border: 1px dashed #9fb3c8;
     border-radius: 8px;
     background: #fff;
@@ -470,5 +473,9 @@ button:disabled {
     .topbar {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .topbar__tenant {
+        white-space: normal;
     }
 }

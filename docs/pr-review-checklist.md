@@ -72,9 +72,9 @@ Return findings first, ordered by severity. Include file and line references whe
     - Redact or tokenize controlled values before they reach logs, errors, traces, analytics events, queues, or webhooks.
     - Confirm screenshots, fixtures, tests, and examples also avoid controlled plaintext data.
 - [ ] Comments follow the repository policy in `AGENTS.md`.
-  - Confirm exported/public functions, public classes, and public methods have short docstrings or JSDoc comments where required.
-  - Confirm inline comments explain non-obvious intent, constraints, tenant-isolation decisions, database assumptions, workarounds, performance choices, or surprising behavior.
-  - Confirm stale or redundant comments were updated or removed.
+    - Confirm exported/public functions, public classes, and public methods have short docstrings or JSDoc comments where required.
+    - Confirm inline comments explain non-obvious intent, constraints, tenant-isolation decisions, database assumptions, workarounds, performance choices, or surprising behavior.
+    - Confirm stale or redundant comments were updated or removed.
 
 ## Review Notes
 

@@ -12,6 +12,7 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
+import { getNavigationItemsForRole } from "./navigation";
 
 type UnauthenticatedView = "sign-in" | "mfa" | "reset" | "reset-confirmation";
 type PendingCredentials = Omit<LoginRequest, "totpCode">;
@@ -20,21 +21,23 @@ export type AppProps = {
     tenantId?: string;
 };
 
-const navigationItems = ["Case Queue", "Employee Portal", "Administration"];
+type RoleLanding = {
+    label: string;
+    path: string;
+};
+
+const roleLandings: Record<Role, RoleLanding> = {
+    "Finance Admin": { label: "Case Queue", path: "/approval-queue" },
+    "Department Manager": { label: "Case Queue", path: "/approval-queue" },
+    Employee: { label: "Employee Portal", path: "/my-submissions" },
+    Admin: { label: "Administration", path: "/roles-permissions" },
+};
 
 /**
  * Selects the first workspace a role may use after authentication.
  */
 export function getRoleLandingScreen(role: Role): string {
-    if (role === "Employee") {
-        return "Employee Portal";
-    }
-
-    if (role === "Admin") {
-        return "Administration";
-    }
-
-    return "Case Queue";
+    return roleLandings[role].label;
 }
 
 /**
@@ -61,8 +64,8 @@ export default function App({
 
     if (session.isAuthenticated && session.user !== null) {
         return (
-            <AuthenticatedWorkspace
-                role={session.user.role}
+            <AppShell
+                signedInRole={session.user.role}
                 onLogout={async () => {
                     await session.logout();
                     setPendingCredentials(null);
@@ -137,32 +140,28 @@ export default function App({
     );
 }
 
-type AuthenticatedWorkspaceProps = {
-    role: Role;
-    onLogout: () => Promise<void>;
+type AppShellProps = {
+    signedInRole: Role;
+    currentPath?: string;
+    onLogout?: () => Promise<void>;
 };
 
 /**
- * Renders the authenticated shell at the current role's landing screen.
+ * Renders the persistent ExpenseFlow application shell for the signed-in role.
  */
-function AuthenticatedWorkspace({
-    role,
+export function AppShell({
+    signedInRole,
+    currentPath,
     onLogout,
-}: AuthenticatedWorkspaceProps): JSX.Element {
+}: AppShellProps): JSX.Element {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const landingScreen = getRoleLandingScreen(role);
-
-    const visibleItems = navigationItems.filter((item) => {
-        if (role === "Employee") {
-            return item === "Employee Portal";
-        }
-
-        if (role === "Admin") {
-            return item === "Administration";
-        }
-
-        return item === "Case Queue";
-    });
+    const visibleNavigationItems = getNavigationItemsForRole(signedInRole);
+    const landing = roleLandings[signedInRole];
+    const activeNavigationPath =
+        currentPath ??
+        (window.location.pathname === "/"
+            ? landing.path
+            : window.location.pathname);
 
     return (
         <div className="app-shell">
@@ -174,49 +173,56 @@ function AuthenticatedWorkspace({
                     ExpenseFlow
                 </div>
                 <nav className="sidebar__nav" aria-label="Workspace sections">
-                    {visibleItems.map((item) => (
-                        <span
+                    {visibleNavigationItems.map((item) => (
+                        <a
                             aria-current={
-                                item === landingScreen ? "page" : undefined
+                                item.path === activeNavigationPath
+                                    ? "page"
+                                    : undefined
                             }
                             className="sidebar__link"
-                            key={item}
+                            href={item.path}
+                            key={item.path}
                         >
-                            {item}
-                        </span>
+                            {item.label}
+                        </a>
                     ))}
                 </nav>
             </aside>
             <div className="workspace">
                 <header className="topbar">
                     <div>
-                        <p className="topbar__eyebrow">{role}</p>
-                        <h1>{landingScreen}</h1>
+                        <p className="topbar__eyebrow">{signedInRole}</p>
+                        <h1>{landing.label}</h1>
                     </div>
-                    <button
-                        className="button button--secondary button--compact"
-                        disabled={isLoggingOut}
-                        onClick={() => {
-                            setIsLoggingOut(true);
-                            void onLogout().finally(() =>
-                                setIsLoggingOut(false),
-                            );
-                        }}
-                        type="button"
-                    >
-                        {isLoggingOut ? "Signing out…" : "Sign out"}
-                    </button>
+                    {onLogout === undefined ? (
+                        <div className="topbar__tenant">{signedInRole}</div>
+                    ) : (
+                        <button
+                            className="button button--secondary button--compact"
+                            disabled={isLoggingOut}
+                            onClick={() => {
+                                setIsLoggingOut(true);
+                                void onLogout().finally(() =>
+                                    setIsLoggingOut(false),
+                                );
+                            }}
+                            type="button"
+                        >
+                            {isLoggingOut ? "Signing out…" : "Sign out"}
+                        </button>
+                    )}
                 </header>
                 <main className="workspace__content">
                     <section
                         className="screen-placeholder"
-                        aria-label={`${landingScreen} content`}
+                        aria-label={`${landing.label} content`}
                     >
                         <p className="screen-placeholder__label">Workspace</p>
-                        <h2>{landingScreen}</h2>
+                        <h2>{landing.label}</h2>
                         <p>
                             You are signed in with the permissions assigned to
-                            the {role} role.
+                            the {signedInRole} role.
                         </p>
                     </section>
                 </main>
