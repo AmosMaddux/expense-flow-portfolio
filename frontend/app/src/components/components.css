@@ -197,8 +197,8 @@
     display: none;
 }
 
-.ef-stage-stepper__item--complete::before,
-.ef-stage-stepper__item--complete::after,
+.ef-stage-stepper__item--done::before,
+.ef-stage-stepper__item--done::after,
 .ef-stage-stepper__item--current::before {
     background: #0b5fff;
 }
@@ -223,7 +223,7 @@
     font-weight: 800;
 }
 
-.ef-stage-stepper__item--complete .ef-stage-stepper__marker {
+.ef-stage-stepper__item--done .ef-stage-stepper__marker {
     border-color: #0b5fff;
     background: #0b5fff;
     color: #ffffff;
@@ -233,6 +233,12 @@
     border-color: #0b5fff;
     color: #0b5fff;
     box-shadow: 0 0 0 4px #d9e8ff;
+}
+
+.ef-stage-stepper__item--paused .ef-stage-stepper__marker {
+    border-color: #f7c948;
+    color: #8d2b0b;
+    box-shadow: 0 0 0 4px #fff3c4;
 }
 
 .ef-stage-stepper__item--invalid .ef-stage-stepper__marker {
@@ -248,13 +254,25 @@
     line-height: 1.35;
 }
 
-.ef-stage-stepper__item--complete .ef-stage-stepper__label,
+.ef-stage-stepper__item--done .ef-stage-stepper__label,
 .ef-stage-stepper__item--current .ef-stage-stepper__label {
     color: #102a43;
 }
 
 .ef-stage-stepper__item--invalid .ef-stage-stepper__label {
     color: #8a1c1c;
+}
+
+.ef-stage-stepper__paused {
+    min-height: 22px;
+    border: 1px solid #f7c948;
+    border-radius: 999px;
+    background: #fff3c4;
+    color: #8d2b0b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    line-height: 1;
+    padding: 5px 8px;
 }
 
 @media (max-width: 760px) {

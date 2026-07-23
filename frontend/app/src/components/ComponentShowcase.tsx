@@ -39,6 +39,7 @@ export function ComponentShowcase(): JSX.Element {
             <div className="component-showcase__group">
                 <h3>Stage Stepper</h3>
                 <StageStepper currentStage="AP Review" />
+                <StageStepper currentStage="Manager Approval" onHold />
             </div>
         </section>
     );

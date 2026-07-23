@@ -92,15 +92,9 @@ describe("shared component primitives", () => {
 
         const stages = getAllByRole("listitem");
 
-        expect(stages[0]?.className).toContain(
-            "ef-stage-stepper__item--complete",
-        );
-        expect(stages[1]?.className).toContain(
-            "ef-stage-stepper__item--complete",
-        );
-        expect(stages[2]?.className).toContain(
-            "ef-stage-stepper__item--complete",
-        );
+        expect(stages[0]?.className).toContain("ef-stage-stepper__item--done");
+        expect(stages[1]?.className).toContain("ef-stage-stepper__item--done");
+        expect(stages[2]?.className).toContain("ef-stage-stepper__item--done");
         expect(stages[3]?.className).toContain(
             "ef-stage-stepper__item--current",
         );
@@ -123,5 +117,20 @@ describe("shared component primitives", () => {
         expect(fallback.className).toContain("ef-stage-stepper__item--invalid");
         expect(fallback.hasAttribute("aria-current")).toBe(false);
         expect(queryByText("Archived")).toBeNull();
+    });
+
+    test("renders a paused indicator on the current stage for on-hold cases", () => {
+        const { getAllByRole, getByText } = render(
+            <StageStepper currentStage="Manager Approval" onHold />,
+        );
+
+        const stages = getAllByRole("listitem");
+
+        expect(stages).toHaveLength(6);
+        expect(stages[2]?.getAttribute("aria-current")).toBe("step");
+        expect(stages[2]?.className).toContain(
+            "ef-stage-stepper__item--paused",
+        );
+        expect(getByText("Paused")).toBeTruthy();
     });
 });
