@@ -1,30 +1,127 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { Badge, Button, OverdueBadge, StageStepper, StatusBadge } from ".";
+import {
+    Badge,
+    Button,
+    EXPENSE_REPORT_STAGES,
+    OverdueBadge,
+    StageStepper,
+    StatusBadge,
+    type ExpenseReportStage,
+} from ".";
 
 afterEach(() => {
     cleanup();
 });
 
 describe("shared component primitives", () => {
-    test("renders buttons, badges, and the stage stepper without errors", () => {
-        const { getAllByText, getByRole, getByText } = render(
+    test("button defaults to a safe type and applies variant and size classes", () => {
+        const { getByRole } = render(
+            <Button size="lg" variant="danger" disabled>
+                Reject
+            </Button>,
+        );
+
+        const button = getByRole("button", { name: "Reject" });
+
+        expect(button.getAttribute("type")).toBe("button");
+        expect(button.className).toContain("ef-button--danger");
+        expect(button.className).toContain("ef-button--lg");
+        expect(button.hasAttribute("disabled")).toBe(true);
+    });
+
+    test("badge primitives apply the requested tones", () => {
+        const { getByText } = render(
             <div>
-                <Button>Approve</Button>
-                <Badge>Drafted</Badge>
+                <Badge tone="warning">Needs receipt</Badge>
                 <StatusBadge label="Manager Approval" tone="info" />
-                <OverdueBadge isOverdue />
-                <StageStepper currentStage="AP Review" />
             </div>,
         );
 
-        expect(getByRole("button", { name: "Approve" })).toBeTruthy();
-        expect(getAllByText("Drafted").length).toBeGreaterThan(0);
-        expect(getAllByText("Manager Approval").length).toBeGreaterThan(0);
-        expect(getByText("Overdue")).toBeTruthy();
+        expect(getByText("Needs receipt").className).toContain(
+            "ef-badge--warning",
+        );
+        expect(getByText("Manager Approval").className).toContain(
+            "ef-badge--info",
+        );
+    });
+
+    test("overdue badge renders overdue and on-track states with expected tones", () => {
+        const { getByText } = render(
+            <div>
+                <OverdueBadge isOverdue />
+                <OverdueBadge isOverdue={false} />
+            </div>,
+        );
+
+        expect(getByText("Overdue").className).toContain("ef-badge--danger");
+        expect(getByText("On track").className).toContain("ef-badge--success");
+    });
+
+    test("stage stepper preserves the canonical stage order", () => {
+        const { getAllByRole } = render(
+            <StageStepper currentStage="Manager Approval" />,
+        );
+
         expect(
-            getByRole("list", { name: "Expense Report stage progress" }),
-        ).toBeTruthy();
+            getAllByRole("listitem").map((stage) => stage.textContent),
+        ).toEqual(
+            EXPENSE_REPORT_STAGES.map((stage, index) => `${index + 1}${stage}`),
+        );
+    });
+
+    test("stage stepper marks exactly one current stage", () => {
+        const { getAllByRole } = render(
+            <StageStepper currentStage="AP Review" />,
+        );
+
+        const stages = getAllByRole("listitem");
+        const currentStages = stages.filter(
+            (stage) => stage.getAttribute("aria-current") === "step",
+        );
+
+        expect(currentStages).toHaveLength(1);
+        expect(currentStages[0]?.textContent).toBe("4AP Review");
+    });
+
+    test("stage stepper marks stages before current as complete and after as upcoming", () => {
+        const { getAllByRole } = render(
+            <StageStepper currentStage="AP Review" />,
+        );
+
+        const stages = getAllByRole("listitem");
+
+        expect(stages[0]?.className).toContain(
+            "ef-stage-stepper__item--complete",
+        );
+        expect(stages[1]?.className).toContain(
+            "ef-stage-stepper__item--complete",
+        );
+        expect(stages[2]?.className).toContain(
+            "ef-stage-stepper__item--complete",
+        );
+        expect(stages[3]?.className).toContain(
+            "ef-stage-stepper__item--current",
+        );
+        expect(stages[4]?.className).toContain(
+            "ef-stage-stepper__item--upcoming",
+        );
+        expect(stages[5]?.className).toContain(
+            "ef-stage-stepper__item--upcoming",
+        );
+    });
+
+    test("stage stepper renders an explicit fallback for an unknown current stage", () => {
+        const { getByRole, queryByText } = render(
+            <StageStepper currentStage={"Archived" as ExpenseReportStage} />,
+        );
+
+        const fallback = getByRole("listitem");
+
+        expect(fallback.textContent).toBe("!Unknown workflow stage");
+        expect(fallback.className).toContain("ef-stage-stepper__item--invalid");
+        expect(fallback.hasAttribute("aria-current")).toBe(false);
+        expect(queryByText("Archived")).toBeNull();
     });
 });

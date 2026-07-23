@@ -13,7 +13,6 @@ export type ExpenseReportStage = (typeof EXPENSE_REPORT_STAGES)[number];
 
 export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
     currentStage: ExpenseReportStage;
-    stages?: readonly ExpenseReportStage[];
 }
 
 /**
@@ -22,11 +21,27 @@ export interface StageStepperProps extends HTMLAttributes<HTMLOListElement> {
 export function StageStepper({
     className,
     currentStage,
-    stages = EXPENSE_REPORT_STAGES,
     ...stepperProps
 }: StageStepperProps): JSX.Element {
-    const currentStageIndex = stages.indexOf(currentStage);
+    const currentStageIndex = EXPENSE_REPORT_STAGES.indexOf(currentStage);
     const classes = ["ef-stage-stepper", className].filter(Boolean).join(" ");
+
+    if (currentStageIndex === -1) {
+        return (
+            <ol
+                aria-label="Expense Report stage progress"
+                className={`${classes} ef-stage-stepper--invalid`}
+                {...stepperProps}
+            >
+                <li className="ef-stage-stepper__item ef-stage-stepper__item--invalid">
+                    <span className="ef-stage-stepper__marker">!</span>
+                    <span className="ef-stage-stepper__label">
+                        Unknown workflow stage
+                    </span>
+                </li>
+            </ol>
+        );
+    }
 
     return (
         <ol
@@ -34,7 +49,7 @@ export function StageStepper({
             className={classes}
             {...stepperProps}
         >
-            {stages.map((stage, index) => {
+            {EXPENSE_REPORT_STAGES.map((stage, index) => {
                 const state = getStageState(index, currentStageIndex);
 
                 return (

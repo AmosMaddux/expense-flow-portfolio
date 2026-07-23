@@ -1,5 +1,3 @@
-import { ComponentShowcase } from "./components";
-
 const navigationItems = ["Case Queue", "Employee Portal", "Administration"];
 
 /**
@@ -35,7 +33,15 @@ export default function App(): JSX.Element {
                         className="screen-placeholder"
                         aria-label="Screen content"
                     >
-                        <ComponentShowcase />
+                        <p className="screen-placeholder__label">
+                            Case management workspace
+                        </p>
+                        <h2>Expense Report queue screen pending</h2>
+                        <p>
+                            This app shell is reserved for product surfaces such
+                            as the Case Queue, Case Detail, Employee Portal, and
+                            Administration workflows.
+                        </p>
                     </section>
                 </main>
             </div>
