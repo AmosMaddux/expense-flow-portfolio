@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
 import { useSession, type SessionUser } from "./auth";
+import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -49,7 +50,12 @@ const protectedRoutes = navigationItems.map((item) =>
     createRoute({
         getParentRoute: () => authenticatedRoute,
         path: item.path,
-        component: () => <WorkspaceScreen item={item} />,
+        component: () =>
+            item.path === "/approval-queue" ? (
+                <CaseQueueScreen />
+            ) : (
+                <WorkspaceScreen item={item} />
+            ),
     }),
 );
 
