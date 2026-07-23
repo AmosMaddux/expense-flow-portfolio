@@ -6,7 +6,8 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test": "vitest run --environment jsdom"
     },
     "dependencies": {
         "react": "^18.3.1",
