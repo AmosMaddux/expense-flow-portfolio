@@ -8,6 +8,8 @@ import {
 import {
     QueryRequestError,
     createAuthenticatedQueryFn,
+    createExpenseFlowQueryClient,
+    createExpenseFlowQueryOptions,
     createTenantQueryKey,
     shouldRetryQueryFailure,
 } from "./queryClient";
@@ -25,10 +27,24 @@ const tenantTwoUser: SessionUser = {
 };
 
 function createSession(
-    response: Response,
+    response: Response | (() => Promise<Response> | Response),
 ): Pick<SessionContextValue, "authenticatedFetch"> {
     return {
-        authenticatedFetch: vi.fn(() => Promise.resolve(response)),
+        authenticatedFetch: vi.fn(() =>
+            Promise.resolve(
+                typeof response === "function" ? response() : response,
+            ),
+        ),
+    };
+}
+
+function createQuerySession(
+    user: SessionUser,
+    response: Response | (() => Promise<Response> | Response),
+): Pick<SessionContextValue, "authenticatedFetch" | "user"> {
+    return {
+        ...createSession(response),
+        user,
     };
 }
 
@@ -88,6 +104,43 @@ describe("createAuthenticatedQueryFn", () => {
         await expect(queryFn()).resolves.toBe(204);
     });
 
+    test("returns undefined for successful empty responses by default", async () => {
+        const session = createSession(new Response(null, { status: 204 }));
+        const queryFn = createAuthenticatedQueryFn(session, {
+            input: "/v1/case-queue/rollups",
+        });
+
+        await expect(queryFn()).resolves.toBeUndefined();
+    });
+
+    test("returns undefined for successful empty json responses by default", async () => {
+        const session = createSession(
+            new Response("", {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+        const queryFn = createAuthenticatedQueryFn(session, {
+            input: "/v1/case-queue/rollups",
+        });
+
+        await expect(queryFn()).resolves.toBeUndefined();
+    });
+
+    test("returns text for successful non-json responses by default", async () => {
+        const session = createSession(
+            new Response("synthetic export ready", {
+                status: 200,
+                headers: { "Content-Type": "text/plain" },
+            }),
+        );
+        const queryFn = createAuthenticatedQueryFn<string>(session, {
+            input: "/v1/case-queue/export-status",
+        });
+
+        await expect(queryFn()).resolves.toBe("synthetic export ready");
+    });
+
     test("throws a terminal auth error for unrecovered 401 responses", async () => {
         const session = createSession(new Response(null, { status: 401 }));
         const queryFn = createAuthenticatedQueryFn(session, {
@@ -98,15 +151,136 @@ describe("createAuthenticatedQueryFn", () => {
     });
 
     test("throws a query request error for other non-success responses", async () => {
-        const session = createSession(new Response(null, { status: 403 }));
+        const problemBody = {
+            detail: "Finance Admin role is required.",
+            title: "Forbidden",
+        };
+        const session = createSession(
+            new Response(JSON.stringify(problemBody), {
+                status: 403,
+                headers: { "Content-Type": "application/problem+json" },
+            }),
+        );
         const queryFn = createAuthenticatedQueryFn(session, {
             input: "/v1/case-queue/rollups",
         });
 
         await expect(queryFn()).rejects.toMatchObject({
+            body: problemBody,
+            message: "Finance Admin role is required.",
             name: "QueryRequestError",
             status: 403,
         } satisfies Partial<QueryRequestError>);
+    });
+});
+
+describe("createExpenseFlowQueryOptions", () => {
+    test("keeps tenant caches separate through the project query abstraction", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const keyParts = ["case-queue", "rollups"];
+        const tenantOneSession = createQuerySession(
+            tenantOneUser,
+            () =>
+                new Response(JSON.stringify({ tenant: "one" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+        const tenantTwoSession = createQuerySession(
+            tenantTwoUser,
+            () =>
+                new Response(JSON.stringify({ tenant: "two" }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(tenantOneSession, {
+                    input: "/v1/case-queue/rollups",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual({ tenant: "one" });
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(tenantTwoSession, {
+                    input: "/v1/case-queue/rollups",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual({ tenant: "two" });
+
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(tenantOneUser, keyParts),
+            ),
+        ).toEqual({ tenant: "one" });
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(tenantTwoUser, keyParts),
+            ),
+        ).toEqual({ tenant: "two" });
+        expect(tenantOneSession.authenticatedFetch).toHaveBeenCalledOnce();
+        expect(tenantTwoSession.authenticatedFetch).toHaveBeenCalledOnce();
+    });
+
+    test("does not enable queries until an authenticated tenant session exists", () => {
+        const session = {
+            authenticatedFetch: vi.fn(),
+            user: null,
+        } satisfies Pick<SessionContextValue, "authenticatedFetch" | "user">;
+
+        expect(
+            createExpenseFlowQueryOptions(session, {
+                input: "/v1/case-queue/rollups",
+                keyParts: ["case-queue", "rollups"],
+            }),
+        ).toMatchObject({
+            enabled: false,
+            queryKey: ["tenant", "anonymous", "case-queue", "rollups"],
+        });
+    });
+});
+
+describe("createExpenseFlowQueryClient", () => {
+    test("does not retry terminal authentication failures through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const queryFn = vi.fn(() =>
+            Promise.reject(
+                new AuthRequestError(401, "Authentication was rejected."),
+            ),
+        );
+
+        await expect(
+            queryClient.fetchQuery({
+                queryFn,
+                queryKey: ["tenant", tenantOneUser.tenantId, "case-queue"],
+            }),
+        ).rejects.toBeInstanceOf(AuthRequestError);
+
+        expect(queryFn).toHaveBeenCalledOnce();
+    });
+
+    test("uses the standard retry budget for transient failures through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const queryFn = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("Synthetic transient failure."))
+            .mockRejectedValueOnce(new Error("Synthetic transient failure."))
+            .mockResolvedValue({ ready: true });
+
+        await expect(
+            queryClient.fetchQuery({
+                queryFn,
+                queryKey: ["tenant", tenantOneUser.tenantId, "case-queue"],
+            }),
+        ).resolves.toEqual({ ready: true });
+
+        expect(queryFn).toHaveBeenCalledTimes(3);
     });
 });
 

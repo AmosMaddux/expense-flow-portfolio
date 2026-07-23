@@ -1,7 +1,12 @@
-import { QueryClient } from "@tanstack/react-query";
+import {
+    QueryClient,
+    useQuery,
+    type UseQueryResult,
+} from "@tanstack/react-query";
 
 import {
     AuthRequestError,
+    useSession,
     type SessionContextValue,
     type SessionUser,
 } from "../auth";
@@ -12,15 +17,37 @@ export type AuthenticatedQueryRequest<TData> = {
     parseResponse?: (response: Response) => Promise<TData> | TData;
 };
 
+export type ExpenseFlowQueryKey = readonly ["tenant", string, ...unknown[]];
+
+export type ExpenseFlowQueryRequest<TData> =
+    AuthenticatedQueryRequest<TData> & {
+        enabled?: boolean;
+        gcTime?: number;
+        keyParts: readonly unknown[];
+        refetchOnWindowFocus?: boolean;
+        staleTime?: number;
+    };
+
+export type ExpenseFlowQueryOptions<TData> = {
+    enabled: boolean;
+    gcTime?: number;
+    queryFn: () => Promise<TData>;
+    queryKey: ExpenseFlowQueryKey;
+    refetchOnWindowFocus?: boolean;
+    staleTime?: number;
+};
+
 /** Represents a rejected request to a read-model or BFF API. */
 export class QueryRequestError extends Error {
     public readonly status: number;
+    public readonly body: unknown;
 
     /** Creates a query request error with its HTTP response status. */
-    public constructor(status: number, message: string) {
+    public constructor(status: number, message: string, body?: unknown) {
         super(message);
         this.name = "QueryRequestError";
         this.status = status;
+        this.body = body;
     }
 }
 
@@ -30,8 +57,30 @@ export class QueryRequestError extends Error {
 export function createTenantQueryKey(
     user: SessionUser,
     keyParts: readonly unknown[],
-): readonly unknown[] {
+): ExpenseFlowQueryKey {
     return ["tenant", user.tenantId, ...keyParts];
+}
+
+/**
+ * Builds the only supported options shape for authenticated TanStack queries.
+ */
+export function createExpenseFlowQueryOptions<TData>(
+    session: Pick<SessionContextValue, "authenticatedFetch" | "user">,
+    request: ExpenseFlowQueryRequest<TData>,
+): ExpenseFlowQueryOptions<TData> {
+    const queryKey =
+        session.user === null
+            ? (["tenant", "anonymous", ...request.keyParts] as const)
+            : createTenantQueryKey(session.user, request.keyParts);
+
+    return {
+        enabled: session.user !== null && request.enabled !== false,
+        gcTime: request.gcTime,
+        queryFn: createAuthenticatedQueryFn(session, request),
+        queryKey,
+        refetchOnWindowFocus: request.refetchOnWindowFocus,
+        staleTime: request.staleTime,
+    };
 }
 
 /**
@@ -52,18 +101,28 @@ export function createAuthenticatedQueryFn<TData>(
         }
 
         if (!response.ok) {
-            throw new QueryRequestError(
-                response.status,
-                "Query request failed.",
-            );
+            throw await createQueryRequestError(response);
         }
 
         if (request.parseResponse !== undefined) {
             return request.parseResponse(response);
         }
 
-        return (await response.json()) as TData;
+        return readDefaultQueryResponse<TData>(response);
     };
+}
+
+/**
+ * Runs an authenticated, tenant-scoped TanStack query.
+ */
+export function useExpenseFlowQuery<TData>(
+    request: ExpenseFlowQueryRequest<TData>,
+): UseQueryResult<TData, Error> {
+    const session = useSession();
+
+    return useQuery<TData, Error>(
+        createExpenseFlowQueryOptions(session, request),
+    );
 }
 
 /**
@@ -94,4 +153,81 @@ export function createExpenseFlowQueryClient(): QueryClient {
             },
         },
     });
+}
+
+async function createQueryRequestError(
+    response: Response,
+): Promise<QueryRequestError> {
+    const body = await readResponseBody(response);
+
+    return new QueryRequestError(
+        response.status,
+        getErrorMessage(body) ?? response.statusText ?? "Query request failed.",
+        body,
+    );
+}
+
+async function readDefaultQueryResponse<TData>(
+    response: Response,
+): Promise<TData> {
+    if (response.status === 204) {
+        return undefined as TData;
+    }
+
+    const responseText = await response.text();
+    if (responseText.length === 0) {
+        return undefined as TData;
+    }
+
+    const contentType = response.headers.get("Content-Type") ?? "";
+    if (isJsonContentType(contentType)) {
+        return JSON.parse(responseText) as TData;
+    }
+
+    return responseText as TData;
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+    const contentType = response.headers.get("Content-Type") ?? "";
+    const responseText = await response.text().catch(() => "");
+    if (responseText.length === 0) {
+        return undefined;
+    }
+
+    if (isJsonContentType(contentType)) {
+        try {
+            return JSON.parse(responseText) as unknown;
+        } catch {
+            return undefined;
+        }
+    }
+
+    return responseText;
+}
+
+function getErrorMessage(body: unknown): string | undefined {
+    if (typeof body === "string") {
+        return body.length > 0 ? body : undefined;
+    }
+
+    if (body === null || typeof body !== "object") {
+        return undefined;
+    }
+
+    const record = body as Record<string, unknown>;
+    for (const field of ["detail", "message", "title"]) {
+        const value = record[field];
+        if (typeof value === "string" && value.length > 0) {
+            return value;
+        }
+    }
+
+    return undefined;
+}
+
+function isJsonContentType(contentType: string): boolean {
+    return (
+        contentType.includes("application/json") ||
+        contentType.includes("+json")
+    );
 }
