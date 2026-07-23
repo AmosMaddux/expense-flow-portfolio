@@ -33,4 +33,3 @@ describe("AppShell", () => {
         expect(within(sidebar).queryByText("Finance Dashboard")).toBeNull();
     });
 });
-

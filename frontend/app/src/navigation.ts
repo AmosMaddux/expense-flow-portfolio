@@ -98,4 +98,3 @@ export function getNavigationItemsForRole(role: RoleName): NavigationItem[] {
         (item.allowedRoles as readonly RoleName[]).includes(role),
     );
 }
-

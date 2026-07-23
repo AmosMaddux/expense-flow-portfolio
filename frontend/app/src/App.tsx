@@ -20,7 +20,9 @@ export function AppShell({ signedInRole }: AppShellProps): JSX.Element {
                     {visibleNavigationItems.map((item) => (
                         <span
                             aria-current={
-                                item.path === activeNavigationPath ? "page" : undefined
+                                item.path === activeNavigationPath
+                                    ? "page"
+                                    : undefined
                             }
                             aria-disabled="true"
                             className="sidebar__link"
@@ -40,11 +42,17 @@ export function AppShell({ signedInRole }: AppShellProps): JSX.Element {
                     <div className="topbar__tenant">{signedInRole}</div>
                 </header>
                 <main className="workspace__content">
-                    <section className="screen-placeholder" aria-label="Screen content">
-                        <p className="screen-placeholder__label">Screen Region</p>
+                    <section
+                        className="screen-placeholder"
+                        aria-label="Screen content"
+                    >
+                        <p className="screen-placeholder__label">
+                            Screen Region
+                        </p>
                         <h2>Navigation-ready app shell</h2>
                         <p>
-                            Operator and portal screens will render inside this shared frame.
+                            Operator and portal screens will render inside this
+                            shared frame.
                         </p>
                     </section>
                 </main>
@@ -99,7 +107,10 @@ function AppStatus({ message }: { message: string }): JSX.Element {
                     </div>
                 </header>
                 <main className="workspace__content">
-                    <section className="screen-placeholder" aria-label="Screen content">
+                    <section
+                        className="screen-placeholder"
+                        aria-label="Screen content"
+                    >
                         <p className="screen-placeholder__label">{message}</p>
                     </section>
                 </main>
