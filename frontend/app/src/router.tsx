@@ -13,14 +13,11 @@ import { z } from "zod";
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
 import { useSession, type SessionUser } from "./auth";
 import {
-    getNavigationItemsForRole,
+    getNavigationItemsForRoles,
     navigationItems,
     type NavigationItem,
     type RoleName,
 } from "./navigation";
-
-type DashboardPath =
-    "/finance-dashboard" | "/my-submissions" | "/roles-permissions";
 
 const loginSearchSchema = z.object({
     redirect: z.string().optional(),
@@ -78,21 +75,6 @@ export function ExpenseFlowRouter(): JSX.Element {
     return <RouterProvider router={router} />;
 }
 
-/**
- * Returns the default dashboard path for a signed-in role.
- */
-export function getDashboardPathForRole(role: RoleName): DashboardPath {
-    switch (role) {
-        case "Employee":
-            return "/my-submissions";
-        case "Admin":
-            return "/roles-permissions";
-        case "Department Manager":
-        case "Finance Admin":
-            return "/finance-dashboard";
-    }
-}
-
 function IndexRedirect(): JSX.Element {
     const session = useSession();
 
@@ -104,7 +86,7 @@ function IndexRedirect(): JSX.Element {
         return <RouteRedirect to="/login" />;
     }
 
-    return <RouteRedirect to={getDashboardPathForRole(session.user.role)} />;
+    return <RouteRedirect to={getDashboardPathForUser(session.user)} />;
 }
 
 function LoginRoute(): JSX.Element {
@@ -139,13 +121,14 @@ function AuthenticatedLayout(): JSX.Element {
     }
 
     if (!isPathAllowedForUser(location.pathname, session.user)) {
-        return (
-            <RouteRedirect to={getDashboardPathForRole(session.user.role)} />
-        );
+        return <RouteRedirect to={getDashboardPathForUser(session.user)} />;
     }
 
     return (
-        <AppShell signedInRole={session.user.role}>
+        <AppShell
+            signedInRole={session.user.role}
+            signedInRoles={session.user.roles}
+        >
             <RoutedWorkspaceOutlet />
         </AppShell>
     );
@@ -201,6 +184,9 @@ function AppStatus({ message }: { message: string }): JSX.Element {
     );
 }
 
+function getDashboardPathForUser(user: SessionUser): string {
+    return getNavigationItemsForRoles(user.roles)[0]?.path ?? "/login";
+}
 function getPostLoginPath(user: SessionUser, redirectPath?: string): string {
     if (
         redirectPath !== undefined &&
@@ -210,11 +196,11 @@ function getPostLoginPath(user: SessionUser, redirectPath?: string): string {
         return redirectPath;
     }
 
-    return getDashboardPathForRole(user.role);
+    return getDashboardPathForUser(user);
 }
 
 function isPathAllowedForUser(pathname: string, user: SessionUser): boolean {
-    return getNavigationItemsForRole(user.role).some(
+    return getNavigationItemsForRoles(user.roles).some(
         (item) => item.path === pathname,
     );
 }

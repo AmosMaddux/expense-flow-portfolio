@@ -9,7 +9,11 @@ import {
     type PropsWithChildren,
 } from "react";
 
-import { createAuthClient, type AuthClient } from "./authClient";
+import {
+    AuthRequestError,
+    createAuthClient,
+    type AuthClient,
+} from "./authClient";
 import type { AuthSession, LoginRequest, Role } from "./authSchemas";
 
 const defaultRefreshBufferMs = 60_000;
@@ -199,7 +203,10 @@ export function AuthProvider({
         ): Promise<Response> => {
             const accessToken = await getAccessToken();
             if (accessToken === null) {
-                throw new Error("An authenticated session is required.");
+                throw new AuthRequestError(
+                    401,
+                    "An authenticated session is required.",
+                );
             }
 
             const sendRequest = async (token: string): Promise<Response> => {
@@ -215,12 +222,25 @@ export function AuthProvider({
 
             const refreshedSession = await refreshSession();
             if (refreshedSession === null) {
-                return response;
+                throw new AuthRequestError(401, "Authentication was rejected.");
             }
 
-            return sendRequest(refreshedSession.accessToken);
+            const retryResponse = await sendRequest(
+                refreshedSession.accessToken,
+            );
+            if (retryResponse.status === 401) {
+                await invalidateSession();
+                throw new AuthRequestError(401, "Authentication was rejected.");
+            }
+
+            return retryResponse;
         },
-        [fetchImplementation, getAccessToken, refreshSession],
+        [
+            fetchImplementation,
+            getAccessToken,
+            invalidateSession,
+            refreshSession,
+        ],
     );
 
     const user = useMemo<SessionUser | null>(() => {

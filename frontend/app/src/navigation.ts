@@ -95,7 +95,16 @@ export const navigationItems = [
  * Returns the sidebar entries visible to the authenticated user's role.
  */
 export function getNavigationItemsForRole(role: RoleName): NavigationItem[] {
+    return getNavigationItemsForRoles([role]);
+}
+
+/**
+ * Returns the sidebar entries visible to any authenticated user role.
+ */
+export function getNavigationItemsForRoles(
+    roles: readonly RoleName[],
+): NavigationItem[] {
     return navigationItems.filter((item) =>
-        (item.allowedRoles as readonly RoleName[]).includes(role),
+        item.allowedRoles.some((allowedRole) => roles.includes(allowedRole)),
     );
 }

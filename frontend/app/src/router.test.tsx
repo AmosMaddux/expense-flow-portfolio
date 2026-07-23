@@ -9,11 +9,11 @@ const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 
-function createSession(role: Role): AuthSession {
+function createSession(role: Role, roles: Role[] = [role]): AuthSession {
     return {
         tenantId,
         userId,
-        roles: [role],
+        roles,
         accessToken: "synthetic-access-token",
         accessTokenExpiresAt: new Date(baseTime + 5 * 60_000).toISOString(),
     };
@@ -90,6 +90,20 @@ describe("ExpenseFlowRouter", () => {
             );
         },
     );
+
+    test("allows any assigned role to access matching routes and navigation", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Finance Admin", ["Finance Admin", "Employee"]),
+        );
+        window.history.pushState(null, "", "/my-submissions");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "My Submissions" });
+        expect(screen.getByText("Finance Dashboard")).not.toBeNull();
+        expect(screen.getByText("Submit Expense")).not.toBeNull();
+        expect(window.location.pathname).toBe("/my-submissions");
+    });
 
     test("redirects authenticated users away from routes their role cannot access", async () => {
         const authClient = createAuthClientMock("Employee");

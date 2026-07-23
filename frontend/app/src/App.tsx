@@ -1,10 +1,11 @@
 import { Outlet } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { getNavigationItemsForRole, type RoleName } from "./navigation";
+import { getNavigationItemsForRoles, type RoleName } from "./navigation";
 
 type AppShellProps = {
     signedInRole: RoleName;
+    signedInRoles?: readonly RoleName[];
     children?: ReactNode;
 };
 
@@ -14,9 +15,9 @@ type AppShellProps = {
 export function AppShell({
     children = <DefaultWorkspaceScreen />,
     signedInRole,
+    signedInRoles = [signedInRole],
 }: AppShellProps): JSX.Element {
-    const visibleNavigationItems = getNavigationItemsForRole(signedInRole);
-    const activeNavigationPath = currentPath ?? window.location.pathname;
+    const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
 
     return (
         <div className="app-shell">
@@ -66,24 +67,6 @@ export function AppShell({
     );
 }
 
-/**
- * Renders the app shell from the authenticated session context.
- */
-export default function App(): JSX.Element {
-    const { isRestoring, user } = useSession();
-
-    if (isRestoring) {
-        return <AppStatus message="Restoring session" />;
-    }
-
-    if (user === null) {
-        return <AppStatus message="Sign in to continue" />;
-    }
-
-    return <AppShell signedInRole={user.role} />;
-}
-
-function AppStatus({ message }: { message: string }): JSX.Element {
 function DefaultWorkspaceScreen(): JSX.Element {
     return (
         <section className="screen-placeholder" aria-label="Screen content">
