@@ -126,6 +126,7 @@ function AuthenticatedLayout(): JSX.Element {
 
     return (
         <AppShell
+            currentPath={location.pathname}
             signedInRole={session.user.role}
             signedInRoles={session.user.roles}
         >

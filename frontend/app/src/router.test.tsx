@@ -105,6 +105,26 @@ describe("ExpenseFlowRouter", () => {
         expect(window.location.pathname).toBe("/my-submissions");
     });
 
+    test("marks the routed workspace path as the active navigation item", async () => {
+        const authClient = createAuthClientMock("Department Manager");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Department Manager"),
+        );
+        window.history.pushState(null, "", "/approval-queue");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "Approval Queue" });
+        expect(
+            screen
+                .getByRole("link", { name: "Approval Queue" })
+                .getAttribute("aria-current"),
+        ).toBe("page");
+        expect(
+            screen
+                .getByRole("link", { name: "Finance Dashboard" })
+                .getAttribute("aria-current"),
+        ).toBeNull();
+    });
     test("redirects authenticated users away from routes their role cannot access", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(
