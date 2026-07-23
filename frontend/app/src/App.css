@@ -46,13 +46,14 @@ body {
 }
 
 .sidebar__link {
+    display: block;
     border-radius: 6px;
     color: #d9e2ec;
-    cursor: default;
     padding: 10px 12px;
+    text-decoration: none;
 }
 
-.sidebar__link:first-child,
+.sidebar__link[aria-current="page"],
 .sidebar__link:hover {
     background: #243b53;
     color: #ffffff;
