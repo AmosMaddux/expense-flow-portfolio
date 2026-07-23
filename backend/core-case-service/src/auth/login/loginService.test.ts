@@ -2,7 +2,10 @@ import { createPrivateKey, createPublicKey, createVerify } from "node:crypto";
 
 import { describe, expect, test, vi } from "vitest";
 
-import { InvalidCredentialsError } from "../shared/authenticationErrors.js";
+import {
+    InvalidCredentialsError,
+    MfaRequiredError,
+} from "../shared/authenticationErrors.js";
 import {
     createLoginService,
     type FailedLoginAuditEntry,
@@ -457,6 +460,23 @@ void describe("login service", () => {
         expect(
             repository.recordAcceptedTotpCounterAndCreateRefreshTokenMock,
         ).not.toHaveBeenCalled();
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
+    });
+
+    void test("requests MFA after valid primary credentials without recording a failure", async () => {
+        const repository = createRepository(storedCredential);
+        const passwordHasher = createPasswordHasher(true);
+        const loginService = createTestLoginService(repository, passwordHasher);
+
+        await expect(
+            loginService.login({
+                tenantId,
+                email: "employee@example.invalid",
+                password,
+            }),
+        ).rejects.toBeInstanceOf(MfaRequiredError);
+
+        expect(repository.failedAuditEntries).toEqual([]);
         expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
     });
 

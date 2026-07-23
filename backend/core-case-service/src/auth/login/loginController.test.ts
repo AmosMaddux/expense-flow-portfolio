@@ -20,6 +20,7 @@ import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
 import type { PasswordHasher } from "../shared/passwordHasher.js";
 import type { TotpSecretProtector } from "../shared/totpSecretProtector.js";
+import { MfaRequiredError } from "../shared/authenticationErrors.js";
 
 type TestResponse = Response & {
     statusMock: ReturnType<typeof vi.fn>;
@@ -143,6 +144,31 @@ void describe("login controller", () => {
             accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
             refreshToken: "synthetic-refresh-token",
             refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
+        });
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    void test("returns a machine-readable challenge when MFA is required", async () => {
+        const loginService: LoginService = {
+            login: vi.fn(() => Promise.reject(new MfaRequiredError())),
+        };
+        const handler = createPostLogin(loginService);
+        const response = createResponse();
+        const next = vi.fn() as NextFunction;
+        const request = {
+            body: {
+                tenantId,
+                email: "employee@example.invalid",
+                password: "synthetic-login-password",
+            },
+        } as Request;
+
+        await handler(request, response, next);
+
+        expect(response.statusMock).toHaveBeenCalledWith(401);
+        expect(response.jsonMock).toHaveBeenCalledWith({
+            code: "MFA_REQUIRED",
+            message: "MFA code is required.",
         });
         expect(next).not.toHaveBeenCalled();
     });

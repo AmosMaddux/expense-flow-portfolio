@@ -9,6 +9,16 @@ export class InvalidCredentialsError extends Error {
 }
 
 /**
+ * Represents valid primary credentials that require a second factor.
+ */
+export class MfaRequiredError extends Error {
+    public constructor() {
+        super("MFA code is required.");
+        this.name = "MfaRequiredError";
+    }
+}
+
+/**
  * Represents a generic second-factor authentication failure.
  */
 export class InvalidMfaCodeError extends Error {

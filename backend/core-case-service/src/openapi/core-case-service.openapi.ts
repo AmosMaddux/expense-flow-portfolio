@@ -20,6 +20,7 @@ import {
     loginRequestSchema,
     loginResponseSchema,
 } from "../auth/login/loginService.js";
+import { loginErrorResponseSchema } from "../auth/login/loginController.js";
 import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
@@ -146,6 +147,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "LoginResponse",
         loginResponseSchema,
     );
+    const loginErrorResponse = registry.register(
+        "LoginErrorResponse",
+        loginErrorResponseSchema,
+    );
 
     registry.registerPath({
         method: "get",
@@ -199,7 +204,13 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             401: {
-                description: "Invalid credentials or MFA code.",
+                description:
+                    "Invalid credentials, MFA required, or invalid MFA code.",
+                content: {
+                    "application/json": {
+                        schema: loginErrorResponse,
+                    },
+                },
             },
             400: problemJsonResponse("Malformed login request."),
             500: problemJsonResponse("Unexpected server error."),
