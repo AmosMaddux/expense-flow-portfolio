@@ -41,11 +41,18 @@ export function AppShell({ signedInRole, currentPath }: AppShellProps): JSX.Elem
                     <div className="topbar__tenant">{signedInRole}</div>
                 </header>
                 <main className="workspace__content">
-                    <section className="screen-placeholder" aria-label="Screen content">
-                        <p className="screen-placeholder__label">Screen Region</p>
-                        <h2>Navigation-ready app shell</h2>
+                    <section
+                        className="screen-placeholder"
+                        aria-label="Screen content"
+                    >
+                        <p className="screen-placeholder__label">
+                            Case management workspace
+                        </p>
+                        <h2>Expense Report queue screen pending</h2>
                         <p>
-                            Operator and portal screens will render inside this shared frame.
+                            This app shell is reserved for product surfaces such
+                            as the Case Queue, Case Detail, Employee Portal, and
+                            Administration workflows.
                         </p>
                     </section>
                 </main>

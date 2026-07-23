@@ -20,6 +20,8 @@ The Core Case Service owns the `Expense Report` case aggregate and the case-mana
 
 The Core Case Service stores case records in PostgreSQL and manages schema changes with Drizzle migrations under `backend/core-case-service/drizzle`.
 
+This boundary document defines which service owns each domain responsibility. [ADR 0003: Use storage per bounded context](adr/0003-storage-per-bounded-context.md) defines which datastore is used for each owned storage concern and why, including PostgreSQL for authoritative `Expense Report` state, DynamoDB for idempotency records, and Redis for derived cache entries.
+
 ### Tenant Isolation
 
 Core Case Service tables carry tenant scope directly or through required relationships to the `Expense Report` aggregate. Repository methods must require authenticated tenant context for reads and writes. Request bodies are not trusted for tenant isolation; tenant scope is derived from authentication context and enforced in queries, authorization checks, and tests.
