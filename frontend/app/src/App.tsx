@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { getNavigationItemsForRoles, type RoleName } from "./navigation";
 
 type AppShellProps = {
+    currentPath?: string;
     signedInRole: RoleName;
     signedInRoles?: readonly RoleName[];
     children?: ReactNode;
@@ -14,10 +15,12 @@ type AppShellProps = {
  */
 export function AppShell({
     children = <DefaultWorkspaceScreen />,
+    currentPath,
     signedInRole,
     signedInRoles = [signedInRole],
 }: AppShellProps): JSX.Element {
     const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
+    const activeNavigationPath = currentPath ?? visibleNavigationItems[0]?.path;
 
     return (
         <div className="app-shell">
@@ -27,7 +30,9 @@ export function AppShell({
                     {visibleNavigationItems.map((item) => (
                         <a
                             aria-current={
-                                item.path === activeNavigationPath ? "page" : undefined
+                                item.path === activeNavigationPath
+                                    ? "page"
+                                    : undefined
                             }
                             className="sidebar__link"
                             href={item.path}
@@ -46,22 +51,7 @@ export function AppShell({
                     </div>
                     <div className="topbar__tenant">{signedInRole}</div>
                 </header>
-                <main className="workspace__content">
-                    <section
-                        className="screen-placeholder"
-                        aria-label="Screen content"
-                    >
-                        <p className="screen-placeholder__label">
-                            Case management workspace
-                        </p>
-                        <h2>Expense Report queue screen pending</h2>
-                        <p>
-                            This app shell is reserved for product surfaces such
-                            as the Case Queue, Case Detail, Employee Portal, and
-                            Administration workflows.
-                        </p>
-                    </section>
-                </main>
+                <main className="workspace__content">{children}</main>
             </div>
         </div>
     );
