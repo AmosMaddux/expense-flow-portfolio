@@ -1,3 +1,5 @@
+import { ComponentShowcase } from "./components";
+
 const navigationItems = ["Case Queue", "Employee Portal", "Administration"];
 
 /**
@@ -10,7 +12,11 @@ export default function App(): JSX.Element {
                 <div className="sidebar__brand">ExpenseFlow</div>
                 <nav className="sidebar__nav" aria-label="Workspace sections">
                     {navigationItems.map((item) => (
-                        <span aria-disabled="true" className="sidebar__link" key={item}>
+                        <span
+                            aria-disabled="true"
+                            className="sidebar__link"
+                            key={item}
+                        >
                             {item}
                         </span>
                     ))}
@@ -25,12 +31,11 @@ export default function App(): JSX.Element {
                     <div className="topbar__tenant">Operator Shell</div>
                 </header>
                 <main className="workspace__content">
-                    <section className="screen-placeholder" aria-label="Screen content">
-                        <p className="screen-placeholder__label">Screen Region</p>
-                        <h2>Navigation-ready app shell</h2>
-                        <p>
-                            Operator and portal screens will render inside this shared frame.
-                        </p>
+                    <section
+                        className="screen-placeholder"
+                        aria-label="Screen content"
+                    >
+                        <ComponentShowcase />
                     </section>
                 </main>
             </div>
