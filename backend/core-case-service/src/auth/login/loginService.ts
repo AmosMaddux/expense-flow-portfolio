@@ -7,6 +7,7 @@ import { signAccessToken } from "../shared/accessTokenSigner.js";
 import {
     InvalidCredentialsError,
     InvalidMfaCodeError,
+    MfaRequiredError,
 } from "../shared/authenticationErrors.js";
 import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
 import type { RoleName } from "../../db/schema/index.js";
@@ -166,18 +167,22 @@ export function createLoginService(
                 throw new InvalidMfaCodeError();
             }
 
-            const acceptedTotpCounter =
-                validatedRequest.totpCode === undefined ||
-                !/^\d{6,8}$/.test(validatedRequest.totpCode)
-                    ? undefined
-                    : verifyTotpCode(
-                          totpSecretProtector
-                              .reveal(storedEnrollment)
-                              .toString("utf8"),
-                          validatedRequest.totpCode,
-                          storedEnrollment,
-                          now(),
-                      );
+            if (validatedRequest.totpCode === undefined) {
+                throw new MfaRequiredError();
+            }
+
+            const acceptedTotpCounter = !/^\d{6,8}$/.test(
+                validatedRequest.totpCode,
+            )
+                ? undefined
+                : verifyTotpCode(
+                      totpSecretProtector
+                          .reveal(storedEnrollment)
+                          .toString("utf8"),
+                      validatedRequest.totpCode,
+                      storedEnrollment,
+                      now(),
+                  );
 
             if (acceptedTotpCounter === undefined) {
                 await recordFailedLogin(loginCredentialRepository, {

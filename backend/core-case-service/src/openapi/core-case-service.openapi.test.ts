@@ -42,7 +42,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             "#/components/schemas/LoginResponse",
         );
         expect(JSON.stringify(loginPath?.post?.responses?.[401])).toContain(
-            "Invalid credentials or MFA code",
+            "#/components/schemas/LoginErrorResponse",
         );
         expect(JSON.stringify(loginResponse)).toContain("accessToken");
         expect(JSON.stringify(loginResponse)).toContain("refreshToken");

@@ -21,6 +21,11 @@ export const refreshRequestSchema = z.object({});
 
 export const logoutRequestSchema = z.object({});
 
+export const authErrorResponseSchema = z.object({
+    code: z.enum(["INVALID_CREDENTIALS", "MFA_REQUIRED", "INVALID_MFA_CODE"]),
+    message: z.string().min(1),
+});
+
 export const tokenResponseSchema = z.object({
     tenantId: z.uuid(),
     userId: z.uuid(),
@@ -42,6 +47,7 @@ export const authSessionSchema = tokenResponseSchema.extend({
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type AuthSession = z.infer<typeof authSessionSchema>;
 export type Role = z.infer<typeof roleSchema>;
+export type AuthErrorCode = z.infer<typeof authErrorResponseSchema>["code"];
 
 /**
  * Builds a validated client session from an auth token response.

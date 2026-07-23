@@ -156,11 +156,27 @@ export function MfaChallengeScreen({
     const [error, setError] = useState<string | null>(null);
     const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
+    const distributeCode = (value: string): void => {
+        const code = value.replace(/\D/g, "").slice(0, 6);
+        if (code.length === 0) {
+            return;
+        }
+
+        setDigits(Array.from({ length: 6 }, (_, index) => code[index] ?? ""));
+        inputRefs.current[Math.min(code.length, 6) - 1]?.focus();
+    };
+
     const updateDigit = (
         index: number,
         event: ChangeEvent<HTMLInputElement>,
     ): void => {
-        const nextDigit = event.target.value.replace(/\D/g, "").slice(-1);
+        const numericValue = event.target.value.replace(/\D/g, "");
+        if (numericValue.length > 1) {
+            distributeCode(numericValue);
+            return;
+        }
+
+        const nextDigit = numericValue.slice(-1);
         setDigits((current) =>
             current.map((digit, digitIndex) =>
                 digitIndex === index ? nextDigit : digit,
@@ -181,19 +197,13 @@ export function MfaChallengeScreen({
     };
 
     const handlePaste = (event: ClipboardEvent<HTMLInputElement>): void => {
-        const pastedCode = event.clipboardData
-            .getData("text")
-            .replace(/\D/g, "")
-            .slice(0, 6);
+        const pastedCode = event.clipboardData.getData("text");
         if (pastedCode.length === 0) {
             return;
         }
 
         event.preventDefault();
-        setDigits(
-            Array.from({ length: 6 }, (_, index) => pastedCode[index] ?? ""),
-        );
-        inputRefs.current[Math.min(pastedCode.length, 6) - 1]?.focus();
+        distributeCode(pastedCode);
     };
 
     const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {

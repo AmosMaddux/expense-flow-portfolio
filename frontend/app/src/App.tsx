@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
     AuthRequestError,
@@ -50,6 +50,22 @@ export default function App({
     const [view, setView] = useState<UnauthenticatedView>("sign-in");
     const [pendingCredentials, setPendingCredentials] =
         useState<PendingCredentials | null>(null);
+    const [shouldNavigateToLanding, setShouldNavigateToLanding] =
+        useState(false);
+
+    useEffect(() => {
+        if (
+            !shouldNavigateToLanding ||
+            !session.isAuthenticated ||
+            session.user === null
+        ) {
+            return;
+        }
+
+        const landingPath = roleLandings[session.user.role].path;
+        window.history.replaceState(window.history.state, "", landingPath);
+        setShouldNavigateToLanding(false);
+    }, [session.isAuthenticated, session.user, shouldNavigateToLanding]);
 
     if (session.isRestoring) {
         return (
@@ -68,6 +84,7 @@ export default function App({
                 signedInRole={session.user.role}
                 onLogout={async () => {
                     await session.logout();
+                    window.history.replaceState(window.history.state, "", "/");
                     setPendingCredentials(null);
                     setView("sign-in");
                 }}
@@ -102,6 +119,7 @@ export default function App({
                 }}
                 onVerify={async (totpCode) => {
                     await session.login({ ...pendingCredentials, totpCode });
+                    setShouldNavigateToLanding(true);
                 }}
             />
         );
@@ -121,13 +139,12 @@ export default function App({
 
                 try {
                     await session.login(credentials);
+                    setShouldNavigateToLanding(true);
                 } catch (error) {
                     if (
                         error instanceof AuthRequestError &&
-                        error.status === 401
+                        error.code === "MFA_REQUIRED"
                     ) {
-                        // Use one response for invalid credentials and missing MFA
-                        // so the first step cannot disclose whether an account exists.
                         setPendingCredentials(credentials);
                         setView("mfa");
                         return;

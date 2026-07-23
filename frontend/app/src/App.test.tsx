@@ -34,7 +34,11 @@ function createAuthClientMock(role: Role = "Finance Admin"): AuthClient {
         login: vi
             .fn()
             .mockRejectedValueOnce(
-                new AuthRequestError(401, "Authentication was rejected."),
+                new AuthRequestError(
+                    401,
+                    "MFA code is required.",
+                    "MFA_REQUIRED",
+                ),
             )
             .mockResolvedValueOnce(createSession(role)),
         refresh: vi
@@ -68,6 +72,7 @@ async function completePrimarySignIn(): Promise<void> {
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
 });
 
 describe("authentication UI", () => {
@@ -87,6 +92,7 @@ describe("authentication UI", () => {
 
     test("submits primary credentials, completes MFA, routes by role, and logs out", async () => {
         const authClient = createAuthClientMock("Employee");
+        window.history.replaceState(null, "", "/stale-route");
         renderApp(authClient);
 
         await completePrimarySignIn();
@@ -111,6 +117,7 @@ describe("authentication UI", () => {
             level: 1,
             name: "Employee Portal",
         });
+        expect(window.location.pathname).toBe("/my-submissions");
         expect(authClient.login).toHaveBeenNthCalledWith(2, {
             tenantId,
             email: "employee@example.invalid",
@@ -120,6 +127,7 @@ describe("authentication UI", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
         await screen.findByRole("heading", { name: "Welcome back" });
+        expect(window.location.pathname).toBe("/");
         expect(authClient.logout).toHaveBeenCalledOnce();
     });
 
@@ -127,8 +135,19 @@ describe("authentication UI", () => {
         const authClient = createAuthClientMock();
         vi.mocked(authClient.login)
             .mockReset()
+            .mockRejectedValueOnce(
+                new AuthRequestError(
+                    401,
+                    "MFA code is required.",
+                    "MFA_REQUIRED",
+                ),
+            )
             .mockRejectedValue(
-                new AuthRequestError(401, "Authentication was rejected."),
+                new AuthRequestError(
+                    401,
+                    "Invalid or expired MFA code.",
+                    "INVALID_MFA_CODE",
+                ),
             );
         renderApp(authClient);
 
@@ -147,6 +166,83 @@ describe("authentication UI", () => {
         expect(screen.getByRole("alert").textContent).toContain(
             "invalid or expired",
         );
+    });
+
+    test("distributes a full browser-autofilled MFA code", async () => {
+        const authClient = createAuthClientMock("Employee");
+        renderApp(authClient);
+
+        await completePrimarySignIn();
+        await screen.findByRole("heading", { name: "Verify your identity" });
+        fireEvent.change(screen.getByLabelText("Digit 1"), {
+            target: { value: "123456" },
+        });
+        fireEvent.submit(
+            screen.getByRole("button", { name: "Verify" }).closest("form")!,
+        );
+
+        await screen.findByRole("heading", {
+            level: 1,
+            name: "Employee Portal",
+        });
+        expect(authClient.login).toHaveBeenNthCalledWith(2, {
+            tenantId,
+            email: "employee@example.invalid",
+            password: "synthetic-password",
+            totpCode: "123456",
+        });
+    });
+
+    test("distributes a pasted MFA code", async () => {
+        const authClient = createAuthClientMock("Employee");
+        renderApp(authClient);
+
+        await completePrimarySignIn();
+        await screen.findByRole("heading", { name: "Verify your identity" });
+        fireEvent.paste(screen.getByLabelText("Digit 1"), {
+            clipboardData: {
+                getData: () => "654321",
+            },
+        });
+        fireEvent.submit(
+            screen.getByRole("button", { name: "Verify" }).closest("form")!,
+        );
+
+        await screen.findByRole("heading", {
+            level: 1,
+            name: "Employee Portal",
+        });
+        expect(authClient.login).toHaveBeenNthCalledWith(2, {
+            tenantId,
+            email: "employee@example.invalid",
+            password: "synthetic-password",
+            totpCode: "654321",
+        });
+    });
+
+    test("keeps invalid primary credentials on sign-in", async () => {
+        const authClient = createAuthClientMock();
+        vi.mocked(authClient.login)
+            .mockReset()
+            .mockRejectedValue(
+                new AuthRequestError(
+                    401,
+                    "Invalid email or password.",
+                    "INVALID_CREDENTIALS",
+                ),
+            );
+        renderApp(authClient);
+
+        await completePrimarySignIn();
+
+        await screen.findByRole("alert");
+        expect(
+            screen.getByRole("heading", { name: "Welcome back" }),
+        ).not.toBeNull();
+        expect(
+            screen.queryByRole("heading", { name: "Verify your identity" }),
+        ).toBeNull();
+        expect(authClient.login).toHaveBeenCalledOnce();
     });
 
     test("keeps the mocked password-reset flow UI-only", async () => {
