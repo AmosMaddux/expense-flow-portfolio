@@ -304,7 +304,7 @@ describe("AuthProvider", () => {
         });
     });
 
-    test("invalidates the session when authorization-scope refresh cannot clear cache", async () => {
+    test("still persists an authorization-scope refresh when cached query data cannot be cleared, and reports the failure", async () => {
         let currentTime = baseTime;
         const initialSession = createSession({
             accessTokenExpiresAt: new Date(baseTime + 61_000).toISOString(),
@@ -318,10 +318,12 @@ describe("AuthProvider", () => {
         });
         const authClient = createAuthClientMock(initialSession);
         const clearCache = vi.fn(() => Promise.resolve());
+        const onLogoutError = vi.fn();
         render(
             <AuthProvider
                 authClient={authClient}
                 clearCache={clearCache}
+                onLogoutError={onLogoutError}
                 now={() => currentTime}
             >
                 <SessionProbe />
@@ -336,15 +338,72 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
-        clearCache.mockRejectedValue(new Error("Synthetic cache failure."));
+        const cacheFailure = new Error("Synthetic cache failure.");
+        clearCache.mockRejectedValue(cacheFailure);
 
         currentTime += 2_000;
-        await expect(sessionApi.getAccessToken()).resolves.toBeNull();
+        await expect(sessionApi.getAccessToken()).resolves.toBe(
+            "synthetic-manager-access-token",
+        );
 
-        await waitFor(() => {
-            expect(sessionApi.isAuthenticated).toBe(false);
-        });
+        expect(sessionApi.isAuthenticated).toBe(true);
         expect(clearCache).toHaveBeenCalled();
+        expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
+    });
+
+    test("still persists an authorization-scope refresh when cache error reporting throws", async () => {
+        let currentTime = baseTime;
+        const initialSession = createSession({
+            accessTokenExpiresAt: new Date(baseTime + 61_000).toISOString(),
+        });
+        const refreshedSession = createSession({
+            accessToken: "synthetic-manager-access-token",
+            accessTokenExpiresAt: new Date(
+                baseTime + 10 * 60_000,
+            ).toISOString(),
+            roles: ["Department Manager"],
+        });
+        const authClient = createAuthClientMock(initialSession);
+        const cacheFailure = new Error("Synthetic cache failure.");
+        const reporterFailure = new Error("Synthetic reporter failure.");
+        const clearCache = vi.fn(() => Promise.resolve());
+        const onLogoutError = vi.fn(() => {
+            throw reporterFailure;
+        });
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                onLogoutError={onLogoutError}
+                now={() => currentTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        vi.mocked(authClient.refresh).mockResolvedValue(refreshedSession);
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+        clearCache.mockRejectedValue(cacheFailure);
+
+        currentTime += 2_000;
+        await expect(sessionApi.getAccessToken()).resolves.toBe(
+            "synthetic-manager-access-token",
+        );
+
+        expect(sessionApi.isAuthenticated).toBe(true);
+        expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
+        await waitFor(() => {
+            expect(sessionApi.user).toMatchObject({
+                role: "Department Manager",
+                roles: ["Department Manager"],
+            });
+        });
     });
 
     test("refreshes and retries once after a 401 response", async () => {
@@ -432,7 +491,7 @@ describe("AuthProvider", () => {
         expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
-    test("does not persist an in-flight request refresh after the original request is aborted", async () => {
+    test("does not retry an aborted request after its shared refresh resolves", async () => {
         let resolveRefresh: ((session: AuthSession) => void) | undefined;
         const authClient = createAuthClientMock();
         const fetchImplementation = vi
@@ -449,6 +508,7 @@ describe("AuthProvider", () => {
             </AuthProvider>,
         );
         await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        vi.mocked(authClient.refresh).mockClear();
         vi.mocked(authClient.refresh).mockImplementation(
             () =>
                 new Promise((resolve) => {
@@ -487,11 +547,74 @@ describe("AuthProvider", () => {
             });
         });
 
-        expect(sessionApi.user).toMatchObject({
-            role: "Finance Admin",
-            roles: ["Finance Admin"],
-        });
         expect(fetchImplementation).toHaveBeenCalledOnce();
+    });
+
+    test("coalesces concurrent request refreshes behind one refresh call", async () => {
+        let resolveRefresh: ((session: AuthSession) => void) | undefined;
+        const refreshedSession = createSession({
+            accessToken: "synthetic-refreshed-access-token",
+        });
+        const authClient = createAuthClientMock();
+        const oldTokenResponses: Array<() => void> = [];
+        const fetchImplementation = vi.fn<typeof fetch>((_input, init) => {
+            const authorization = new Headers(init?.headers).get(
+                "Authorization",
+            );
+
+            if (authorization === "Bearer synthetic-access-token") {
+                return new Promise<Response>((resolve) => {
+                    oldTokenResponses.push(() => {
+                        resolve(new Response(null, { status: 401 }));
+                    });
+                });
+            }
+
+            return Promise.resolve(new Response(null, { status: 200 }));
+        });
+        render(
+            <AuthProvider
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        vi.mocked(authClient.refresh).mockClear();
+        vi.mocked(authClient.refresh).mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveRefresh = resolve;
+                }),
+        );
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+
+        const firstFetchPromise =
+            sessionApi.authenticatedFetch("/v1/case-queue");
+        const secondFetchPromise =
+            sessionApi.authenticatedFetch("/v1/case-queue");
+        await waitFor(() => expect(oldTokenResponses).toHaveLength(2));
+        for (const resolveOldTokenResponse of oldTokenResponses) {
+            resolveOldTokenResponse();
+        }
+        await waitFor(() => expect(authClient.refresh).toHaveBeenCalledOnce());
+        resolveRefresh?.(refreshedSession);
+
+        await expect(firstFetchPromise).resolves.toMatchObject({ status: 200 });
+        await expect(secondFetchPromise).resolves.toMatchObject({
+            status: 200,
+        });
+
+        expect(authClient.refresh).toHaveBeenCalledOnce();
+        expect(fetchImplementation).toHaveBeenCalledTimes(4);
     });
 
 

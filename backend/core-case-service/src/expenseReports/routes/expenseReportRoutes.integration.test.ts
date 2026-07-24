@@ -2638,6 +2638,36 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns 403 for Case Queue rollups with an external role", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000109";
+        const employeeId = "50000000-0000-4000-8000-000000000109";
+        const response = await requestApp(
+            "/v1/case-queue/rollups?asOfDate=2026-07-20",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, employeeId, [
+                        "Employee",
+                    ]),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            detail?: string;
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(403);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Forbidden",
+            status: 403,
+            detail: "Case Queue access is limited to internal roles.",
+        });
+    });
+
     void test("returns 401 when a refresh token is used as a bearer token", async () => {
         const response = await requestApp(
             "/v1/expense-reports/not-a-report-id",

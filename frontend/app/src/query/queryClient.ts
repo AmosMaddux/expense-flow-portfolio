@@ -4,6 +4,7 @@ import {
     type QueryFunctionContext,
     type UseQueryResult,
 } from "@tanstack/react-query";
+import { ZodError } from "zod";
 
 import {
     AuthRequestError,
@@ -53,6 +54,18 @@ export class QueryRequestError extends Error {
         this.name = "QueryRequestError";
         this.status = status;
         this.body = body;
+    }
+}
+
+/** Represents a terminal failure while parsing a successful query response. */
+export class QueryResponseParseError extends Error {
+    public readonly cause: unknown;
+
+    /** Creates a parse error for an invalid successful response body. */
+    public constructor(message: string, cause: unknown) {
+        super(message);
+        this.name = "QueryResponseParseError";
+        this.cause = cause;
     }
 }
 
@@ -127,10 +140,18 @@ export function createAuthenticatedQueryFn<TData>(
         }
 
         if (request.parseResponse !== undefined) {
-            return request.parseResponse(response);
+            try {
+                return await request.parseResponse(response);
+            } catch (error: unknown) {
+                throw createQueryResponseParseError(error);
+            }
         }
 
-        return readDefaultQueryResponse<TData>(response);
+        try {
+            return await readDefaultQueryResponse<TData>(response);
+        } catch (error: unknown) {
+            throw createQueryResponseParseError(error);
+        }
     };
 }
 
@@ -159,6 +180,10 @@ export function shouldRetryQueryFailure(
     }
 
     if (error instanceof QueryRequestError && isTerminalClientError(error)) {
+        return false;
+    }
+
+    if (error instanceof ZodError || error instanceof QueryResponseParseError) {
         return false;
     }
 
@@ -275,5 +300,32 @@ function isTerminalClientError(error: QueryRequestError): boolean {
         error.status < 500 &&
         error.status !== 408 &&
         error.status !== 429
+    );
+}
+
+function createQueryResponseParseError(
+    error: unknown,
+): QueryResponseParseError {
+    if (error instanceof QueryResponseParseError) {
+        return error;
+    }
+
+    if (error instanceof ZodError) {
+        return new QueryResponseParseError(
+            "Query response did not match the expected shape.",
+            error,
+        );
+    }
+
+    if (error instanceof SyntaxError) {
+        return new QueryResponseParseError(
+            "Query response body could not be parsed.",
+            error,
+        );
+    }
+
+    return new QueryResponseParseError(
+        "Query response could not be parsed.",
+        error,
     );
 }

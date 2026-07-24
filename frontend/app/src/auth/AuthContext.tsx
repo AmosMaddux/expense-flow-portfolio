@@ -94,19 +94,24 @@ export function AuthProvider({
 
     const refreshSession = useCallback(
         async (signal?: AbortSignal | null): Promise<AuthSession | null> => {
-            if (signal === undefined && refreshPromiseRef.current !== null) {
-                return refreshPromiseRef.current;
+            throwIfRequestAborted(signal);
+            if (refreshPromiseRef.current !== null) {
+                return resolveRefreshForSignal(
+                    refreshPromiseRef.current,
+                    signal,
+                );
             }
 
             const refreshVersion = sessionVersionRef.current;
             const refreshPromise = refreshAndPersistSession(
                 client,
                 clearCache,
+                onLogoutError,
                 persistSession,
                 refreshVersion,
                 sessionVersionRef,
                 sessionRef,
-                signal,
+                null,
             ).catch(async (error: unknown) => {
                 if (isAbortError(error)) {
                     return null;
@@ -119,17 +124,13 @@ export function AuthProvider({
                 return null;
             });
 
-            if (signal !== undefined) {
-                return refreshPromise;
-            }
-
             refreshPromiseRef.current = refreshPromise.finally(() => {
                 refreshPromiseRef.current = null;
             });
 
-            return refreshPromiseRef.current;
+            return resolveRefreshForSignal(refreshPromiseRef.current, signal);
         },
-        [clearCache, client, invalidateSession, persistSession],
+        [clearCache, client, invalidateSession, onLogoutError, persistSession],
     );
 
     useEffect(() => {
@@ -166,7 +167,9 @@ export function AuthProvider({
             // reports a failed cache clear or revocation call.
             await Promise.resolve()
                 .then(clearCache)
-                .catch((error: unknown) => onLogoutError(error));
+                .catch((error: unknown) => {
+                    reportLogoutError(onLogoutError, error);
+                });
             const nextSession = await client.login(request);
             persistSession(nextSession);
         },
@@ -184,11 +187,7 @@ export function AuthProvider({
 
         for (const result of results) {
             if (result.status === "rejected") {
-                try {
-                    onLogoutError(result.reason as unknown);
-                } catch {
-                    // Reporting failures must not make the logout contract reject.
-                }
+                reportLogoutError(onLogoutError, result.reason as unknown);
             }
         }
     }, [clearCache, client, onLogoutError, persistSession]);
@@ -203,7 +202,15 @@ export function AuthProvider({
             Date.parse(currentSession.accessTokenExpiresAt) - now() <=
             refreshBufferMs
         ) {
-            return (await refreshSession())?.accessToken ?? null;
+            const refreshedSession = await refreshSession();
+            if (refreshedSession !== null) {
+                return refreshedSession.accessToken;
+            }
+
+            // The refresh may have resolved to null because a concurrent
+            // refresh already advanced sessionRef past this attempt's
+            // version, not because the session is actually gone.
+            return sessionRef.current?.accessToken ?? null;
         }
 
         return currentSession.accessToken;
@@ -240,11 +247,19 @@ export function AuthProvider({
                 throw new AuthRequestError(401, "Authentication was rejected.");
             }
 
+            const refreshVersionBeforeRetry = sessionVersionRef.current;
             const retryResponse = await sendRequest(
                 refreshedSession.accessToken,
             );
             if (retryResponse.status === 401) {
-                await invalidateSession();
+                // Only invalidate if no other refresh has advanced the
+                // session since this retry's token was sent; otherwise a
+                // newer, valid session would be logged out from under the
+                // user because of a stale retried token.
+                if (sessionVersionRef.current === refreshVersionBeforeRetry) {
+                    await invalidateSession();
+                }
+
                 throw new AuthRequestError(401, "Authentication was rejected.");
             }
 
@@ -302,6 +317,7 @@ export function AuthProvider({
 async function refreshAndPersistSession(
     client: AuthClient,
     clearCache: () => void | Promise<void>,
+    onLogoutError: (error: unknown) => void,
     persistSession: (nextSession: AuthSession | null) => void,
     refreshVersion: number,
     sessionVersionRef: { current: number },
@@ -321,7 +337,14 @@ async function refreshAndPersistSession(
         currentSession !== null &&
         !hasSameAuthorizationScope(currentSession, refreshedSession)
     ) {
-        await clearCache();
+        // A failed cache clear must not block persisting the refreshed
+        // session, but it must not be silently lost either: report it the
+        // same way login/logout report a failed cache clear.
+        await Promise.resolve()
+            .then(clearCache)
+            .catch((error: unknown) => {
+                reportLogoutError(onLogoutError, error);
+            });
         throwIfRequestAborted(signal);
     }
 
@@ -350,9 +373,37 @@ function throwIfRequestAborted(signal: AbortSignal | null | undefined): void {
         return;
     }
 
-    throw signal.reason instanceof Error
+    throw getAbortError(signal);
+}
+
+function getAbortError(signal: AbortSignal): Error | DOMException {
+    return signal.reason instanceof Error
         ? signal.reason
         : new DOMException("The operation was aborted.", "AbortError");
+}
+
+function resolveRefreshForSignal(
+    refreshPromise: Promise<AuthSession | null>,
+    signal: AbortSignal | null | undefined,
+): Promise<AuthSession | null> {
+    if (signal === null || signal === undefined) {
+        return refreshPromise;
+    }
+
+    if (signal.aborted) {
+        return Promise.reject(getAbortError(signal));
+    }
+
+    return new Promise<AuthSession | null>((resolve, reject) => {
+        const abortRefreshWait = () => {
+            reject(getAbortError(signal));
+        };
+
+        signal.addEventListener("abort", abortRefreshWait, { once: true });
+        refreshPromise.then(resolve, reject).finally(() => {
+            signal.removeEventListener("abort", abortRefreshWait);
+        });
+    });
 }
 
 function isAbortError(error: unknown): boolean {
@@ -360,6 +411,17 @@ function isAbortError(error: unknown): boolean {
         error instanceof DOMException ||
         (typeof error === "object" && error !== null && "name" in error)
     ) && (error as { name: unknown }).name === "AbortError";
+}
+
+function reportLogoutError(
+    onLogoutError: (error: unknown) => void,
+    error: unknown,
+): void {
+    try {
+        onLogoutError(error);
+    } catch {
+        // Reporting failures must not change auth-session state transitions.
+    }
 }
 
 /**

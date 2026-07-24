@@ -28,7 +28,10 @@ vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
     getDefaultIdempotencyStore: () => idempotencyStoreMock,
 }));
 
-import { UnauthorizedError } from "../../errors/problem-json.js";
+import {
+    ForbiddenError,
+    UnauthorizedError,
+} from "../../errors/problem-json.js";
 
 const readCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 
@@ -100,6 +103,25 @@ void describe("Expense Report controller authorization", () => {
         );
         expect(status).toHaveBeenCalledWith(200);
         expect(next).not.toHaveBeenCalled();
+    });
+
+    void test("rejects external roles before reading Case Queue rollups", async () => {
+        const request = {
+            auth: {
+                tenantId: "40000000-0000-4000-8000-000000000011",
+                userId: "50000000-0000-4000-8000-000000000011",
+                roles: ["Employee"],
+            },
+            query: {
+                asOfDate: "2026-07-20",
+            },
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await getCaseQueueStageRollups(request, {} as Response, next);
+
+        expect(readCachedCaseQueueStageRollupsMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
     });
 
     void test("logs create errors with a static route name instead of the raw URL", async () => {
