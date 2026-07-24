@@ -22,7 +22,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
     font: inherit;
 }
 
@@ -849,6 +850,100 @@ button:disabled {
     padding: 24px;
 }
 
+.all-transactions {
+    display: grid;
+    gap: 22px;
+}
+
+.all-transactions__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.all-transactions__header h2 {
+    margin: 4px 0 0;
+    color: #102a43;
+    font-size: 1.25rem;
+}
+
+.all-transactions-filters {
+    display: grid;
+    align-items: end;
+    gap: 14px;
+    grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 1fr) repeat(
+            2,
+            minmax(140px, 0.8fr)
+        ) auto;
+}
+
+.all-transactions-filters label {
+    display: grid;
+    gap: 6px;
+    color: #52606d;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.all-transactions-filters input,
+.all-transactions-filters select {
+    min-height: 42px;
+    width: 100%;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    background: #fff;
+    color: #334e68;
+    padding: 0 12px;
+}
+
+.all-transactions-table__frame {
+    overflow-x: auto;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.all-transactions-table table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+}
+
+.all-transactions-table caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.all-transactions-table th,
+.all-transactions-table td {
+    border-bottom: 1px solid #d9e2ec;
+    color: #334e68;
+    font-size: 0.88rem;
+    padding: 14px 16px;
+    text-align: left;
+}
+
+.all-transactions-table thead th {
+    background: #f0f4f8;
+    color: #102a43;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+}
+
+.all-transactions-table tbody th {
+    color: #102a43;
+    font-weight: 700;
+}
+
+.all-transactions-table tfoot td {
+    border-bottom: 0;
+    color: #52606d;
+    font-size: 0.78rem;
+}
+
 @media (max-width: 760px) {
     .auth-card {
         padding: 24px 20px;
@@ -891,6 +986,19 @@ button:disabled {
     }
 
     .case-queue-table {
+        overflow-x: auto;
+    }
+
+    .all-transactions__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .all-transactions-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .all-transactions-table {
         overflow-x: auto;
     }
 }

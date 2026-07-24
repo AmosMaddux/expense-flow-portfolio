@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+    getAllTransactions,
     getCaseQueueStageRollups,
     getCurrentDraftExpenseReport,
     getExpenseReportAuditEntries,
@@ -16,6 +17,7 @@ import {
 export const expenseReportRouter = Router();
 
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
+expenseReportRouter.get("/transactions", getAllTransactions);
 expenseReportRouter.post("/expense-reports", postExpenseReport);
 expenseReportRouter.get(
     "/expense-reports/drafts/current",

@@ -12,6 +12,7 @@ import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
@@ -21,6 +22,7 @@ import {
     createIdempotencyRequestHash,
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
+import { readTenantAllTransactions } from "../services/allTransactionsService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
 import {
     logExpenseReportAuditError,
@@ -345,6 +347,34 @@ export async function getCaseQueueStageRollups(
 }
 
 /**
+ * Handles All Transactions reads for Finance Admins in one tenant.
+ */
+export async function getAllTransactions(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceAdminAllTransactionsAccess(auth);
+        const parsedQuery = ReadAllTransactionsQuerySchema.parse({
+            category: req.query.category,
+            status: req.query.status,
+            startDate: req.query.startDate,
+            endDate: req.query.endDate,
+        });
+        const transactions = await readTenantAllTransactions({
+            ...parsedQuery,
+            tenantId: auth.tenantId,
+        });
+
+        res.status(200).json(transactions);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
  * Handles Audit Trail reads for an Expense Report case.
  */
 export async function getExpenseReportAuditEntries(
@@ -425,6 +455,18 @@ function requireInternalCaseQueueAccess(
     }
 
     throw new ForbiddenError("Case Queue access is limited to internal roles.");
+}
+
+function requireFinanceAdminAllTransactionsAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "All Transactions access is limited to Finance Admins.",
+    );
 }
 
 const internalExpenseReportRoles = new Set<RoleName>([
