@@ -86,67 +86,76 @@
             }
         },
         "schemas": {
-            "AllTransactionList": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "expenseReportId": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "date": {
-                            "type": "string",
-                            "format": "date-time"
-                        },
-                        "merchant": {
-                            "type": "string",
-                            "minLength": 1
-                        },
-                        "category": {
-                            "type": "string",
-                            "minLength": 1
-                        },
-                        "amount": {
-                            "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{2}$"
-                        },
-                        "currency": {
-                            "type": "string",
-                            "minLength": 3,
-                            "maxLength": 3
-                        },
-                        "status": {
-                            "type": "string",
-                            "enum": [
-                                "Drafted",
-                                "Submitted",
-                                "Manager Approval",
-                                "AP Review",
-                                "Paid",
-                                "Reconciled"
+            "AllTransactionPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "expenseReportId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Drafted",
+                                        "Submitted",
+                                        "Manager Approval",
+                                        "AP Review",
+                                        "Paid",
+                                        "Reconciled"
+                                    ]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "expenseReportId",
+                                "date",
+                                "merchant",
+                                "category",
+                                "amount",
+                                "currency",
+                                "status",
+                                "deductible"
                             ]
-                        },
-                        "deductible": {
-                            "type": ["boolean", "null"]
                         }
                     },
-                    "required": [
-                        "id",
-                        "expenseReportId",
-                        "date",
-                        "merchant",
-                        "category",
-                        "amount",
-                        "currency",
-                        "status",
-                        "deductible"
-                    ]
-                }
+                    "nextCursor": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": ["items", "nextCursor"]
             },
             "AuditEntryListResponse": {
                 "type": "array",
@@ -508,6 +517,16 @@
                     "endDate": {
                         "type": "string",
                         "format": "date"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1
                     }
                 },
                 "additionalProperties": false
@@ -679,6 +698,26 @@
                         "required": false,
                         "name": "endDate",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -687,7 +726,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AllTransactionList"
+                                    "$ref": "#/components/schemas/AllTransactionPage"
                                 }
                             }
                         }

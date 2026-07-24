@@ -7,10 +7,20 @@ import {
 } from "../schema/index.js";
 import type {
     AllTransaction,
-    ReadAllTransactionsParams,
+    AllTransactionPage,
+    ParsedReadAllTransactionsParams,
 } from "../../schemas/expense-report.schema.js";
 
 export type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
+
+type AllTransactionsCursor = {
+    createdAt: string;
+    id: string;
+};
+
+type AllTransactionWithCursor = AllTransaction & {
+    cursorCreatedAt: string;
+};
 
 type AllTransactionsDatabase = {
     execute(query: SQLWrapper | string): PromiseLike<{
@@ -23,8 +33,9 @@ type AllTransactionsDatabase = {
  */
 export async function readAllTransactions(
     db: AllTransactionsDatabase,
-    params: ReadAllTransactionsParams,
-): Promise<AllTransaction[]> {
+    params: ParsedReadAllTransactionsParams,
+): Promise<AllTransactionPage> {
+    const cursor = parseCursor(params.cursor);
     const filters: SQLWrapper[] = [
         sql`${lineItem.tenantId} = ${params.tenantId}`,
         sql`${expenseReport.tenantId} = ${params.tenantId}`,
@@ -50,11 +61,23 @@ export async function readAllTransactions(
         );
     }
 
+    if (cursor !== undefined) {
+        filters.push(sql`(
+            ${lineItem.createdAt} < ${cursor.createdAt}
+            or (
+                ${lineItem.createdAt} = ${cursor.createdAt}
+                and ${lineItem.id} > ${cursor.id}
+            )
+        )`);
+    }
+
+    const pageSize = params.limit;
     const result = await db.execute(sql`
         select
             ${lineItem.id} as "id",
             ${lineItem.expenseReportId} as "expenseReportId",
             ${lineItem.createdAt} as "date",
+            to_char(${lineItem.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "cursorCreatedAt",
             ${lineItem.merchant} as "merchant",
             ${lineItem.category} as "category",
             ${lineItem.amount} as "amount",
@@ -67,12 +90,24 @@ export async function readAllTransactions(
             and ${expenseReport.tenantId} = ${lineItem.tenantId}
         where ${sql.join(filters, sql` and `)}
         order by ${lineItem.createdAt} desc, ${lineItem.id} asc
+        limit ${pageSize + 1}
     `);
+    const rows = result.rows.map(toAllTransactionWithCursor);
+    const pageRows = rows.slice(0, pageSize);
+    const items = pageRows.map(toPublicAllTransaction);
 
-    return result.rows.map(toAllTransaction);
+    return {
+        items,
+        nextCursor:
+            rows.length > pageSize
+                ? createCursor(pageRows[pageRows.length - 1])
+                : null,
+    };
 }
 
-function toAllTransaction(row: Record<string, unknown>): AllTransaction {
+function toAllTransactionWithCursor(
+    row: Record<string, unknown>,
+): AllTransactionWithCursor {
     const status = row.status;
 
     if (
@@ -92,6 +127,23 @@ function toAllTransaction(row: Record<string, unknown>): AllTransaction {
         currency: String(row.currency),
         status: status as ExpenseReportStage,
         deductible: typeof row.deductible === "boolean" ? row.deductible : null,
+        cursorCreatedAt: String(row.cursorCreatedAt),
+    };
+}
+
+function toPublicAllTransaction(
+    transaction: AllTransactionWithCursor,
+): AllTransaction {
+    return {
+        id: transaction.id,
+        expenseReportId: transaction.expenseReportId,
+        date: transaction.date,
+        merchant: transaction.merchant,
+        category: transaction.category,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        status: transaction.status,
+        deductible: transaction.deductible,
     };
 }
 
@@ -101,4 +153,51 @@ function toIsoDateTime(value: unknown): string {
     }
 
     return new Date(String(value)).toISOString();
+}
+
+function createCursor(
+    transaction: AllTransactionWithCursor | undefined,
+): string | null {
+    if (transaction === undefined) {
+        return null;
+    }
+
+    return Buffer.from(
+        JSON.stringify({
+            createdAt: transaction.cursorCreatedAt,
+            id: transaction.id,
+        } satisfies AllTransactionsCursor),
+    ).toString("base64url");
+}
+
+function parseCursor(
+    cursor: string | undefined,
+): AllTransactionsCursor | undefined {
+    if (cursor === undefined) {
+        return undefined;
+    }
+
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "createdAt" in parsed &&
+            "id" in parsed &&
+            typeof parsed.createdAt === "string" &&
+            typeof parsed.id === "string"
+        ) {
+            return {
+                createdAt: parsed.createdAt,
+                id: parsed.id,
+            };
+        }
+    } catch {
+        // Fall through to the generic cursor error below.
+    }
+
+    throw new Error("Invalid All Transactions cursor.");
 }

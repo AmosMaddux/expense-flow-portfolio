@@ -908,7 +908,11 @@ void describe("lineItem schema", () => {
 
         expect(
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-        ).toEqual(["line_item_tenant_expense_report_idx"]);
+        ).toEqual([
+            "line_item_tenant_expense_report_idx",
+            "line_item_tenant_created_id_idx",
+            "line_item_tenant_category_created_id_idx",
+        ]);
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -964,6 +968,10 @@ void describe("lineItem schema", () => {
         );
 
         expect(migrationSql).toContain("line_item_tenant_expense_report_idx");
+        expect(migrationSql).toContain("line_item_tenant_created_id_idx");
+        expect(migrationSql).toContain(
+            "line_item_tenant_category_created_id_idx",
+        );
     });
 });
 

@@ -2,14 +2,15 @@ import { db } from "../../db/client.js";
 import { readAllTransactions as readPostgresAllTransactions } from "../../db/queries/allTransactions.js";
 import {
     ReadAllTransactionsInboundRequestSchema,
-    type AllTransaction,
+    type AllTransactionPage,
+    type ParsedReadAllTransactionsParams,
     type ReadAllTransactionsParams,
 } from "../../schemas/expense-report.schema.js";
 
 export type AllTransactionsStore = {
     readAllTransactions(
-        params: ReadAllTransactionsParams,
-    ): Promise<AllTransaction[]>;
+        params: ParsedReadAllTransactionsParams,
+    ): Promise<AllTransactionPage>;
 };
 
 export type AllTransactionsServiceDependencies = {
@@ -27,7 +28,7 @@ export async function readTenantAllTransactions(
                 readPostgresAllTransactions(db, params),
         },
     },
-): Promise<AllTransaction[]> {
+): Promise<AllTransactionPage> {
     const parsedRequest =
         ReadAllTransactionsInboundRequestSchema.parse(request);
 

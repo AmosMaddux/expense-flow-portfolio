@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
 import {
@@ -27,7 +27,13 @@ const allTransactionSchema = z.object({
 
 export const allTransactionListSchema = z.array(allTransactionSchema);
 
+const allTransactionPageSchema = z.object({
+    items: allTransactionListSchema,
+    nextCursor: z.string().nullable(),
+});
+
 export type AllTransaction = z.infer<typeof allTransactionSchema>;
+export type AllTransactionPage = z.infer<typeof allTransactionPageSchema>;
 
 export type AllTransactionsFilters = {
     category: string;
@@ -46,18 +52,21 @@ const emptyFilters: AllTransactionsFilters = {
 /**
  * Fetches tenant-scoped All Transactions rows for the Finance Admin workspace.
  */
-export function useAllTransactions(filters: AllTransactionsFilters) {
-    const queryString = createAllTransactionsQueryString(filters);
+export function useAllTransactions(
+    filters: AllTransactionsFilters,
+    cursor: string | null,
+) {
+    const queryString = createAllTransactionsQueryString(filters, cursor);
     const input =
         queryString.length === 0
             ? "/v1/transactions"
             : `/v1/transactions?${queryString}`;
 
-    return useExpenseFlowQuery<AllTransaction[]>({
+    return useExpenseFlowQuery<AllTransactionPage>({
         input,
-        keyParts: ["transactions", filters],
+        keyParts: ["transactions", filters, cursor],
         parseResponse: async (response) =>
-            allTransactionListSchema.parse(await response.json()),
+            allTransactionPageSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -68,15 +77,49 @@ export function useAllTransactions(filters: AllTransactionsFilters) {
 export function AllTransactionsScreen(): JSX.Element {
     const [filters, setFilters] =
         useState<AllTransactionsFilters>(emptyFilters);
-    const query = useAllTransactions(filters);
-    const transactions = query.data ?? [];
+    const [cursor, setCursor] = useState<string | null>(null);
+    const [transactions, setTransactions] = useState<AllTransaction[]>([]);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const loadedPageKeys = useRef(new Set<string>());
+    const query = useAllTransactions(filters, cursor);
     const categories = useMemo(
         () =>
             Array.from(
-                new Set(transactions.map((transaction) => transaction.category)),
+                new Set(
+                    transactions.map((transaction) => transaction.category),
+                ),
             ).sort((left, right) => left.localeCompare(right)),
         [transactions],
     );
+
+    useEffect(() => {
+        const page = query.data;
+        if (page === undefined) {
+            return;
+        }
+
+        const pageKey = cursor ?? "first";
+        if (loadedPageKeys.current.has(pageKey)) {
+            setNextCursor(page.nextCursor);
+            return;
+        }
+
+        loadedPageKeys.current.add(pageKey);
+        setTransactions((currentTransactions) =>
+            cursor === null
+                ? page.items
+                : [...currentTransactions, ...page.items],
+        );
+        setNextCursor(page.nextCursor);
+    }, [cursor, query.data]);
+
+    const updateFilters = (nextFilters: AllTransactionsFilters) => {
+        loadedPageKeys.current.clear();
+        setCursor(null);
+        setNextCursor(null);
+        setTransactions([]);
+        setFilters(nextFilters);
+    };
 
     return (
         <section
@@ -96,8 +139,8 @@ export function AllTransactionsScreen(): JSX.Element {
             <AllTransactionsFiltersForm
                 categories={categories}
                 filters={filters}
-                onChange={setFilters}
-                onClear={() => setFilters(emptyFilters)}
+                onChange={updateFilters}
+                onClear={() => updateFilters(emptyFilters)}
             />
 
             <section
@@ -124,7 +167,24 @@ export function AllTransactionsScreen(): JSX.Element {
                         title="No transactions found"
                     />
                 ) : (
-                    <AllTransactionsTable transactions={transactions} />
+                    <>
+                        <AllTransactionsTable transactions={transactions} />
+                        {nextCursor !== null ? (
+                            <div className="all-transactions__pagination">
+                                <Button
+                                    disabled={query.isFetching}
+                                    onClick={() => setCursor(nextCursor)}
+                                    size="sm"
+                                    type="button"
+                                    variant="secondary"
+                                >
+                                    {query.isFetching
+                                        ? "Loading..."
+                                        : "Load more"}
+                                </Button>
+                            </div>
+                        ) : null}
+                    </>
                 )}
             </section>
         </section>
@@ -133,6 +193,7 @@ export function AllTransactionsScreen(): JSX.Element {
 
 export function createAllTransactionsQueryString(
     filters: AllTransactionsFilters,
+    cursor: string | null = null,
 ): string {
     const queryString = new URLSearchParams();
     const category = filters.category.trim();
@@ -153,6 +214,10 @@ export function createAllTransactionsQueryString(
         queryString.set("endDate", filters.endDate);
     }
 
+    if (cursor !== null) {
+        queryString.set("cursor", cursor);
+    }
+
     return queryString.toString();
 }
 
@@ -167,10 +232,7 @@ function AllTransactionsFiltersForm({
     onChange: (filters: AllTransactionsFilters) => void;
     onClear: () => void;
 }): JSX.Element {
-    const updateFilter = (
-        key: keyof AllTransactionsFilters,
-        value: string,
-    ) => {
+    const updateFilter = (key: keyof AllTransactionsFilters, value: string) => {
         onChange({ ...filters, [key]: value });
     };
 
@@ -232,7 +294,12 @@ function AllTransactionsFiltersForm({
                     value={filters.endDate}
                 />
             </label>
-            <Button onClick={onClear} size="sm" type="button" variant="secondary">
+            <Button
+                onClick={onClear}
+                size="sm"
+                type="button"
+                variant="secondary"
+            >
                 Clear
             </Button>
         </form>

@@ -265,6 +265,17 @@ export const lineItem = pgTable(
             table.tenantId,
             table.expenseReportId,
         ),
+        index("line_item_tenant_created_id_idx").on(
+            table.tenantId,
+            table.createdAt.desc(),
+            table.id.asc(),
+        ),
+        index("line_item_tenant_category_created_id_idx").on(
+            table.tenantId,
+            table.category,
+            table.createdAt.desc(),
+            table.id.asc(),
+        ),
         foreignKey({
             name: "line_item_tenant_expense_report_fk",
             // Tenant joins prevent line items from attaching to another tenant's report.

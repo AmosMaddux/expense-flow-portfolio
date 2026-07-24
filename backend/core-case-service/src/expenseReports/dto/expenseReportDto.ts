@@ -50,6 +50,13 @@ const ReadAllTransactionsFilterSchema = z.object({
     status: z.enum(approvedWorkflowStages).optional(),
     startDate: z.iso.date().optional(),
     endDate: z.iso.date().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z
+        .string()
+        .trim()
+        .min(1)
+        .refine(isValidAllTransactionsCursor)
+        .optional(),
 });
 
 function isValidTransactionDateRange(request: {
@@ -61,6 +68,27 @@ function isValidTransactionDateRange(request: {
         request.endDate === undefined ||
         request.startDate <= request.endDate
     );
+}
+
+function isValidAllTransactionsCursor(cursor: string): boolean {
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        return (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "createdAt" in parsed &&
+            "id" in parsed &&
+            typeof parsed.createdAt === "string" &&
+            z.string().datetime({ offset: true }).safeParse(parsed.createdAt)
+                .success &&
+            z.uuid().safeParse(parsed.id).success
+        );
+    } catch {
+        return false;
+    }
 }
 
 export const ReadAllTransactionsInboundRequestSchema =
@@ -138,6 +166,11 @@ export const AllTransactionSchema = z.object({
 
 export const AllTransactionListSchema = z.array(AllTransactionSchema);
 
+export const AllTransactionPageSchema = z.object({
+    items: AllTransactionListSchema,
+    nextCursor: z.string().nullable(),
+});
+
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -195,6 +228,8 @@ export const allTransactionSchema = AllTransactionSchema;
 
 export const allTransactionListSchema = AllTransactionListSchema;
 
+export const allTransactionPageSchema = AllTransactionPageSchema;
+
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
@@ -232,7 +267,11 @@ export type ReadCaseQueueStageRollupsQuery = z.infer<
     typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
-export type ReadAllTransactionsParams = z.infer<
+export type ReadAllTransactionsParams = z.input<
+    typeof ReadAllTransactionsInboundRequestSchema
+>;
+
+export type ParsedReadAllTransactionsParams = z.infer<
     typeof ReadAllTransactionsInboundRequestSchema
 >;
 
@@ -247,6 +286,8 @@ export type TransitionExpenseReportStageRequest = z.infer<
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
 
 export type AllTransaction = z.infer<typeof AllTransactionSchema>;
+
+export type AllTransactionPage = z.infer<typeof AllTransactionPageSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema

@@ -7,7 +7,7 @@ import type { OpenAPIObject } from "openapi3-ts/oas31";
 import { z } from "zod";
 
 import {
-    AllTransactionListSchema,
+    AllTransactionPageSchema,
     CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
@@ -92,9 +92,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "ReadAllTransactionsRequest",
         ReadAllTransactionsQuerySchema,
     );
-    const allTransactionList = registry.register(
-        "AllTransactionList",
-        AllTransactionListSchema,
+    const allTransactionPage = registry.register(
+        "AllTransactionPage",
+        AllTransactionPageSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -203,7 +203,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 description: "All Transactions rows found.",
                 content: {
                     "application/json": {
-                        schema: allTransactionList,
+                        schema: allTransactionPage,
                     },
                 },
             },

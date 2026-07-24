@@ -288,6 +288,8 @@ export async function getAllTransactions(
             status: req.query.status,
             startDate: req.query.startDate,
             endDate: req.query.endDate,
+            limit: req.query.limit,
+            cursor: req.query.cursor,
         });
         const transactions = await readTenantAllTransactions({
             ...parsedQuery,

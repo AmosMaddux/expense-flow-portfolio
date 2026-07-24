@@ -75,6 +75,16 @@ void describe("readAllTransactions", () => {
                 createdAt: new Date("2026-07-05T10:00:00.000Z"),
             },
             {
+                id: "85000000-0000-4000-8000-000000000104",
+                expenseReportId: "84000000-0000-4000-8000-000000000102",
+                tenantId: tenantOneId,
+                merchant: "Alpine Shuttle",
+                amount: "37.00",
+                currency: "USD",
+                category: "Ground Transport",
+                createdAt: new Date("2026-07-05T10:00:00.000Z"),
+            },
+            {
                 id: "85000000-0000-4000-8000-000000000201",
                 expenseReportId: "84000000-0000-4000-8000-000000000201",
                 tenantId: tenantTwoId,
@@ -94,21 +104,28 @@ void describe("readAllTransactions", () => {
     void test("lists tenant-scoped line items across reports newest first", async () => {
         const transactions = await readAllTransactions(db, {
             tenantId: tenantOneId,
+            limit: 50,
         });
 
-        expect(transactions.map((transaction) => transaction.merchant)).toEqual(
-            ["Summit Air", "Bluebird Cafe", "Northstar Office"],
-        );
         expect(
-            transactions.every(
+            transactions.items.map((transaction) => transaction.merchant),
+        ).toEqual([
+            "Summit Air",
+            "Alpine Shuttle",
+            "Bluebird Cafe",
+            "Northstar Office",
+        ]);
+        expect(
+            transactions.items.every(
                 (transaction) => transaction.deductible === null,
             ),
         ).toBe(true);
         expect(
-            transactions.some(
+            transactions.items.some(
                 (transaction) => transaction.merchant === "Other Tenant Rail",
             ),
         ).toBe(false);
+        expect(transactions.nextCursor).toBeNull();
     });
 
     void test("filters by category, status, and inclusive date range", async () => {
@@ -118,10 +135,11 @@ void describe("readAllTransactions", () => {
             status: "AP Review",
             startDate: "2026-07-05",
             endDate: "2026-07-05",
+            limit: 50,
         });
 
-        expect(transactions).toHaveLength(1);
-        expect(transactions[0]).toMatchObject({
+        expect(transactions.items).toHaveLength(1);
+        expect(transactions.items[0]).toMatchObject({
             id: "85000000-0000-4000-8000-000000000103",
             expenseReportId: "84000000-0000-4000-8000-000000000102",
             merchant: "Summit Air",
@@ -131,7 +149,7 @@ void describe("readAllTransactions", () => {
             status: "AP Review",
             deductible: null,
         });
-        expect(transactions[0]?.date).toBe("2026-07-05T10:00:00.000Z");
+        expect(transactions.items[0]?.date).toBe("2026-07-05T10:00:00.000Z");
     });
 
     void test("returns no rows when filters only match another tenant", async () => {
@@ -141,8 +159,32 @@ void describe("readAllTransactions", () => {
             status: "Submitted",
             startDate: "2026-07-06",
             endDate: "2026-07-06",
+            limit: 50,
         });
 
-        expect(transactions).toEqual([]);
+        expect(transactions).toEqual({ items: [], nextCursor: null });
+    });
+
+    void test("returns stable keyset pages without duplicate rows", async () => {
+        const firstPage = await readAllTransactions(db, {
+            tenantId: tenantOneId,
+            limit: 2,
+        });
+
+        expect(
+            firstPage.items.map((transaction) => transaction.merchant),
+        ).toEqual(["Summit Air", "Alpine Shuttle"]);
+        expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+        const secondPage = await readAllTransactions(db, {
+            tenantId: tenantOneId,
+            cursor: firstPage.nextCursor ?? undefined,
+            limit: 2,
+        });
+
+        expect(
+            secondPage.items.map((transaction) => transaction.merchant),
+        ).toEqual(["Bluebird Cafe", "Northstar Office"]);
+        expect(secondPage.nextCursor).toBeNull();
     });
 });
