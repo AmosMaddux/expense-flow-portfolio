@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AuthProvider, type AuthClient } from "./auth";
@@ -37,13 +43,28 @@ function RoutedApp({ authClient }: { authClient: AuthClient }): JSX.Element {
     );
 }
 
+async function submitSignIn(): Promise<void> {
+    await screen.findByRole("heading", { name: "Welcome back" });
+    fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "employee@example.invalid" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "synthetic-password" },
+    });
+    fireEvent.submit(
+        screen.getByRole("button", { name: /sign in/i }).closest("form")!,
+    );
+}
+
 beforeEach(() => {
     window.scrollTo = vi.fn();
+    vi.stubEnv("VITE_TENANT_ID", tenantId);
 });
 
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     window.history.pushState(null, "", "/");
 });
 
@@ -54,19 +75,38 @@ describe("ExpenseFlowRouter", () => {
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
 
-        await screen.findByText("Login route");
+        await screen.findByRole("heading", { name: "Welcome back" });
         expect(window.location.pathname).toBe("/login");
     });
 
-    test("creates the login route without building a local sign-in page", async () => {
+    test("mounts the existing auth sign-in screen at the login route", async () => {
         window.history.pushState(null, "", "/login");
         render(
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
 
-        await screen.findByText("Login route");
+        await screen.findByRole("heading", { name: "Welcome back" });
+        expect(screen.getByLabelText("Email")).not.toBeNull();
+        expect(screen.getByLabelText("Password")).not.toBeNull();
         expect(screen.queryByLabelText("Tenant ID")).toBeNull();
-        expect(screen.queryByLabelText("Email")).toBeNull();
+    });
+
+    test("signs in from the login route and lands on the role dashboard", async () => {
+        const authClient = createAuthClientMock("Employee");
+        window.history.pushState(null, "", "/login");
+        render(<RoutedApp authClient={authClient} />);
+
+        await submitSignIn();
+
+        await screen.findByRole("heading", { name: "My Submissions" });
+        await waitFor(() =>
+            expect(window.location.pathname).toBe("/my-submissions"),
+        );
+        expect(authClient.login).toHaveBeenCalledWith({
+            tenantId,
+            email: "employee@example.invalid",
+            password: "synthetic-password",
+        });
     });
 
     test.each([
@@ -125,6 +165,7 @@ describe("ExpenseFlowRouter", () => {
                 .getAttribute("aria-current"),
         ).toBeNull();
     });
+
     test("redirects authenticated users away from routes their role cannot access", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(

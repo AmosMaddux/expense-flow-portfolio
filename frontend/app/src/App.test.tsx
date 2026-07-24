@@ -309,6 +309,23 @@ describe("AppShell", () => {
         expect(approvalQueueLink.getAttribute("aria-current")).toBe("page");
     });
 
+    test("updates browser history and active link without a document refresh", () => {
+        window.history.replaceState(null, "", "/my-submissions");
+        render(<AppShell signedInRole="Employee" />);
+
+        const sidebar = screen.getByRole("navigation", {
+            name: "Workspace sections",
+        });
+        const submitExpenseLink = within(sidebar).getByRole("link", {
+            name: "Submit Expense",
+        });
+
+        fireEvent.click(submitExpenseLink);
+
+        expect(window.location.pathname).toBe("/submit-expense");
+        expect(submitExpenseLink.getAttribute("href")).toBe("/submit-expense");
+        expect(submitExpenseLink.getAttribute("aria-current")).toBe("page");
+    });
     test("renders Employee navigation links only for the employee portal", () => {
         render(<AppShell currentPath="/log-mileage" signedInRole="Employee" />);
 

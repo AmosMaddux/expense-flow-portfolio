@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import {
     AuthRequestError,
@@ -82,7 +82,6 @@ export default function App({
     if (session.isAuthenticated && session.user !== null) {
         return (
             <AppShell
-                currentPath={window.location.pathname}
                 signedInRole={session.user.role}
                 signedInRoles={session.user.roles}
                 onLogout={async () => {
@@ -178,14 +177,52 @@ export function AppShell({
     signedInRole,
     signedInRoles = [signedInRole],
 }: AppShellProps): JSX.Element {
+    const [browserPath, setBrowserPath] = useState(
+        () => window.location.pathname,
+    );
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
     const landing = roleLandings[signedInRole];
+    const currentBrowserPath = currentPath ?? browserPath;
     const activeNavigationPath =
-        currentPath ??
-        (window.location.pathname === "/"
-            ? landing.path
-            : window.location.pathname);
+        currentBrowserPath === "/" ? landing.path : currentBrowserPath;
+
+    useEffect(() => {
+        if (currentPath !== undefined) {
+            return undefined;
+        }
+
+        const handleLocationChange = (): void => {
+            setBrowserPath(window.location.pathname);
+        };
+
+        window.addEventListener("popstate", handleLocationChange);
+
+        return () =>
+            window.removeEventListener("popstate", handleLocationChange);
+    }, [currentPath]);
+
+    function handleSidebarNavigation(
+        event: MouseEvent<HTMLAnchorElement>,
+        path: string,
+    ): void {
+        if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        window.history.pushState(null, "", path);
+        setBrowserPath(path);
+        // Notify router/history listeners because pushState does not emit popstate.
+        window.dispatchEvent(new PopStateEvent("popstate"));
+    }
 
     return (
         <div className="app-shell">
@@ -207,6 +244,9 @@ export function AppShell({
                             className="sidebar__link"
                             href={item.path}
                             key={item.path}
+                            onClick={(event) =>
+                                handleSidebarNavigation(event, item.path)
+                            }
                         >
                             {item.label}
                         </a>
