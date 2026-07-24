@@ -259,6 +259,129 @@
     color: #102a43;
 }
 
+.ef-state {
+    display: grid;
+    min-height: 280px;
+    align-content: center;
+    justify-items: center;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334e68;
+    padding: 32px;
+    text-align: center;
+}
+
+.ef-state h2 {
+    margin: 14px 0 8px;
+    color: #102a43;
+    font-size: 1rem;
+}
+
+.ef-state p {
+    max-width: 520px;
+    margin: 0 0 20px;
+    color: #52606d;
+    line-height: 1.5;
+}
+
+.ef-state--loading {
+    gap: 22px;
+    justify-items: stretch;
+    text-align: left;
+}
+
+.ef-state__icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #f0f4f8;
+    color: #243b53;
+    font-weight: 800;
+}
+
+.ef-state--error .ef-state__icon {
+    border-color: #f29b9b;
+    background: #ffeeee;
+    color: #8a1c1c;
+}
+
+.ef-state__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.ef-skeleton-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ef-skeleton-card,
+.ef-skeleton-row {
+    display: block;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #e6e8ea;
+}
+
+.ef-skeleton-card {
+    min-height: 92px;
+}
+
+.ef-skeleton-table {
+    display: grid;
+    gap: 12px;
+}
+
+.ef-skeleton-row {
+    min-height: 54px;
+}
+
+.ef-skeleton-card::after,
+.ef-skeleton-row::after {
+    display: block;
+    width: 45%;
+    height: 100%;
+    animation: ef-skeleton-pulse 1.25s ease-in-out infinite;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgb(255 255 255 / 62%),
+        transparent
+    );
+    content: "";
+}
+
+@keyframes ef-skeleton-pulse {
+    from {
+        transform: translateX(-120%);
+    }
+
+    to {
+        transform: translateX(260%);
+    }
+}
+
+@media (max-width: 900px) {
+    .ef-skeleton-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .ef-skeleton-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .ef-stage-stepper__item--invalid .ef-stage-stepper__label {
     color: #8a1c1c;
 }

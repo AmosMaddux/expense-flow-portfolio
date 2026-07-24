@@ -255,6 +255,7 @@ export async function getCaseQueueStageRollups(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
         const parsedQuery = ReadCaseQueueStageRollupsQuerySchema.parse({
             asOfDate: req.query.asOfDate,
         });
@@ -340,6 +341,16 @@ function requireInternalAuditTrailAccess(
     throw new ForbiddenError(
         "Audit Trail access is limited to internal roles.",
     );
+}
+
+function requireInternalCaseQueueAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.some((role) => internalExpenseReportRoles.has(role))) {
+        return;
+    }
+
+    throw new ForbiddenError("Case Queue access is limited to internal roles.");
 }
 
 const internalExpenseReportRoles = new Set<RoleName>([

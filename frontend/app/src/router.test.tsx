@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
     cleanup,
     fireEvent,
@@ -36,10 +37,40 @@ function createAuthClientMock(loginRole: Role): AuthClient {
 }
 
 function RoutedApp({ authClient }: { authClient: AuthClient }): JSX.Element {
+    const queryClient = new QueryClient({
+        defaultOptions: {
+            queries: { retry: false },
+        },
+    });
+    const fetchImplementation = vi.fn<typeof fetch>(() =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify([
+                    {
+                        currentStage: "Submitted",
+                        overdueCount: 0,
+                        reportCount: 1,
+                    },
+                ]),
+                {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                },
+            ),
+        ),
+    );
+
     return (
-        <AuthProvider authClient={authClient} now={() => baseTime}>
-            <ExpenseFlowRouter />
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+            <AuthProvider
+                authClient={authClient}
+                clearCache={() => queryClient.clear()}
+                fetchImplementation={fetchImplementation}
+                now={() => baseTime}
+            >
+                <ExpenseFlowRouter />
+            </AuthProvider>
+        </QueryClientProvider>
     );
 }
 
@@ -153,7 +184,15 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
-        await screen.findByRole("heading", { name: "Approval Queue" });
+        await waitFor(() =>
+            expect(
+                screen.getAllByRole("heading", { name: "Case Queue" }),
+            ).toHaveLength(2),
+        );
+        expect(screen.getAllByText("Approval Queue").length).toBeGreaterThan(1);
+        expect(
+            screen.queryByText(/This protected workspace route is available/),
+        ).toBeNull();
         expect(
             screen
                 .getByRole("link", { name: "Approval Queue" })
@@ -193,5 +232,22 @@ describe("ExpenseFlowRouter", () => {
         await waitFor(() =>
             expect(window.location.pathname).toBe("/my-submissions"),
         );
+    });
+
+    test("redirects Employee users away from the internal Case Queue route", async () => {
+        const authClient = createAuthClientMock("Employee");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Employee"),
+        );
+        window.history.pushState(null, "", "/approval-queue");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "My Submissions" });
+        await waitFor(() =>
+            expect(window.location.pathname).toBe("/my-submissions"),
+        );
+        expect(
+            screen.queryByRole("heading", { name: "Case Queue" }),
+        ).toBeNull();
     });
 });

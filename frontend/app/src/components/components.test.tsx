@@ -1,10 +1,13 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
     Badge,
     Button,
     EXPENSE_REPORT_STAGES,
+    EmptyState,
+    ErrorState,
+    LoadingSkeleton,
     OverdueBadge,
     StageStepper,
     StatusBadge,
@@ -132,5 +135,67 @@ describe("shared component primitives", () => {
             "ef-stage-stepper__item--paused",
         );
         expect(getByText("Paused")).toBeTruthy();
+    });
+
+    test("loading skeleton exposes an accessible loading status", () => {
+        const { getByRole } = render(
+            <LoadingSkeleton label="Loading Case Queue" />,
+        );
+
+        expect(getByRole("status").getAttribute("aria-label")).toBe(
+            "Loading Case Queue",
+        );
+    });
+
+    test("empty state renders the provided title, body, and action", () => {
+        const { getByRole, getByText } = render(
+            <EmptyState
+                action={<Button>Refresh</Button>}
+                body="No Expense Reports need review."
+                title="No reports waiting"
+            />,
+        );
+
+        expect(getByRole("region", { name: "No reports waiting" })).toBeTruthy();
+        expect(getByText("No Expense Reports need review.")).toBeTruthy();
+        expect(getByRole("button", { name: "Refresh" })).toBeTruthy();
+    });
+
+    test("error state invokes retry when the retry action is clicked", () => {
+        const onRetry = vi.fn();
+        const { getByRole, getByText } = render(
+            <ErrorState
+                message="Synthetic Case Queue failure."
+                onRetry={onRetry}
+                title="Unable to load Case Queue"
+            />,
+        );
+
+        getByRole("button", { name: "Retry" }).click();
+
+        expect(
+            getByRole("heading", { name: "Unable to load Case Queue" }),
+        ).toBeTruthy();
+        expect(getByText("Synthetic Case Queue failure.")).toBeTruthy();
+        expect(onRetry).toHaveBeenCalledOnce();
+    });
+
+    test("error state has reusable default copy and disables retry while retrying", () => {
+        const { getByRole } = render(
+            <ErrorState
+                isRetrying
+                message="Synthetic workspace failure."
+                onRetry={vi.fn()}
+            />,
+        );
+
+        expect(
+            getByRole("heading", { name: "Unable to load data" }),
+        ).toBeTruthy();
+        expect(
+            getByRole("button", { name: "Retrying..." }).hasAttribute(
+                "disabled",
+            ),
+        ).toBe(true);
     });
 });

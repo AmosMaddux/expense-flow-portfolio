@@ -23,6 +23,7 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
+import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -63,7 +64,12 @@ const protectedRoutes = navigationItems.map((item) =>
     createRoute({
         getParentRoute: () => authenticatedRoute,
         path: item.path,
-        component: () => <WorkspaceScreen item={item} />,
+        component: () =>
+            item.path === "/approval-queue" ? (
+                <CaseQueueScreen />
+            ) : (
+                <WorkspaceScreen item={item} />
+            ),
     }),
 );
 
