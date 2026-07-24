@@ -8,6 +8,7 @@ import {
 } from "../../errors/problem-json.js";
 import {
     ClearExpenseReportFlagsInboundRequestSchema,
+    CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
@@ -27,9 +28,12 @@ import {
 } from "../../logging/coreCaseLogger.js";
 import {
     clearExpenseReportFlags,
+    addMileageEntry,
     createDraftExpenseReport,
+    readCurrentDraftExpenseReport,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    readMileageConfig,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
 } from "../services/expenseReportService.js";
@@ -37,6 +41,76 @@ import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRep
 
 const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
+
+/**
+ * Handles reads for the employee's current Drafted Expense Report.
+ */
+export async function getCurrentDraftExpenseReport(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const report = await readCurrentDraftExpenseReport({
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+        });
+
+        res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles reads for the configured mileage reimbursement policy.
+ */
+export function getMileageConfig(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): void {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        res.status(200).json(readMileageConfig());
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles mileage additions to an employee-owned Drafted Expense Report.
+ */
+export async function postMileageEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = CreateMileageEntryInboundRequestSchema.parse(
+            req.body,
+        );
+        const entry = await addMileageEntry({
+            ...parsedRequest,
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            ownerId: auth.userId,
+        });
+
+        res.status(201).json(entry);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 
 /**
  * Handles Expense Report creation requests.
@@ -377,6 +451,14 @@ function hasInternalExpenseReportRole(
     auth: NonNullable<Request["auth"]>,
 ): boolean {
     return auth.roles.some((role) => internalExpenseReportRoles.has(role));
+}
+
+function requireEmployeeAccess(auth: NonNullable<Request["auth"]>): void {
+    if (!auth.roles.includes("Employee")) {
+        throw new ForbiddenError(
+            "Mileage logging is limited to the Employee Portal.",
+        );
+    }
 }
 
 function parseIdempotencyKey(req: Request): string {

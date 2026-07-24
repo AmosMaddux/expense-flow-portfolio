@@ -61,6 +61,11 @@ export type SubmissionSources = {
     }>;
 };
 
+export type InsertMileageEntryResult =
+    | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
 type ExpenseReportTransaction = Parameters<
     Parameters<typeof db.transaction>[0]
 >[0];
@@ -105,6 +110,104 @@ export async function findExpenseReportById(
     }
 
     return undefined;
+}
+
+/**
+ * Reads the most recently updated Drafted Expense Report owned by an employee.
+ */
+export async function findCurrentDraftExpenseReport(
+    tenantId: string,
+    ownerId: string,
+): Promise<ExpenseReport | undefined> {
+    const reports = await db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+                eq(expenseReport.currentStage, "Drafted"),
+            ),
+        )
+        .orderBy(desc(expenseReport.updatedAt))
+        .limit(1);
+
+    return reports[0];
+}
+
+/**
+ * Adds a mileage entry to an employee-owned Drafted Expense Report.
+ */
+export async function insertMileageEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    route: string;
+    distance: string;
+    mileageDate: string;
+}): Promise<InsertMileageEntryResult> {
+    return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.expenseReportId),
+                    eq(expenseReport.owner, request.ownerId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage !== "Drafted") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage as ExpenseReportStage,
+            };
+        }
+
+        const insertedEntries = await transaction
+            .insert(mileageEntry)
+            .values({
+                tenantId: request.tenantId,
+                expenseReportId: request.expenseReportId,
+                route: request.route,
+                distance: request.distance,
+                mileageDate: request.mileageDate,
+            })
+            .returning();
+        const entry = insertedEntries[0];
+        if (entry === undefined) {
+            throw new Error("Unable to add mileage entry.");
+        }
+
+        await transaction
+            .update(expenseReport)
+            .set({ updatedAt: new Date() })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.expenseReportId),
+                ),
+            );
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "mileage_entry_added",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Drafted",
+        });
+
+        return { kind: "created", entry };
+    });
 }
 
 /**

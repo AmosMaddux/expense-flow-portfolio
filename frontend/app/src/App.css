@@ -282,6 +282,11 @@ button:disabled {
     color: #93000a;
 }
 
+.form-message--success {
+    background: #dff7eb;
+    color: #075c3d;
+}
+
 .auth-card__support,
 .auth-form__secondary {
     border-top: 1px solid #e0e3e5;
@@ -448,9 +453,203 @@ button:disabled {
     line-height: 1.6;
 }
 
+.mileage-screen {
+    display: grid;
+    gap: 24px;
+}
+
+.mileage-screen__header h2 {
+    margin: 5px 0 6px;
+    color: #102a43;
+    font-size: 1.5rem;
+}
+
+.mileage-screen__header > p:last-child {
+    margin: 0;
+    color: #52606d;
+}
+
+.mileage-layout {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid #bcccdc;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 12px 32px rgb(16 42 67 / 7%);
+    grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.mileage-form {
+    display: grid;
+    gap: 24px;
+    padding: 32px;
+}
+
+.mileage-form__route,
+.mileage-form__calculation {
+    display: grid;
+    align-items: start;
+    gap: 20px;
+}
+
+.mileage-form__route {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mileage-form__calculation {
+    grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+}
+
+.mileage-field {
+    display: grid;
+    gap: 8px;
+}
+
+.mileage-field label {
+    color: #334e68;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.mileage-field input {
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid #9fb3c8;
+    border-radius: 7px;
+    outline: none;
+    background: #fff;
+    color: #102a43;
+    padding: 0 14px;
+}
+
+.mileage-field input:focus {
+    border-color: #486581;
+    box-shadow: 0 0 0 3px rgb(72 101 129 / 13%);
+}
+
+.mileage-field input[aria-invalid="true"] {
+    border-color: #ba1a1a;
+}
+
+.mileage-field__error {
+    margin: 0;
+    color: #93000a;
+    font-size: 0.78rem;
+}
+
+.mileage-distance {
+    position: relative;
+}
+
+.mileage-distance input {
+    padding-right: 46px;
+}
+
+.mileage-distance span {
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    color: #627d98;
+    font-size: 0.78rem;
+    font-weight: 700;
+    transform: translateY(-50%);
+}
+
+.mileage-preview {
+    display: grid;
+    min-height: 76px;
+    align-content: center;
+    gap: 4px;
+    border: 1px solid #b6e5d1;
+    border-radius: 8px;
+    background: #edf9f3;
+    color: #075c3d;
+    padding: 12px 16px;
+}
+
+.mileage-preview span {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.mileage-preview strong {
+    font-size: 1.3rem;
+}
+
+.mileage-form__actions {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr 2fr;
+}
+
+.mileage-form__actions .button--primary {
+    width: auto;
+}
+
+.mileage-policy {
+    border-left: 1px solid #d9e2ec;
+    background: #f0f4f8;
+    padding: 32px 24px;
+}
+
+.mileage-policy h3 {
+    margin: 0 0 24px;
+    color: #102a43;
+    font-size: 1rem;
+}
+
+.mileage-policy p {
+    color: #52606d;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.mileage-policy strong {
+    display: block;
+    margin: 8px 0 28px;
+    color: #075c3d;
+    font-size: 1.25rem;
+}
+
 .case-queue {
     display: grid;
     gap: 24px;
+}
+
+@media (max-width: 900px) {
+    .mileage-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .mileage-policy {
+        border-top: 1px solid #d9e2ec;
+        border-left: 0;
+    }
+}
+
+@media (max-width: 700px) {
+    .app-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+    }
+
+    .workspace__content,
+    .mileage-form {
+        padding: 20px;
+    }
+
+    .mileage-form__route,
+    .mileage-form__calculation,
+    .mileage-form__actions {
+        grid-template-columns: 1fr;
+    }
 }
 
 .case-queue__header {

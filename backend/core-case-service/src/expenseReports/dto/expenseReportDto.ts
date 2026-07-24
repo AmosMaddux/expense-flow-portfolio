@@ -20,6 +20,18 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+export const CreateMileageEntryInboundRequestSchema = z
+    .object({
+        route: z.string().trim().min(3).max(500),
+        distance: z
+            .number()
+            .positive("Distance must be greater than zero.")
+            .max(999999.99)
+            .multipleOf(0.01),
+        mileageDate: z.iso.date(),
+    })
+    .strict();
+
 export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
 
 export const TransitionExpenseReportWorkflowInboundRequestSchema = z
@@ -75,6 +87,26 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     holdReason: z.string().nullable(),
     createdAt: z.date(),
     updatedAt: z.date(),
+});
+
+export const MileageEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string(),
+    distance: z.number().positive(),
+    mileageDate: z.iso.date(),
+    reimbursement: z.object({
+        ratePerMile: z.number().positive(),
+        amount: z.number().nonnegative(),
+        currency: z.literal("USD"),
+    }),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+});
+
+export const MileageConfigOutboundResponseSchema = z.object({
+    ratePerMile: z.number().positive(),
+    currency: z.literal("USD"),
 });
 
 export const CaseQueueStageRollupSchema = z.object({
@@ -146,6 +178,18 @@ export type CreateExpenseReportRequest = z.infer<
 
 export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
+>;
+
+export type CreateMileageEntryRequest = z.infer<
+    typeof CreateMileageEntryInboundRequestSchema
+>;
+
+export type MileageEntryResponse = z.infer<
+    typeof MileageEntryOutboundResponseSchema
+>;
+
+export type MileageConfigResponse = z.infer<
+    typeof MileageConfigOutboundResponseSchema
 >;
 
 export type SubmitExpenseReportRequest = z.infer<

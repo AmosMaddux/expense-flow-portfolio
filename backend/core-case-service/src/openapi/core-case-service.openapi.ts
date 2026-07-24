@@ -11,7 +11,10 @@ import {
     AuditEntryListOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
+    CreateMileageEntryInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    MileageConfigOutboundResponseSchema,
+    MileageEntryOutboundResponseSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
@@ -57,6 +60,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportResponse = registry.register(
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
+    );
+    const createMileageEntryRequest = registry.register(
+        "CreateMileageEntryRequest",
+        CreateMileageEntryInboundRequestSchema,
+    );
+    const mileageEntryResponse = registry.register(
+        "MileageEntryResponse",
+        MileageEntryOutboundResponseSchema,
+    );
+    const mileageConfigResponse = registry.register(
+        "MileageConfigResponse",
+        MileageConfigOutboundResponseSchema,
     );
     const submitExpenseReportRequest = registry.register(
         "SubmitExpenseReportRequest",
@@ -285,6 +300,95 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             403: problemJsonResponse("Authenticated role is not permitted."),
             409: problemJsonResponse(
                 "Submission with this idempotency key is already in progress.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/drafts/current",
+        summary: "Get the employee's current Drafted Expense Report",
+        description:
+            "Loads the most recently updated Drafted Expense Report owned by the authenticated Employee.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Current Drafted Expense Report found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("No Drafted Expense Report found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/config/mileage",
+        summary: "Get the configured mileage reimbursement rate",
+        description:
+            "Returns the server-configured per-mile reimbursement policy used by the Employee Mileage Tracker.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Mileage reimbursement configuration found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mileageConfigResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/mileage-entries",
+        summary: "Add mileage to a Drafted Expense Report",
+        description:
+            "Adds a validated mileage entry to an authenticated Employee's own Drafted Expense Report.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: createMileageEntryRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Mileage entry added.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mileageEntryResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed mileage request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Drafted Expense Report not found."),
+            409: problemJsonResponse(
+                "Mileage can only be added while the Expense Report is Drafted.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

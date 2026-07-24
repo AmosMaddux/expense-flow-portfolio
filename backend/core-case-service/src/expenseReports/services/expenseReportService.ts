@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { loadDefaultGlCodingConfig } from "../../config/glCodingConfig.js";
+import { loadMileageConfig } from "../../config/mileageConfig.js";
 import {
     BadGatewayError,
     ConflictError,
@@ -18,8 +19,10 @@ import {
     buildSubmissionSourceFingerprint,
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
     findAuditEntriesByExpenseReportId,
+    findCurrentDraftExpenseReport,
     findExpenseReportById,
     insertDraftExpenseReport,
+    insertMileageEntry,
     insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
     insertDeniedWorkflowTransitionAttempt,
@@ -30,11 +33,16 @@ import {
 import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
     AuditEntryOutboundResponseSchema,
+    MileageConfigOutboundResponseSchema,
+    MileageEntryOutboundResponseSchema,
     type AuditEntryResponse,
     type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
+    type CreateMileageEntryRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
+    type MileageConfigResponse,
+    type MileageEntryResponse,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
 
@@ -88,6 +96,89 @@ export async function readExpenseReport(
     }
 
     return toExpenseReportResponse(report);
+}
+
+/**
+ * Reads the employee's most recently updated Drafted Expense Report.
+ */
+export async function readCurrentDraftExpenseReport(request: {
+    tenantId: string;
+    ownerId: string;
+}): Promise<ExpenseReportResponse> {
+    const report = await findCurrentDraftExpenseReport(
+        request.tenantId,
+        request.ownerId,
+    );
+    if (report === undefined) {
+        throw new NotFoundError("No Drafted Expense Report was found.");
+    }
+
+    return toExpenseReportResponse(report);
+}
+
+/**
+ * Returns the reimbursement policy data used by the Mileage form.
+ */
+export function readMileageConfig(): MileageConfigResponse {
+    const config = loadMileageConfig();
+
+    return MileageConfigOutboundResponseSchema.parse({
+        ratePerMile: config.reimbursementRate,
+        currency: "USD",
+    });
+}
+
+/**
+ * Adds a validated mileage entry to an employee-owned Drafted Expense Report.
+ */
+export async function addMileageEntry(
+    request: CreateMileageEntryRequest & {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        ownerId: string;
+    },
+): Promise<MileageEntryResponse> {
+    const config = loadMileageConfig();
+    const result = await insertMileageEntry({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        route: request.route,
+        distance: request.distance.toFixed(2),
+        mileageDate: request.mileageDate,
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Drafted Expense Report not found.");
+    }
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Mileage can only be added to a Drafted Expense Report; this report is in ${result.currentStage}.`,
+        );
+    }
+
+    const distance = Number(result.entry.distance);
+    const reimbursementAmount =
+        Math.round(
+            (distance * config.reimbursementRate + Number.EPSILON) * 100,
+        ) / 100;
+
+    return MileageEntryOutboundResponseSchema.parse({
+        id: result.entry.id,
+        expenseReportId: result.entry.expenseReportId,
+        route: result.entry.route,
+        distance,
+        mileageDate: result.entry.mileageDate,
+        reimbursement: {
+            ratePerMile: config.reimbursementRate,
+            amount: reimbursementAmount,
+            currency: "USD",
+        },
+        createdAt: result.entry.createdAt,
+        updatedAt: result.entry.updatedAt,
+    });
 }
 
 /**

@@ -235,6 +235,27 @@
                 "required": ["owner", "dueDate"],
                 "additionalProperties": false
             },
+            "CreateMileageEntryRequest": {
+                "type": "object",
+                "properties": {
+                    "route": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 500
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 999999.99
+                    },
+                    "mileageDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["route", "distance", "mileageDate"],
+                "additionalProperties": false
+            },
             "ExpenseReportResponse": {
                 "type": "object",
                 "properties": {
@@ -399,6 +420,80 @@
                     }
                 },
                 "required": ["provisioningUri"]
+            },
+            "MileageConfigResponse": {
+                "type": "object",
+                "properties": {
+                    "ratePerMile": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": ["USD"]
+                    }
+                },
+                "required": ["ratePerMile", "currency"]
+            },
+            "MileageEntryResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "route": {
+                        "type": "string"
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "mileageDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "reimbursement": {
+                        "type": "object",
+                        "properties": {
+                            "ratePerMile": {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                            },
+                            "amount": {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": ["USD"]
+                            }
+                        },
+                        "required": ["ratePerMile", "amount", "currency"]
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "expenseReportId",
+                    "route",
+                    "distance",
+                    "mileageDate",
+                    "reimbursement",
+                    "createdAt",
+                    "updatedAt"
+                ]
             },
             "ProblemJson": {
                 "type": "object",
@@ -731,6 +826,277 @@
                     },
                     "409": {
                         "description": "Submission with this idempotency key is already in progress.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/drafts/current": {
+            "get": {
+                "summary": "Get the employee's current Drafted Expense Report",
+                "description": "Loads the most recently updated Drafted Expense Report owned by the authenticated Employee.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current Drafted Expense Report found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No Drafted Expense Report found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/config/mileage": {
+            "get": {
+                "summary": "Get the configured mileage reimbursement rate",
+                "description": "Returns the server-configured per-mile reimbursement policy used by the Employee Mileage Tracker.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Mileage reimbursement configuration found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MileageConfigResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/mileage-entries": {
+            "post": {
+                "summary": "Add mileage to a Drafted Expense Report",
+                "description": "Adds a validated mileage entry to an authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMileageEntryRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Mileage entry added.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MileageEntryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed mileage request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Drafted Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Mileage can only be added while the Expense Report is Drafted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

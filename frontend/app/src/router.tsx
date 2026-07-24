@@ -13,6 +13,7 @@ import { z } from "zod";
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
 import { useSession, type SessionUser } from "./auth";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
+import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -53,6 +54,8 @@ const protectedRoutes = navigationItems.map((item) =>
         component: () =>
             item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
+            ) : item.path === "/log-mileage" ? (
+                <LogMileageScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),
