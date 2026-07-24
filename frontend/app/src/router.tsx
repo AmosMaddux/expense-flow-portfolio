@@ -16,7 +16,6 @@ import {
     getNavigationItemsForRoles,
     navigationItems,
     type NavigationItem,
-    type RoleName,
 } from "./navigation";
 
 const loginSearchSchema = z.object({
