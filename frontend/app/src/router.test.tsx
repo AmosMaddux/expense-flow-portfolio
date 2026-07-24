@@ -166,6 +166,21 @@ describe("ExpenseFlowRouter", () => {
         ).toBeNull();
     });
 
+    test("renders sign out in the routed workspace and clears the session", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Finance Admin"),
+        );
+        window.history.pushState(null, "", "/finance-dashboard");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "Finance Dashboard" });
+        fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+        await screen.findByRole("heading", { name: "Welcome back" });
+        expect(authClient.logout).toHaveBeenCalledOnce();
+        expect(window.location.pathname).toBe("/login");
+    });
     test("redirects authenticated users away from routes their role cannot access", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(

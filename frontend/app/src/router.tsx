@@ -206,6 +206,9 @@ function AuthenticatedLayout(): JSX.Element {
             currentPath={location.pathname}
             signedInRole={session.user.role}
             signedInRoles={session.user.roles}
+            onLogout={async () => {
+                await session.logout();
+            }}
         >
             <RoutedWorkspaceOutlet />
         </AppShell>
