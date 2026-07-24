@@ -7,11 +7,22 @@ import {
     useLocation,
     useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
-import { useSession, type SessionUser } from "./auth";
+import {
+    AuthRequestError,
+    useSession,
+    type LoginRequest,
+    type SessionUser,
+} from "./auth";
+import {
+    MfaChallengeScreen,
+    PasswordResetConfirmationScreen,
+    PasswordResetRequestScreen,
+    SignInScreen,
+} from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
@@ -23,6 +34,9 @@ import {
 const loginSearchSchema = z.object({
     redirect: z.string().optional(),
 });
+
+type UnauthenticatedView = "sign-in" | "mfa" | "reset" | "reset-confirmation";
+type PendingCredentials = Omit<LoginRequest, "totpCode">;
 
 const rootRoute = createRootRoute({
     component: Outlet,
@@ -100,6 +114,9 @@ function IndexRedirect(): JSX.Element {
 function LoginRoute(): JSX.Element {
     const session = useSession();
     const search = loginRoute.useSearch();
+    const [view, setView] = useState<UnauthenticatedView>("sign-in");
+    const [pendingCredentials, setPendingCredentials] =
+        useState<PendingCredentials | null>(null);
 
     if (session.isRestoring) {
         return <AppStatus message="Restoring session" />;
@@ -113,7 +130,68 @@ function LoginRoute(): JSX.Element {
         );
     }
 
-    return <AppStatus message="Login route" />;
+    if (view === "reset") {
+        return (
+            <PasswordResetRequestScreen
+                onBack={() => setView("sign-in")}
+                onRequested={() => setView("reset-confirmation")}
+            />
+        );
+    }
+
+    if (view === "reset-confirmation") {
+        return (
+            <PasswordResetConfirmationScreen
+                onBack={() => setView("sign-in")}
+            />
+        );
+    }
+
+    if (view === "mfa" && pendingCredentials !== null) {
+        return (
+            <MfaChallengeScreen
+                email={pendingCredentials.email}
+                onBack={() => {
+                    setPendingCredentials(null);
+                    setView("sign-in");
+                }}
+                onVerify={async (totpCode) => {
+                    await session.login({ ...pendingCredentials, totpCode });
+                }}
+            />
+        );
+    }
+
+    return (
+        <SignInScreen
+            onForgotPassword={() => setView("reset")}
+            onSubmit={async ({ email, password }) => {
+                const tenantId = import.meta.env.VITE_TENANT_ID ?? "";
+                if (tenantId.length === 0) {
+                    throw new Error(
+                        "Sign-in is not configured for an organization.",
+                    );
+                }
+
+                const credentials = { tenantId, email, password };
+
+                try {
+                    await session.login(credentials);
+                } catch (error) {
+                    if (
+                        error instanceof AuthRequestError &&
+                        error.code === "MFA_REQUIRED"
+                    ) {
+                        setPendingCredentials(credentials);
+                        setView("mfa");
+                        return;
+                    }
+
+                    throw error;
+                }
+            }}
+        />
+    );
 }
 
 function AuthenticatedLayout(): JSX.Element {
@@ -137,6 +215,9 @@ function AuthenticatedLayout(): JSX.Element {
             currentPath={location.pathname}
             signedInRole={session.user.role}
             signedInRoles={session.user.roles}
+            onLogout={async () => {
+                await session.logout();
+            }}
         >
             <RoutedWorkspaceOutlet />
         </AppShell>
@@ -170,6 +251,7 @@ function RouteRedirect({
 
     return null;
 }
+
 function WorkspaceScreen({ item }: { item: NavigationItem }): JSX.Element {
     return (
         <section className="screen-placeholder" aria-label="Screen content">
@@ -196,6 +278,7 @@ function AppStatus({ message }: { message: string }): JSX.Element {
 function getDashboardPathForUser(user: SessionUser): string {
     return getNavigationItemsForRoles(user.roles)[0]?.path ?? "/login";
 }
+
 function getPostLoginPath(user: SessionUser, redirectPath?: string): string {
     if (
         redirectPath !== undefined &&

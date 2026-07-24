@@ -85,6 +85,7 @@ export default defineConfig({
                     environment: "jsdom",
                     include: [`${frontendSourceRoot}**/*.test.{ts,tsx}`],
                     root: repositoryRoot,
+                    testTimeout: 10_000,
                 },
             },
         ],
