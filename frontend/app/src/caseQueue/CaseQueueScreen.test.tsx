@@ -5,6 +5,7 @@ import {
     render,
     screen,
     waitFor,
+    within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -139,8 +140,8 @@ describe("CaseQueueScreen", () => {
                 overdueCount: 2,
             },
             { currentStage: "AP Review", reportCount: 2, overdueCount: 1 },
-            { currentStage: "Paid", reportCount: 5, overdueCount: 0 },
-            { currentStage: "Reconciled", reportCount: 6, overdueCount: 0 },
+            { currentStage: "Paid", reportCount: 5, overdueCount: 7 },
+            { currentStage: "Reconciled", reportCount: 6, overdueCount: 8 },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(rollups)),
@@ -154,15 +155,26 @@ describe("CaseQueueScreen", () => {
         expect(
             await screen.findByText("4 submitted, 3 manager, 2 AP"),
         ).toBeTruthy();
-        expect(screen.getByText("9")).toBeTruthy();
+        const summary = screen.getByLabelText("Case Queue summary");
+        expect(within(summary).getByText("9")).toBeTruthy();
         expect(screen.getByText("Overdue Reviews")).toBeTruthy();
+        expect(within(summary).getByText("4")).toBeTruthy();
         expect(screen.getByText("Reports past their review due date")).toBeTruthy();
         expect(
             screen.getByRole("table", {
                 name: "Stage rollups from the authenticated Case Queue fetch",
             }),
         ).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /Submitted 4 1 Needs review/i }),
+        ).toBeTruthy();
         expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /Paid 5 7 Clear/i }),
+        ).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /Reconciled 6 8 Clear/i }),
+        ).toBeTruthy();
         expect(screen.getByText("Showing 6 workflow stages with 21 total reports")).toBeTruthy();
     });
 
@@ -268,6 +280,32 @@ describe("CaseQueueScreen", () => {
                 name: "No reports waiting for review",
             }),
         ).toBeNull();
+    });
+
+    test("does not retry an invalid response shape with the production retry policy", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                createJsonResponse([
+                    {
+                        currentStage: "Submitted",
+                        overdueCount: 0,
+                        reportCount: "not-a-number",
+                    },
+                ]),
+            ),
+        );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createFastProductionRetryQueryClient(),
+        );
+
+        expect(
+            await screen.findByRole("heading", {
+                name: "Unable to load Case Queue",
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
     test("uses the production retry policy before showing a non-auth error", async () => {

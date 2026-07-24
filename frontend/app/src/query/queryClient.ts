@@ -4,6 +4,7 @@ import {
     type QueryFunctionContext,
     type UseQueryResult,
 } from "@tanstack/react-query";
+import { ZodError } from "zod";
 
 import {
     AuthRequestError,
@@ -159,6 +160,10 @@ export function shouldRetryQueryFailure(
     }
 
     if (error instanceof QueryRequestError && isTerminalClientError(error)) {
+        return false;
+    }
+
+    if (error instanceof ZodError) {
         return false;
     }
 

@@ -167,7 +167,9 @@ export function AuthProvider({
             // reports a failed cache clear or revocation call.
             await Promise.resolve()
                 .then(clearCache)
-                .catch((error: unknown) => onLogoutError(error));
+                .catch((error: unknown) => {
+                    reportLogoutError(onLogoutError, error);
+                });
             const nextSession = await client.login(request);
             persistSession(nextSession);
         },
@@ -185,11 +187,7 @@ export function AuthProvider({
 
         for (const result of results) {
             if (result.status === "rejected") {
-                try {
-                    onLogoutError(result.reason as unknown);
-                } catch {
-                    // Reporting failures must not make the logout contract reject.
-                }
+                reportLogoutError(onLogoutError, result.reason as unknown);
             }
         }
     }, [clearCache, client, onLogoutError, persistSession]);
@@ -344,7 +342,9 @@ async function refreshAndPersistSession(
         // same way login/logout report a failed cache clear.
         await Promise.resolve()
             .then(clearCache)
-            .catch((error: unknown) => onLogoutError(error));
+            .catch((error: unknown) => {
+                reportLogoutError(onLogoutError, error);
+            });
         throwIfRequestAborted(signal);
     }
 
@@ -383,6 +383,17 @@ function isAbortError(error: unknown): boolean {
         error instanceof DOMException ||
         (typeof error === "object" && error !== null && "name" in error)
     ) && (error as { name: unknown }).name === "AbortError";
+}
+
+function reportLogoutError(
+    onLogoutError: (error: unknown) => void,
+    error: unknown,
+): void {
+    try {
+        onLogoutError(error);
+    } catch {
+        // Reporting failures must not change auth-session state transitions.
+    }
 }
 
 /**

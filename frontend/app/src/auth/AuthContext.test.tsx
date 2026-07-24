@@ -351,6 +351,61 @@ describe("AuthProvider", () => {
         expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
     });
 
+    test("still persists an authorization-scope refresh when cache error reporting throws", async () => {
+        let currentTime = baseTime;
+        const initialSession = createSession({
+            accessTokenExpiresAt: new Date(baseTime + 61_000).toISOString(),
+        });
+        const refreshedSession = createSession({
+            accessToken: "synthetic-manager-access-token",
+            accessTokenExpiresAt: new Date(
+                baseTime + 10 * 60_000,
+            ).toISOString(),
+            roles: ["Department Manager"],
+        });
+        const authClient = createAuthClientMock(initialSession);
+        const cacheFailure = new Error("Synthetic cache failure.");
+        const reporterFailure = new Error("Synthetic reporter failure.");
+        const clearCache = vi.fn(() => Promise.resolve());
+        const onLogoutError = vi.fn(() => {
+            throw reporterFailure;
+        });
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                onLogoutError={onLogoutError}
+                now={() => currentTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        vi.mocked(authClient.refresh).mockResolvedValue(refreshedSession);
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+        clearCache.mockRejectedValue(cacheFailure);
+
+        currentTime += 2_000;
+        await expect(sessionApi.getAccessToken()).resolves.toBe(
+            "synthetic-manager-access-token",
+        );
+
+        expect(sessionApi.isAuthenticated).toBe(true);
+        expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
+        await waitFor(() => {
+            expect(sessionApi.user).toMatchObject({
+                role: "Department Manager",
+                roles: ["Department Manager"],
+            });
+        });
+    });
+
     test("refreshes and retries once after a 401 response", async () => {
         const refreshedSession = createSession({
             accessToken: "synthetic-refreshed-access-token",

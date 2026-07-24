@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 
 import {
     AuthRequestError,
@@ -53,6 +54,20 @@ function createQuerySession(
         ...createSession(response),
         user,
     };
+}
+
+function createValidationError(): z.ZodError {
+    const result = z
+        .object({ reportCount: z.number() })
+        .safeParse({ reportCount: "not-a-number" });
+
+    if (result.success) {
+        throw new Error(
+            "Expected synthetic response shape validation to fail.",
+        );
+    }
+
+    return result.error;
 }
 
 describe("createTenantQueryKey", () => {
@@ -430,6 +445,21 @@ describe("createExpenseFlowQueryClient", () => {
         expect(queryFn).toHaveBeenCalledOnce();
     });
 
+    test("does not retry response shape validation failures through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const validationError = createValidationError();
+        const queryFn = vi.fn(() => Promise.reject(validationError));
+
+        await expect(
+            queryClient.fetchQuery({
+                queryFn,
+                queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
+            }),
+        ).rejects.toBe(validationError);
+
+        expect(queryFn).toHaveBeenCalledOnce();
+    });
+
     test("uses the standard retry budget for transient failures through TanStack Query", async () => {
         const queryClient = createExpenseFlowQueryClient();
         const queryFn = vi
@@ -484,6 +514,12 @@ describe("shouldRetryQueryFailure", () => {
                 new QueryRequestError(422, "Invalid request."),
             ),
         ).toBe(false);
+    });
+
+    test("does not retry response shape validation failures", () => {
+        const validationError = createValidationError();
+
+        expect(shouldRetryQueryFailure(0, validationError)).toBe(false);
     });
 
     test("allows the standard retry budget for retryable 400-range query request failures", () => {

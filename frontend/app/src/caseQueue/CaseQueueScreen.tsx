@@ -28,6 +28,12 @@ export type CaseQueueScreenProps = {
     asOfDate?: string;
 };
 
+const reviewRelevantStages = new Set<ExpenseReportStage>([
+    "Submitted",
+    "Manager Approval",
+    "AP Review",
+]);
+
 /**
  * Fetches authenticated Case Queue rollups for the current tenant.
  */
@@ -238,12 +244,16 @@ function CaseQueueRollupTable({
                             <td>
                                 <StatusBadge
                                     label={
-                                        rollup.reportCount > 0
+                                        isReviewRelevantStage(
+                                            rollup.currentStage,
+                                        ) && rollup.reportCount > 0
                                             ? "Needs review"
                                             : "Clear"
                                     }
                                     tone={
-                                        rollup.reportCount > 0
+                                        isReviewRelevantStage(
+                                            rollup.currentStage,
+                                        ) && rollup.reportCount > 0
                                             ? "warning"
                                             : "neutral"
                                     }
@@ -313,10 +323,9 @@ function calculateCaseQueueMetrics(
 
     return {
         apReviewCount,
-        overdueReviewCount: rollups.reduce(
-            (total, rollup) => total + rollup.overdueCount,
-            0,
-        ),
+        overdueReviewCount: rollups
+            .filter((rollup) => isReviewRelevantStage(rollup.currentStage))
+            .reduce((total, rollup) => total + rollup.overdueCount, 0),
         managerApprovalCount,
         pendingApproval:
             submittedCount + managerApprovalCount + apReviewCount,
@@ -370,4 +379,8 @@ function getCaseQueueErrorMessage(error: Error | null): string {
     }
 
     return "The Case Queue could not be loaded. Retry the request or sign in again if the problem continues.";
+}
+
+function isReviewRelevantStage(stage: ExpenseReportStage): boolean {
+    return reviewRelevantStages.has(stage);
 }
