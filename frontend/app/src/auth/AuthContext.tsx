@@ -102,6 +102,7 @@ export function AuthProvider({
             const refreshPromise = refreshAndPersistSession(
                 client,
                 clearCache,
+                onLogoutError,
                 persistSession,
                 refreshVersion,
                 sessionVersionRef,
@@ -129,7 +130,7 @@ export function AuthProvider({
 
             return refreshPromiseRef.current;
         },
-        [clearCache, client, invalidateSession, persistSession],
+        [clearCache, client, invalidateSession, onLogoutError, persistSession],
     );
 
     useEffect(() => {
@@ -203,7 +204,15 @@ export function AuthProvider({
             Date.parse(currentSession.accessTokenExpiresAt) - now() <=
             refreshBufferMs
         ) {
-            return (await refreshSession())?.accessToken ?? null;
+            const refreshedSession = await refreshSession();
+            if (refreshedSession !== null) {
+                return refreshedSession.accessToken;
+            }
+
+            // The refresh may have resolved to null because a concurrent
+            // refresh already advanced sessionRef past this attempt's
+            // version, not because the session is actually gone.
+            return sessionRef.current?.accessToken ?? null;
         }
 
         return currentSession.accessToken;
@@ -240,11 +249,19 @@ export function AuthProvider({
                 throw new AuthRequestError(401, "Authentication was rejected.");
             }
 
+            const refreshVersionBeforeRetry = sessionVersionRef.current;
             const retryResponse = await sendRequest(
                 refreshedSession.accessToken,
             );
             if (retryResponse.status === 401) {
-                await invalidateSession();
+                // Only invalidate if no other refresh has advanced the
+                // session since this retry's token was sent; otherwise a
+                // newer, valid session would be logged out from under the
+                // user because of a stale retried token.
+                if (sessionVersionRef.current === refreshVersionBeforeRetry) {
+                    await invalidateSession();
+                }
+
                 throw new AuthRequestError(401, "Authentication was rejected.");
             }
 
@@ -302,6 +319,7 @@ export function AuthProvider({
 async function refreshAndPersistSession(
     client: AuthClient,
     clearCache: () => void | Promise<void>,
+    onLogoutError: (error: unknown) => void,
     persistSession: (nextSession: AuthSession | null) => void,
     refreshVersion: number,
     sessionVersionRef: { current: number },
@@ -321,7 +339,12 @@ async function refreshAndPersistSession(
         currentSession !== null &&
         !hasSameAuthorizationScope(currentSession, refreshedSession)
     ) {
-        await clearCache();
+        // A failed cache clear must not block persisting the refreshed
+        // session, but it must not be silently lost either: report it the
+        // same way login/logout report a failed cache clear.
+        await Promise.resolve()
+            .then(clearCache)
+            .catch((error: unknown) => onLogoutError(error));
         throwIfRequestAborted(signal);
     }
 

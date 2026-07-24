@@ -304,7 +304,7 @@ describe("AuthProvider", () => {
         });
     });
 
-    test("invalidates the session when authorization-scope refresh cannot clear cache", async () => {
+    test("still persists an authorization-scope refresh when cached query data cannot be cleared, and reports the failure", async () => {
         let currentTime = baseTime;
         const initialSession = createSession({
             accessTokenExpiresAt: new Date(baseTime + 61_000).toISOString(),
@@ -318,10 +318,12 @@ describe("AuthProvider", () => {
         });
         const authClient = createAuthClientMock(initialSession);
         const clearCache = vi.fn(() => Promise.resolve());
+        const onLogoutError = vi.fn();
         render(
             <AuthProvider
                 authClient={authClient}
                 clearCache={clearCache}
+                onLogoutError={onLogoutError}
                 now={() => currentTime}
             >
                 <SessionProbe />
@@ -336,15 +338,17 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
-        clearCache.mockRejectedValue(new Error("Synthetic cache failure."));
+        const cacheFailure = new Error("Synthetic cache failure.");
+        clearCache.mockRejectedValue(cacheFailure);
 
         currentTime += 2_000;
-        await expect(sessionApi.getAccessToken()).resolves.toBeNull();
+        await expect(sessionApi.getAccessToken()).resolves.toBe(
+            "synthetic-manager-access-token",
+        );
 
-        await waitFor(() => {
-            expect(sessionApi.isAuthenticated).toBe(false);
-        });
+        expect(sessionApi.isAuthenticated).toBe(true);
         expect(clearCache).toHaveBeenCalled();
+        expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
     });
 
     test("refreshes and retries once after a 401 response", async () => {
