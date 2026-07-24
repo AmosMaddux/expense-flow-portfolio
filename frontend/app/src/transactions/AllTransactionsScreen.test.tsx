@@ -170,7 +170,7 @@ describe("AllTransactionsScreen", () => {
         expect(screen.getByText("Showing 2 line items")).toBeTruthy();
     });
 
-    test("sends filter query params when filters change", async () => {
+    test("sends filter query params only after filters are applied", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(createTransactionPage([]))),
         );
@@ -178,6 +178,8 @@ describe("AllTransactionsScreen", () => {
         renderAllTransactionsScreen(fetchImplementation);
 
         await screen.findByRole("region", { name: "No transactions found" });
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+
         fireEvent.change(screen.getByLabelText("Category"), {
             target: { value: "Meals" },
         });
@@ -190,6 +192,10 @@ describe("AllTransactionsScreen", () => {
         fireEvent.change(screen.getByLabelText("End date"), {
             target: { value: "2026-07-31" },
         });
+
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledWith(
@@ -290,6 +296,9 @@ describe("AllTransactionsScreen", () => {
         fireEvent.change(screen.getByLabelText("End date"), {
             target: { value: "2026-07-20" },
         });
+
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
         expect(
             await screen.findByRole("row", {

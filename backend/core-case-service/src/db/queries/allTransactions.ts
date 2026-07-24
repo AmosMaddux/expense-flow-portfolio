@@ -51,13 +51,13 @@ export async function readAllTransactions(
 
     if (params.startDate !== undefined) {
         filters.push(
-            sql`${lineItem.createdAt} >= cast(${params.startDate} as date)`,
+            sql`${lineItem.createdAt} >= ${toUtcStartOfDay(params.startDate)}::timestamptz`,
         );
     }
 
     if (params.endDate !== undefined) {
         filters.push(
-            sql`${lineItem.createdAt} < cast(${params.endDate} as date) + interval '1 day'`,
+            sql`${lineItem.createdAt} < ${toUtcExclusiveEndOfDay(params.endDate)}::timestamptz`,
         );
     }
 
@@ -153,6 +153,17 @@ function toIsoDateTime(value: unknown): string {
     }
 
     return new Date(String(value)).toISOString();
+}
+
+function toUtcStartOfDay(date: string): string {
+    return `${date}T00:00:00.000Z`;
+}
+
+function toUtcExclusiveEndOfDay(date: string): string {
+    const endDate = new Date(`${date}T00:00:00.000Z`);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
+
+    return endDate.toISOString();
 }
 
 function createCursor(

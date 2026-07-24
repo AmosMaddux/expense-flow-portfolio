@@ -2705,7 +2705,7 @@ void describe("Expense Report routes", () => {
                 id: "30000000-0000-4000-8000-000000000161",
                 tenantId: otherTenantId,
                 expenseReportId: "60000000-0000-4000-8000-000000000161",
-                merchant: "Other Tenant Bistro",
+                merchant: "Cedar Bistro",
                 amount: "64.20",
                 currency: "USD",
                 category: "Meals",
@@ -2727,7 +2727,13 @@ void describe("Expense Report routes", () => {
         );
         const body = (await response.json()) as {
             items?: Array<{
+                id?: string;
+                expenseReportId?: string;
+                date?: string;
                 merchant?: string;
+                category?: string;
+                amount?: string;
+                currency?: string;
                 status?: string;
                 deductible?: boolean | null;
             }>;
@@ -2737,11 +2743,23 @@ void describe("Expense Report routes", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("ratelimit-limit")).toBe("2");
         expect(body.items).toHaveLength(1);
-        expect(body.items?.[0]).toMatchObject({
+        expect(body.items?.[0]).toEqual({
+            id: "30000000-0000-4000-8000-000000000160",
+            expenseReportId: "60000000-0000-4000-8000-000000000160",
+            date: "2026-07-20T12:00:00.000Z",
             merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
             status: "AP Review",
             deductible: null,
         });
+        expect(
+            body.items?.some(
+                (transaction) =>
+                    transaction.id === "30000000-0000-4000-8000-000000000161",
+            ),
+        ).toBe(false);
         expect(body.nextCursor).toBeNull();
     });
 

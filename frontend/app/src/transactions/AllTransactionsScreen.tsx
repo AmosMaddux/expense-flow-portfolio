@@ -75,13 +75,15 @@ export function useAllTransactions(
  * Renders the Finance Admin All Transactions read-model screen.
  */
 export function AllTransactionsScreen(): JSX.Element {
-    const [filters, setFilters] =
+    const [draftFilters, setDraftFilters] =
+        useState<AllTransactionsFilters>(emptyFilters);
+    const [appliedFilters, setAppliedFilters] =
         useState<AllTransactionsFilters>(emptyFilters);
     const [cursor, setCursor] = useState<string | null>(null);
     const [transactions, setTransactions] = useState<AllTransaction[]>([]);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
     const loadedPageKeys = useRef(new Set<string>());
-    const query = useAllTransactions(filters, cursor);
+    const query = useAllTransactions(appliedFilters, cursor);
     const categories = useMemo(
         () =>
             Array.from(
@@ -113,12 +115,22 @@ export function AllTransactionsScreen(): JSX.Element {
         setNextCursor(page.nextCursor);
     }, [cursor, query.data]);
 
-    const updateFilters = (nextFilters: AllTransactionsFilters) => {
+    const resetPagination = () => {
         loadedPageKeys.current.clear();
         setCursor(null);
         setNextCursor(null);
         setTransactions([]);
-        setFilters(nextFilters);
+    };
+
+    const applyFilters = () => {
+        resetPagination();
+        setAppliedFilters(draftFilters);
+    };
+
+    const clearFilters = () => {
+        resetPagination();
+        setDraftFilters(emptyFilters);
+        setAppliedFilters(emptyFilters);
     };
 
     return (
@@ -138,9 +150,10 @@ export function AllTransactionsScreen(): JSX.Element {
 
             <AllTransactionsFiltersForm
                 categories={categories}
-                filters={filters}
-                onChange={updateFilters}
-                onClear={() => updateFilters(emptyFilters)}
+                filters={draftFilters}
+                onApply={applyFilters}
+                onChange={setDraftFilters}
+                onClear={clearFilters}
             />
 
             <section
@@ -224,11 +237,13 @@ export function createAllTransactionsQueryString(
 function AllTransactionsFiltersForm({
     categories,
     filters,
+    onApply,
     onChange,
     onClear,
 }: {
     categories: string[];
     filters: AllTransactionsFilters;
+    onApply: () => void;
     onChange: (filters: AllTransactionsFilters) => void;
     onClear: () => void;
 }): JSX.Element {
@@ -240,7 +255,10 @@ function AllTransactionsFiltersForm({
         <form
             className="all-transactions-filters"
             aria-label="All Transactions filters"
-            onSubmit={(event) => event.preventDefault()}
+            onSubmit={(event) => {
+                event.preventDefault();
+                onApply();
+            }}
         >
             <label>
                 <span>Category</span>
@@ -294,6 +312,9 @@ function AllTransactionsFiltersForm({
                     value={filters.endDate}
                 />
             </label>
+            <Button size="sm" type="submit" variant="primary">
+                Apply
+            </Button>
             <Button
                 onClick={onClear}
                 size="sm"

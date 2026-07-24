@@ -107,6 +107,14 @@ void describe("readAllTransactions", () => {
             limit: 50,
         });
 
+        expect(transactions.items.map((transaction) => transaction.id)).toEqual(
+            [
+                "85000000-0000-4000-8000-000000000103",
+                "85000000-0000-4000-8000-000000000104",
+                "85000000-0000-4000-8000-000000000102",
+                "85000000-0000-4000-8000-000000000101",
+            ],
+        );
         expect(
             transactions.items.map((transaction) => transaction.merchant),
         ).toEqual([
@@ -150,6 +158,50 @@ void describe("readAllTransactions", () => {
             deductible: null,
         });
         expect(transactions.items[0]?.date).toBe("2026-07-05T10:00:00.000Z");
+    });
+
+    void test("uses UTC day boundaries for date filters", async () => {
+        const boundaryTenantId = "81000000-0000-4000-8000-000000000300";
+        await db.insert(expenseReport).values({
+            id: "84000000-0000-4000-8000-000000000301",
+            currentStage: "AP Review",
+            dueDate: "2026-08-01",
+            owner: ownerId,
+            tenantId: boundaryTenantId,
+        });
+        await db.insert(lineItem).values([
+            {
+                id: "85000000-0000-4000-8000-000000000301",
+                expenseReportId: "84000000-0000-4000-8000-000000000301",
+                tenantId: boundaryTenantId,
+                merchant: "Late Day Cafe",
+                amount: "24.00",
+                currency: "USD",
+                category: "Meals",
+                createdAt: new Date("2026-07-05T23:59:59.999Z"),
+            },
+            {
+                id: "85000000-0000-4000-8000-000000000302",
+                expenseReportId: "84000000-0000-4000-8000-000000000301",
+                tenantId: boundaryTenantId,
+                merchant: "Midnight Market",
+                amount: "18.00",
+                currency: "USD",
+                category: "Meals",
+                createdAt: new Date("2026-07-06T00:00:00.000Z"),
+            },
+        ]);
+
+        const transactions = await readAllTransactions(db, {
+            tenantId: boundaryTenantId,
+            startDate: "2026-07-05",
+            endDate: "2026-07-05",
+            limit: 50,
+        });
+
+        expect(transactions.items.map((transaction) => transaction.id)).toEqual(
+            ["85000000-0000-4000-8000-000000000301"],
+        );
     });
 
     void test("returns no rows when filters only match another tenant", async () => {
