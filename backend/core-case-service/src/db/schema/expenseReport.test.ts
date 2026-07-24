@@ -132,6 +132,10 @@ const glReferenceMigrationSqlUrl = new URL(
     "../../../drizzle/0009_gl_reference_seed.sql",
     import.meta.url,
 );
+const allTransactionsPaginationMigrationSqlUrl = new URL(
+    "../../../drizzle/0020_all_transactions_pagination_idx.sql",
+    import.meta.url,
+);
 
 async function readLatestMigrationSql(): Promise<string> {
     // Drizzle chooses a generated suffix, so pin this test to the next migration number.
@@ -971,6 +975,19 @@ void describe("lineItem schema", () => {
         expect(migrationSql).toContain("line_item_tenant_created_id_idx");
         expect(migrationSql).toContain(
             "line_item_tenant_category_created_id_idx",
+        );
+    });
+
+    void test("creates All Transactions indexes concurrently for production rollout", async () => {
+        const migrationSql = (
+            await readFile(allTransactionsPaginationMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_created_id_idx"',
+        );
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_category_created_id_idx"',
         );
     });
 });

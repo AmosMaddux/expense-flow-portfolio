@@ -1,10 +1,11 @@
 import { fileURLToPath } from "node:url";
 
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+
+import { applyDrizzleMigrations } from "../db/drizzleMigrationRunner.js";
 
 const coreCaseServiceDrizzleUrl = new URL("../../drizzle/", import.meta.url);
 const coreCaseServiceDrizzlePath = fileURLToPath(coreCaseServiceDrizzleUrl);
@@ -53,7 +54,7 @@ export async function applyCoreCaseSchema(
     const db = drizzle(pool);
 
     try {
-        await migrate(db, {
+        await applyDrizzleMigrations(db, {
             migrationsFolder: coreCaseServiceDrizzlePath,
         });
     } finally {

@@ -16,6 +16,7 @@ import {
     type AllTransaction,
     type AllTransactionPage,
 } from "./AllTransactionsScreen";
+import allTransactionsPageContract from "./__fixtures__/allTransactionsPage.contract.json";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
@@ -170,6 +171,67 @@ describe("AllTransactionsScreen", () => {
         expect(screen.getByText("Showing 2 line items")).toBeTruthy();
     });
 
+    test("keeps current rows when already-applied filters are applied again", async () => {
+        const transactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000174",
+                expenseReportId: "60000000-0000-4000-8000-000000000174",
+                date: "2026-07-20T12:00:00.000Z",
+                merchant: "Cedar Bistro",
+                category: "Meals",
+                amount: "64.20",
+                currency: "USD",
+                status: "AP Review",
+                deductible: null,
+            },
+        ];
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                createJsonResponse(createTransactionPage(transactions)),
+            ),
+        );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        expect(await screen.findByText("Cedar Bistro")).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+        expect(screen.getByText("Cedar Bistro")).toBeTruthy();
+        expect(screen.getByText("Showing 1 line items")).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    });
+
+    test("keeps unfiltered rows when clearing already-empty filters", async () => {
+        const transactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000175",
+                expenseReportId: "60000000-0000-4000-8000-000000000175",
+                date: "2026-07-18T12:00:00.000Z",
+                merchant: "Northstar Office",
+                category: "Office Supplies",
+                amount: "92.41",
+                currency: "USD",
+                status: "Submitted",
+                deductible: null,
+            },
+        ];
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                createJsonResponse(createTransactionPage(transactions)),
+            ),
+        );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        expect(await screen.findByText("Northstar Office")).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+        expect(screen.getByText("Northstar Office")).toBeTruthy();
+        expect(screen.getByText("Showing 1 line items")).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    });
+
     test("sends filter query params only after filters are applied", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(createTransactionPage([]))),
@@ -274,46 +336,26 @@ describe("AllTransactionsScreen", () => {
         ).toBeTruthy();
     });
 
-    test("requests transactions, pulls matching line items, and populates the component", async () => {
-        const fetchImplementation = createSyntheticTransactionsFetch();
+    test("renders the backend All Transactions page contract fixture", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(allTransactionsPageContract)),
+        );
 
         renderAllTransactionsScreen(fetchImplementation);
-
-        expect(
-            await screen.findByRole("row", {
-                name: /Jul 20, 2026 Northstar Office Office Supplies \$92\.41 Submitted Not set/i,
-            }),
-        ).toBeTruthy();
-        fireEvent.change(screen.getByLabelText("Category"), {
-            target: { value: "Meals" },
-        });
-        fireEvent.change(screen.getByLabelText("Status"), {
-            target: { value: "AP Review" },
-        });
-        fireEvent.change(screen.getByLabelText("Start date"), {
-            target: { value: "2026-07-20" },
-        });
-        fireEvent.change(screen.getByLabelText("End date"), {
-            target: { value: "2026-07-20" },
-        });
-
-        expect(fetchImplementation).toHaveBeenCalledTimes(1);
-        fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
         expect(
             await screen.findByRole("row", {
                 name: /Jul 20, 2026 Cedar Bistro Meals \$64\.20 AP Review Not set/i,
             }),
         ).toBeTruthy();
-        await waitFor(() =>
-            expect(screen.queryByText("Northstar Office")).toBeNull(),
-        );
-        expect(screen.queryByText("Other Tenant Bistro")).toBeNull();
-        await waitFor(() =>
-            expect(fetchImplementation).toHaveBeenLastCalledWith(
-                "/v1/transactions?category=Meals&status=AP+Review&startDate=2026-07-20&endDate=2026-07-20",
-                expect.objectContaining({}),
-            ),
+        expect(
+            screen.getByRole("row", {
+                name: /Jul 18, 2026 Northstar Office Office Supplies \$92\.41 Submitted Yes/i,
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "/v1/transactions",
+            expect.objectContaining({}),
         );
 
         const lastRequestInit =
@@ -403,156 +445,3 @@ describe("createAllTransactionsQueryString", () => {
         ).toBe("cursor=synthetic-cursor");
     });
 });
-
-type SyntheticReport = {
-    id: string;
-    tenantId: string;
-    status: AllTransaction["status"];
-};
-
-type SyntheticLineItem = {
-    id: string;
-    expenseReportId: string;
-    tenantId: string;
-    date: string;
-    merchant: string;
-    category: string;
-    amount: string;
-    currency: string;
-};
-
-function createSyntheticTransactionsFetch(): ReturnType<
-    typeof vi.fn<typeof fetch>
-> {
-    const reports: SyntheticReport[] = [
-        {
-            id: "60000000-0000-4000-8000-000000000190",
-            tenantId,
-            status: "AP Review",
-        },
-        {
-            id: "60000000-0000-4000-8000-000000000191",
-            tenantId,
-            status: "Submitted",
-        },
-        {
-            id: "60000000-0000-4000-8000-000000000192",
-            tenantId: "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fc",
-            status: "AP Review",
-        },
-    ];
-    const lineItems: SyntheticLineItem[] = [
-        {
-            id: "30000000-0000-4000-8000-000000000190",
-            expenseReportId: "60000000-0000-4000-8000-000000000190",
-            tenantId,
-            date: "2026-07-20T12:00:00.000Z",
-            merchant: "Cedar Bistro",
-            category: "Meals",
-            amount: "64.20",
-            currency: "USD",
-        },
-        {
-            id: "30000000-0000-4000-8000-000000000191",
-            expenseReportId: "60000000-0000-4000-8000-000000000191",
-            tenantId,
-            date: "2026-07-20T12:00:00.000Z",
-            merchant: "Northstar Office",
-            category: "Office Supplies",
-            amount: "92.41",
-            currency: "USD",
-        },
-        {
-            id: "30000000-0000-4000-8000-000000000192",
-            expenseReportId: "60000000-0000-4000-8000-000000000192",
-            tenantId: "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fc",
-            date: "2026-07-20T12:00:00.000Z",
-            merchant: "Other Tenant Bistro",
-            category: "Meals",
-            amount: "64.20",
-            currency: "USD",
-        },
-    ];
-
-    return vi.fn<typeof fetch>((input, init) => {
-        const requestUrl = new URL(
-            resolveFetchInputUrl(input),
-            "http://expenseflow.test",
-        );
-        const authorization =
-            init?.headers instanceof Headers
-                ? init.headers.get("authorization")
-                : null;
-
-        if (
-            requestUrl.pathname !== "/v1/transactions" ||
-            authorization !== "Bearer synthetic-access-token"
-        ) {
-            return Promise.resolve(
-                createJsonResponse(createTransactionPage([]), { status: 404 }),
-            );
-        }
-
-        const rows = lineItems.flatMap((lineItem): AllTransaction[] => {
-            const report = reports.find(
-                (candidate) =>
-                    candidate.id === lineItem.expenseReportId &&
-                    candidate.tenantId === lineItem.tenantId,
-            );
-
-            if (report === undefined || report.tenantId !== tenantId) {
-                return [];
-            }
-
-            const category = requestUrl.searchParams.get("category");
-            const status = requestUrl.searchParams.get("status");
-            const startDate = requestUrl.searchParams.get("startDate");
-            const endDate = requestUrl.searchParams.get("endDate");
-            const transactionDate = lineItem.date.slice(0, 10);
-
-            if (category !== null && lineItem.category !== category) {
-                return [];
-            }
-
-            if (status !== null && report.status !== status) {
-                return [];
-            }
-
-            if (startDate !== null && transactionDate < startDate) {
-                return [];
-            }
-
-            if (endDate !== null && transactionDate > endDate) {
-                return [];
-            }
-
-            return [
-                {
-                    id: lineItem.id,
-                    expenseReportId: lineItem.expenseReportId,
-                    date: lineItem.date,
-                    merchant: lineItem.merchant,
-                    category: lineItem.category,
-                    amount: lineItem.amount,
-                    currency: lineItem.currency,
-                    status: report.status,
-                    deductible: null,
-                },
-            ];
-        });
-
-        return Promise.resolve(createJsonResponse(createTransactionPage(rows)));
-    });
-}
-
-function resolveFetchInputUrl(input: RequestInfo | URL): string {
-    if (typeof input === "string") {
-        return input;
-    }
-
-    if (input instanceof URL) {
-        return input.toString();
-    }
-
-    return input.url;
-}

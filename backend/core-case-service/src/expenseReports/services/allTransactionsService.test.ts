@@ -1,11 +1,27 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, test, vi } from "vitest";
 
+import { AllTransactionPageSchema } from "../../schemas/expense-report.schema.js";
 import {
     readTenantAllTransactions,
     type AllTransactionsServiceDependencies,
 } from "./allTransactionsService.js";
 
+const allTransactionsPageContractFixtureUrl = new URL(
+    "../../../../../frontend/app/src/transactions/__fixtures__/allTransactionsPage.contract.json",
+    import.meta.url,
+);
+
 void describe("readTenantAllTransactions", () => {
+    void test("accepts the shared frontend All Transactions page contract fixture", async () => {
+        const fixture = JSON.parse(
+            await readFile(allTransactionsPageContractFixtureUrl, "utf8"),
+        ) as unknown;
+
+        expect(() => AllTransactionPageSchema.parse(fixture)).not.toThrow();
+    });
+
     void test("passes a validated tenant-scoped request to the transaction store", async () => {
         const readAllTransactions = vi.fn().mockResolvedValue({
             items: [

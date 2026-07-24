@@ -94,13 +94,11 @@ export function AllTransactionsScreen(): JSX.Element {
         [transactions],
     );
 
-    useEffect(() => {
-        const page = query.data;
-        if (page === undefined) {
-            return;
-        }
-
-        const pageKey = cursor ?? "first";
+    const appendPage = (
+        page: AllTransactionPage,
+        pageCursor: string | null,
+    ) => {
+        const pageKey = pageCursor ?? "first";
         if (loadedPageKeys.current.has(pageKey)) {
             setNextCursor(page.nextCursor);
             return;
@@ -108,11 +106,20 @@ export function AllTransactionsScreen(): JSX.Element {
 
         loadedPageKeys.current.add(pageKey);
         setTransactions((currentTransactions) =>
-            cursor === null
+            pageCursor === null
                 ? page.items
                 : [...currentTransactions, ...page.items],
         );
         setNextCursor(page.nextCursor);
+    };
+
+    useEffect(() => {
+        const page = query.data;
+        if (page === undefined) {
+            return;
+        }
+
+        appendPage(page, cursor);
     }, [cursor, query.data]);
 
     const resetPagination = () => {
@@ -123,14 +130,36 @@ export function AllTransactionsScreen(): JSX.Element {
     };
 
     const applyFilters = () => {
+        const isReapplyingCurrentFilters = areFiltersEqual(
+            draftFilters,
+            appliedFilters,
+        );
         resetPagination();
         setAppliedFilters(draftFilters);
+        if (
+            isReapplyingCurrentFilters &&
+            cursor === null &&
+            query.data !== undefined
+        ) {
+            appendPage(query.data, null);
+        }
     };
 
     const clearFilters = () => {
+        const isClearingCurrentFilters = areFiltersEqual(
+            appliedFilters,
+            emptyFilters,
+        );
         resetPagination();
         setDraftFilters(emptyFilters);
         setAppliedFilters(emptyFilters);
+        if (
+            isClearingCurrentFilters &&
+            cursor === null &&
+            query.data !== undefined
+        ) {
+            appendPage(query.data, null);
+        }
     };
 
     return (
@@ -232,6 +261,18 @@ export function createAllTransactionsQueryString(
     }
 
     return queryString.toString();
+}
+
+function areFiltersEqual(
+    left: AllTransactionsFilters,
+    right: AllTransactionsFilters,
+): boolean {
+    return (
+        left.category === right.category &&
+        left.status === right.status &&
+        left.startDate === right.startDate &&
+        left.endDate === right.endDate
+    );
 }
 
 function AllTransactionsFiltersForm({
