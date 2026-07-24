@@ -32,7 +32,7 @@ export const navigationItems = [
     {
         label: "All Transactions",
         path: "/transactions",
-        allowedRoles: financeAdminOnlyRoles,
+        allowedRoles: internalRoles,
     },
     {
         label: "Approval Queue",

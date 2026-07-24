@@ -24,7 +24,6 @@ import {
     SignInScreen,
 } from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
-import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -68,8 +67,6 @@ const protectedRoutes = navigationItems.map((item) =>
         component: () =>
             item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
-            ) : item.path === "/transactions" ? (
-                <AllTransactionsScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),
