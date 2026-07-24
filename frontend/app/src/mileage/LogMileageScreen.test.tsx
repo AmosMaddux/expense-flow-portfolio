@@ -117,6 +117,22 @@ afterEach(() => {
 });
 
 describe("LogMileageScreen", () => {
+    test("shows a stable mileage loading state while checking for a draft", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(
+            () => new Promise<Response>(() => undefined),
+        );
+        renderMileageScreen(fetchImplementation);
+
+        expect(
+            await screen.findByRole("status", {
+                name: "Loading Mileage Tracker",
+            }),
+        ).toBeTruthy();
+        expect(
+            screen.getByText("Checking for a Drafted Expense Report..."),
+        ).toBeTruthy();
+    });
+
     test("shows inline zod validation errors for missing trip details", async () => {
         renderMileageScreen(createMileageFetchMock());
 

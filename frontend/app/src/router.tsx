@@ -116,7 +116,6 @@ function IndexRedirect(): JSX.Element {
 
 function LoginRoute(): JSX.Element {
     const session = useSession();
-    const search = loginRoute.useSearch();
     const [view, setView] = useState<UnauthenticatedView>("sign-in");
     const [pendingCredentials, setPendingCredentials] =
         useState<PendingCredentials | null>(null);
@@ -126,11 +125,7 @@ function LoginRoute(): JSX.Element {
     }
 
     if (session.user !== null) {
-        return (
-            <RouteRedirect
-                to={getPostLoginPath(session.user, search.redirect)}
-            />
-        );
+        return <RouteRedirect to={getDashboardPathForUser(session.user)} />;
     }
 
     if (view === "reset") {
@@ -280,18 +275,6 @@ function AppStatus({ message }: { message: string }): JSX.Element {
 
 function getDashboardPathForUser(user: SessionUser): string {
     return getNavigationItemsForRoles(user.roles)[0]?.path ?? "/login";
-}
-
-function getPostLoginPath(user: SessionUser, redirectPath?: string): string {
-    if (
-        redirectPath !== undefined &&
-        redirectPath.startsWith("/") &&
-        isPathAllowedForUser(redirectPath, user)
-    ) {
-        return redirectPath;
-    }
-
-    return getDashboardPathForUser(user);
 }
 
 function isPathAllowedForUser(pathname: string, user: SessionUser): boolean {

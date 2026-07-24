@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { useSession } from "../auth";
-import { ErrorState, LoadingSkeleton } from "../components";
+import { EmptyState, ErrorState } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 import {
     expenseReportSchema,
@@ -91,7 +92,16 @@ export function LogMileageScreen(): JSX.Element {
     });
 
     if (draftQuery.isPending || configQuery.isPending) {
-        return <LoadingSkeleton label="Loading Mileage Tracker" rows={4} />;
+        return (
+            <section
+                aria-label="Loading Mileage Tracker"
+                aria-live="polite"
+                className="mileage-loading"
+                role="status"
+            >
+                <p>Checking for a Drafted Expense Report...</p>
+            </section>
+        );
     }
 
     const loadError = draftQuery.error ?? configQuery.error;
@@ -99,24 +109,34 @@ export function LogMileageScreen(): JSX.Element {
         const hasNoDraft =
             loadError instanceof QueryRequestError && loadError.status === 404;
 
+        if (hasNoDraft) {
+            return (
+                <EmptyState
+                    action={
+                        <Link
+                            className="button button--primary mileage-empty__action"
+                            to="/submit-expense"
+                        >
+                            Create a draft report
+                        </Link>
+                    }
+                    body="Create a Drafted Expense Report before logging mileage."
+                    icon={null}
+                    title="No draft report available"
+                />
+            );
+        }
+
         return (
             <ErrorState
-                message={
-                    hasNoDraft
-                        ? "Create a Drafted Expense Report before logging mileage."
-                        : getErrorMessage(loadError)
-                }
+                message={getErrorMessage(loadError)}
                 onRetry={() => {
                     void Promise.allSettled([
                         draftQuery.refetch(),
                         configQuery.refetch(),
                     ]);
                 }}
-                title={
-                    hasNoDraft
-                        ? "No draft report available"
-                        : "Unable to load Mileage Tracker"
-                }
+                title="Unable to load Mileage Tracker"
             />
         );
     }

@@ -459,6 +459,27 @@ button:disabled {
     gap: 24px;
 }
 
+.mileage-loading {
+    display: grid;
+    min-height: 280px;
+    place-items: center;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #fff;
+    color: #52606d;
+    text-align: center;
+}
+
+.mileage-loading p {
+    margin: 0;
+}
+
+.mileage-empty__action {
+    width: auto;
+    padding: 0 20px;
+    text-decoration: none;
+}
+
 .mileage-screen__header h2 {
     margin: 5px 0 6px;
     color: #102a43;
@@ -872,10 +893,9 @@ button:disabled {
     display: grid;
     align-items: end;
     gap: 14px;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 1fr) repeat(
-            2,
-            minmax(140px, 0.8fr)
-        ) auto;
+    grid-template-columns:
+        minmax(160px, 1.2fr) minmax(150px, 1fr) repeat(2, minmax(140px, 0.8fr))
+        auto;
 }
 
 .all-transactions-filters label {
