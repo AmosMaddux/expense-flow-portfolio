@@ -126,6 +126,34 @@ describe("AuthProvider", () => {
         expect(sessionApi.user?.tenantId).toBe(tenantId);
     });
 
+    test("clears cached query data when a login establishes a new session", async () => {
+        const authClient = createAuthClientMock();
+        const clearCache = vi.fn(() => Promise.resolve());
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        clearCache.mockClear();
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+                totpCode: "123456",
+            });
+        });
+
+        expect(clearCache).toHaveBeenCalledOnce();
+        expect(sessionApi.isAuthenticated).toBe(true);
+    });
+
     test("refreshes a nearly expired access token through one central accessor", async () => {
         let currentTime = baseTime;
         const initialSession = createSession({
@@ -237,6 +265,7 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
+        clearCache.mockClear();
 
         await act(async () => {
             await expect(
@@ -277,6 +306,7 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
+        clearCache.mockClear();
 
         await act(async () => {
             await expect(
@@ -317,6 +347,7 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
+        clearCache.mockClear();
 
         await act(async () => {
             await expect(sessionApi.logout()).resolves.toBeUndefined();
@@ -357,6 +388,7 @@ describe("AuthProvider", () => {
                 password: "synthetic-password",
             });
         });
+        clearCache.mockClear();
         await act(async () => {
             await expect(sessionApi.getAccessToken()).resolves.toBeNull();
         });

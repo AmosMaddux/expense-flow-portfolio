@@ -26,6 +26,13 @@ const tenantTwoUser: SessionUser = {
     tenantId: "4038c9e3-2223-4fb1-a8f7-3cac30bf4d9a",
 };
 
+const sameTenantDepartmentManagerUser: SessionUser = {
+    id: "e573b2f9-497e-4bec-a45e-f37e8f6c07a1",
+    tenantId: tenantOneUser.tenantId,
+    role: "Department Manager",
+    roles: ["Department Manager"],
+};
+
 function createSession(
     response: Response | (() => Promise<Response> | Response),
 ): Pick<SessionContextValue, "authenticatedFetch"> {
@@ -49,7 +56,7 @@ function createQuerySession(
 }
 
 describe("createTenantQueryKey", () => {
-    test("prefixes query keys with the authenticated tenant", () => {
+    test("prefixes query keys with the authenticated tenant and authorization scope", () => {
         expect(
             createTenantQueryKey(tenantOneUser, [
                 "case-queue",
@@ -59,6 +66,10 @@ describe("createTenantQueryKey", () => {
         ).toEqual([
             "tenant",
             tenantOneUser.tenantId,
+            "principal",
+            tenantOneUser.id,
+            "roles",
+            ["Finance Admin"],
             "case-queue",
             "rollups",
             { asOfDate: "2026-07-22" },
@@ -70,6 +81,29 @@ describe("createTenantQueryKey", () => {
 
         expect(createTenantQueryKey(tenantOneUser, keyParts)).not.toEqual(
             createTenantQueryKey(tenantTwoUser, keyParts),
+        );
+    });
+
+    test("keeps the same logical query separate for different users and roles in one tenant", () => {
+        const keyParts = ["case-queue", "rollups"];
+
+        expect(createTenantQueryKey(tenantOneUser, keyParts)).not.toEqual(
+            createTenantQueryKey(sameTenantDepartmentManagerUser, keyParts),
+        );
+    });
+
+    test("sorts roles so equivalent role sets share a stable authorization scope", () => {
+        const multiRoleUser = {
+            ...tenantOneUser,
+            roles: ["Employee", "Finance Admin"],
+        } satisfies SessionUser;
+        const sameRolesInDifferentOrder = {
+            ...tenantOneUser,
+            roles: ["Finance Admin", "Employee"],
+        } satisfies SessionUser;
+
+        expect(createTenantQueryKey(multiRoleUser, ["case-queue"])).toEqual(
+            createTenantQueryKey(sameRolesInDifferentOrder, ["case-queue"]),
         );
     });
 });
@@ -91,6 +125,37 @@ describe("createAuthenticatedQueryFn", () => {
         expect(session.authenticatedFetch).toHaveBeenCalledWith(
             "/v1/case-queue/rollups?asOfDate=2026-07-22",
             { headers: { Accept: "application/json" } },
+        );
+    });
+
+    test("passes the TanStack Query cancellation signal through request options", async () => {
+        const session = createSession(
+            new Response(JSON.stringify({ total: 3 }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        );
+        const abortController = new AbortController();
+        const queryFn = createAuthenticatedQueryFn<{ total: number }>(session, {
+            input: "/v1/case-queue/rollups",
+            init: {
+                headers: { Accept: "application/json" },
+                method: "GET",
+            },
+        });
+
+        await expect(
+            queryFn({
+                signal: abortController.signal,
+            } as Parameters<typeof queryFn>[0]),
+        ).resolves.toEqual({ total: 3 });
+        expect(session.authenticatedFetch).toHaveBeenCalledWith(
+            "/v1/case-queue/rollups",
+            {
+                headers: { Accept: "application/json" },
+                method: "GET",
+                signal: abortController.signal,
+            },
         );
     });
 
@@ -228,6 +293,61 @@ describe("createExpenseFlowQueryOptions", () => {
         expect(tenantTwoSession.authenticatedFetch).toHaveBeenCalledOnce();
     });
 
+    test("does not reuse cached data for different users or roles in the same tenant", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const keyParts = ["case-queue", "rollups"];
+        const financeAdminSession = createQuerySession(
+            tenantOneUser,
+            () =>
+                new Response(JSON.stringify({ visibleCaseCount: 12 }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+        const departmentManagerSession = createQuerySession(
+            sameTenantDepartmentManagerUser,
+            () =>
+                new Response(JSON.stringify({ visibleCaseCount: 4 }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(financeAdminSession, {
+                    input: "/v1/case-queue/rollups",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual({ visibleCaseCount: 12 });
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(departmentManagerSession, {
+                    input: "/v1/case-queue/rollups",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual({ visibleCaseCount: 4 });
+
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(tenantOneUser, keyParts),
+            ),
+        ).toEqual({ visibleCaseCount: 12 });
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(sameTenantDepartmentManagerUser, keyParts),
+            ),
+        ).toEqual({ visibleCaseCount: 4 });
+        expect(financeAdminSession.authenticatedFetch).toHaveBeenCalledOnce();
+        expect(
+            departmentManagerSession.authenticatedFetch,
+        ).toHaveBeenCalledOnce();
+    });
+
     test("does not enable queries until an authenticated tenant session exists", () => {
         const session = {
             authenticatedFetch: vi.fn(),
@@ -258,9 +378,45 @@ describe("createExpenseFlowQueryClient", () => {
         await expect(
             queryClient.fetchQuery({
                 queryFn,
-                queryKey: ["tenant", tenantOneUser.tenantId, "case-queue"],
+                queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
             }),
         ).rejects.toBeInstanceOf(AuthRequestError);
+
+        expect(queryFn).toHaveBeenCalledOnce();
+    });
+
+    test("does not retry terminal authorization failures through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const queryFn = vi.fn(() =>
+            Promise.reject(
+                new QueryRequestError(403, "Finance Admin role is required."),
+            ),
+        );
+
+        await expect(
+            queryClient.fetchQuery({
+                queryFn,
+                queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
+            }),
+        ).rejects.toBeInstanceOf(QueryRequestError);
+
+        expect(queryFn).toHaveBeenCalledOnce();
+    });
+
+    test("does not retry terminal validation failures through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const queryFn = vi.fn(() =>
+            Promise.reject(
+                new QueryRequestError(422, "Request shape was invalid."),
+            ),
+        );
+
+        await expect(
+            queryClient.fetchQuery({
+                queryFn,
+                queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
+            }),
+        ).rejects.toBeInstanceOf(QueryRequestError);
 
         expect(queryFn).toHaveBeenCalledOnce();
     });
@@ -276,7 +432,7 @@ describe("createExpenseFlowQueryClient", () => {
         await expect(
             queryClient.fetchQuery({
                 queryFn,
-                queryKey: ["tenant", tenantOneUser.tenantId, "case-queue"],
+                queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
             }),
         ).resolves.toEqual({ ready: true });
 
@@ -303,6 +459,42 @@ describe("shouldRetryQueryFailure", () => {
         ).toBe(true);
         expect(
             shouldRetryQueryFailure(2, new Error("Synthetic failure.")),
+        ).toBe(false);
+    });
+
+    test("does not retry terminal 400-range query request failures", () => {
+        expect(
+            shouldRetryQueryFailure(
+                0,
+                new QueryRequestError(403, "Forbidden."),
+            ),
+        ).toBe(false);
+        expect(
+            shouldRetryQueryFailure(
+                0,
+                new QueryRequestError(422, "Invalid request."),
+            ),
+        ).toBe(false);
+    });
+
+    test("allows the standard retry budget for retryable 400-range query request failures", () => {
+        expect(
+            shouldRetryQueryFailure(
+                0,
+                new QueryRequestError(408, "Request timeout."),
+            ),
+        ).toBe(true);
+        expect(
+            shouldRetryQueryFailure(
+                0,
+                new QueryRequestError(429, "Too many requests."),
+            ),
+        ).toBe(true);
+        expect(
+            shouldRetryQueryFailure(
+                2,
+                new QueryRequestError(429, "Too many requests."),
+            ),
         ).toBe(false);
     });
 });

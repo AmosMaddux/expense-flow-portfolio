@@ -155,9 +155,12 @@ export function AuthProvider({
     const login = useCallback(
         async (request: LoginRequest): Promise<void> => {
             const nextSession = await client.login(request);
+            await Promise.resolve()
+                .then(clearCache)
+                .catch(() => undefined);
             persistSession(nextSession);
         },
-        [client, persistSession],
+        [clearCache, client, persistSession],
     );
 
     const logout = useCallback(async (): Promise<void> => {

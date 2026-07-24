@@ -1,6 +1,7 @@
 import {
     QueryClient,
     useQuery,
+    type QueryFunctionContext,
     type UseQueryResult,
 } from "@tanstack/react-query";
 
@@ -19,6 +20,10 @@ export type AuthenticatedQueryRequest<TData> = {
 
 export type ExpenseFlowQueryKey = readonly ["tenant", string, ...unknown[]];
 
+export type ExpenseFlowQueryFunction<TData> = (
+    context?: QueryFunctionContext<ExpenseFlowQueryKey>,
+) => Promise<TData>;
+
 export type ExpenseFlowQueryRequest<TData> =
     AuthenticatedQueryRequest<TData> & {
         enabled?: boolean;
@@ -31,7 +36,7 @@ export type ExpenseFlowQueryRequest<TData> =
 export type ExpenseFlowQueryOptions<TData> = {
     enabled: boolean;
     gcTime?: number;
-    queryFn: () => Promise<TData>;
+    queryFn: ExpenseFlowQueryFunction<TData>;
     queryKey: ExpenseFlowQueryKey;
     refetchOnWindowFocus?: boolean;
     staleTime?: number;
@@ -52,13 +57,21 @@ export class QueryRequestError extends Error {
 }
 
 /**
- * Builds a tenant-scoped query key so cached data cannot cross tenant sessions.
+ * Builds an authorization-scoped query key so cached data cannot cross sessions.
  */
 export function createTenantQueryKey(
     user: SessionUser,
     keyParts: readonly unknown[],
 ): ExpenseFlowQueryKey {
-    return ["tenant", user.tenantId, ...keyParts];
+    return [
+        "tenant",
+        user.tenantId,
+        "principal",
+        user.id,
+        "roles",
+        [...user.roles].sort(),
+        ...keyParts,
+    ];
 }
 
 /**
@@ -89,11 +102,13 @@ export function createExpenseFlowQueryOptions<TData>(
 export function createAuthenticatedQueryFn<TData>(
     session: Pick<SessionContextValue, "authenticatedFetch">,
     request: AuthenticatedQueryRequest<TData>,
-): () => Promise<TData> {
-    return async () => {
+): ExpenseFlowQueryFunction<TData> {
+    return async (
+        context?: QueryFunctionContext<ExpenseFlowQueryKey>,
+    ): Promise<TData> => {
         const response = await session.authenticatedFetch(
             request.input,
-            request.init,
+            createRequestInitWithSignal(request.init, context?.signal),
         );
 
         if (response.status === 401) {
@@ -120,7 +135,7 @@ export function useExpenseFlowQuery<TData>(
 ): UseQueryResult<TData, Error> {
     const session = useSession();
 
-    return useQuery<TData, Error>(
+    return useQuery<TData, Error, TData, ExpenseFlowQueryKey>(
         createExpenseFlowQueryOptions(session, request),
     );
 }
@@ -133,6 +148,10 @@ export function shouldRetryQueryFailure(
     error: unknown,
 ): boolean {
     if (error instanceof AuthRequestError && error.status === 401) {
+        return false;
+    }
+
+    if (error instanceof QueryRequestError && isTerminalClientError(error)) {
         return false;
     }
 
@@ -229,5 +248,25 @@ function isJsonContentType(contentType: string): boolean {
     return (
         contentType.includes("application/json") ||
         contentType.includes("+json")
+    );
+}
+
+function createRequestInitWithSignal(
+    init: RequestInit | undefined,
+    signal: AbortSignal | undefined,
+): RequestInit | undefined {
+    if (signal === undefined) {
+        return init;
+    }
+
+    return { ...init, signal };
+}
+
+function isTerminalClientError(error: QueryRequestError): boolean {
+    return (
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 408 &&
+        error.status !== 429
     );
 }
