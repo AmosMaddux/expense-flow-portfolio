@@ -161,11 +161,16 @@ export function AuthProvider({
 
     const login = useCallback(
         async (request: LoginRequest): Promise<void> => {
-            await clearCache();
+            // A failed cache clear must not block login, but it must not be
+            // silently lost either: it's reported the same way logout
+            // reports a failed cache clear or revocation call.
+            await Promise.resolve()
+                .then(clearCache)
+                .catch((error: unknown) => onLogoutError(error));
             const nextSession = await client.login(request);
             persistSession(nextSession);
         },
-        [clearCache, client, persistSession],
+        [clearCache, client, onLogoutError, persistSession],
     );
 
     const logout = useCallback(async (): Promise<void> => {

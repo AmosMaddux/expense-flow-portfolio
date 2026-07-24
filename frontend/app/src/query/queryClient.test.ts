@@ -361,7 +361,16 @@ describe("createExpenseFlowQueryOptions", () => {
             }),
         ).toMatchObject({
             enabled: false,
-            queryKey: ["tenant", "anonymous", "case-queue", "rollups"],
+            queryKey: [
+                "tenant",
+                "anonymous",
+                "principal",
+                "anonymous",
+                "roles",
+                ["Employee"],
+                "case-queue",
+                "rollups",
+            ],
         });
     });
 });

@@ -56,6 +56,13 @@ export class QueryRequestError extends Error {
     }
 }
 
+const anonymousSessionUser: SessionUser = {
+    id: "anonymous",
+    tenantId: "anonymous",
+    role: "Employee",
+    roles: ["Employee"],
+};
+
 /**
  * Builds an authorization-scoped query key so cached data cannot cross sessions.
  */
@@ -81,10 +88,10 @@ export function createExpenseFlowQueryOptions<TData>(
     session: Pick<SessionContextValue, "authenticatedFetch" | "user">,
     request: ExpenseFlowQueryRequest<TData>,
 ): ExpenseFlowQueryOptions<TData> {
-    const queryKey =
-        session.user === null
-            ? (["tenant", "anonymous", ...request.keyParts] as const)
-            : createTenantQueryKey(session.user, request.keyParts);
+    const queryKey = createTenantQueryKey(
+        session.user ?? anonymousSessionUser,
+        request.keyParts,
+    );
 
     return {
         enabled: session.user !== null && request.enabled !== false,

@@ -154,11 +154,50 @@ describe("AuthProvider", () => {
         expect(sessionApi.isAuthenticated).toBe(true);
     });
 
-    test("does not establish a login session when cached query data cannot be cleared", async () => {
+    test("still establishes a login session when cached query data cannot be cleared, and reports the failure", async () => {
         const authClient = createAuthClientMock();
-        const clearCache = vi.fn(() =>
-            Promise.reject(new Error("Synthetic cache failure.")),
+        const cacheFailure = new Error("Synthetic cache failure.");
+        const clearCache = vi.fn(() => Promise.reject(cacheFailure));
+        const onLogoutError = vi.fn();
+        render(
+            <AuthProvider
+                authClient={authClient}
+                clearCache={clearCache}
+                onLogoutError={onLogoutError}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
         );
+
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        clearCache.mockClear();
+        vi.mocked(authClient.login).mockClear();
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+                totpCode: "123456",
+            });
+        });
+
+        expect(authClient.login).toHaveBeenCalledOnce();
+        expect(sessionApi.isAuthenticated).toBe(true);
+        expect(onLogoutError).toHaveBeenCalledWith(cacheFailure);
+    });
+
+    test("clears cached query data before establishing a new login session", async () => {
+        const authClient = createAuthClientMock();
+        const callOrder: string[] = [];
+        const clearCache = vi.fn(() => {
+            callOrder.push("clearCache");
+            return Promise.resolve();
+        });
+        vi.mocked(authClient.login).mockImplementation(() => {
+            callOrder.push("client.login");
+            return Promise.resolve(createSession());
+        });
         render(
             <AuthProvider
                 authClient={authClient}
@@ -170,21 +209,17 @@ describe("AuthProvider", () => {
         );
 
         await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
-        clearCache.mockClear();
-        vi.mocked(authClient.login).mockClear();
+        callOrder.length = 0;
         await act(async () => {
-            await expect(
-                sessionApi.login({
-                    tenantId,
-                    email: "finance.admin@example.invalid",
-                    password: "synthetic-password",
-                    totpCode: "123456",
-                }),
-            ).rejects.toThrow("Synthetic cache failure.");
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+                totpCode: "123456",
+            });
         });
 
-        expect(authClient.login).not.toHaveBeenCalled();
-        expect(sessionApi.isAuthenticated).toBe(false);
+        expect(callOrder).toEqual(["clearCache", "client.login"]);
     });
 
     test("refreshes a nearly expired access token through one central accessor", async () => {
