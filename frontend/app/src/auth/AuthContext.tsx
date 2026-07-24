@@ -94,8 +94,12 @@ export function AuthProvider({
 
     const refreshSession = useCallback(
         async (signal?: AbortSignal | null): Promise<AuthSession | null> => {
-            if (signal === undefined && refreshPromiseRef.current !== null) {
-                return refreshPromiseRef.current;
+            throwIfRequestAborted(signal);
+            if (refreshPromiseRef.current !== null) {
+                return resolveRefreshForSignal(
+                    refreshPromiseRef.current,
+                    signal,
+                );
             }
 
             const refreshVersion = sessionVersionRef.current;
@@ -107,7 +111,7 @@ export function AuthProvider({
                 refreshVersion,
                 sessionVersionRef,
                 sessionRef,
-                signal,
+                null,
             ).catch(async (error: unknown) => {
                 if (isAbortError(error)) {
                     return null;
@@ -120,15 +124,11 @@ export function AuthProvider({
                 return null;
             });
 
-            if (signal !== undefined) {
-                return refreshPromise;
-            }
-
             refreshPromiseRef.current = refreshPromise.finally(() => {
                 refreshPromiseRef.current = null;
             });
 
-            return refreshPromiseRef.current;
+            return resolveRefreshForSignal(refreshPromiseRef.current, signal);
         },
         [clearCache, client, invalidateSession, onLogoutError, persistSession],
     );
@@ -373,9 +373,37 @@ function throwIfRequestAborted(signal: AbortSignal | null | undefined): void {
         return;
     }
 
-    throw signal.reason instanceof Error
+    throw getAbortError(signal);
+}
+
+function getAbortError(signal: AbortSignal): Error | DOMException {
+    return signal.reason instanceof Error
         ? signal.reason
         : new DOMException("The operation was aborted.", "AbortError");
+}
+
+function resolveRefreshForSignal(
+    refreshPromise: Promise<AuthSession | null>,
+    signal: AbortSignal | null | undefined,
+): Promise<AuthSession | null> {
+    if (signal === null || signal === undefined) {
+        return refreshPromise;
+    }
+
+    if (signal.aborted) {
+        return Promise.reject(getAbortError(signal));
+    }
+
+    return new Promise<AuthSession | null>((resolve, reject) => {
+        const abortRefreshWait = () => {
+            reject(getAbortError(signal));
+        };
+
+        signal.addEventListener("abort", abortRefreshWait, { once: true });
+        refreshPromise.then(resolve, reject).finally(() => {
+            signal.removeEventListener("abort", abortRefreshWait);
+        });
+    });
 }
 
 function isAbortError(error: unknown): boolean {

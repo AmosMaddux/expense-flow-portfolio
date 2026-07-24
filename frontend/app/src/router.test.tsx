@@ -177,4 +177,21 @@ describe("ExpenseFlowRouter", () => {
             expect(window.location.pathname).toBe("/my-submissions"),
         );
     });
+
+    test("redirects Employee users away from the internal Case Queue route", async () => {
+        const authClient = createAuthClientMock("Employee");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Employee"),
+        );
+        window.history.pushState(null, "", "/approval-queue");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "My Submissions" });
+        await waitFor(() =>
+            expect(window.location.pathname).toBe("/my-submissions"),
+        );
+        expect(
+            screen.queryByRole("heading", { name: "Case Queue" }),
+        ).toBeNull();
+    });
 });

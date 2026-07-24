@@ -132,7 +132,7 @@ describe("CaseQueueScreen", () => {
 
     test("renders rollup-backed summary and stage rows after a successful fetch", async () => {
         const rollups: CaseQueueStageRollup[] = [
-            { currentStage: "Drafted", reportCount: 1, overdueCount: 0 },
+            { currentStage: "Drafted", reportCount: 1, overdueCount: 6 },
             { currentStage: "Submitted", reportCount: 4, overdueCount: 1 },
             {
                 currentStage: "Manager Approval",
@@ -169,6 +169,9 @@ describe("CaseQueueScreen", () => {
             screen.getByRole("row", { name: /Submitted 4 1 Needs review/i }),
         ).toBeTruthy();
         expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /Drafted 1 6 Clear/i }),
+        ).toBeTruthy();
         expect(
             screen.getByRole("row", { name: /Paid 5 7 Clear/i }),
         ).toBeTruthy();

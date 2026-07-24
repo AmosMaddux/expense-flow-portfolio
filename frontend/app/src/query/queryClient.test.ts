@@ -8,6 +8,7 @@ import {
 } from "../auth";
 import {
     QueryRequestError,
+    QueryResponseParseError,
     createAuthenticatedQueryFn,
     createExpenseFlowQueryClient,
     createExpenseFlowQueryOptions,
@@ -448,16 +449,62 @@ describe("createExpenseFlowQueryClient", () => {
     test("does not retry response shape validation failures through TanStack Query", async () => {
         const queryClient = createExpenseFlowQueryClient();
         const validationError = createValidationError();
-        const queryFn = vi.fn(() => Promise.reject(validationError));
+        const queryFn = vi.fn(() =>
+            Promise.reject(
+                new QueryResponseParseError(
+                    "Query response did not match the expected shape.",
+                    validationError,
+                ),
+            ),
+        );
 
         await expect(
             queryClient.fetchQuery({
                 queryFn,
                 queryKey: createTenantQueryKey(tenantOneUser, ["case-queue"]),
             }),
-        ).rejects.toBe(validationError);
+        ).rejects.toBeInstanceOf(QueryResponseParseError);
 
         expect(queryFn).toHaveBeenCalledOnce();
+    });
+
+    test("does not retry malformed json responses through TanStack Query", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const session = createQuerySession(
+            tenantOneUser,
+            () =>
+                new Response("{", {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                }),
+        );
+
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(session, {
+                    input: "/v1/case-queue/rollups",
+                    keyParts: ["case-queue", "rollups"],
+                }),
+            ),
+        ).rejects.toBeInstanceOf(QueryResponseParseError);
+
+        expect(session.authenticatedFetch).toHaveBeenCalledOnce();
+    });
+
+    test("wraps caller-owned parser failures as terminal response parse errors", async () => {
+        const validationError = createValidationError();
+        const session = createSession(new Response("[]", { status: 200 }));
+        const queryFn = createAuthenticatedQueryFn(session, {
+            input: "/v1/case-queue/rollups",
+            parseResponse: () => {
+                throw validationError;
+            },
+        });
+
+        await expect(queryFn()).rejects.toMatchObject({
+            cause: validationError,
+            name: "QueryResponseParseError",
+        });
     });
 
     test("uses the standard retry budget for transient failures through TanStack Query", async () => {
@@ -520,6 +567,15 @@ describe("shouldRetryQueryFailure", () => {
         const validationError = createValidationError();
 
         expect(shouldRetryQueryFailure(0, validationError)).toBe(false);
+        expect(
+            shouldRetryQueryFailure(
+                0,
+                new QueryResponseParseError(
+                    "Query response did not match the expected shape.",
+                    validationError,
+                ),
+            ),
+        ).toBe(false);
     });
 
     test("allows the standard retry budget for retryable 400-range query request failures", () => {
