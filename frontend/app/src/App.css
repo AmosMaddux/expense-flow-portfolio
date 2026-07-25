@@ -556,6 +556,16 @@ button:disabled {
     color: #243b53;
 }
 
+.case-queue-toolbar select {
+    min-height: 38px;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #243b53;
+    font: inherit;
+    padding: 0 12px;
+}
+
 .case-queue-table__frame {
     overflow: hidden;
     border: 1px solid #bcccdc;
@@ -588,8 +598,33 @@ button:disabled {
     font-size: 0.78rem;
 }
 
+.case-queue-table__sort {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 800;
+    padding: 0;
+    text-align: left;
+}
+
+.case-queue-table__sort:focus-visible {
+    outline: 3px solid #9fb3c8;
+    outline-offset: 3px;
+}
+
 .case-queue-table tbody th {
     color: #102a43;
+}
+
+.case-queue-table__empty-filter {
+    border-bottom: 1px solid #d9e2ec;
+    color: #52606d;
+    padding: 18px 20px;
 }
 
 .case-queue-table footer {

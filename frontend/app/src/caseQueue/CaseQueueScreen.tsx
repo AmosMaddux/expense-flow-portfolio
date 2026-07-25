@@ -1,8 +1,18 @@
+import {
+    flexRender,
+    getCoreRowModel,
+    getFilteredRowModel,
+    getSortedRowModel,
+    useReactTable,
+    type ColumnDef,
+    type ColumnFiltersState,
+    type SortingState,
+} from "@tanstack/react-table";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 
 import {
     Badge,
-    Button,
     EmptyState,
     ErrorState,
     EXPENSE_REPORT_STAGES,
@@ -12,56 +22,41 @@ import {
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
-const caseQueueStageRollupSchema = z.object({
+const approvalQueueLineItemSchema = z.object({
+    id: z.uuid(),
+    merchant: z.string().min(1),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
-    reportCount: z.number().int().nonnegative(),
-    overdueCount: z.number().int().nonnegative(),
+    flaggedLineItem: z.boolean(),
 });
 
-export const caseQueueStageRollupListSchema = z.array(
-    caseQueueStageRollupSchema,
+export const approvalQueueLineItemListSchema = z.array(
+    approvalQueueLineItemSchema,
 );
 
-export type CaseQueueStageRollup = z.infer<typeof caseQueueStageRollupSchema>;
+export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
 
-export type CaseQueueScreenProps = {
-    asOfDate?: string;
-};
-
-const reviewRelevantStages = new Set<ExpenseReportStage>([
-    "Submitted",
-    "Manager Approval",
-    "AP Review",
-]);
+type FlagFilter = "all" | "flagged" | "clear";
 
 /**
- * Fetches authenticated Case Queue rollups for the current tenant.
+ * Fetches authenticated Approval Queue line items for the current tenant.
  */
-export function useCaseQueueRollups(asOfDate: string) {
-    const queryString = new URLSearchParams({ asOfDate });
-
-    return useExpenseFlowQuery<CaseQueueStageRollup[]>({
-        input: `/v1/case-queue/rollups?${queryString.toString()}`,
-        keyParts: ["case-queue", "rollups", { asOfDate }],
+export function useApprovalQueueLineItems() {
+    return useExpenseFlowQuery<ApprovalQueueLineItem[]>({
+        input: "/v1/case-queue/line-items",
+        keyParts: ["case-queue", "line-items"],
         parseResponse: async (response) =>
-            caseQueueStageRollupListSchema.parse(await response.json()),
+            approvalQueueLineItemListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
 
 /**
- * Renders the wireframe-aligned Approval Queue workspace.
+ * Renders the Department Manager Approval Queue line-item review table.
  */
-export function CaseQueueScreen({
-    asOfDate = getCurrentLocalDate(),
-}: CaseQueueScreenProps): JSX.Element {
-    const query = useCaseQueueRollups(asOfDate);
-    const rollups = normalizeCaseQueueRollups(query.data ?? []);
-    const metrics = calculateCaseQueueMetrics(rollups);
-    const hasNoReports =
-        query.isSuccess &&
-        (rollups.length === 0 ||
-            rollups.every((rollup) => rollup.reportCount === 0));
+export function CaseQueueScreen(): JSX.Element {
+    const query = useApprovalQueueLineItems();
 
     return (
         <section className="case-queue" aria-labelledby="case-queue-heading">
@@ -70,317 +65,270 @@ export function CaseQueueScreen({
                     <p className="screen-placeholder__label">Approval Queue</p>
                     <h2 id="case-queue-heading">Case Queue</h2>
                 </div>
-                <label className="case-queue__search">
-                    <span>Search reports</span>
-                    <input disabled placeholder="Search reports..." />
-                </label>
             </header>
 
             {query.isPending ? (
-                <LoadingSkeleton label="Loading Case Queue" rows={6} />
+                <LoadingSkeleton label="Loading Approval Queue" rows={6} />
             ) : query.isError ? (
                 <section
                     className="case-queue-table"
-                    aria-label="Case Queue stage rollups"
+                    aria-label="Approval Queue line items"
                 >
                     <ErrorState
                         isRetrying={query.isFetching}
-                        message={getCaseQueueErrorMessage(query.error)}
+                        message={getApprovalQueueErrorMessage(query.error)}
                         onRetry={() => {
                             void query.refetch();
                         }}
-                        title="Unable to load Case Queue"
+                        title="Unable to load Approval Queue"
                     />
                 </section>
             ) : (
-                <>
-                    <CaseQueueSummaryCards metrics={metrics} />
-                    <CaseQueueToolbar />
-                    <section
-                        className="case-queue-table"
-                        aria-label="Case Queue stage rollups"
-                    >
-                        {hasNoReports ? (
-                            <EmptyState
-                                body="There are no Expense Reports waiting in the Case Queue for the selected date."
-                                title="No reports waiting for review"
-                            />
-                        ) : (
-                            <CaseQueueRollupTable rollups={rollups} />
-                        )}
-                    </section>
-                    <CaseQueueSupportPanels />
-                </>
+                <ApprovalQueueLineItemTable lineItems={query.data ?? []} />
             )}
         </section>
     );
 }
 
-export function getCurrentLocalDate(now = new Date()): string {
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-
-    return `${year}-${month}-${day}`;
-}
-
-function CaseQueueSummaryCards({
-    metrics,
+function ApprovalQueueLineItemTable({
+    lineItems,
 }: {
-    metrics: CaseQueueMetrics;
+    lineItems: ApprovalQueueLineItem[];
 }): JSX.Element {
-    return (
-        <div className="case-queue-summary" aria-label="Case Queue summary">
-            <SummaryCard
-                label="Pending Approval"
-                value={metrics.pendingApproval}
-                helper={`${metrics.submittedCount} submitted, ${metrics.managerApprovalCount} manager, ${metrics.apReviewCount} AP`}
-            />
-            <SummaryCard
-                label="Total Value"
-                value="MVP"
-                helper="Amount totals require report-detail data"
-            />
-            <SummaryCard
-                label="Overdue Reviews"
-                tone="danger"
-                value={metrics.overdueReviewCount}
-                helper="Reports past their review due date"
-            />
-            <SummaryCard
-                label="Auto-Rejections"
-                value="MVP"
-                helper="Policy automation is outside this fetch"
-            />
-        </div>
+    const [sorting, setSorting] = useState<SortingState>([]);
+    const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+    const columns = useMemo<ColumnDef<ApprovalQueueLineItem>[]>(
+        () => [
+            {
+                accessorKey: "merchant",
+                header: "Merchant",
+                cell: ({ getValue }) => (
+                    <strong>
+                        {getValue<ApprovalQueueLineItem["merchant"]>()}
+                    </strong>
+                ),
+            },
+            {
+                accessorKey: "amount",
+                header: "Amount",
+                cell: ({ getValue }) =>
+                    formatCurrency(getValue<ApprovalQueueLineItem["amount"]>()),
+                sortDescFirst: false,
+                sortingFn: "basic",
+            },
+            {
+                accessorKey: "glCode",
+                header: "GL Code",
+            },
+            {
+                accessorKey: "currentStage",
+                header: "Stage",
+                cell: ({ getValue }) => (
+                    <StatusBadge
+                        label={getValue<
+                            ApprovalQueueLineItem["currentStage"]
+                        >()}
+                        tone="info"
+                    />
+                ),
+            },
+            {
+                accessorKey: "flaggedLineItem",
+                filterFn: (row, columnId, filterValue) => {
+                    if (filterValue === "flagged") {
+                        return row.getValue<boolean>(columnId);
+                    }
+
+                    if (filterValue === "clear") {
+                        return !row.getValue<boolean>(columnId);
+                    }
+
+                    return true;
+                },
+                header: "Flag",
+                cell: ({ getValue }) =>
+                    getValue<ApprovalQueueLineItem["flaggedLineItem"]>() ? (
+                        <Badge tone="warning">Over $500</Badge>
+                    ) : (
+                        <Badge tone="success">Clear</Badge>
+                    ),
+            },
+        ],
+        [],
     );
-}
-
-function SummaryCard({
-    helper,
-    label,
-    tone = "neutral",
-    value,
-}: {
-    helper: string;
-    label: string;
-    tone?: "danger" | "neutral";
-    value: number | string;
-}): JSX.Element {
-    return (
-        <article className={`case-queue-summary-card case-queue-summary-card--${tone}`}>
-            <p>{label}</p>
-            <strong>{value}</strong>
-            <span>{helper}</span>
-        </article>
-    );
-}
-
-function CaseQueueToolbar(): JSX.Element {
-    return (
-        <div className="case-queue-toolbar" aria-label="Case Queue filters">
-            <span>Filter by:</span>
-            <button disabled type="button">
-                Role: All
-            </button>
-            <button disabled type="button">
-                Department: All
-            </button>
-            <label>
-                <input checked disabled type="checkbox" />
-                Amount &gt; $500
-            </label>
-            <Button disabled size="sm" variant="secondary">
-                Sort
-            </Button>
-            <Button disabled size="sm" variant="secondary">
-                Export CSV
-            </Button>
-        </div>
-    );
-}
-
-function CaseQueueRollupTable({
-    rollups,
-}: {
-    rollups: CaseQueueStageRollup[];
-}): JSX.Element {
-    const totalReports = rollups.reduce(
-        (total, rollup) => total + rollup.reportCount,
-        0,
-    );
-
-    return (
-        <div className="case-queue-table__frame">
-            <table>
-                <caption>
-                    Stage rollups from the authenticated Case Queue fetch
-                </caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Workflow Stage</th>
-                        <th scope="col">Reports</th>
-                        <th scope="col">Overdue</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rollups.map((rollup) => (
-                        <tr key={rollup.currentStage}>
-                            <th scope="row">{rollup.currentStage}</th>
-                            <td>{rollup.reportCount}</td>
-                            <td>
-                                <Badge
-                                    tone={
-                                        rollup.overdueCount > 0
-                                            ? "danger"
-                                            : "success"
-                                    }
-                                >
-                                    {rollup.overdueCount}
-                                </Badge>
-                            </td>
-                            <td>
-                                <StatusBadge
-                                    label={
-                                        isReviewRelevantStage(
-                                            rollup.currentStage,
-                                        ) && rollup.reportCount > 0
-                                            ? "Needs review"
-                                            : "Clear"
-                                    }
-                                    tone={
-                                        isReviewRelevantStage(
-                                            rollup.currentStage,
-                                        ) && rollup.reportCount > 0
-                                            ? "warning"
-                                            : "neutral"
-                                    }
-                                />
-                            </td>
-                            <td>
-                                <Button disabled size="sm" variant="secondary">
-                                    Review
-                                </Button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-            <footer>
-                Showing {rollups.length} workflow stages with {totalReports}{" "}
-                total reports
-            </footer>
-        </div>
-    );
-}
-
-function CaseQueueSupportPanels(): JSX.Element {
-    return (
-        <div className="case-queue-support">
-            <section className="case-queue-quick-review">
-                <div aria-hidden="true">▣</div>
-                <h3>Quick Review Mode</h3>
-                <p>
-                    Process low-risk pending reports in a single batch once
-                    report-detail data is available.
-                </p>
-                <Button disabled>Start Batch Process</Button>
-            </section>
-            <aside className="case-queue-tip" aria-label="Approval Tip">
-                <h3>Approval Tip</h3>
-                <p>
-                    GL codes starting with '62xx' are Travel &amp;
-                    Entertainment. Ensure receipts are attached for entries
-                    over $25.
-                </p>
-                <Button disabled variant="ghost">
-                    View Expense Policy
-                </Button>
-            </aside>
-        </div>
-    );
-}
-
-type CaseQueueMetrics = {
-    apReviewCount: number;
-    managerApprovalCount: number;
-    overdueReviewCount: number;
-    pendingApproval: number;
-    submittedCount: number;
-};
-
-function calculateCaseQueueMetrics(
-    rollups: CaseQueueStageRollup[],
-): CaseQueueMetrics {
-    const submittedCount = getStageReportCount(rollups, "Submitted");
-    const managerApprovalCount = getStageReportCount(
-        rollups,
-        "Manager Approval",
-    );
-    const apReviewCount = getStageReportCount(rollups, "AP Review");
-
-    return {
-        apReviewCount,
-        overdueReviewCount: rollups
-            .filter((rollup) => isReviewRelevantStage(rollup.currentStage))
-            .reduce((total, rollup) => total + rollup.overdueCount, 0),
-        managerApprovalCount,
-        pendingApproval:
-            submittedCount + managerApprovalCount + apReviewCount,
-        submittedCount,
-    };
-}
-
-function getStageReportCount(
-    rollups: CaseQueueStageRollup[],
-    stage: ExpenseReportStage,
-): number {
-    return (
-        rollups.find((rollup) => rollup.currentStage === stage)?.reportCount ??
-        0
-    );
-}
-
-function normalizeCaseQueueRollups(
-    rollups: CaseQueueStageRollup[],
-): CaseQueueStageRollup[] {
-    const countsByStage = new Map<
-        ExpenseReportStage,
-        Pick<CaseQueueStageRollup, "overdueCount" | "reportCount">
-    >();
-
-    for (const rollup of rollups) {
-        const existing = countsByStage.get(rollup.currentStage) ?? {
-            overdueCount: 0,
-            reportCount: 0,
-        };
-        countsByStage.set(rollup.currentStage, {
-            overdueCount: existing.overdueCount + rollup.overdueCount,
-            reportCount: existing.reportCount + rollup.reportCount,
-        });
-    }
-
-    return EXPENSE_REPORT_STAGES.map((stage) => {
-        const counts = countsByStage.get(stage);
-
-        return {
-            currentStage: stage,
-            overdueCount: counts?.overdueCount ?? 0,
-            reportCount: counts?.reportCount ?? 0,
-        };
+    const table = useReactTable({
+        columns,
+        data: lineItems,
+        getCoreRowModel: getCoreRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
+        getSortedRowModel: getSortedRowModel(),
+        onColumnFiltersChange: setColumnFilters,
+        onSortingChange: setSorting,
+        state: {
+            columnFilters,
+            sorting,
+        },
     });
+    const stageFilter =
+        (table.getColumn("currentStage")?.getFilterValue() as
+            ExpenseReportStage | undefined) ?? "all";
+    const flagFilter =
+        (table.getColumn("flaggedLineItem")?.getFilterValue() as
+            FlagFilter | undefined) ?? "all";
+    const visibleRows = table.getRowModel().rows;
+
+    return (
+        <>
+            <div
+                className="case-queue-toolbar"
+                aria-label="Approval Queue filters"
+            >
+                <label>
+                    <span>Stage</span>
+                    <select
+                        aria-label="Filter by stage"
+                        value={stageFilter}
+                        onChange={(event) =>
+                            table
+                                .getColumn("currentStage")
+                                ?.setFilterValue(
+                                    event.target.value === "all"
+                                        ? undefined
+                                        : event.target.value,
+                                )
+                        }
+                    >
+                        <option value="all">All stages</option>
+                        {EXPENSE_REPORT_STAGES.map((stage) => (
+                            <option key={stage} value={stage}>
+                                {stage}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <label>
+                    <span>Flag</span>
+                    <select
+                        aria-label="Filter by flag status"
+                        value={flagFilter}
+                        onChange={(event) =>
+                            table
+                                .getColumn("flaggedLineItem")
+                                ?.setFilterValue(
+                                    event.target.value === "all"
+                                        ? undefined
+                                        : event.target.value,
+                                )
+                        }
+                    >
+                        <option value="all">All line items</option>
+                        <option value="flagged">Over $500</option>
+                        <option value="clear">Clear</option>
+                    </select>
+                </label>
+            </div>
+
+            <section
+                className="case-queue-table"
+                aria-label="Approval Queue line items"
+            >
+                {lineItems.length === 0 ? (
+                    <EmptyState
+                        body="There are no line items waiting in the Approval Queue."
+                        title="No line items waiting for review"
+                    />
+                ) : (
+                    <div className="case-queue-table__frame">
+                        <table>
+                            <caption>
+                                Tenant-scoped Approval Queue line items
+                            </caption>
+                            <thead>
+                                {table.getHeaderGroups().map((headerGroup) => (
+                                    <tr key={headerGroup.id}>
+                                        {headerGroup.headers.map((header) => (
+                                            <th key={header.id} scope="col">
+                                                {header.isPlaceholder ? null : (
+                                                    <button
+                                                        className="case-queue-table__sort"
+                                                        type="button"
+                                                        onClick={header.column.getToggleSortingHandler()}
+                                                    >
+                                                        {flexRender(
+                                                            header.column
+                                                                .columnDef
+                                                                .header,
+                                                            header.getContext(),
+                                                        )}
+                                                        <span aria-hidden="true">
+                                                            {getSortIndicator(
+                                                                header.column.getIsSorted(),
+                                                            )}
+                                                        </span>
+                                                    </button>
+                                                )}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </thead>
+                            <tbody>
+                                {visibleRows.map((row) => (
+                                    <tr key={row.id}>
+                                        {row.getVisibleCells().map((cell) => (
+                                            <td key={cell.id}>
+                                                {flexRender(
+                                                    cell.column.columnDef.cell,
+                                                    cell.getContext(),
+                                                )}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {visibleRows.length === 0 ? (
+                            <div
+                                className="case-queue-table__empty-filter"
+                                role="status"
+                            >
+                                No line items match the selected filters.
+                            </div>
+                        ) : null}
+                        <footer>
+                            Showing {visibleRows.length} of {lineItems.length}{" "}
+                            line items
+                        </footer>
+                    </div>
+                )}
+            </section>
+        </>
+    );
 }
 
-function getCaseQueueErrorMessage(error: Error | null): string {
+function formatCurrency(amount: number): string {
+    return new Intl.NumberFormat("en-US", {
+        currency: "USD",
+        style: "currency",
+    }).format(amount);
+}
+
+function getApprovalQueueErrorMessage(error: Error | null): string {
     if (error instanceof QueryRequestError) {
         return error.message;
     }
 
-    return "The Case Queue could not be loaded. Retry the request or sign in again if the problem continues.";
+    return "The Approval Queue could not be loaded. Retry the request or sign in again if the problem continues.";
 }
 
-function isReviewRelevantStage(stage: ExpenseReportStage): boolean {
-    return reviewRelevantStages.has(stage);
+function getSortIndicator(sortDirection: false | "asc" | "desc"): string {
+    if (sortDirection === "asc") {
+        return " ^";
+    }
+
+    if (sortDirection === "desc") {
+        return " v";
+    }
+
+    return "";
 }

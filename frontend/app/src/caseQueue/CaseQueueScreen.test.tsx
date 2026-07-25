@@ -11,18 +11,44 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
-import { CaseQueueScreen, type CaseQueueStageRollup } from "./CaseQueueScreen";
+import { CaseQueueScreen, type ApprovalQueueLineItem } from "./CaseQueueScreen";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
-const asOfDate = "2026-07-22";
+
+const lineItems: ApprovalQueueLineItem[] = [
+    {
+        id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+        merchant: "Northstar Hotels",
+        amount: 742.18,
+        glCode: "6240",
+        currentStage: "Manager Approval",
+        flaggedLineItem: true,
+    },
+    {
+        id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
+        merchant: "Metro Meals",
+        amount: 86.42,
+        glCode: "6210",
+        currentStage: "Submitted",
+        flaggedLineItem: false,
+    },
+    {
+        id: "e6f4d30b-20fc-4a72-9e44-190eb7d30c72",
+        merchant: "Zenith Air",
+        amount: 512,
+        glCode: "6220",
+        currentStage: "AP Review",
+        flaggedLineItem: true,
+    },
+];
 
 function createSession(): AuthSession {
     return {
         tenantId,
         userId,
-        roles: ["Finance Admin"],
+        roles: ["Department Manager"],
         accessToken: "synthetic-access-token",
         accessTokenExpiresAt: new Date(baseTime + 5 * 60_000).toISOString(),
     };
@@ -36,10 +62,7 @@ function createAuthClientMock(): AuthClient {
     };
 }
 
-function createJsonResponse(
-    body: unknown,
-    init: ResponseInit = {},
-): Response {
+function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     return new Response(JSON.stringify(body), {
         headers: { "Content-Type": "application/json" },
         status: 200,
@@ -88,7 +111,6 @@ function renderCaseQueueScreen(
     fetchImplementation: typeof fetch,
     queryClient = createNoRetryQueryClient(),
 ): void {
-
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
@@ -97,10 +119,14 @@ function renderCaseQueueScreen(
                 fetchImplementation={fetchImplementation}
                 now={() => baseTime}
             >
-                <CaseQueueScreen asOfDate={asOfDate} />
+                <CaseQueueScreen />
             </AuthProvider>
         </QueryClientProvider>,
     );
+}
+
+function getBodyRows(): HTMLElement[] {
+    return screen.getAllByRole("row").slice(1);
 }
 
 afterEach(() => {
@@ -109,7 +135,7 @@ afterEach(() => {
 });
 
 describe("CaseQueueScreen", () => {
-    test("renders a loading skeleton while the Case Queue fetch is pending", async () => {
+    test("renders a loading skeleton while the Approval Queue fetch is pending", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(
             () => new Promise<Response>(() => undefined),
         );
@@ -118,33 +144,21 @@ describe("CaseQueueScreen", () => {
 
         expect(
             await screen.findByRole("status", {
-                name: "Loading Case Queue",
+                name: "Loading Approval Queue",
             }),
         ).toBeTruthy();
         await waitFor(() => expect(fetchImplementation).toHaveBeenCalled());
         expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
-            `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
+            "/v1/case-queue/line-items",
         );
         expect(fetchImplementation.mock.calls[0]?.[1]?.headers).toBeInstanceOf(
             Headers,
         );
     });
 
-    test("renders rollup-backed summary and stage rows after a successful fetch", async () => {
-        const rollups: CaseQueueStageRollup[] = [
-            { currentStage: "Drafted", reportCount: 1, overdueCount: 6 },
-            { currentStage: "Submitted", reportCount: 4, overdueCount: 1 },
-            {
-                currentStage: "Manager Approval",
-                reportCount: 3,
-                overdueCount: 2,
-            },
-            { currentStage: "AP Review", reportCount: 2, overdueCount: 1 },
-            { currentStage: "Paid", reportCount: 5, overdueCount: 7 },
-            { currentStage: "Reconciled", reportCount: 6, overdueCount: 8 },
-        ];
+    test("renders line item rows with merchant, amount, GL code, stage, and flag indicator", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(rollups)),
+            Promise.resolve(createJsonResponse(lineItems)),
         );
 
         renderCaseQueueScreen(fetchImplementation);
@@ -152,56 +166,86 @@ describe("CaseQueueScreen", () => {
         expect(
             await screen.findByRole("heading", { name: "Case Queue" }),
         ).toBeTruthy();
+        expect(await screen.findByText("Northstar Hotels")).toBeTruthy();
+        const table = screen.getByRole("table", {
+            name: "Tenant-scoped Approval Queue line items",
+        });
+        expect(table).toBeTruthy();
         expect(
-            await screen.findByText("4 submitted, 3 manager, 2 AP"),
-        ).toBeTruthy();
-        const summary = screen.getByLabelText("Case Queue summary");
-        expect(within(summary).getByText("9")).toBeTruthy();
-        expect(screen.getByText("Overdue Reviews")).toBeTruthy();
-        expect(within(summary).getByText("4")).toBeTruthy();
-        expect(screen.getByText("Reports past their review due date")).toBeTruthy();
-        expect(
-            screen.getByRole("table", {
-                name: "Stage rollups from the authenticated Case Queue fetch",
+            screen.getByRole("row", {
+                name: /Northstar Hotels \$742\.18 6240 Manager Approval Over \$500/i,
             }),
         ).toBeTruthy();
         expect(
-            screen.getByRole("row", { name: /Submitted 4 1 Needs review/i }),
+            screen.getByRole("row", {
+                name: /Metro Meals \$86\.42 6210 Submitted Clear/i,
+            }),
         ).toBeTruthy();
-        expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
-        expect(
-            screen.getByRole("row", { name: /Drafted 1 6 Clear/i }),
-        ).toBeTruthy();
-        expect(
-            screen.getByRole("row", { name: /Paid 5 7 Clear/i }),
-        ).toBeTruthy();
-        expect(
-            screen.getByRole("row", { name: /Reconciled 6 8 Clear/i }),
-        ).toBeTruthy();
-        expect(screen.getByText("Showing 6 workflow stages with 21 total reports")).toBeTruthy();
+        expect(within(table).getAllByText("Over $500")).toHaveLength(2);
+        expect(screen.getByText("Showing 3 of 3 line items")).toBeTruthy();
     });
 
-    test("normalizes returned rollups into canonical workflow-stage order", async () => {
-        const rollups: CaseQueueStageRollup[] = [
-            { currentStage: "AP Review", reportCount: 2, overdueCount: 1 },
-        ];
+    test("filters line items by stage", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(rollups)),
+            Promise.resolve(createJsonResponse(lineItems)),
         );
 
         renderCaseQueueScreen(fetchImplementation);
 
-        expect(
-            await screen.findByRole("row", { name: /Drafted 0 0/i }),
-        ).toBeTruthy();
-        expect(screen.getByRole("row", { name: /Submitted 0 0/i })).toBeTruthy();
-        expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
-        expect(
-            screen.getByText("Showing 6 workflow stages with 2 total reports"),
-        ).toBeTruthy();
+        await screen.findByText("Northstar Hotels");
+        fireEvent.change(screen.getByLabelText("Filter by stage"), {
+            target: { value: "AP Review" },
+        });
+
+        expect(screen.getByText("Zenith Air")).toBeTruthy();
+        expect(screen.queryByText("Northstar Hotels")).toBeNull();
+        expect(screen.queryByText("Metro Meals")).toBeNull();
+        expect(screen.getByText("Showing 1 of 3 line items")).toBeTruthy();
     });
 
-    test("renders an empty state for an empty rollup response", async () => {
+    test("filters line items by flag status", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        await screen.findByText("Northstar Hotels");
+        fireEvent.change(screen.getByLabelText("Filter by flag status"), {
+            target: { value: "clear" },
+        });
+
+        expect(screen.getByText("Metro Meals")).toBeTruthy();
+        expect(screen.queryByText("Northstar Hotels")).toBeNull();
+        expect(screen.queryByText("Zenith Air")).toBeNull();
+        expect(screen.getByText("Showing 1 of 3 line items")).toBeTruthy();
+    });
+
+    test("sorts line items from TanStack table headers", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        await screen.findByText("Northstar Hotels");
+        fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+
+        await waitFor(() => {
+            const rows = getBodyRows();
+            expect(
+                within(rows[0] as HTMLElement).getByText("Metro Meals"),
+            ).toBeTruthy();
+            expect(
+                within(rows[1] as HTMLElement).getByText("Zenith Air"),
+            ).toBeTruthy();
+            expect(
+                within(rows[2] as HTMLElement).getByText("Northstar Hotels"),
+            ).toBeTruthy();
+        });
+    });
+
+    test("renders an empty state for an empty line-item response", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse([])),
         );
@@ -210,89 +254,38 @@ describe("CaseQueueScreen", () => {
 
         expect(
             await screen.findByRole("region", {
-                name: "No reports waiting for review",
+                name: "No line items waiting for review",
             }),
         ).toBeTruthy();
         expect(screen.queryByRole("table")).toBeNull();
     });
 
-    test("renders an empty state when every returned stage has zero reports", async () => {
-        const rollups: CaseQueueStageRollup[] = [
-            { currentStage: "Submitted", reportCount: 0, overdueCount: 0 },
-            {
-                currentStage: "Manager Approval",
-                reportCount: 0,
-                overdueCount: 0,
-            },
-        ];
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(rollups)),
-        );
-
-        renderCaseQueueScreen(fetchImplementation);
-
-        expect(
-            await screen.findByRole("region", {
-                name: "No reports waiting for review",
-            }),
-        ).toBeTruthy();
-        expect(screen.queryByRole("table")).toBeNull();
-    });
-
-    test("renders an error state without success or empty content when the fetch fails", async () => {
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createProblemResponse("Synthetic rollup outage.")),
-        );
-
-        renderCaseQueueScreen(fetchImplementation);
-
-        expect(await screen.findByText("Synthetic rollup outage.")).toBeTruthy();
-        expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-        expect(screen.queryByLabelText("Case Queue summary")).toBeNull();
-        expect(screen.queryByRole("table")).toBeNull();
-        expect(
-            screen.queryByRole("region", {
-                name: "No reports waiting for review",
-            }),
-        ).toBeNull();
-    });
-
-    test("renders an error state when the response shape is invalid", async () => {
+    test("renders an error state when the line-item fetch fails", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
-                createJsonResponse([
-                    {
-                        currentStage: "Submitted",
-                        overdueCount: 0,
-                        reportCount: "not-a-number",
-                    },
-                ]),
+                createProblemResponse("Synthetic line-item outage."),
             ),
         );
 
         renderCaseQueueScreen(fetchImplementation);
 
         expect(
-            await screen.findByRole("heading", {
-                name: "Unable to load Case Queue",
-            }),
+            await screen.findByText("Synthetic line-item outage."),
         ).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
         expect(screen.queryByRole("table")).toBeNull();
-        expect(
-            screen.queryByRole("region", {
-                name: "No reports waiting for review",
-            }),
-        ).toBeNull();
     });
 
-    test("does not retry an invalid response shape with the production retry policy", async () => {
+    test("does not retry an invalid line-item response shape with the production retry policy", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 createJsonResponse([
                     {
                         currentStage: "Submitted",
-                        overdueCount: 0,
-                        reportCount: "not-a-number",
+                        flaggedLineItem: false,
+                        glCode: "6210",
+                        id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
+                        merchant: "Metro Meals",
                     },
                 ]),
             ),
@@ -305,53 +298,27 @@ describe("CaseQueueScreen", () => {
 
         expect(
             await screen.findByRole("heading", {
-                name: "Unable to load Case Queue",
+                name: "Unable to load Approval Queue",
             }),
         ).toBeTruthy();
         expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
-    test("uses the production retry policy before showing a non-auth error", async () => {
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createProblemResponse("Synthetic retry outage.")),
-        );
-
-        renderCaseQueueScreen(
-            fetchImplementation,
-            createFastProductionRetryQueryClient(),
-        );
-
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(3));
-        expect(await screen.findByText("Synthetic retry outage.")).toBeTruthy();
-        expect(screen.queryByLabelText("Case Queue summary")).toBeNull();
-    });
-
-    test("retry re-runs the query and replaces the error state with success content", async () => {
+    test("retry re-runs the query and replaces the error state with line-item rows", async () => {
         const fetchImplementation = vi
             .fn<typeof fetch>()
             .mockResolvedValueOnce(createProblemResponse("Synthetic outage."))
-            .mockResolvedValueOnce(
-                createJsonResponse([
-                    {
-                        currentStage: "Submitted",
-                        overdueCount: 0,
-                        reportCount: 2,
-                    },
-                ]),
-            );
+            .mockResolvedValueOnce(createJsonResponse(lineItems));
 
         renderCaseQueueScreen(fetchImplementation);
 
         expect(await screen.findByText("Synthetic outage.")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
-        expect(
-            await screen.findByRole("row", { name: /Submitted 2 0/i }),
-        ).toBeTruthy();
-        expect(
-            screen.getByText("Showing 6 workflow stages with 2 total reports"),
-        ).toBeTruthy();
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
+        expect(await screen.findByText("Northstar Hotels")).toBeTruthy();
         expect(screen.queryByText("Synthetic outage.")).toBeNull();
     });
 });
