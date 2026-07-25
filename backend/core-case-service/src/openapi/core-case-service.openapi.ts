@@ -7,12 +7,15 @@ import type { OpenAPIObject } from "openapi3-ts/oas31";
 import { z } from "zod";
 
 import {
+    AddDraftExpenseContentInboundRequestSchema,
+    AddDraftExpenseContentOutboundResponseSchema,
     AllTransactionListSchema,
     CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
+    DraftExpenseContentOutboundResponseSchema,
     ExpenseReportOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
@@ -66,6 +69,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const createMileageEntryRequest = registry.register(
         "CreateMileageEntryRequest",
         CreateMileageEntryInboundRequestSchema,
+    );
+    const addDraftExpenseContentRequest = registry.register(
+        "AddDraftExpenseContentRequest",
+        AddDraftExpenseContentInboundRequestSchema,
+    );
+    const addDraftExpenseContentResponse = registry.register(
+        "AddDraftExpenseContentResponse",
+        AddDraftExpenseContentOutboundResponseSchema,
+    );
+    const draftExpenseContentResponse = registry.register(
+        "DraftExpenseContentResponse",
+        DraftExpenseContentOutboundResponseSchema,
     );
     const mileageEntryResponse = registry.register(
         "MileageEntryResponse",
@@ -176,6 +191,77 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "LoginErrorResponse",
         loginErrorResponseSchema,
     );
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/draft-content",
+        summary: "Add line items and receipt references to a draft",
+        description:
+            "Atomically adds validated line items and receipt references to the authenticated Employee's own Drafted Expense Report.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128),
+            }),
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: addDraftExpenseContentRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Draft expense content added.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: addDraftExpenseContentResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed draft content request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Drafted Expense Report not found."),
+            409: problemJsonResponse(
+                "Expense content can only be added while the report is Drafted.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/draft-content",
+        summary: "Get saved content from a draft",
+        description:
+            "Returns saved line items, receipt metadata, and mileage entries from the authenticated Employee's own Drafted Expense Report.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Draft expense content found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: draftExpenseContentResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Drafted Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
 
     registry.registerPath({
         method: "get",
@@ -465,7 +551,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/expense-reports/{id}/submit",
         summary: "Submit an Expense Report",
         description:
-            "Advances a Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
+            "Advances an Employee-owned Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
         security: [{ bearerAuth: [] }],
         request: {
             params: expenseReportIdPathParamsSchema,

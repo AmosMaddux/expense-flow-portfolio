@@ -294,12 +294,17 @@ export function LogMileageScreen(): JSX.Element {
                         </p>
                     ) : null}
                     {successMessage === null ? null : (
-                        <p
-                            className="form-message form-message--success"
-                            role="status"
-                        >
-                            {successMessage}
-                        </p>
+                        <div className="mileage-save-success" role="status">
+                            <p className="form-message form-message--success">
+                                {successMessage}
+                            </p>
+                            <Link
+                                className="button button--secondary"
+                                to="/submit-expense"
+                            >
+                                Return to Submit Expense
+                            </Link>
+                        </div>
                     )}
 
                     <div className="mileage-form__actions">

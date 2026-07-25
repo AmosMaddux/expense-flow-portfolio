@@ -18,11 +18,13 @@ import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
 import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import {
+    attachmentMetadata,
     auditEntry,
     expenseReport,
     glCodingResult,
     lineItem,
     mileageEntry,
+    receiptMetadata,
     stageTransition,
     tenantRateLimitWindow,
     type RoleName,
@@ -208,6 +210,7 @@ void describe("Expense Report routes", () => {
             1,
         ).toString("base64");
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
         app = (await import("../../app.js")).app;
     });
 
@@ -729,7 +732,126 @@ void describe("Expense Report routes", () => {
         });
     });
 
-    void test("rejects Employee submission attempts", async () => {
+    void test("adds employee line items and receipt references idempotently", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000129";
+        const owner = "50000000-0000-4000-8000-000000000129";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-129",
+            },
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-12",
+            }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const request = {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-content-129",
+            },
+            body: JSON.stringify({
+                lineItems: [
+                    {
+                        merchant: "Synthetic Conference Center",
+                        expenseDate: "2026-07-23",
+                        category: "Travel",
+                        amount: 125.5,
+                        currency: "USD",
+                    },
+                ],
+                receipts: [
+                    {
+                        lineItemIndex: 0,
+                        filename: "synthetic-receipt.pdf",
+                        contentType: "application/pdf",
+                        sizeBytes: 2048,
+                        blobReference: {
+                            objectKey: "synthetic/receipt-object-129",
+                        },
+                    },
+                ],
+            }),
+        } satisfies RequestInit;
+
+        const firstResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/draft-content`,
+            request,
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/draft-content`,
+            request,
+        );
+        const [lineItemRows, receiptRows, attachmentRows] = await Promise.all([
+            db
+                .select()
+                .from(lineItem)
+                .where(eq(lineItem.expenseReportId, created.id)),
+            db
+                .select()
+                .from(receiptMetadata)
+                .where(eq(receiptMetadata.expenseReportId, created.id)),
+            db
+                .select()
+                .from(attachmentMetadata)
+                .where(eq(attachmentMetadata.expenseReportId, created.id)),
+        ]);
+
+        expect(firstResponse.status).toBe(201);
+        expect(replayResponse.status).toBe(201);
+        expect(await replayResponse.json()).toStrictEqual(
+            await firstResponse.json(),
+        );
+        expect(lineItemRows).toHaveLength(1);
+        expect(lineItemRows[0]?.expenseDate).toBe("2026-07-23");
+        expect(receiptRows).toHaveLength(1);
+        expect(attachmentRows).toHaveLength(1);
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const contentResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/draft-content`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        const savedContent = (await contentResponse.json()) as {
+            lineItems?: Array<{ merchant?: string; expenseDate?: string }>;
+            receipts?: Array<{ filename?: string }>;
+            mileageEntries?: unknown[];
+        };
+
+        expect(contentResponse.status).toBe(200);
+        expect(savedContent.lineItems).toEqual([
+            expect.objectContaining({
+                merchant: "Synthetic Conference Center",
+                expenseDate: "2026-07-23",
+            }),
+        ]);
+        expect(savedContent.receipts).toEqual([
+            expect.objectContaining({
+                filename: "synthetic-receipt.pdf",
+            }),
+        ]);
+        expect(savedContent.mileageEntries).toEqual([]);
+    });
+
+    void test("allows an Employee to submit their own Drafted report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000132";
         const owner = "50000000-0000-4000-8000-000000000132";
         const createResponse = await requestApp("/v1/expense-reports", {
@@ -747,6 +869,11 @@ void describe("Expense Report routes", () => {
             throw new Error("Expected created Expense Report id");
         }
 
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [],
+            flags: [],
+        });
+
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
             {
@@ -760,8 +887,11 @@ void describe("Expense Report routes", () => {
             },
         );
 
-        expect(response.status).toBe(403);
-        expect(glCodingClientMock).not.toHaveBeenCalled();
+        const body = (await response.json()) as { currentStage?: string };
+
+        expect(response.status).toBe(201);
+        expect(body.currentStage).toBe("Submitted");
+        expect(glCodingClientMock).toHaveBeenCalledOnce();
         const auditRows = await db
             .select()
             .from(auditEntry)
@@ -778,11 +908,9 @@ void describe("Expense Report routes", () => {
         expect(auditRows).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    action: "transition_denied",
+                    action: "transition_approved",
                     stageBeforeAction: "Drafted",
                     stageAfterProposedAction: "Submitted",
-                    denialReason:
-                        "Authenticated role is not permitted to submit Expense Reports.",
                 }),
             ]),
         );
@@ -790,8 +918,8 @@ void describe("Expense Report routes", () => {
             expect.objectContaining({
                 actor: owner,
                 fromStage: "Drafted",
-                toStage: "Drafted",
-                reason: "transition_denied: Authenticated role is not permitted to submit Expense Reports.",
+                toStage: "Submitted",
+                reason: "report_submitted",
             }),
         );
     });

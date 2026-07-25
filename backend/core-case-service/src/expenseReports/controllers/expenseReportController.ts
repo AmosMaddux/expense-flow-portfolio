@@ -7,6 +7,7 @@ import {
     UnauthorizedError,
 } from "../../errors/problem-json.js";
 import {
+    AddDraftExpenseContentInboundRequestSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
@@ -29,10 +30,12 @@ import {
     logExpenseReportAuditSuccess,
 } from "../../logging/coreCaseLogger.js";
 import {
+    addDraftExpenseContent,
     clearExpenseReportFlags,
     addMileageEntry,
     createDraftExpenseReport,
     readCurrentDraftExpenseReport,
+    readDraftExpenseContent,
     readExpenseReport,
     readExpenseReportAuditEntries,
     readMileageConfig,
@@ -61,6 +64,32 @@ export async function getCurrentDraftExpenseReport(
         });
 
         res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles reads for saved content in an employee-owned draft.
+ */
+export async function getDraftExpenseContent(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const content = await readDraftExpenseContent({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+        });
+
+        res.status(200).json(content);
     } catch (error: unknown) {
         next(error);
     }
@@ -109,6 +138,49 @@ export async function postMileageEntry(
         });
 
         res.status(201).json(entry);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles batch additions of line items and receipt references to a draft.
+ */
+export async function postDraftExpenseContent(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = AddDraftExpenseContentInboundRequestSchema.parse(
+            req.body,
+        );
+        const idempotencyKey = parseIdempotencyKey(req);
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: async () =>
+                addDraftExpenseContent({
+                    ...parsedRequest,
+                    id: parsedParams.id,
+                    tenantId: auth.tenantId,
+                    actorId: auth.userId,
+                    ownerId: auth.userId,
+                }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            tenantId: auth.tenantId,
+        });
+
+        res.status(result.statusCode).json(result.body);
     } catch (error: unknown) {
         next(error);
     }
@@ -214,7 +286,7 @@ export async function postExpenseReportSubmission(
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        if (!hasInternalExpenseReportRole(auth)) {
+        if (!hasExpenseReportSubmitRole(auth)) {
             await insertDeniedSubmissionAuditEntry(
                 auth.tenantId,
                 parsedParams.id,
@@ -227,6 +299,16 @@ export async function postExpenseReportSubmission(
         const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
             req.body,
         );
+        if (
+            auth.roles.includes("Employee") &&
+            !hasInternalExpenseReportRole(auth)
+        ) {
+            await readExpenseReport({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                ownerId: auth.userId,
+            });
+        }
         const submitReport = async () =>
             submitExpenseReport({
                 id: parsedParams.id,
@@ -495,10 +577,18 @@ function hasInternalExpenseReportRole(
     return auth.roles.some((role) => internalExpenseReportRoles.has(role));
 }
 
+function hasExpenseReportSubmitRole(
+    auth: NonNullable<Request["auth"]>,
+): boolean {
+    return (
+        hasInternalExpenseReportRole(auth) || auth.roles.includes("Employee")
+    );
+}
+
 function requireEmployeeAccess(auth: NonNullable<Request["auth"]>): void {
     if (!auth.roles.includes("Employee")) {
         throw new ForbiddenError(
-            "Mileage logging is limited to the Employee Portal.",
+            "This action is limited to the Employee Portal.",
         );
     }
 }

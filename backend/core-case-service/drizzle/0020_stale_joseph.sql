@@ -1,0 +1,1 @@
+ALTER TABLE "line_item" ADD COLUMN "expense_date" date DEFAULT CURRENT_DATE NOT NULL;

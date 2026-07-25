@@ -4,10 +4,12 @@ import {
     getAllTransactions,
     getCaseQueueStageRollups,
     getCurrentDraftExpenseReport,
+    getDraftExpenseContent,
     getExpenseReportAuditEntries,
     getExpenseReportById,
     getMileageConfig,
     postExpenseReportFlagClear,
+    postDraftExpenseContent,
     postExpenseReportSubmission,
     postExpenseReportTransition,
     postExpenseReport,
@@ -27,6 +29,14 @@ expenseReportRouter.get("/expense-reports/config/mileage", getMileageConfig);
 expenseReportRouter.post(
     "/expense-reports/:id/mileage-entries",
     postMileageEntry,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/draft-content",
+    postDraftExpenseContent,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/draft-content",
+    getDraftExpenseContent,
 );
 expenseReportRouter.post(
     "/expense-reports/:id/submit",

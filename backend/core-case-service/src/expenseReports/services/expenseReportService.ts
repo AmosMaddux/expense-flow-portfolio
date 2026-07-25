@@ -20,8 +20,10 @@ import {
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
     findAuditEntriesByExpenseReportId,
     findCurrentDraftExpenseReport,
+    findDraftExpenseContent,
     findExpenseReportById,
     insertDraftExpenseReport,
+    insertDraftExpenseContent,
     insertMileageEntry,
     insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
@@ -32,13 +34,18 @@ import {
 } from "../repository/expenseReportRepository.js";
 import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
+    AddDraftExpenseContentOutboundResponseSchema,
     AuditEntryOutboundResponseSchema,
+    DraftExpenseContentOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    type AddDraftExpenseContentRequest,
+    type AddDraftExpenseContentResponse,
     type AuditEntryResponse,
     type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
     type CreateMileageEntryRequest,
+    type DraftExpenseContentResponse,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
     type MileageConfigResponse,
@@ -117,6 +124,61 @@ export async function readCurrentDraftExpenseReport(request: {
 }
 
 /**
+ * Reads saved line items, receipts, and mileage from an employee-owned draft.
+ */
+export async function readDraftExpenseContent(request: {
+    id: string;
+    tenantId: string;
+    ownerId: string;
+}): Promise<DraftExpenseContentResponse> {
+    const content = await findDraftExpenseContent(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+    if (content === undefined) {
+        throw new NotFoundError("Drafted Expense Report not found.");
+    }
+
+    const mileageConfig = loadMileageConfig();
+
+    return DraftExpenseContentOutboundResponseSchema.parse({
+        expenseReportId: content.report.id,
+        lineItems: content.lineItems.map((item) => ({
+            id: item.id,
+            merchant: item.merchant,
+            expenseDate: item.expenseDate,
+            category: item.category,
+            amount: Number(item.amount),
+            currency: item.currency,
+        })),
+        receipts: content.receipts.map((receipt) => ({
+            id: receipt.id,
+            filename: readReceiptFilename(receipt.blobReference),
+            merchant: receipt.merchant,
+            receiptDate: receipt.receiptDate,
+            amount: Number(receipt.amount),
+        })),
+        mileageEntries: content.mileageEntries.map((entry) => {
+            const distance = Number(entry.distance);
+
+            return {
+                id: entry.id,
+                route: entry.route,
+                distance,
+                mileageDate: entry.mileageDate,
+                reimbursementAmount:
+                    Math.round(
+                        (distance * mileageConfig.reimbursementRate +
+                            Number.EPSILON) *
+                            100,
+                    ) / 100,
+            };
+        }),
+    });
+}
+
+/**
  * Returns the reimbursement policy data used by the Mileage form.
  */
 export function readMileageConfig(): MileageConfigResponse {
@@ -182,6 +244,38 @@ export async function addMileageEntry(
 }
 
 /**
+ * Adds line items and receipt references to an employee-owned Drafted report.
+ */
+export async function addDraftExpenseContent(
+    request: AddDraftExpenseContentRequest & {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        ownerId: string;
+    },
+): Promise<AddDraftExpenseContentResponse> {
+    const result = await insertDraftExpenseContent({
+        ...request,
+        expenseReportId: request.id,
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Drafted Expense Report not found.");
+    }
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Expense content can only be added to a Drafted Expense Report; this report is in ${result.currentStage}.`,
+        );
+    }
+
+    return AddDraftExpenseContentOutboundResponseSchema.parse({
+        expenseReportId: request.id,
+        lineItemIds: result.lineItemIds,
+        receiptIds: result.receiptIds,
+    });
+}
+
+/**
  * Submits a Drafted Expense Report after appending GL-coding results.
  */
 export async function submitExpenseReport(request: {
@@ -221,6 +315,7 @@ export async function submitExpenseReport(request: {
             tenantId: request.tenantId,
             userId: request.actorId,
             roles: request.roles,
+            servicePermissions: ["expense-report:submit"],
         },
         authConfig,
         new Date(),
@@ -466,4 +561,18 @@ function toExpenseReportResponse(report: {
         createdAt: report.createdAt,
         updatedAt: report.updatedAt,
     };
+}
+
+function readReceiptFilename(blobReference: unknown): string | null {
+    if (
+        blobReference === null ||
+        typeof blobReference !== "object" ||
+        !("filename" in blobReference)
+    ) {
+        return null;
+    }
+
+    return typeof blobReference.filename === "string"
+        ? blobReference.filename
+        : null;
 }

@@ -2,6 +2,7 @@ import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import {
+    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     priorityLevels,
 } from "../../db/schema/index.js";
@@ -31,6 +32,92 @@ export const CreateMileageEntryInboundRequestSchema = z
         mileageDate: z.iso.date(),
     })
     .strict();
+
+export const expenseCategories = ["Travel", "Meals", "Lodging"] as const;
+
+const DraftLineItemInboundSchema = z
+    .object({
+        merchant: z.string().trim().min(1).max(240),
+        expenseDate: z.iso.date(),
+        category: z.enum(expenseCategories),
+        amount: z.number().positive().max(9_999_999_999.99).multipleOf(0.01),
+        currency: z.literal("USD"),
+    })
+    .strict();
+
+const DraftReceiptInboundSchema = z
+    .object({
+        lineItemIndex: z.number().int().nonnegative(),
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.enum(approvedAttachmentContentTypes),
+        sizeBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 1024 * 1024),
+        blobReference: z
+            .object({
+                objectKey: z.string().trim().min(1).max(1024),
+            })
+            .strict(),
+    })
+    .strict();
+
+export const AddDraftExpenseContentInboundRequestSchema = z
+    .object({
+        lineItems: z.array(DraftLineItemInboundSchema).min(1).max(50),
+        receipts: z.array(DraftReceiptInboundSchema).max(50),
+    })
+    .strict()
+    .superRefine((request, context) => {
+        for (const [index, receipt] of request.receipts.entries()) {
+            if (receipt.lineItemIndex >= request.lineItems.length) {
+                context.addIssue({
+                    code: "custom",
+                    message: "Receipt must reference a submitted line item.",
+                    path: ["receipts", index, "lineItemIndex"],
+                });
+            }
+        }
+    });
+
+export const AddDraftExpenseContentOutboundResponseSchema = z.object({
+    expenseReportId: z.uuid(),
+    lineItemIds: z.array(z.uuid()),
+    receiptIds: z.array(z.uuid()),
+});
+
+export const DraftExpenseContentOutboundResponseSchema = z.object({
+    expenseReportId: z.uuid(),
+    lineItems: z.array(
+        z.object({
+            id: z.uuid(),
+            merchant: z.string(),
+            expenseDate: z.iso.date(),
+            category: z.enum(expenseCategories),
+            amount: z.number().nonnegative(),
+            currency: z.literal("USD"),
+        }),
+    ),
+    receipts: z.array(
+        z.object({
+            id: z.uuid(),
+            filename: z.string().nullable(),
+            merchant: z.string(),
+            receiptDate: z.iso.date(),
+            amount: z.number().nonnegative(),
+        }),
+    ),
+    mileageEntries: z.array(
+        z.object({
+            id: z.uuid(),
+            route: z.string(),
+            distance: z.number().positive(),
+            mileageDate: z.iso.date(),
+            reimbursementAmount: z.number().nonnegative(),
+        }),
+    ),
+});
 
 export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
 
@@ -242,6 +329,18 @@ export type GetExpenseReportRequest = z.infer<
 
 export type CreateMileageEntryRequest = z.infer<
     typeof CreateMileageEntryInboundRequestSchema
+>;
+
+export type AddDraftExpenseContentRequest = z.infer<
+    typeof AddDraftExpenseContentInboundRequestSchema
+>;
+
+export type AddDraftExpenseContentResponse = z.infer<
+    typeof AddDraftExpenseContentOutboundResponseSchema
+>;
+
+export type DraftExpenseContentResponse = z.infer<
+    typeof DraftExpenseContentOutboundResponseSchema
 >;
 
 export type MileageEntryResponse = z.infer<

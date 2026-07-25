@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
+    attachmentMetadata,
     auditEntry,
     approvedWorkflowStages,
     type AuditEntry,
@@ -13,6 +14,7 @@ import {
     type NewAuditEntry,
     type NewExpenseReport,
     type NewGlCodingResult,
+    receiptMetadata,
     stageTransition,
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
@@ -65,6 +67,22 @@ export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
+
+export type AddDraftExpenseContentResult =
+    | {
+          kind: "created";
+          lineItemIds: string[];
+          receiptIds: string[];
+      }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type DraftExpenseContent = {
+    report: ExpenseReport;
+    lineItems: (typeof lineItem.$inferSelect)[];
+    receipts: (typeof receiptMetadata.$inferSelect)[];
+    mileageEntries: (typeof mileageEntry.$inferSelect)[];
+};
 
 type ExpenseReportTransaction = Parameters<
     Parameters<typeof db.transaction>[0]
@@ -133,6 +151,72 @@ export async function findCurrentDraftExpenseReport(
         .limit(1);
 
     return reports[0];
+}
+
+/**
+ * Reads saved content from an employee-owned Drafted Expense Report.
+ */
+export async function findDraftExpenseContent(
+    tenantId: string,
+    expenseReportId: string,
+    ownerId: string,
+): Promise<DraftExpenseContent | undefined> {
+    const reports = await db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.id, expenseReportId),
+                eq(expenseReport.owner, ownerId),
+                eq(expenseReport.currentStage, "Drafted"),
+            ),
+        )
+        .limit(1);
+    const report = reports[0];
+    if (report === undefined) {
+        return undefined;
+    }
+
+    const [savedLineItems, receipts, mileageEntries] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(lineItem.createdAt), asc(lineItem.id)),
+        db
+            .select()
+            .from(receiptMetadata)
+            .where(
+                and(
+                    eq(receiptMetadata.tenantId, tenantId),
+                    eq(receiptMetadata.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(receiptMetadata.createdAt), asc(receiptMetadata.id)),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(mileageEntry.createdAt), asc(mileageEntry.id)),
+    ]);
+
+    return {
+        report,
+        lineItems: savedLineItems,
+        receipts,
+        mileageEntries,
+    };
 }
 
 /**
@@ -207,6 +291,138 @@ export async function insertMileageEntry(request: {
         });
 
         return { kind: "created", entry };
+    });
+}
+
+/**
+ * Adds validated line items and receipt references to an employee-owned draft.
+ */
+export async function insertDraftExpenseContent(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    lineItems: Array<{
+        merchant: string;
+        expenseDate: string;
+        category: string;
+        amount: number;
+        currency: string;
+    }>;
+    receipts: Array<{
+        lineItemIndex: number;
+        filename: string;
+        contentType: string;
+        sizeBytes: number;
+        blobReference: { objectKey: string };
+    }>;
+}): Promise<AddDraftExpenseContentResult> {
+    return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.expenseReportId),
+                    eq(expenseReport.owner, request.ownerId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+        if (report.currentStage !== "Drafted") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage as ExpenseReportStage,
+            };
+        }
+
+        const insertedLineItems = await transaction
+            .insert(lineItem)
+            .values(
+                request.lineItems.map((item) => ({
+                    tenantId: request.tenantId,
+                    expenseReportId: request.expenseReportId,
+                    merchant: item.merchant,
+                    expenseDate: item.expenseDate,
+                    amount: item.amount.toFixed(2),
+                    currency: item.currency,
+                    category: item.category,
+                })),
+            )
+            .returning({ id: lineItem.id });
+
+        const receiptValues = request.receipts.map((receipt) => {
+            const sourceLineItem = request.lineItems[receipt.lineItemIndex];
+            if (sourceLineItem === undefined) {
+                throw new Error("Receipt line item reference is invalid.");
+            }
+
+            return {
+                tenantId: request.tenantId,
+                expenseReportId: request.expenseReportId,
+                merchant: sourceLineItem.merchant,
+                receiptDate: sourceLineItem.expenseDate,
+                amount: sourceLineItem.amount.toFixed(2),
+                blobReference: {
+                    ...receipt.blobReference,
+                    filename: receipt.filename,
+                    contentType: receipt.contentType,
+                    sizeBytes: receipt.sizeBytes,
+                },
+            };
+        });
+        const insertedReceipts =
+            receiptValues.length === 0
+                ? []
+                : await transaction
+                      .insert(receiptMetadata)
+                      .values(receiptValues)
+                      .returning({ id: receiptMetadata.id });
+
+        if (request.receipts.length > 0) {
+            await transaction.insert(attachmentMetadata).values(
+                request.receipts.map((receipt) => ({
+                    tenantId: request.tenantId,
+                    expenseReportId: request.expenseReportId,
+                    filename: receipt.filename,
+                    contentType: receipt.contentType,
+                    blobReference: {
+                        ...receipt.blobReference,
+                        sizeBytes: receipt.sizeBytes,
+                    },
+                })),
+            );
+        }
+
+        await transaction
+            .update(expenseReport)
+            .set({ updatedAt: new Date() })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.expenseReportId),
+                ),
+            );
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "draft_expense_content_added",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Drafted",
+        });
+
+        return {
+            kind: "created",
+            lineItemIds: insertedLineItems.map((item) => item.id),
+            receiptIds: insertedReceipts.map((receipt) => receipt.id),
+        };
     });
 }
 

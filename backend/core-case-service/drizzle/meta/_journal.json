@@ -141,6 +141,13 @@
             "when": 1784937600000,
             "tag": "0019_mfa_totp_replay_guard",
             "breakpoints": true
+        },
+        {
+            "idx": 20,
+            "version": "7",
+            "when": 1784937600001,
+            "tag": "0020_stale_joseph",
+            "breakpoints": true
         }
     ]
 }

@@ -248,6 +248,9 @@ export const lineItem = pgTable(
     {
         id: uuid("id").defaultRandom().primaryKey(),
         merchant: text("merchant").notNull(),
+        expenseDate: date("expense_date")
+            .notNull()
+            .default(sql`CURRENT_DATE`),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
         currency: text("currency").notNull(),
         category: text("category").notNull(),

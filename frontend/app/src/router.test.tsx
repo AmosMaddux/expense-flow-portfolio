@@ -237,6 +237,7 @@ describe("ExpenseFlowRouter", () => {
         await screen.findByRole("heading", { name: "Welcome back" });
         expect(authClient.logout).toHaveBeenCalledOnce();
         expect(window.location.pathname).toBe("/login");
+        expect(window.location.search).toBe("");
     });
     test("redirects authenticated users away from routes their role cannot access", async () => {
         const authClient = createAuthClientMock("Employee");

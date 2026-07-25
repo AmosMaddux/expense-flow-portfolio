@@ -6,10 +6,31 @@ import {
     screen,
     waitFor,
 } from "@testing-library/react";
+import type { AnchorHTMLAttributes } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { LogMileageScreen } from "./LogMileageScreen";
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+    const router =
+        await importOriginal<typeof import("@tanstack/react-router")>();
+
+    return {
+        ...router,
+        Link: ({
+            children,
+            to,
+            ...props
+        }: AnchorHTMLAttributes<HTMLAnchorElement> & {
+            to: string;
+        }) => (
+            <a href={to} {...props}>
+                {children}
+            </a>
+        ),
+    };
+});
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
@@ -181,6 +202,11 @@ describe("LogMileageScreen", () => {
         expect(
             await screen.findByText("$8.75 was added to your draft."),
         ).toBeTruthy();
+        expect(
+            screen
+                .getByRole("link", { name: "Return to Submit Expense" })
+                .getAttribute("href"),
+        ).toBe("/submit-expense");
         await waitFor(() => {
             expect(fetchImplementation).toHaveBeenCalledWith(
                 `/v1/expense-reports/${reportId}/mileage-entries`,
