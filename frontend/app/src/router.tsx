@@ -26,7 +26,6 @@ import {
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
-import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -74,8 +73,6 @@ const protectedRoutes = navigationItems.map((item) =>
                 <LogMileageScreen />
             ) : item.path === "/submit-expense" ? (
                 <SubmitExpenseScreen />
-            ) : item.path === "/transactions" ? (
-                <AllTransactionsScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),

@@ -144,43 +144,6 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
-const ReadAllTransactionsFilterSchema = z.object({
-    category: z.string().trim().min(1).optional(),
-    status: z.enum(approvedWorkflowStages).optional(),
-    startDate: z.iso.date().optional(),
-    endDate: z.iso.date().optional(),
-});
-
-function isValidTransactionDateRange(request: {
-    startDate?: string | undefined;
-    endDate?: string | undefined;
-}): boolean {
-    return (
-        request.startDate === undefined ||
-        request.endDate === undefined ||
-        request.startDate <= request.endDate
-    );
-}
-
-export const ReadAllTransactionsInboundRequestSchema =
-    ReadAllTransactionsFilterSchema.extend({
-        tenantId: z.uuid(),
-    })
-        .strict()
-        .refine(isValidTransactionDateRange, {
-            message: "startDate must be on or before endDate.",
-            path: ["startDate"],
-        });
-
-export const ReadAllTransactionsQuerySchema =
-    ReadAllTransactionsFilterSchema.strict().refine(
-        isValidTransactionDateRange,
-        {
-            message: "startDate must be on or before endDate.",
-            path: ["startDate"],
-        },
-    );
-
 export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     id: z.uuid(),
@@ -243,20 +206,6 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
-export const AllTransactionSchema = z.object({
-    id: z.uuid(),
-    expenseReportId: z.uuid(),
-    date: z.string().datetime({ offset: true }),
-    merchant: z.string().min(1),
-    category: z.string().min(1),
-    amount: z.string().regex(/^-?\d+\.\d{2}$/),
-    currency: z.string().min(3).max(3),
-    status: z.enum(approvedWorkflowStages),
-    deductible: z.boolean().nullable(),
-});
-
-export const AllTransactionListSchema = z.array(AllTransactionSchema);
-
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -298,21 +247,12 @@ export const readCaseQueueStageRollupsRequestSchema =
 export const readCaseQueueStageRollupsQuerySchema =
     ReadCaseQueueStageRollupsQuerySchema;
 
-export const readAllTransactionsRequestSchema =
-    ReadAllTransactionsInboundRequestSchema;
-
-export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
-
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
-
-export const allTransactionSchema = AllTransactionSchema;
-
-export const allTransactionListSchema = AllTransactionListSchema;
 
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
@@ -375,21 +315,11 @@ export type ReadCaseQueueStageRollupsQuery = z.infer<
     typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
-export type ReadAllTransactionsParams = z.infer<
-    typeof ReadAllTransactionsInboundRequestSchema
->;
-
-export type ReadAllTransactionsQuery = z.infer<
-    typeof ReadAllTransactionsQuerySchema
->;
-
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
-
-export type AllTransaction = z.infer<typeof AllTransactionSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema
