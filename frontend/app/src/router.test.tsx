@@ -4,6 +4,7 @@ import {
     fireEvent,
     render,
     screen,
+    within,
     waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -171,8 +172,15 @@ describe("ExpenseFlowRouter", () => {
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
-        expect(screen.getByText("Finance Dashboard")).not.toBeNull();
-        expect(screen.getByText("Submit Expense")).not.toBeNull();
+        const sidebar = screen.getByRole("navigation", {
+            name: "Workspace sections",
+        });
+        expect(
+            within(sidebar).getByRole("link", { name: "Finance Dashboard" }),
+        ).not.toBeNull();
+        expect(
+            within(sidebar).getByRole("link", { name: "Submit Expense" }),
+        ).not.toBeNull();
         expect(window.location.pathname).toBe("/my-submissions");
     });
 
@@ -184,11 +192,7 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
-        await waitFor(() =>
-            expect(
-                screen.getAllByRole("heading", { name: "Case Queue" }),
-            ).toHaveLength(2),
-        );
+        await screen.findByRole("heading", { name: "Case Queue" });
         expect(screen.getAllByText("Approval Queue").length).toBeGreaterThan(1);
         expect(
             screen.queryByText(/This protected workspace route is available/),

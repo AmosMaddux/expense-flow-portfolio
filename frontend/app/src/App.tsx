@@ -28,8 +28,14 @@ type RoleLanding = {
 };
 
 const roleLandings: Record<Role, RoleLanding> = {
-    "Finance Admin": { label: "Case Queue", path: "/approval-queue" },
-    "Department Manager": { label: "Case Queue", path: "/approval-queue" },
+    "Finance Admin": {
+        label: "Finance Dashboard",
+        path: "/finance-dashboard",
+    },
+    "Department Manager": {
+        label: "Finance Dashboard",
+        path: "/finance-dashboard",
+    },
     Employee: { label: "Employee Portal", path: "/my-submissions" },
     Admin: { label: "Administration", path: "/roles-permissions" },
 };
