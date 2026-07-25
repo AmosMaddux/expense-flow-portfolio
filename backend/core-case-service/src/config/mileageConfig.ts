@@ -3,11 +3,16 @@ import { z } from "zod";
 import { ConfigurationError } from "../errors/problem-json.js";
 
 const mileageConfigSchema = z.object({
-    MILEAGE_REIMBURSEMENT_RATE: z.coerce.number().positive().max(100),
+    MILEAGE_REIMBURSEMENT_RATE: z
+        .string()
+        .trim()
+        .regex(/^\d+(?:\.\d{1,6})?$/)
+        .refine((rate) => Number(rate) > 0 && Number(rate) <= 100),
 });
 
 export type MileageConfig = {
     reimbursementRate: number;
+    reimbursementRateDecimal: string;
 };
 
 /**
@@ -25,6 +30,7 @@ export function loadMileageConfig(
     }
 
     return {
-        reimbursementRate: parsed.data.MILEAGE_REIMBURSEMENT_RATE,
+        reimbursementRate: Number(parsed.data.MILEAGE_REIMBURSEMENT_RATE),
+        reimbursementRateDecimal: parsed.data.MILEAGE_REIMBURSEMENT_RATE,
     };
 }

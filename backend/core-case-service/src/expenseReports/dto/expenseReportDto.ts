@@ -21,17 +21,39 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
-export const CreateMileageEntryInboundRequestSchema = z
-    .object({
-        route: z.string().trim().min(3).max(500),
-        distance: z
-            .number()
-            .positive("Distance must be greater than zero.")
-            .max(999999.99)
-            .multipleOf(0.01),
-        mileageDate: z.iso.date(),
-    })
-    .strict();
+const mileageEntryRequestShape = {
+    route: z.string().trim().min(3).max(500),
+    distance: z
+        .number()
+        .positive("Distance must be greater than zero.")
+        .max(999999.99)
+        .multipleOf(0.01),
+    mileageDate: z.iso.date(),
+};
+
+/**
+ * Builds mileage request validation against a testable current-date clock.
+ */
+export function createMileageEntryInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return z
+        .object(mileageEntryRequestShape)
+        .strict()
+        .superRefine((request, context) => {
+            const currentUtcDate = now().toISOString().slice(0, 10);
+            if (request.mileageDate > currentUtcDate) {
+                context.addIssue({
+                    code: "custom",
+                    message: "Mileage date cannot be in the future.",
+                    path: ["mileageDate"],
+                });
+            }
+        });
+}
+
+export const CreateMileageEntryInboundRequestSchema =
+    createMileageEntryInboundRequestSchema();
 
 export const expenseCategories = ["Travel", "Meals", "Lodging"] as const;
 

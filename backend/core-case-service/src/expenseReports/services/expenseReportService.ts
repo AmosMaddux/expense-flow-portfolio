@@ -52,6 +52,7 @@ import {
     type MileageEntryResponse,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
+import { calculateMileageReimbursement } from "./mileageReimbursement.js";
 
 /**
  * Creates a Drafted Expense Report and returns the public API response shape.
@@ -167,12 +168,10 @@ export async function readDraftExpenseContent(request: {
                 route: entry.route,
                 distance,
                 mileageDate: entry.mileageDate,
-                reimbursementAmount:
-                    Math.round(
-                        (distance * mileageConfig.reimbursementRate +
-                            Number.EPSILON) *
-                            100,
-                    ) / 100,
+                reimbursementAmount: calculateMileageReimbursement(
+                    entry.distance,
+                    mileageConfig.reimbursementRateDecimal,
+                ),
             };
         }),
     });
@@ -222,10 +221,10 @@ export async function addMileageEntry(
     }
 
     const distance = Number(result.entry.distance);
-    const reimbursementAmount =
-        Math.round(
-            (distance * config.reimbursementRate + Number.EPSILON) * 100,
-        ) / 100;
+    const reimbursementAmount = calculateMileageReimbursement(
+        result.entry.distance,
+        config.reimbursementRateDecimal,
+    );
 
     return MileageEntryOutboundResponseSchema.parse({
         id: result.entry.id,

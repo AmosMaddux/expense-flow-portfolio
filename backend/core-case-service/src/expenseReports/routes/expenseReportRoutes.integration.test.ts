@@ -851,6 +851,62 @@ void describe("Expense Report routes", () => {
         expect(savedContent.mileageEntries).toEqual([]);
     });
 
+    void test("rejects future mileage dates from API clients", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000143";
+        const owner = "50000000-0000-4000-8000-000000000143";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-143",
+            },
+            body: JSON.stringify({
+                owner,
+                dueDate: "2026-08-25",
+            }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/mileage-entries`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    route: "Synthetic Office → Synthetic Client Site",
+                    distance: 12.5,
+                    mileageDate: "2999-01-01",
+                }),
+            },
+        );
+        const rows = await db
+            .select()
+            .from(mileageEntry)
+            .where(eq(mileageEntry.expenseReportId, created.id));
+        const responseBody = (await response.json()) as {
+            detail?: string;
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(400);
+        expect(responseBody).toMatchObject({
+            status: 400,
+            title: "Bad Request",
+        });
+        expect(responseBody.detail).toContain(
+            "Mileage date cannot be in the future.",
+        );
+        expect(rows).toHaveLength(0);
+    });
+
     void test("allows an Employee to submit their own Drafted report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000132";
         const owner = "50000000-0000-4000-8000-000000000132";

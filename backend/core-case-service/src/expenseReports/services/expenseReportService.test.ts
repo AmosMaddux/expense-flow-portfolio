@@ -116,6 +116,35 @@ void describe("Expense Report mileage service", () => {
             }),
         );
     });
+
+    void test("rounds half-cent mileage reimbursement exactly", async () => {
+        process.env.MILEAGE_REIMBURSEMENT_RATE = "0.50";
+        insertMileageEntryMock.mockResolvedValue({
+            kind: "created",
+            entry: {
+                id: "70000000-0000-4000-8000-000000000902",
+                expenseReportId,
+                tenantId,
+                route: "Synthetic Building A → Synthetic Building B",
+                distance: "0.01",
+                mileageDate: "2026-07-23",
+                createdAt: new Date("2026-07-24T12:00:00.000Z"),
+                updatedAt: new Date("2026-07-24T12:00:00.000Z"),
+            },
+        });
+
+        const entry = await addMileageEntry({
+            id: expenseReportId,
+            tenantId,
+            actorId: ownerId,
+            ownerId,
+            route: "Synthetic Building A → Synthetic Building B",
+            distance: 0.01,
+            mileageDate: "2026-07-23",
+        });
+
+        expect(entry.reimbursement.amount).toBe(0.01);
+    });
 });
 
 void describe("Expense Report service audit responses", () => {

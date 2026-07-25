@@ -113,6 +113,9 @@ describe("ExpenseFlowRouter", () => {
 
         await screen.findByRole("heading", { name: "Welcome back" });
         expect(window.location.pathname).toBe("/login");
+        expect(
+            new URLSearchParams(window.location.search).get("redirect"),
+        ).toBe("/finance-dashboard");
     });
 
     test("mounts the existing auth sign-in screen at the login route", async () => {
@@ -145,18 +148,88 @@ describe("ExpenseFlowRouter", () => {
         });
     });
 
-    test("lands Employees on My Submissions instead of a saved Submit Expense redirect", async () => {
+    test("returns Employees to an allowed protected deep link after sign-in", async () => {
         const authClient = createAuthClientMock("Employee");
         window.history.pushState(null, "", "/submit-expense");
         render(<RoutedApp authClient={authClient} />);
 
         await submitSignIn();
 
-        await screen.findByRole("heading", { name: "My Submissions" });
+        await screen.findByRole("heading", { name: "Submit Expense" });
         await waitFor(() =>
-            expect(window.location.pathname).toBe("/my-submissions"),
+            expect(window.location.pathname).toBe("/submit-expense"),
         );
     });
+
+    test("returns an Employee to Log Mileage after direct-link sign-in", async () => {
+        const authClient = createAuthClientMock("Employee");
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            if (input === "/v1/expense-reports/drafts/current") {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            detail: "No Drafted Expense Report was found.",
+                        }),
+                        {
+                            headers: {
+                                "Content-Type": "application/problem+json",
+                            },
+                            status: 404,
+                        },
+                    ),
+                );
+            }
+
+            return Promise.resolve(
+                new Response(
+                    JSON.stringify({
+                        ratePerMile: 0.7,
+                        currency: "USD",
+                    }),
+                    {
+                        headers: { "Content-Type": "application/json" },
+                        status: 200,
+                    },
+                ),
+            );
+        });
+        window.history.pushState(null, "", "/log-mileage");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        await submitSignIn();
+
+        await screen.findByText("No draft report available");
+        expect(window.location.pathname).toBe("/log-mileage");
+    });
+
+    test.each([
+        "/finance-dashboard",
+        "https://synthetic.invalid/redirect",
+        "//synthetic.invalid/redirect",
+    ])(
+        "ignores an unauthorized or external post-login redirect: %s",
+        async (redirect) => {
+            const authClient = createAuthClientMock("Employee");
+            window.history.pushState(
+                null,
+                "",
+                `/login?redirect=${encodeURIComponent(redirect)}`,
+            );
+            render(<RoutedApp authClient={authClient} />);
+
+            await submitSignIn();
+
+            await screen.findByRole("heading", { name: "My Submissions" });
+            await waitFor(() =>
+                expect(window.location.pathname).toBe("/my-submissions"),
+            );
+        },
+    );
 
     test.each([
         ["Finance Admin", "/finance-dashboard", "Finance Dashboard"],

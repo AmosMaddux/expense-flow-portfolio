@@ -6,6 +6,7 @@ import {
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
+    createMileageEntryInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
     type AuditEntryResponse,
@@ -154,6 +155,27 @@ void describe("CreateMileageEntryInboundRequestSchema", () => {
                 tenantId: validExpenseReportResponse.tenantId,
             }),
         ).toThrow();
+    });
+
+    void test("rejects mileage dates after the clock's current date", () => {
+        const schema = createMileageEntryInboundRequestSchema(
+            () => new Date("2026-07-25T12:00:00.000Z"),
+        );
+
+        expect(() =>
+            schema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-26",
+            }),
+        ).toThrow("Mileage date cannot be in the future.");
+        expect(
+            schema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-25",
+            }).mileageDate,
+        ).toBe("2026-07-25");
     });
 });
 

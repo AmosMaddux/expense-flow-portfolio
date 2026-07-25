@@ -170,6 +170,19 @@ describe("LogMileageScreen", () => {
         ).toBe("true");
     });
 
+    test("rejects a future trip date in client-side validation", async () => {
+        renderMileageScreen(createMileageFetchMock());
+
+        fireEvent.change(await screen.findByLabelText("Trip Date"), {
+            target: { value: "2999-01-01" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Add to Draft" }));
+
+        expect(
+            await screen.findByText("Trip date cannot be in the future."),
+        ).toBeTruthy();
+    });
+
     test("computes the reimbursement preview from the configured rate", async () => {
         renderMileageScreen(createMileageFetchMock());
 

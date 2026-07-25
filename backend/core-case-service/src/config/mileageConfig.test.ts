@@ -8,8 +8,11 @@ describe("mileage configuration", () => {
         expect(
             loadMileageConfig({
                 MILEAGE_REIMBURSEMENT_RATE: "0.70",
-            }).reimbursementRate,
-        ).toBe(0.7);
+            }),
+        ).toStrictEqual({
+            reimbursementRate: 0.7,
+            reimbursementRateDecimal: "0.70",
+        });
     });
 
     test("rejects a missing or non-positive reimbursement rate", () => {
@@ -17,6 +20,11 @@ describe("mileage configuration", () => {
         expect(() =>
             loadMileageConfig({
                 MILEAGE_REIMBURSEMENT_RATE: "0",
+            }),
+        ).toThrow(ConfigurationError);
+        expect(() =>
+            loadMileageConfig({
+                MILEAGE_REIMBURSEMENT_RATE: "0.1234567",
             }),
         ).toThrow(ConfigurationError);
     });

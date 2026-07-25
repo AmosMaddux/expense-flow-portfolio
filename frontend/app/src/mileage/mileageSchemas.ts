@@ -6,6 +6,9 @@ export const mileageFormSchema = z.object({
         .min(1, "Trip date is required.")
         .refine((value) => z.iso.date().safeParse(value).success, {
             message: "Enter a valid trip date.",
+        })
+        .refine((value) => value <= getCurrentLocalDate(), {
+            message: "Trip date cannot be in the future.",
         }),
     routeFrom: z
         .string()
@@ -53,3 +56,14 @@ export type MileageFormInput = z.input<typeof mileageFormSchema>;
 export type MileageFormValues = z.output<typeof mileageFormSchema>;
 export type MileageConfig = z.infer<typeof mileageConfigSchema>;
 export type MileageEntry = z.infer<typeof mileageEntrySchema>;
+
+/**
+ * Formats the browser's current local calendar date for mileage validation.
+ */
+export function getCurrentLocalDate(now = new Date()): string {
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}

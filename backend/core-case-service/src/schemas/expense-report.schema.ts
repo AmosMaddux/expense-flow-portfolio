@@ -25,6 +25,7 @@ export {
     caseQueueStageRollupSchema,
     clearExpenseReportFlagsRequestSchema,
     createExpenseReportRequestSchema,
+    createMileageEntryInboundRequestSchema,
     expenseReportResponseSchema,
     getExpenseReportRequestSchema,
     readCaseQueueStageRollupsQuerySchema,
