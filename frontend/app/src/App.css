@@ -28,7 +28,7 @@
     margin: 0.25rem 0;
 }
 
-.submit-expense-screen__header .badge {
+.submit-expense-screen__status {
     position: absolute;
     top: 0;
     right: 0;

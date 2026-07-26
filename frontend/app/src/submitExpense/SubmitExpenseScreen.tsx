@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ZodIssue } from "zod";
 
 import { useSession } from "../auth";
+import { Badge } from "../components/Badge";
 import {
     createTenantQueryKey,
     QueryRequestError,
@@ -445,15 +446,17 @@ export function SubmitExpenseScreen(): JSX.Element {
             aria-labelledby="submit-expense-heading"
         >
             <header className="submit-expense-screen__header">
-                <p className="screen-placeholder__label">Employee Portal</p>
                 <h2 id="submit-expense-heading">Submit Expense</h2>
                 <p>
                     Save expenses and mileage to one draft, then submit the
                     complete report for review.
                 </p>
-                <span className="badge badge--neutral">
+                <Badge
+                    className="submit-expense-screen__status"
+                    tone={activeDraftId === undefined ? "neutral" : "info"}
+                >
                     {activeDraftId === undefined ? "New Draft" : "Drafted"}
-                </span>
+                </Badge>
             </header>
 
             {draftLoadFailed || contentLoadFailed ? (

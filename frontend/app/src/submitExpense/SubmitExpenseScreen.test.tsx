@@ -101,9 +101,7 @@ function createFetchMock(
             ) &&
             init?.method === "PUT"
         ) {
-            const uploadId = input
-                .split("/receipt-uploads/")[1]
-                ?.split("?")[0];
+            const uploadId = input.split("/receipt-uploads/")[1]?.split("?")[0];
 
             return Promise.resolve(
                 createJsonResponse(
@@ -170,6 +168,15 @@ afterEach(() => {
 });
 
 describe("SubmitExpenseScreen", () => {
+    test("shows a single page context with an informational Drafted badge", async () => {
+        renderScreen(createFetchMock());
+
+        const draftedBadge = await screen.findByText("Drafted");
+
+        expect(screen.queryByText("Employee Portal")).toBeNull();
+        expect(draftedBadge.className).toContain("ef-badge--info");
+    });
+
     test("shows zod validation errors for an empty line item", async () => {
         renderScreen(createFetchMock());
 
@@ -470,7 +477,8 @@ describe("SubmitExpenseScreen", () => {
         firstRender.unmount();
         renderScreen(fetchImplementation, queryClient);
 
-        expect(await screen.findByText("New Draft")).toBeTruthy();
+        const newDraftBadge = await screen.findByText("New Draft");
+        expect(newDraftBadge.className).toContain("ef-badge--neutral");
         expect(screen.queryByText("Synthetic Meal Vendor")).toBeNull();
         expect(
             screen.queryByText(
