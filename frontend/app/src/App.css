@@ -590,6 +590,7 @@ button:disabled {
     border-bottom: 1px solid #d9e2ec;
     padding: 18px 20px;
     text-align: left;
+    vertical-align: top;
 }
 
 .case-queue-table thead th {
@@ -625,6 +626,25 @@ button:disabled {
     border-bottom: 1px solid #d9e2ec;
     color: #52606d;
     padding: 18px 20px;
+}
+
+.case-queue-actions {
+    display: flex;
+    max-width: 260px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.case-queue-actions .button {
+    min-height: 34px;
+    white-space: nowrap;
+}
+
+.case-queue-actions__state {
+    color: #52606d;
+    font-size: 0.78rem;
+    font-weight: 700;
 }
 
 .case-queue-table footer {

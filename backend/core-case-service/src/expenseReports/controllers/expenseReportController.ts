@@ -12,6 +12,8 @@ import {
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReviewExpenseReportLineItemInboundRequestSchema,
+    ReviewExpenseReportLineItemParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
@@ -28,8 +30,10 @@ import {
 import {
     clearExpenseReportFlags,
     createDraftExpenseReport,
+    readApprovalQueueLineItems,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    reviewExpenseReportLineItem,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
 } from "../services/expenseReportService.js";
@@ -245,6 +249,61 @@ export async function postExpenseReportFlagClear(
         next(error);
     }
 }
+
+/**
+ * Handles manager review decisions for one Expense Report line item.
+ */
+export async function postExpenseReportLineItemReview(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = ReviewExpenseReportLineItemParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest =
+            ReviewExpenseReportLineItemInboundRequestSchema.parse(req.body);
+        const lineItem = await reviewExpenseReportLineItem({
+            id: parsedParams.id,
+            sourceId: parsedParams.sourceId,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            action: parsedRequest.action,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(lineItem);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Approval Queue line-item read requests.
+ */
+export async function getCaseQueueLineItems(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const lineItems = await readApprovalQueueLineItems({
+            tenantId: auth.tenantId,
+            roles: auth.roles,
+        });
+
+        res.status(200).json(lineItems);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
 /**
  * Handles Case Queue rollup read requests for one tenant.
  */

@@ -37,6 +37,7 @@ export const approvedAttachmentContentTypes = [
 ] as const;
 
 export const glCodingSourceTypes = ["line_item", "mileage"] as const;
+export const lineItemReviewActions = ["approve", "reject"] as const;
 
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
@@ -61,6 +62,9 @@ const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
 );
 const glCodingSourceTypeCheckSql =
     buildStaticStringInListSql(glCodingSourceTypes);
+const lineItemReviewActionCheckSql = buildStaticStringInListSql(
+    lineItemReviewActions,
+);
 
 export const expenseReport = pgTable(
     "expense_report",
@@ -364,6 +368,12 @@ export const glCodingResult = pgTable(
         flaggedLineItem: boolean("flagged_line_item").notNull().default(false),
         flagCode: text("flag_code"),
         flagMessage: text("flag_message"),
+        lineItemReviewAction: text("line_item_review_action"),
+        lineItemReviewReason: text("line_item_review_reason"),
+        lineItemReviewedBy: uuid("line_item_reviewed_by"),
+        lineItemReviewedAt: timestamp("line_item_reviewed_at", {
+            withTimezone: true,
+        }),
         codedAt: timestamp("coded_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -376,6 +386,10 @@ export const glCodingResult = pgTable(
         check(
             "gl_coding_result_mapping_status_check",
             sql`${table.mappingStatus} in ('mapped', 'unmapped')`,
+        ),
+        check(
+            "gl_coding_result_line_item_review_check",
+            sql`(${table.lineItemReviewAction} is null and ${table.lineItemReviewReason} is null and ${table.lineItemReviewedBy} is null and ${table.lineItemReviewedAt} is null) or (${table.sourceType} = 'line_item' and ${table.lineItemReviewAction} in (${lineItemReviewActionCheckSql}) and ${table.lineItemReviewedBy} is not null and ${table.lineItemReviewedAt} is not null and (${table.lineItemReviewAction} <> 'reject' or nullif(btrim(${table.lineItemReviewReason}), '') is not null))`,
         ),
         foreignKey({
             name: "gl_coding_result_expense_report_tenant_fk",

@@ -8,9 +8,17 @@ import {
     type ColumnFiltersState,
     type SortingState,
 } from "@tanstack/react-table";
+import {
+    useMutation,
+    useQueryClient,
+    type Query,
+    type QueryClient,
+    type QueryKey,
+} from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 
+import { useSession } from "../auth";
 import {
     Badge,
     EmptyState,
@@ -20,15 +28,21 @@ import {
     StatusBadge,
     type ExpenseReportStage,
 } from "../components";
-import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
+import {
+    QueryRequestError,
+    useExpenseFlowQuery,
+} from "../query/queryClient";
 
 const approvalQueueLineItemSchema = z.object({
     id: z.uuid(),
+    expenseReportId: z.uuid(),
     merchant: z.string().min(1),
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
     flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(["approve", "reject"]).nullable(),
+    canAdvance: z.boolean(),
 });
 
 export const approvalQueueLineItemListSchema = z.array(
@@ -37,7 +51,59 @@ export const approvalQueueLineItemListSchema = z.array(
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
 
+const reviewLineItemRequestSchema = z
+    .object({
+        action: z.enum(["approve", "reject"]),
+        reason: z.string().trim().min(1).optional(),
+    })
+    .strict()
+    .superRefine((request, context) => {
+        if (request.action === "reject" && request.reason === undefined) {
+            context.addIssue({
+                code: "custom",
+                message: "Line-item rejection requires a reason.",
+                path: ["reason"],
+            });
+        }
+    });
+const clearFlagsRequestSchema = z
+    .object({
+        sourceIds: z.array(z.uuid()).min(1),
+        reason: z.string().trim().min(1),
+    })
+    .strict();
+const transitionExpenseReportRequestSchema = z
+    .object({
+        toStage: z.enum(EXPENSE_REPORT_STAGES),
+        reason: z.string().trim().min(1),
+    })
+    .strict();
+const expenseReportTransitionResponseSchema = z.object({
+    id: z.uuid(),
+    currentStage: z.enum(EXPENSE_REPORT_STAGES),
+});
+
 type FlagFilter = "all" | "flagged" | "clear";
+type LineItemReviewAction = NonNullable<
+    ApprovalQueueLineItem["reviewAction"]
+>;
+type LineItemMutationVariables = {
+    lineItem: ApprovalQueueLineItem;
+    action: LineItemReviewAction;
+    reason?: string;
+};
+type ClearFlagMutationVariables = {
+    lineItem: ApprovalQueueLineItem;
+    reason: string;
+};
+type TransitionMutationVariables = {
+    expenseReportId: string;
+    toStage: ExpenseReportStage;
+    reason: string;
+};
+type QueueSnapshot = Array<[QueryKey, ApprovalQueueLineItem[] | undefined]>;
+
+const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
 
 /**
  * Fetches authenticated Approval Queue line items for the current tenant.
@@ -45,7 +111,7 @@ type FlagFilter = "all" | "flagged" | "clear";
 export function useApprovalQueueLineItems() {
     return useExpenseFlowQuery<ApprovalQueueLineItem[]>({
         input: "/v1/case-queue/line-items",
-        keyParts: ["case-queue", "line-items"],
+        keyParts: approvalQueueLineItemKeyParts,
         parseResponse: async (response) =>
             approvalQueueLineItemListSchema.parse(await response.json()),
         staleTime: 30_000,
@@ -57,6 +123,169 @@ export function useApprovalQueueLineItems() {
  */
 export function CaseQueueScreen(): JSX.Element {
     const query = useApprovalQueueLineItems();
+    const session = useSession();
+    const queryClient = useQueryClient();
+    const [actionError, setActionError] = useState<string | null>(null);
+    const reviewMutation = useMutation({
+        mutationFn: async ({
+            action,
+            lineItem,
+            reason,
+        }: LineItemMutationVariables) => {
+            const requestBody = reviewLineItemRequestSchema.parse({
+                action,
+                ...(reason === undefined ? {} : { reason }),
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${lineItem.expenseReportId}/line-items/${lineItem.id}/review`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return approvalQueueLineItemSchema.parse(await response.json());
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(
+                queryClient,
+                (current = []) =>
+                    current.map((lineItem) =>
+                        lineItem.id === variables.lineItem.id
+                            ? {
+                                  ...lineItem,
+                                  reviewAction: variables.action,
+                              }
+                            : lineItem,
+                    ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (updatedLineItem) => {
+            replaceQueueLineItem(queryClient, updatedLineItem);
+        },
+    });
+    const clearFlagMutation = useMutation({
+        mutationFn: async ({ lineItem, reason }: ClearFlagMutationVariables) => {
+            const requestBody = clearFlagsRequestSchema.parse({
+                sourceIds: [lineItem.id],
+                reason,
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${lineItem.expenseReportId}/flags/clear`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(
+                queryClient,
+                (current = []) =>
+                    recalculateAdvanceEligibility(
+                        current.map((lineItem) =>
+                            lineItem.id === variables.lineItem.id
+                                ? { ...lineItem, flaggedLineItem: false }
+                                : lineItem,
+                        ),
+                    ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+    });
+    const transitionMutation = useMutation({
+        mutationFn: async ({
+            expenseReportId,
+            reason,
+            toStage,
+        }: TransitionMutationVariables) => {
+            const requestBody = transitionExpenseReportRequestSchema.parse({
+                toStage,
+                reason,
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${expenseReportId}/transitions`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return expenseReportTransitionResponseSchema.parse(
+                await response.json(),
+            );
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(
+                queryClient,
+                (current = []) =>
+                    recalculateAdvanceEligibility(
+                        current.map((lineItem) =>
+                            lineItem.expenseReportId ===
+                            variables.expenseReportId
+                                ? {
+                                      ...lineItem,
+                                      currentStage: variables.toStage,
+                                  }
+                                : lineItem,
+                        ),
+                    ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (report) => {
+            updateQueueReportStage(queryClient, report);
+        },
+    });
 
     return (
         <section className="case-queue" aria-labelledby="case-queue-heading">
@@ -84,16 +313,100 @@ export function CaseQueueScreen(): JSX.Element {
                     />
                 </section>
             ) : (
-                <ApprovalQueueLineItemTable lineItems={query.data ?? []} />
+                <>
+                    {actionError === null ? null : (
+                        <div className="form-message form-message--error">
+                            {actionError}
+                        </div>
+                    )}
+                    <ApprovalQueueLineItemTable
+                        isActionPending={
+                            reviewMutation.isPending ||
+                            clearFlagMutation.isPending ||
+                            transitionMutation.isPending
+                        }
+                        lineItems={query.data ?? []}
+                        onAdvanceReport={(lineItem) =>
+                            transitionMutation.mutate({
+                                expenseReportId: lineItem.expenseReportId,
+                                toStage: "AP Review",
+                                reason: "manager approved after flag review",
+                            })
+                        }
+                        onClearFlag={(lineItem) => {
+                            const reason = window.prompt(
+                                "Reason for clearing this flag",
+                                "reviewed receipt detail",
+                            );
+                            if (reason === null || reason.trim().length === 0) {
+                                return;
+                            }
+
+                            clearFlagMutation.mutate({
+                                lineItem,
+                                reason: reason.trim(),
+                            });
+                        }}
+                        onReviewLineItem={(lineItem, action) => {
+                            let reason: string | undefined;
+                            if (action === "reject") {
+                                const promptedReason = window.prompt(
+                                    "Reason for rejecting this line item",
+                                );
+                                if (
+                                    promptedReason === null ||
+                                    promptedReason.trim().length === 0
+                                ) {
+                                    return;
+                                }
+
+                                reason = promptedReason.trim();
+                            }
+
+                            reviewMutation.mutate({
+                                lineItem,
+                                action,
+                                ...(reason === undefined ? {} : { reason }),
+                            });
+                        }}
+                        onSendBackReport={(lineItem) => {
+                            const reason = window.prompt(
+                                "Reason for sending this report back to Drafted",
+                            );
+                            if (reason === null || reason.trim().length === 0) {
+                                return;
+                            }
+
+                            transitionMutation.mutate({
+                                expenseReportId: lineItem.expenseReportId,
+                                toStage: "Drafted",
+                                reason: reason.trim(),
+                            });
+                        }}
+                    />
+                </>
             )}
         </section>
     );
 }
 
 function ApprovalQueueLineItemTable({
+    isActionPending,
     lineItems,
+    onAdvanceReport,
+    onClearFlag,
+    onReviewLineItem,
+    onSendBackReport,
 }: {
+    isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
+    onAdvanceReport: (lineItem: ApprovalQueueLineItem) => void;
+    onClearFlag: (lineItem: ApprovalQueueLineItem) => void;
+    onReviewLineItem: (
+        lineItem: ApprovalQueueLineItem,
+        action: LineItemReviewAction,
+    ) => void;
+    onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -153,8 +466,104 @@ function ApprovalQueueLineItemTable({
                         <Badge tone="success">Clear</Badge>
                     ),
             },
+            {
+                accessorKey: "reviewAction",
+                header: "Review",
+                cell: ({ row }) => {
+                    const lineItem = row.original;
+
+                    return (
+                        <div className="case-queue-actions">
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={
+                                    isActionPending ||
+                                    lineItem.currentStage !==
+                                        "Manager Approval"
+                                }
+                                type="button"
+                                onClick={() =>
+                                    onReviewLineItem(lineItem, "approve")
+                                }
+                            >
+                                Approve
+                            </button>
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={
+                                    isActionPending ||
+                                    lineItem.currentStage !==
+                                        "Manager Approval"
+                                }
+                                type="button"
+                                onClick={() =>
+                                    onReviewLineItem(lineItem, "reject")
+                                }
+                            >
+                                Reject
+                            </button>
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={
+                                    isActionPending ||
+                                    !lineItem.flaggedLineItem ||
+                                    lineItem.currentStage !==
+                                        "Manager Approval"
+                                }
+                                type="button"
+                                onClick={() => onClearFlag(lineItem)}
+                            >
+                                Clear flag
+                            </button>
+                            <span className="case-queue-actions__state">
+                                {getReviewActionLabel(lineItem.reviewAction)}
+                            </span>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: "reportActions",
+                header: "Report",
+                cell: ({ row }) => {
+                    const lineItem = row.original;
+
+                    return (
+                        <div className="case-queue-actions">
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={
+                                    isActionPending || !lineItem.canAdvance
+                                }
+                                type="button"
+                                onClick={() => onAdvanceReport(lineItem)}
+                            >
+                                Advance
+                            </button>
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={
+                                    isActionPending ||
+                                    lineItem.currentStage !==
+                                        "Manager Approval"
+                                }
+                                type="button"
+                                onClick={() => onSendBackReport(lineItem)}
+                            >
+                                Reject / Send back
+                            </button>
+                        </div>
+                    );
+                },
+            },
         ],
-        [],
+        [
+            isActionPending,
+            onAdvanceReport,
+            onClearFlag,
+            onReviewLineItem,
+            onSendBackReport,
+        ],
     );
     const table = useReactTable({
         columns,
@@ -306,6 +715,20 @@ function ApprovalQueueLineItemTable({
     );
 }
 
+function getReviewActionLabel(
+    reviewAction: ApprovalQueueLineItem["reviewAction"],
+): string {
+    if (reviewAction === "approve") {
+        return "Approved";
+    }
+
+    if (reviewAction === "reject") {
+        return "Rejected";
+    }
+
+    return "Not reviewed";
+}
+
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("en-US", {
         currency: "USD",
@@ -331,4 +754,129 @@ function getSortIndicator(sortDirection: false | "asc" | "desc"): string {
     }
 
     return "";
+}
+
+const approvalQueueQueryFilter = {
+    predicate: (query: Query): boolean =>
+        query.queryKey.includes("case-queue") &&
+        query.queryKey.includes("line-items"),
+};
+
+function readApprovalQueueSnapshots(
+    queryClient: QueryClient,
+): QueueSnapshot {
+    return queryClient.getQueriesData<ApprovalQueueLineItem[]>(
+        approvalQueueQueryFilter,
+    );
+}
+
+function restoreApprovalQueueSnapshots(
+    queryClient: QueryClient,
+    snapshots: QueueSnapshot | undefined,
+): void {
+    for (const [queryKey, lineItems] of snapshots ?? []) {
+        queryClient.setQueryData(queryKey, lineItems);
+    }
+}
+
+function setApprovalQueueData(
+    queryClient: QueryClient,
+    updater: (
+        current: ApprovalQueueLineItem[] | undefined,
+    ) => ApprovalQueueLineItem[],
+): void {
+    queryClient.setQueriesData<ApprovalQueueLineItem[]>(
+        approvalQueueQueryFilter,
+        updater,
+    );
+}
+
+function replaceQueueLineItem(
+    queryClient: QueryClient,
+    updatedLineItem: ApprovalQueueLineItem,
+): void {
+    setApprovalQueueData(
+        queryClient,
+        (current = []) =>
+            recalculateAdvanceEligibility(
+                current.map((lineItem) =>
+                    lineItem.id === updatedLineItem.id
+                        ? updatedLineItem
+                        : lineItem,
+                ),
+            ),
+    );
+}
+
+function updateQueueReportStage(
+    queryClient: QueryClient,
+    report: z.infer<typeof expenseReportTransitionResponseSchema>,
+): void {
+    setApprovalQueueData(
+        queryClient,
+        (current = []) =>
+            recalculateAdvanceEligibility(
+                current.map((lineItem) =>
+                    lineItem.expenseReportId === report.id
+                        ? {
+                              ...lineItem,
+                              currentStage: report.currentStage,
+                          }
+                        : lineItem,
+                ),
+            ),
+    );
+}
+
+function recalculateAdvanceEligibility(
+    lineItems: ApprovalQueueLineItem[],
+): ApprovalQueueLineItem[] {
+    const openFlagCounts = new Map<string, number>();
+    for (const lineItem of lineItems) {
+        if (lineItem.flaggedLineItem) {
+            openFlagCounts.set(
+                lineItem.expenseReportId,
+                (openFlagCounts.get(lineItem.expenseReportId) ?? 0) + 1,
+            );
+        }
+    }
+
+    return lineItems.map((lineItem) => ({
+        ...lineItem,
+        canAdvance:
+            lineItem.currentStage === "Manager Approval" &&
+            (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0,
+    }));
+}
+
+async function createQueueActionError(
+    response: Response,
+): Promise<QueryRequestError> {
+    const body: unknown = await response.json().catch(() => undefined);
+
+    return new QueryRequestError(
+        response.status,
+        getProblemDetail(body) ?? response.statusText,
+        body,
+    );
+}
+
+function getProblemDetail(body: unknown): string | undefined {
+    if (body === null || typeof body !== "object") {
+        return undefined;
+    }
+
+    const detail = (body as Record<string, unknown>).detail;
+
+    return typeof detail === "string" && detail.length > 0
+        ? detail
+        : undefined;
+}
+
+function getQueueActionErrorMessage(error: unknown): string {
+    if (error instanceof QueryRequestError) {
+        return error.message;
+    }
+
+    return "The queue action could not be completed. Retry the action or refresh the queue.";
 }

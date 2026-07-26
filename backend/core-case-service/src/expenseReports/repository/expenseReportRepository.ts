@@ -17,7 +17,10 @@ import {
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
-import type { TransitionExpenseReportStageRequest } from "../dto/expenseReportDto.js";
+import type {
+    ApprovalQueueLineItemResponse,
+    TransitionExpenseReportStageRequest,
+} from "../dto/expenseReportDto.js";
 
 export const expenseReportCreatedReason = "report_created";
 export const expenseReportSubmittedReason = "report_submitted";
@@ -31,6 +34,11 @@ type SubmissionSourceFingerprint = string;
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+type ReviewExpenseReportLineItemResult =
+    | { kind: "reviewed"; lineItem: ApprovalQueueLineItemResponse }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
 
@@ -59,6 +67,18 @@ export type SubmissionSources = {
         distance: string;
         mileageDate: string;
     }>;
+};
+
+type ApprovalQueueLineItemRow = {
+    id: string;
+    expenseReportId: string;
+    merchant: string;
+    amount: string | null;
+    glCode: string | null;
+    currentStage: string;
+    flaggedLineItem: boolean;
+    reviewAction: "approve" | "reject" | null;
+    submissionId: string;
 };
 
 type ExpenseReportTransaction = Parameters<
@@ -105,6 +125,54 @@ export async function findExpenseReportById(
     }
 
     return undefined;
+}
+
+/**
+ * Reads latest-submission line items that can appear in the manager Approval Queue.
+ */
+export async function findApprovalQueueLineItems(
+    tenantId: string,
+): Promise<ApprovalQueueLineItemResponse[]> {
+    const rows = await db
+        .select({
+            id: glCodingResult.sourceId,
+            expenseReportId: glCodingResult.expenseReportId,
+            merchant: lineItem.merchant,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            lineItem,
+            and(
+                eq(lineItem.tenantId, glCodingResult.tenantId),
+                eq(lineItem.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.sourceType, "line_item"),
+            ),
+        )
+        .orderBy(
+            asc(expenseReport.dueDate),
+            desc(glCodingResult.codedAt),
+            desc(glCodingResult.id),
+        );
+
+    return toLatestApprovalQueueLineItems(rows as ApprovalQueueLineItemRow[]);
 }
 
 /**
@@ -517,6 +585,111 @@ export async function clearExpenseReportFlags(request: {
 }
 
 /**
+ * Records a manager review decision for one line item in Manager Approval.
+ */
+export async function reviewExpenseReportLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    sourceId: string;
+    actorId: string;
+    action: "approve" | "reject";
+    reason?: string;
+}): Promise<ReviewExpenseReportLineItemResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage !== "Manager Approval") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        const latestSubmissionId = await readLatestSubmissionId(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+
+        if (latestSubmissionId === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const reviewedAt = new Date();
+        const reviewedRows = await transaction
+            .update(glCodingResult)
+            .set({
+                lineItemReviewAction: request.action,
+                lineItemReviewReason: request.reason ?? null,
+                lineItemReviewedBy: request.actorId,
+                lineItemReviewedAt: reviewedAt,
+            })
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, request.tenantId),
+                    eq(glCodingResult.expenseReportId, request.expenseReportId),
+                    eq(glCodingResult.sourceType, "line_item"),
+                    eq(glCodingResult.sourceId, request.sourceId),
+                    eq(glCodingResult.submissionId, latestSubmissionId),
+                ),
+            )
+            .returning({ id: glCodingResult.id });
+
+        if (reviewedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action:
+                request.action === "approve"
+                    ? "line_item_approved"
+                    : "line_item_rejected",
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: request.reason ?? null,
+        });
+
+        const lineItemRow = await readApprovalQueueLineItemInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            request.sourceId,
+            latestSubmissionId,
+        );
+
+        if (lineItemRow === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const openFlagCount = await countOpenExpenseReportFlagsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+
+        return {
+            kind: "reviewed",
+            lineItem: toApprovalQueueLineItemResponse(
+                lineItemRow,
+                openFlagCount,
+            ),
+        };
+    });
+}
+
+/**
  * Transitions an Expense Report stage and writes the required audit records.
  */
 export async function transitionExpenseReportStage(
@@ -776,6 +949,110 @@ async function countOpenExpenseReportFlagsInTransaction(
         );
 
     return rows.length;
+}
+
+async function readApprovalQueueLineItemInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+    sourceId: string,
+    submissionId: string,
+): Promise<ApprovalQueueLineItemRow | undefined> {
+    const rows = await transaction
+        .select({
+            id: glCodingResult.sourceId,
+            expenseReportId: glCodingResult.expenseReportId,
+            merchant: lineItem.merchant,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            lineItem,
+            and(
+                eq(lineItem.tenantId, glCodingResult.tenantId),
+                eq(lineItem.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.sourceType, "line_item"),
+                eq(glCodingResult.sourceId, sourceId),
+                eq(glCodingResult.submissionId, submissionId),
+            ),
+        )
+        .limit(1);
+
+    return rows[0] as ApprovalQueueLineItemRow | undefined;
+}
+
+function toLatestApprovalQueueLineItems(
+    rows: ApprovalQueueLineItemRow[],
+): ApprovalQueueLineItemResponse[] {
+    const latestSubmissionByReport = new Map<string, string>();
+    for (const row of rows) {
+        if (!latestSubmissionByReport.has(row.expenseReportId)) {
+            latestSubmissionByReport.set(row.expenseReportId, row.submissionId);
+        }
+    }
+
+    const openFlagCounts = new Map<string, number>();
+    for (const row of rows) {
+        if (
+            latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId &&
+            row.flaggedLineItem
+        ) {
+            openFlagCounts.set(
+                row.expenseReportId,
+                (openFlagCounts.get(row.expenseReportId) ?? 0) + 1,
+            );
+        }
+    }
+
+    return rows
+        .filter(
+            (row) =>
+                latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId,
+        )
+        .map((row) =>
+            toApprovalQueueLineItemResponse(
+                row,
+                openFlagCounts.get(row.expenseReportId) ?? 0,
+            ),
+        );
+}
+
+function toApprovalQueueLineItemResponse(
+    row: ApprovalQueueLineItemRow,
+    openFlagCount: number,
+): ApprovalQueueLineItemResponse {
+    return {
+        id: row.id,
+        expenseReportId: row.expenseReportId,
+        merchant: row.merchant,
+        amount: Number(row.amount ?? 0),
+        glCode: row.glCode ?? "Unmapped",
+        currentStage: row.currentStage as ExpenseReportStage,
+        flaggedLineItem: row.flaggedLineItem,
+        reviewAction: row.reviewAction,
+        canAdvance:
+            row.currentStage === "Manager Approval" && openFlagCount === 0,
+    };
 }
 
 async function readLatestSubmissionId(

@@ -17,6 +17,7 @@ import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
+    findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
     findExpenseReportById,
     insertDraftExpenseReport,
@@ -24,6 +25,7 @@ import {
     insertDeniedSubmissionAuditEntry,
     insertDeniedWorkflowTransitionAttempt,
     readDraftSubmissionSources,
+    reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
 } from "../repository/expenseReportRepository.js";
@@ -31,10 +33,12 @@ import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
     AuditEntryOutboundResponseSchema,
     type AuditEntryResponse,
+    type ApprovalQueueLineItemResponse,
     type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
+    type ReviewExpenseReportLineItemRequest,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
 
@@ -88,6 +92,20 @@ export async function readExpenseReport(
     }
 
     return toExpenseReportResponse(report);
+}
+
+/**
+ * Reads manager-review line items in the authenticated tenant's Approval Queue.
+ */
+export async function readApprovalQueueLineItems(request: {
+    tenantId: string;
+    roles: RoleName[];
+}): Promise<ApprovalQueueLineItemResponse[]> {
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    return findApprovalQueueLineItems(request.tenantId);
 }
 
 /**
@@ -245,6 +263,49 @@ export async function clearExpenseReportFlags(
     }
 
     return { clearedFlagCount: clearResult.clearedFlagCount };
+}
+
+/**
+ * Applies a manager approve/reject decision to one Expense Report line item.
+ */
+export async function reviewExpenseReportLineItem(
+    request: ReviewExpenseReportLineItemRequest & {
+        id: string;
+        sourceId: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+    },
+): Promise<ApprovalQueueLineItemResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    const result = await reviewExpenseReportLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        sourceId: request.sourceId,
+        actorId: request.actorId,
+        action: request.action,
+        ...(request.reason === undefined ? {} : { reason: request.reason }),
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Expense Report line item not found.");
+    }
+
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Line items can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
+        );
+    }
+
+    return result.lineItem;
 }
 
 /**

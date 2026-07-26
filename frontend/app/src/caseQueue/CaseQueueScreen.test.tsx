@@ -20,27 +20,36 @@ const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 const lineItems: ApprovalQueueLineItem[] = [
     {
         id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+        expenseReportId: "d104c9ca-9de7-4f85-bb23-ed907e9db001",
         merchant: "Northstar Hotels",
         amount: 742.18,
         glCode: "6240",
         currentStage: "Manager Approval",
         flaggedLineItem: true,
+        reviewAction: null,
+        canAdvance: false,
     },
     {
         id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
+        expenseReportId: "d104c9ca-9de7-4f85-bb23-ed907e9db002",
         merchant: "Metro Meals",
         amount: 86.42,
         glCode: "6210",
         currentStage: "Submitted",
         flaggedLineItem: false,
+        reviewAction: null,
+        canAdvance: false,
     },
     {
         id: "e6f4d30b-20fc-4a72-9e44-190eb7d30c72",
+        expenseReportId: "d104c9ca-9de7-4f85-bb23-ed907e9db003",
         merchant: "Zenith Air",
         amount: 512,
         glCode: "6220",
         currentStage: "AP Review",
         flaggedLineItem: true,
+        reviewAction: "approve",
+        canAdvance: false,
     },
 ];
 
@@ -171,17 +180,29 @@ describe("CaseQueueScreen", () => {
             name: "Tenant-scoped Approval Queue line items",
         });
         expect(table).toBeTruthy();
-        expect(
-            screen.getByRole("row", {
-                name: /Northstar Hotels \$742\.18 6240 Manager Approval Over \$500/i,
-            }),
-        ).toBeTruthy();
-        expect(
-            screen.getByRole("row", {
-                name: /Metro Meals \$86\.42 6210 Submitted Clear/i,
-            }),
-        ).toBeTruthy();
+        const northstarRow = screen.getByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        const metroRow = screen.getByRole("row", {
+            name: /Metro Meals/i,
+        });
+        expect(within(northstarRow).getByText("$742.18")).toBeTruthy();
+        expect(within(northstarRow).getByText("6240")).toBeTruthy();
+        expect(within(northstarRow).getByText("Manager Approval")).toBeTruthy();
+        expect(within(northstarRow).getByText("Over $500")).toBeTruthy();
+        expect(within(northstarRow).getByText("Not reviewed")).toBeTruthy();
+        expect(within(metroRow).getByText("$86.42")).toBeTruthy();
+        expect(within(metroRow).getByText("6210")).toBeTruthy();
+        expect(within(metroRow).getByText("Submitted")).toBeTruthy();
+        expect(within(metroRow).getByText("Clear")).toBeTruthy();
         expect(within(table).getAllByText("Over $500")).toHaveLength(2);
+        expect(within(table).getAllByRole("button", { name: "Approve" }))
+            .toHaveLength(3);
+        expect(
+            within(table).getAllByRole("button", {
+                name: "Reject / Send back",
+            }),
+        ).toHaveLength(3);
         expect(screen.getByText("Showing 3 of 3 line items")).toBeTruthy();
     });
 
@@ -233,14 +254,10 @@ describe("CaseQueueScreen", () => {
 
         await waitFor(() => {
             const rows = getBodyRows();
+            expect(within(rows[0]).getByText("Metro Meals")).toBeTruthy();
+            expect(within(rows[1]).getByText("Zenith Air")).toBeTruthy();
             expect(
-                within(rows[0] as HTMLElement).getByText("Metro Meals"),
-            ).toBeTruthy();
-            expect(
-                within(rows[1] as HTMLElement).getByText("Zenith Air"),
-            ).toBeTruthy();
-            expect(
-                within(rows[2] as HTMLElement).getByText("Northstar Hotels"),
+                within(rows[2]).getByText("Northstar Hotels"),
             ).toBeTruthy();
         });
     });
@@ -320,5 +337,118 @@ describe("CaseQueueScreen", () => {
         );
         expect(await screen.findByText("Northstar Hotels")).toBeTruthy();
         expect(screen.queryByText("Synthetic outage.")).toBeNull();
+    });
+
+    test("approves a line item optimistically and rolls back when the API rejects the action", async () => {
+        let resolveReviewResponse: (response: Response) => void = () =>
+            undefined;
+        const reviewResponse = new Promise<Response>((resolve) => {
+            resolveReviewResponse = resolve;
+        });
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockReturnValueOnce(reviewResponse);
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        fireEvent.click(within(northstarRow).getByRole("button", {
+            name: "Approve",
+        }));
+
+        await waitFor(() =>
+            expect(
+                within(
+                    screen.getByRole("row", { name: /Northstar Hotels/i }),
+                ).getByText("Approved"),
+            ).toBeTruthy(),
+        );
+
+        resolveReviewResponse(
+            createProblemResponse("Synthetic review failure."),
+        );
+
+        expect(await screen.findByText("Synthetic review failure.")).toBeTruthy();
+        expect(
+            within(
+                screen.getByRole("row", { name: /Northstar Hotels/i }),
+            ).getByText("Not reviewed"),
+        ).toBeTruthy();
+    });
+
+    test("clears the last report flag and enables the advance action", async () => {
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(createJsonResponse({ clearedFlagCount: 1 }));
+        vi.spyOn(window, "prompt").mockReturnValue("reviewed receipt detail");
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        expect(
+            within(northstarRow).getByRole("button", {
+                name: "Advance",
+            }).hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(
+            within(northstarRow).getByRole("button", {
+                name: "Clear flag",
+            }),
+        );
+
+        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
+        const updatedNorthstarRow = screen.getByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        expect(within(updatedNorthstarRow).getByText("Clear")).toBeTruthy();
+        expect(
+            within(updatedNorthstarRow).getByRole("button", {
+                name: "Advance",
+            }).hasAttribute("disabled"),
+        ).toBe(false);
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/flags/clear",
+        );
+    });
+
+    test("sends a report back to Drafted with a required reason", async () => {
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                    currentStage: "Drafted",
+                }),
+            );
+        vi.spyOn(window, "prompt").mockReturnValue("employee correction needed");
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", {
+                name: "Reject / Send back",
+            }),
+        );
+
+        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
+        expect(
+            within(
+                screen.getByRole("row", { name: /Northstar Hotels/i }),
+            ).getByText("Drafted"),
+        ).toBeTruthy();
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/transitions",
+        );
     });
 });

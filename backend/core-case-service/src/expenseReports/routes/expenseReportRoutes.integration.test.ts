@@ -1687,6 +1687,113 @@ void describe("Expense Report routes", () => {
         expect(advanceBody.currentStage).toBe("AP Review");
     });
 
+    void test("reviews a Manager Approval line item and exposes the updated queue row", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000154";
+        const owner = "50000000-0000-4000-8000-000000000154";
+        const managerId = "51000000-0000-4000-8000-000000000154";
+        const reportId = "60000000-0000-4000-8000-000000000154";
+        const lineItemId = "30000000-0000-4000-8000-000000000154";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000154",
+            submissionId: "90000000-0000-4000-8000-000000000154",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "642.30",
+            currency: "USD",
+            flaggedLineItem: true,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
+        });
+
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "reject",
+                    reason: "receipt does not match policy",
+                }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            id?: string;
+            reviewAction?: string;
+            canAdvance?: boolean;
+        };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody).toMatchObject({
+            id: lineItemId,
+            reviewAction: "reject",
+            canAdvance: false,
+        });
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "line_item_rejected",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Manager Approval",
+                outcomeReason: "receipt does not match policy",
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            reviewAction?: string;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: lineItemId,
+                reviewAction: "reject",
+            }),
+        );
+    });
+
     void test("sends AP Review back to Drafted without removing line items or flags", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000153";
         const owner = "50000000-0000-4000-8000-000000000153";
