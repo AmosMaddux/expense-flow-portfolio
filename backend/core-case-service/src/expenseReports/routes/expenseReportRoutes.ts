@@ -4,6 +4,7 @@ import {
     getCaseQueueStageRollups,
     getExpenseReportAuditEntries,
     getExpenseReportById,
+    getFinanceDashboardTrend,
     postExpenseReportFlagClear,
     postExpenseReportSubmission,
     postExpenseReportTransition,
@@ -13,6 +14,7 @@ import {
 export const expenseReportRouter = Router();
 
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
+expenseReportRouter.get("/finance-dashboard/trends", getFinanceDashboardTrend);
 expenseReportRouter.post("/expense-reports", postExpenseReport);
 expenseReportRouter.post(
     "/expense-reports/:id/submit",

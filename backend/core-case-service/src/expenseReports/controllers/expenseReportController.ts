@@ -12,6 +12,7 @@ import {
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadFinanceDashboardTrendQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
@@ -21,6 +22,7 @@ import {
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
+import { readFinanceDashboardTrend } from "../services/financeDashboardService.js";
 import {
     logExpenseReportAuditError,
     logExpenseReportAuditSuccess,
@@ -270,6 +272,32 @@ export async function getCaseQueueStageRollups(
     }
 }
 
+/**
+ * Handles Finance Dashboard trend read requests for one tenant.
+ */
+export async function getFinanceDashboardTrend(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const parsedQuery = ReadFinanceDashboardTrendQuerySchema.parse({
+            fromDate: req.query.fromDate,
+            toDate: req.query.toDate,
+        });
+        const trend = await readFinanceDashboardTrend({
+            tenantId: auth.tenantId,
+            fromDate: parsedQuery.fromDate,
+            toDate: parsedQuery.toDate,
+        });
+
+        res.status(200).json(trend);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 /**
  * Handles Audit Trail reads for an Expense Report case.
  */

@@ -12,7 +12,9 @@ import {
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    FinanceDashboardTrendPointListSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadFinanceDashboardTrendQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
@@ -81,6 +83,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
+    );
+    const readFinanceDashboardTrendRequest = registry.register(
+        "ReadFinanceDashboardTrendRequest",
+        ReadFinanceDashboardTrendQuerySchema,
+    );
+    const financeDashboardTrendPointList = registry.register(
+        "FinanceDashboardTrendPointList",
+        FinanceDashboardTrendPointListSchema,
     );
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
@@ -178,6 +188,34 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    registry.registerPath({
+        method: "get",
+        path: "/v1/finance-dashboard/trends",
+        summary: "Get Finance Dashboard report trends",
+        description:
+            "Loads tenant-scoped daily Expense Report creation volume and spend grouped by currency for the Finance Dashboard.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readFinanceDashboardTrendRequest,
+        },
+        responses: {
+            200: {
+                description: "Finance Dashboard trend points found.",
+                content: {
+                    "application/json": {
+                        schema: financeDashboardTrendPointList,
+                    },
+                },
+            },
+            400: problemJsonResponse(
+                "Malformed Finance Dashboard trend request.",
+            ),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("Authenticated user is not permitted."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
     registry.registerPath({
         method: "post",
         path: "/v1/auth/login",

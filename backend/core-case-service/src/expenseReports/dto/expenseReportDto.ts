@@ -45,6 +45,27 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
+export const ReadFinanceDashboardTrendInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+        fromDate: z.iso.date(),
+        toDate: z.iso.date(),
+    })
+    .refine((request) => request.fromDate <= request.toDate, {
+        message: "fromDate must be on or before toDate.",
+        path: ["fromDate"],
+    });
+
+export const ReadFinanceDashboardTrendQuerySchema = z
+    .object({
+        fromDate: z.iso.date(),
+        toDate: z.iso.date(),
+    })
+    .refine((request) => request.fromDate <= request.toDate, {
+        message: "fromDate must be on or before toDate.",
+        path: ["fromDate"],
+    });
+
 export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     id: z.uuid(),
@@ -85,6 +106,21 @@ export const CaseQueueStageRollupSchema = z.object({
 
 export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
+);
+
+export const FinanceDashboardTrendSpendBucketSchema = z.object({
+    currency: z.string().min(3).max(8),
+    spendAmount: z.string().regex(/^\d{1,12}\.\d{2}$/),
+});
+
+export const FinanceDashboardTrendPointSchema = z.object({
+    periodStart: z.iso.date(),
+    reportCount: z.number().int().nonnegative(),
+    spendByCurrency: z.array(FinanceDashboardTrendSpendBucketSchema),
+});
+
+export const FinanceDashboardTrendPointListSchema = z.array(
+    FinanceDashboardTrendPointSchema,
 );
 
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
@@ -128,12 +164,27 @@ export const readCaseQueueStageRollupsRequestSchema =
 export const readCaseQueueStageRollupsQuerySchema =
     ReadCaseQueueStageRollupsQuerySchema;
 
+export const readFinanceDashboardTrendRequestSchema =
+    ReadFinanceDashboardTrendInboundRequestSchema;
+
+export const readFinanceDashboardTrendQuerySchema =
+    ReadFinanceDashboardTrendQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
+
+export const financeDashboardTrendSpendBucketSchema =
+    FinanceDashboardTrendSpendBucketSchema;
+
+export const financeDashboardTrendPointSchema =
+    FinanceDashboardTrendPointSchema;
+
+export const financeDashboardTrendPointListSchema =
+    FinanceDashboardTrendPointListSchema;
 
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
@@ -172,11 +223,27 @@ export type ReadCaseQueueStageRollupsQuery = z.infer<
     typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
+export type ReadFinanceDashboardTrendParams = z.infer<
+    typeof ReadFinanceDashboardTrendInboundRequestSchema
+>;
+
+export type ReadFinanceDashboardTrendQuery = z.infer<
+    typeof ReadFinanceDashboardTrendQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type FinanceDashboardTrendSpendBucket = z.infer<
+    typeof FinanceDashboardTrendSpendBucketSchema
+>;
+
+export type FinanceDashboardTrendPoint = z.infer<
+    typeof FinanceDashboardTrendPointSchema
+>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema
