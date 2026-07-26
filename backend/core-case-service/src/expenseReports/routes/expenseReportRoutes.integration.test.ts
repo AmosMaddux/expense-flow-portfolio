@@ -101,6 +101,14 @@ const redisClientMock = vi.hoisted(() => ({
         return Promise.resolve(Number(nextValue));
     }),
 }));
+const receiptStorageMock = vi.hoisted(() => ({
+    put: vi.fn().mockResolvedValue({
+        objectKey: "synthetic/receipt-object",
+    }),
+    verify: vi.fn().mockResolvedValue({
+        objectKey: "synthetic/receipt-object",
+    }),
+}));
 
 vi.mock("../../cache/redisClient.js", () => ({
     getRedisClient: () => Promise.resolve(redisClientMock),
@@ -108,6 +116,9 @@ vi.mock("../../cache/redisClient.js", () => ({
 
 vi.mock("../../glCoding/glCodingClient.js", () => ({
     codeExpenseLineItems: glCodingClientMock,
+}));
+vi.mock("../../receipts/receiptStorage.js", () => ({
+    getDefaultReceiptStorage: () => receiptStorageMock,
 }));
 
 import { db } from "../../db/client.js";
@@ -196,6 +207,8 @@ void describe("Expense Report routes", () => {
         redisClientMock.get.mockClear();
         redisClientMock.set.mockClear();
         redisClientMock.incr.mockClear();
+        receiptStorageMock.put.mockClear();
+        receiptStorageMock.verify.mockClear();
         glCodingClientMock.mockResolvedValue({
             coded_items: [],
             flags: [],
@@ -647,6 +660,7 @@ void describe("Expense Report routes", () => {
             tenantId,
             expenseReportId: created.id,
             merchant: "Synthetic Air",
+            expenseDate: "2026-07-20",
             amount: "501.00",
             currency: "USD",
             category: "Travel",
@@ -772,12 +786,10 @@ void describe("Expense Report routes", () => {
                 receipts: [
                     {
                         lineItemIndex: 0,
+                        uploadId: "30000000-0000-4000-8000-000000000129",
                         filename: "synthetic-receipt.pdf",
                         contentType: "application/pdf",
                         sizeBytes: 2048,
-                        blobReference: {
-                            objectKey: "synthetic/receipt-object-129",
-                        },
                     },
                 ],
             }),
@@ -907,6 +919,371 @@ void describe("Expense Report routes", () => {
         expect(rows).toHaveLength(0);
     });
 
+    void test("uploads actual receipt bytes for an employee-owned draft", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000145";
+        const owner = "50000000-0000-4000-8000-000000000145";
+        const uploadId = "30000000-0000-4000-8000-000000000145";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-145",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-25" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/receipt-uploads/${uploadId}?filename=synthetic-receipt.pdf`,
+            {
+                method: "PUT",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/pdf",
+                },
+                body: new Blob(["synthetic receipt"]),
+            },
+        );
+        const responseBody = (await response.json()) as {
+            contentType?: string;
+            filename?: string;
+            sizeBytes?: number;
+            uploadId?: string;
+        };
+
+        expect(response.status).toBe(201);
+        expect(responseBody).toEqual({
+            contentType: "application/pdf",
+            filename: "synthetic-receipt.pdf",
+            sizeBytes: 17,
+            uploadId,
+        });
+        expect(receiptStorageMock.put).toHaveBeenCalledWith(
+            {
+                contentType: "application/pdf",
+                expenseReportId: created.id,
+                sizeBytes: 17,
+                tenantId,
+                uploadId,
+            },
+            expect.any(Buffer),
+        );
+    });
+
+    void test("deduplicates retried mileage additions", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000146";
+        const owner = "50000000-0000-4000-8000-000000000146";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-146",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-25" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+        const request = {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "mileage-create-146",
+            },
+            body: JSON.stringify({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-24",
+            }),
+        } satisfies RequestInit;
+
+        const firstResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/mileage-entries`,
+            request,
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/mileage-entries`,
+            request,
+        );
+        const firstBody = (await firstResponse.json()) as unknown;
+        const replayBody = (await replayResponse.json()) as unknown;
+        const rows = await db
+            .select()
+            .from(mileageEntry)
+            .where(eq(mileageEntry.expenseReportId, created.id));
+
+        expect(firstResponse.status).toBe(201);
+        expect(replayResponse.status).toBe(201);
+        expect(replayBody).toStrictEqual(firstBody);
+        expect(rows).toHaveLength(1);
+    });
+
+    void test("requires an Idempotency-Key header for mileage additions", async () => {
+        const response = await requestApp(
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000146/mileage-entries",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        "40000000-0000-4000-8000-000000000249",
+                        "50000000-0000-4000-8000-000000000249",
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    route: "Synthetic route",
+                    distance: 10,
+                    mileageDate: "2026-07-24",
+                }),
+            },
+        );
+
+        expect(response.status).toBe(400);
+    });
+
+    void test("rejects future expense dates from API clients", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000147";
+        const owner = "50000000-0000-4000-8000-000000000147";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-147",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-25" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/draft-content`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-content-147",
+                },
+                body: JSON.stringify({
+                    lineItems: [
+                        {
+                            merchant: "Synthetic Air",
+                            expenseDate: "2999-01-01",
+                            category: "Travel",
+                            amount: 125.5,
+                            currency: "USD",
+                        },
+                    ],
+                    receipts: [],
+                }),
+            },
+        );
+        const rows = await db
+            .select()
+            .from(lineItem)
+            .where(eq(lineItem.expenseReportId, created.id));
+
+        expect(response.status).toBe(400);
+        expect(rows).toHaveLength(0);
+    });
+
+    void test("reuses one active draft for the same employee", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000148";
+        const owner = "50000000-0000-4000-8000-000000000148";
+        const create = (idempotencyKey: string) =>
+            requestApp("/v1/expense-reports", {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": idempotencyKey,
+                },
+                body: JSON.stringify({ owner, dueDate: "2026-08-25" }),
+            });
+
+        const firstResponse = await create("expense-create-148-a");
+        const firstBody = (await firstResponse.json()) as { id?: string };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const secondResponse = await create("expense-create-148-b");
+        const secondBody = (await secondResponse.json()) as { id?: string };
+        const rows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.owner, owner),
+                    eq(expenseReport.currentStage, "Drafted"),
+                ),
+            );
+
+        expect(firstResponse.status).toBe(201);
+        expect(secondResponse.status).toBe(201);
+        expect(secondBody.id).toBe(firstBody.id);
+        expect(rows).toHaveLength(1);
+    });
+
+    void test("isolates employee draft content, mileage, and receipt uploads by owner and tenant", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000149";
+        const otherTenantId = "40000000-0000-4000-8000-000000000150";
+        const owner = "50000000-0000-4000-8000-000000000149";
+        const otherOwner = "50000000-0000-4000-8000-000000000150";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-149",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-25" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        for (const [requestTenantId, requestOwner] of [
+            [tenantId, otherOwner],
+            [otherTenantId, owner],
+        ] as const) {
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, requestTenantId));
+            const currentDraftResponse = await requestApp(
+                "/v1/expense-reports/drafts/current",
+                {
+                    headers: {
+                        authorization: authorizationHeader(
+                            requestTenantId,
+                            requestOwner,
+                        ),
+                    },
+                },
+            );
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, requestTenantId));
+            const contentResponse = await requestApp(
+                `/v1/expense-reports/${created.id}/draft-content`,
+                {
+                    headers: {
+                        authorization: authorizationHeader(
+                            requestTenantId,
+                            requestOwner,
+                        ),
+                    },
+                },
+            );
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, requestTenantId));
+            const addContentResponse = await requestApp(
+                `/v1/expense-reports/${created.id}/draft-content`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            requestTenantId,
+                            requestOwner,
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": `content-isolation-${requestTenantId}`,
+                    },
+                    body: JSON.stringify({
+                        lineItems: [
+                            {
+                                merchant: "Synthetic Air",
+                                expenseDate: "2026-07-24",
+                                category: "Travel",
+                                amount: 125,
+                                currency: "USD",
+                            },
+                        ],
+                        receipts: [
+                            {
+                                lineItemIndex: 0,
+                                uploadId:
+                                    "30000000-0000-4000-8000-000000000149",
+                                filename: "synthetic-receipt.pdf",
+                                contentType: "application/pdf",
+                                sizeBytes: 17,
+                            },
+                        ],
+                    }),
+                },
+            );
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, requestTenantId));
+            const mileageResponse = await requestApp(
+                `/v1/expense-reports/${created.id}/mileage-entries`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            requestTenantId,
+                            requestOwner,
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": `mileage-isolation-${requestTenantId}`,
+                    },
+                    body: JSON.stringify({
+                        route: "Synthetic route",
+                        distance: 10,
+                        mileageDate: "2026-07-24",
+                    }),
+                },
+            );
+            await db
+                .delete(tenantRateLimitWindow)
+                .where(eq(tenantRateLimitWindow.tenantId, requestTenantId));
+            const receiptResponse = await requestApp(
+                `/v1/expense-reports/${created.id}/receipt-uploads/30000000-0000-4000-8000-000000000149?filename=synthetic-receipt.pdf`,
+                {
+                    method: "PUT",
+                    headers: {
+                        authorization: authorizationHeader(
+                            requestTenantId,
+                            requestOwner,
+                        ),
+                        "content-type": "application/pdf",
+                    },
+                    body: new Blob(["synthetic receipt"]),
+                },
+            );
+
+            expect(currentDraftResponse.status).toBe(404);
+            expect(contentResponse.status).toBe(404);
+            expect(addContentResponse.status).toBe(404);
+            expect(mileageResponse.status).toBe(404);
+            expect(receiptResponse.status).toBe(404);
+        }
+
+        expect(receiptStorageMock.put).not.toHaveBeenCalled();
+        expect(receiptStorageMock.verify).not.toHaveBeenCalled();
+        expect(
+            await db
+                .select()
+                .from(mileageEntry)
+                .where(eq(mileageEntry.expenseReportId, created.id)),
+        ).toHaveLength(0);
+    });
+
     void test("allows an Employee to submit their own Drafted report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000132";
         const owner = "50000000-0000-4000-8000-000000000132";
@@ -925,8 +1302,33 @@ void describe("Expense Report routes", () => {
             throw new Error("Expected created Expense Report id");
         }
 
+        const sourceId = "30000000-0000-4000-8000-000000000132";
+        await db.insert(lineItem).values({
+            id: sourceId,
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-23",
+            amount: "42.00",
+            currency: "USD",
+            category: "Travel",
+        });
         glCodingClientMock.mockResolvedValueOnce({
-            coded_items: [],
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "42.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
             flags: [],
         });
 
@@ -978,6 +1380,48 @@ void describe("Expense Report routes", () => {
                 reason: "report_submitted",
             }),
         );
+    });
+
+    void test("rejects an empty Drafted Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000144";
+        const owner = "50000000-0000-4000-8000-000000000144";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-144",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const response = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-144",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        expect(response.status).toBe(409);
+        const responseBody = (await response.json()) as {
+            detail?: string;
+            title?: string;
+        };
+        expect(responseBody).toMatchObject({
+            detail: "Add at least one expense or mileage entry before submitting.",
+            title: "Conflict",
+        });
+        expect(glCodingClientMock).not.toHaveBeenCalled();
     });
 
     void test("requires an Idempotency-Key header for submit requests", async () => {
@@ -1194,6 +1638,15 @@ void describe("Expense Report routes", () => {
             throw new Error("Expected created Expense Report id");
         }
 
+        await db.insert(lineItem).values({
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Air",
+            expenseDate: "2026-07-23",
+            amount: "125.00",
+            currency: "USD",
+            category: "Travel",
+        });
         glCodingClientMock.mockRejectedValueOnce(
             new GlCodingServiceError("Synthetic GL-coding failure"),
         );
@@ -1262,6 +1715,7 @@ void describe("Expense Report routes", () => {
             tenantId,
             expenseReportId: created.id,
             merchant: "Synthetic Air",
+            expenseDate: "2026-07-20",
             amount: "501.00",
             currency: "USD",
             category: "Travel",
@@ -1890,6 +2344,7 @@ void describe("Expense Report routes", () => {
             tenantId,
             expenseReportId: reportId,
             merchant: "Synthetic Hotel",
+            expenseDate: "2026-07-20",
             amount: "725.00",
             currency: "USD",
             category: "Travel",
@@ -2092,6 +2547,7 @@ void describe("Expense Report routes", () => {
             tenantId,
             expenseReportId: created.id,
             merchant: "Synthetic Rail",
+            expenseDate: "2026-07-20",
             amount: "125.00",
             currency: "USD",
             category: "Travel",

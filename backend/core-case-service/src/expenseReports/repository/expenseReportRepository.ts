@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -147,7 +147,11 @@ export async function findCurrentDraftExpenseReport(
                 eq(expenseReport.currentStage, "Drafted"),
             ),
         )
-        .orderBy(desc(expenseReport.updatedAt))
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        )
         .limit(1);
 
     return reports[0];
@@ -445,11 +449,32 @@ export async function insertDraftExpenseReport(
                 ...newReport,
                 currentStage: "Drafted",
             })
+            .onConflictDoNothing({
+                target: [expenseReport.tenantId, expenseReport.owner],
+                where: sql`${expenseReport.currentStage} = 'Drafted'`,
+            })
             .returning();
         const insertedReport = insertedReports[0];
 
         if (insertedReport === undefined) {
-            return undefined;
+            const existingReports = await transaction
+                .select()
+                .from(expenseReport)
+                .where(
+                    and(
+                        eq(expenseReport.tenantId, tenantId),
+                        eq(expenseReport.owner, newReport.owner),
+                        eq(expenseReport.currentStage, "Drafted"),
+                    ),
+                )
+                .orderBy(
+                    desc(expenseReport.updatedAt),
+                    desc(expenseReport.createdAt),
+                    desc(expenseReport.id),
+                )
+                .limit(1);
+
+            return existingReports[0];
         }
 
         await appendAuditEntry(transaction, {
@@ -523,6 +548,22 @@ export async function submitDraftExpenseReport(
     expectedSourceFingerprint: SubmissionSourceFingerprint,
 ): Promise<ExpenseReport | undefined> {
     return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, expenseReportId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+        if (report === undefined || report.currentStage !== "Drafted") {
+            return undefined;
+        }
+
         const [lineItems, mileageEntries] = await Promise.all([
             transaction
                 .select()

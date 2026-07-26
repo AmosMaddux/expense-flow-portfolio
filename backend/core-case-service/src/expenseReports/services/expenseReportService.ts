@@ -39,6 +39,7 @@ import {
     DraftExpenseContentOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    ReceiptUploadOutboundResponseSchema,
     type AddDraftExpenseContentRequest,
     type AddDraftExpenseContentResponse,
     type AuditEntryResponse,
@@ -50,8 +51,11 @@ import {
     type GetExpenseReportRequest,
     type MileageConfigResponse,
     type MileageEntryResponse,
+    type ReceiptUploadMetadataRequest,
+    type ReceiptUploadResponse,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
+import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
 
 /**
@@ -253,8 +257,35 @@ export async function addDraftExpenseContent(
         ownerId: string;
     },
 ): Promise<AddDraftExpenseContentResponse> {
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+    if (report === undefined) {
+        throw new NotFoundError("Drafted Expense Report not found.");
+    }
+    if (report.currentStage !== "Drafted") {
+        throw new ConflictError(
+            `Expense content can only be added to a Drafted Expense Report; this report is in ${report.currentStage}.`,
+        );
+    }
+
+    const verifiedReceipts = await Promise.all(
+        request.receipts.map(async (receipt) => ({
+            ...receipt,
+            blobReference: await getDefaultReceiptStorage().verify({
+                tenantId: request.tenantId,
+                expenseReportId: request.id,
+                uploadId: receipt.uploadId,
+                contentType: receipt.contentType,
+                sizeBytes: receipt.sizeBytes,
+            }),
+        })),
+    );
     const result = await insertDraftExpenseContent({
         ...request,
+        receipts: verifiedReceipts,
         expenseReportId: request.id,
     });
 
@@ -271,6 +302,51 @@ export async function addDraftExpenseContent(
         expenseReportId: request.id,
         lineItemIds: result.lineItemIds,
         receiptIds: result.receiptIds,
+    });
+}
+
+/**
+ * Stores a receipt file for an employee-owned Drafted Expense Report.
+ */
+export async function uploadReceiptFile(
+    request: ReceiptUploadMetadataRequest & {
+        content: Uint8Array;
+        id: string;
+        ownerId: string;
+        tenantId: string;
+        uploadId: string;
+    },
+): Promise<ReceiptUploadResponse> {
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+    if (report === undefined) {
+        throw new NotFoundError("Drafted Expense Report not found.");
+    }
+    if (report.currentStage !== "Drafted") {
+        throw new ConflictError(
+            "Receipts can only be uploaded to a Drafted Expense Report.",
+        );
+    }
+
+    await getDefaultReceiptStorage().put(
+        {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            uploadId: request.uploadId,
+            contentType: request.contentType,
+            sizeBytes: request.sizeBytes,
+        },
+        request.content,
+    );
+
+    return ReceiptUploadOutboundResponseSchema.parse({
+        uploadId: request.uploadId,
+        filename: request.filename,
+        contentType: request.contentType,
+        sizeBytes: request.sizeBytes,
     });
 }
 
@@ -304,6 +380,17 @@ export async function submitExpenseReport(request: {
         );
         throw new ConflictError(
             "Only Drafted Expense Reports can be submitted.",
+        );
+    }
+    if (sources.lineItems.length + sources.mileageEntries.length === 0) {
+        await insertDeniedSubmissionAuditEntry(
+            request.tenantId,
+            request.id,
+            request.actorId,
+            "An Expense Report must contain at least one expense or mileage entry.",
+        );
+        throw new ConflictError(
+            "Add at least one expense or mileage entry before submitting.",
         );
     }
 

@@ -5,6 +5,7 @@ import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    createAddDraftExpenseContentInboundRequestSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
@@ -127,12 +128,10 @@ void describe("AddDraftExpenseContentInboundRequestSchema", () => {
         receipts: [
             {
                 lineItemIndex: 0,
+                uploadId: "30000000-0000-4000-8000-000000000001",
                 filename: "synthetic-receipt.pdf",
                 contentType: "application/pdf",
                 sizeBytes: 2048,
-                blobReference: {
-                    objectKey: "synthetic/receipt-object",
-                },
             },
         ],
     };
@@ -174,6 +173,24 @@ void describe("AddDraftExpenseContentInboundRequestSchema", () => {
                 ],
             }),
         ).toThrow();
+    });
+
+    void test("rejects future expense dates using the backend clock", () => {
+        const schema = createAddDraftExpenseContentInboundRequestSchema(
+            () => new Date("2026-07-25T12:00:00.000Z"),
+        );
+
+        expect(() =>
+            schema.parse({
+                ...validRequest,
+                lineItems: [
+                    {
+                        ...validRequest.lineItems[0],
+                        expenseDate: "2026-07-26",
+                    },
+                ],
+            }),
+        ).toThrow("Expense date cannot be in the future.");
     });
 });
 

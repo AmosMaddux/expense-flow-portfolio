@@ -233,6 +233,7 @@ void describe("expenseReport schema", () => {
             "expense_report_tenant_owner_idx",
             "expense_report_tenant_priority_idx",
             "expense_report_tenant_id_unique_idx",
+            "expense_report_one_draft_per_owner_idx",
         ]);
 
         const tenantReportIndex = tableConfig.indexes.find(
@@ -246,6 +247,14 @@ void describe("expenseReport schema", () => {
         if (tenantReportIndex !== undefined) {
             expect(tenantReportIndex.config.unique).toBeTruthy();
         }
+
+        const oneDraftIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "expense_report_one_draft_per_owner_idx",
+        );
+        expect(oneDraftIndex?.config.unique).toBeTruthy();
+        expect(oneDraftIndex?.config.where).toBeDefined();
     });
 
     void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
@@ -283,6 +292,9 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");
         expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
+        expect(migrationSql).toContain(
+            "expense_report_one_draft_per_owner_idx",
+        );
     });
 });
 
@@ -893,9 +905,13 @@ void describe("lineItem schema", () => {
         const expenseReportId = tableConfig.columns.find(
             (column) => column.name === "expense_report_id",
         );
+        const expenseDate = tableConfig.columns.find(
+            (column) => column.name === "expense_date",
+        );
 
         expect(tenantId).toBeDefined();
         expect(expenseReportId).toBeDefined();
+        expect(expenseDate?.default).toBeUndefined();
 
         if (tenantId !== undefined && expenseReportId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();

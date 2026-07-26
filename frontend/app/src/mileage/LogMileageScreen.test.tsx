@@ -232,6 +232,16 @@ describe("LogMileageScreen", () => {
                     }),
                 }),
             );
+            const mileageRequest = fetchImplementation.mock.calls.find(
+                ([input]) =>
+                    input ===
+                    `/v1/expense-reports/${reportId}/mileage-entries`,
+            );
+            expect(
+                new Headers(mileageRequest?.[1]?.headers).get(
+                    "Idempotency-Key",
+                ),
+            ).toBeTruthy();
         });
         expect(
             screen.getByLabelText<HTMLInputElement>("Distance (miles)").value,

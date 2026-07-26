@@ -2,7 +2,6 @@ import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import {
-    approvedAttachmentContentTypes,
     approvedWorkflowStages,
     priorityLevels,
 } from "../../db/schema/index.js";
@@ -56,6 +55,12 @@ export const CreateMileageEntryInboundRequestSchema =
     createMileageEntryInboundRequestSchema();
 
 export const expenseCategories = ["Travel", "Meals", "Lodging"] as const;
+export const receiptContentTypes = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+] as const;
 
 const DraftLineItemInboundSchema = z
     .object({
@@ -70,38 +75,81 @@ const DraftLineItemInboundSchema = z
 const DraftReceiptInboundSchema = z
     .object({
         lineItemIndex: z.number().int().nonnegative(),
+        uploadId: z.uuid(),
         filename: z.string().trim().min(1).max(255),
-        contentType: z.enum(approvedAttachmentContentTypes),
+        contentType: z.enum(receiptContentTypes),
         sizeBytes: z
             .number()
             .int()
             .positive()
             .max(10 * 1024 * 1024),
-        blobReference: z
-            .object({
-                objectKey: z.string().trim().min(1).max(1024),
-            })
-            .strict(),
     })
     .strict();
 
-export const AddDraftExpenseContentInboundRequestSchema = z
-    .object({
-        lineItems: z.array(DraftLineItemInboundSchema).min(1).max(50),
-        receipts: z.array(DraftReceiptInboundSchema).max(50),
-    })
-    .strict()
-    .superRefine((request, context) => {
-        for (const [index, receipt] of request.receipts.entries()) {
-            if (receipt.lineItemIndex >= request.lineItems.length) {
-                context.addIssue({
-                    code: "custom",
-                    message: "Receipt must reference a submitted line item.",
-                    path: ["receipts", index, "lineItemIndex"],
-                });
+/**
+ * Builds draft-content validation against a testable current-date clock.
+ */
+export function createAddDraftExpenseContentInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return z
+        .object({
+            lineItems: z.array(DraftLineItemInboundSchema).min(1).max(50),
+            receipts: z.array(DraftReceiptInboundSchema).max(50),
+        })
+        .strict()
+        .superRefine((request, context) => {
+            const currentUtcDate = now().toISOString().slice(0, 10);
+            for (const [index, item] of request.lineItems.entries()) {
+                if (item.expenseDate > currentUtcDate) {
+                    context.addIssue({
+                        code: "custom",
+                        message: "Expense date cannot be in the future.",
+                        path: ["lineItems", index, "expenseDate"],
+                    });
+                }
             }
-        }
-    });
+            for (const [index, receipt] of request.receipts.entries()) {
+                if (receipt.lineItemIndex >= request.lineItems.length) {
+                    context.addIssue({
+                        code: "custom",
+                        message:
+                            "Receipt must reference a submitted line item.",
+                        path: ["receipts", index, "lineItemIndex"],
+                    });
+                }
+            }
+        });
+}
+
+export const AddDraftExpenseContentInboundRequestSchema =
+    createAddDraftExpenseContentInboundRequestSchema();
+
+export const ReceiptUploadParamsSchema = z
+    .object({
+        id: z.uuid(),
+        uploadId: z.uuid(),
+    })
+    .strict();
+
+export const ReceiptUploadMetadataInboundRequestSchema = z
+    .object({
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.enum(receiptContentTypes),
+        sizeBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 1024 * 1024),
+    })
+    .strict();
+
+export const ReceiptUploadOutboundResponseSchema = z.object({
+    uploadId: z.uuid(),
+    filename: z.string(),
+    contentType: z.enum(receiptContentTypes),
+    sizeBytes: z.number().int().positive(),
+});
 
 export const AddDraftExpenseContentOutboundResponseSchema = z.object({
     expenseReportId: z.uuid(),
@@ -299,6 +347,14 @@ export type AddDraftExpenseContentRequest = z.infer<
 
 export type AddDraftExpenseContentResponse = z.infer<
     typeof AddDraftExpenseContentOutboundResponseSchema
+>;
+
+export type ReceiptUploadMetadataRequest = z.infer<
+    typeof ReceiptUploadMetadataInboundRequestSchema
+>;
+
+export type ReceiptUploadResponse = z.infer<
+    typeof ReceiptUploadOutboundResponseSchema
 >;
 
 export type DraftExpenseContentResponse = z.infer<

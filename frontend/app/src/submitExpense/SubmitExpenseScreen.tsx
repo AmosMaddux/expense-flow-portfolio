@@ -14,6 +14,7 @@ import {
     draftExpenseContentSchema,
     draftExpenseReportSchema,
     expenseCategories,
+    receiptUploadResponseSchema,
     submittedExpenseReportSchema,
     submitExpenseFormSchema,
     type DraftExpenseContent,
@@ -77,6 +78,7 @@ export function SubmitExpenseScreen(): JSX.Element {
         content: crypto.randomUUID(),
         submit: crypto.randomUUID(),
     });
+    const receiptUploadIds = useRef(new WeakMap<File, string>());
     const draftQuery = useExpenseFlowQuery({
         input: "/v1/expense-reports/drafts/current",
         keyParts: ["expense-reports", "drafts", "current"],
@@ -272,20 +274,30 @@ export function SubmitExpenseScreen(): JSX.Element {
         content: SubmitExpenseFormValues,
         idempotencyKey: string,
     ): Promise<ReturnType<typeof assembledDraftSchema.parse>> {
-        const receipts = content.lineItems.flatMap((item, index) =>
+        const receiptFiles = content.lineItems.flatMap((item, index) =>
             item.receipt === null
                 ? []
                 : [
                       {
                           lineItemIndex: index,
-                          filename: item.receipt.name,
-                          contentType: item.receipt.type,
-                          sizeBytes: item.receipt.size,
-                          blobReference: {
-                              objectKey: `receipts/${reportId}/${idempotencyKey}-${index}`,
-                          },
+                          file: item.receipt,
+                          uploadId: getReceiptUploadId(item.receipt),
                       },
                   ],
+        );
+        await Promise.all(
+            receiptFiles.map(({ file, uploadId }) =>
+                uploadReceipt(reportId, uploadId, file),
+            ),
+        );
+        const receipts = receiptFiles.map(
+            ({ file, lineItemIndex, uploadId }) => ({
+                lineItemIndex,
+                uploadId,
+                filename: file.name,
+                contentType: file.type,
+                sizeBytes: file.size,
+            }),
         );
         const response = await session.authenticatedFetch(
             `/v1/expense-reports/${reportId}/draft-content`,
@@ -312,6 +324,37 @@ export function SubmitExpenseScreen(): JSX.Element {
         }
 
         return assembledDraftSchema.parse(await response.json());
+    }
+
+    function getReceiptUploadId(file: File): string {
+        const existing = receiptUploadIds.current.get(file);
+        if (existing !== undefined) {
+            return existing;
+        }
+
+        const uploadId = crypto.randomUUID();
+        receiptUploadIds.current.set(file, uploadId);
+        return uploadId;
+    }
+
+    async function uploadReceipt(
+        reportId: string,
+        uploadId: string,
+        file: File,
+    ): Promise<void> {
+        const response = await session.authenticatedFetch(
+            `/v1/expense-reports/${reportId}/receipt-uploads/${uploadId}?filename=${encodeURIComponent(file.name)}`,
+            {
+                method: "PUT",
+                headers: { "Content-Type": file.type },
+                body: file,
+            },
+        );
+        if (!response.ok) {
+            throw await createSubmitExpenseRequestError(response);
+        }
+
+        receiptUploadResponseSchema.parse(await response.json());
     }
 
     const runAction = (action: DraftAction): void => {

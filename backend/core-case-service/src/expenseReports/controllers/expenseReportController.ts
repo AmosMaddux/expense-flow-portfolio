@@ -13,6 +13,8 @@ import {
     CreateExpenseReportInboundRequestSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    ReceiptUploadMetadataInboundRequestSchema,
+    ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
@@ -39,6 +41,7 @@ import {
     readMileageConfig,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
+    uploadReceiptFile,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
 
@@ -127,15 +130,66 @@ export async function postMileageEntry(
         const parsedRequest = CreateMileageEntryInboundRequestSchema.parse(
             req.body,
         );
-        const entry = await addMileageEntry({
-            ...parsedRequest,
+        const idempotencyKey = parseIdempotencyKey(req);
+        const requestHash = createIdempotencyRequestHash({
             id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            idempotencyKey,
+            operation: async () =>
+                addMileageEntry({
+                    ...parsedRequest,
+                    id: parsedParams.id,
+                    tenantId: auth.tenantId,
+                    actorId: auth.userId,
+                    ownerId: auth.userId,
+                }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
             tenantId: auth.tenantId,
-            actorId: auth.userId,
+        });
+
+        res.status(result.statusCode).json(result.body);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles receipt-byte uploads for an employee-owned draft.
+ */
+export async function putReceiptUpload(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = ReceiptUploadParamsSchema.parse({
+            id: req.params.id,
+            uploadId: req.params.uploadId,
+        });
+        const requestBody: unknown = req.body;
+        const parsedMetadata = ReceiptUploadMetadataInboundRequestSchema.parse({
+            filename: req.query.filename,
+            contentType: req.get("content-type")?.split(";")[0],
+            sizeBytes: Buffer.isBuffer(requestBody) ? requestBody.length : 0,
+        });
+        if (!Buffer.isBuffer(requestBody)) {
+            throw new Error("Receipt upload body was not available.");
+        }
+
+        const result = await uploadReceiptFile({
+            ...parsedMetadata,
+            ...parsedParams,
+            content: requestBody,
+            tenantId: auth.tenantId,
             ownerId: auth.userId,
         });
 
-        res.status(201).json(entry);
+        res.status(201).json(result);
     } catch (error: unknown) {
         next(error);
     }

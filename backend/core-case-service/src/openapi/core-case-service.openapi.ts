@@ -19,6 +19,8 @@ import {
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReceiptUploadMetadataInboundRequestSchema,
+    ReceiptUploadOutboundResponseSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
@@ -87,6 +89,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const mileageConfigResponse = registry.register(
         "MileageConfigResponse",
         MileageConfigOutboundResponseSchema,
+    );
+    const receiptUploadMetadataRequest = registry.register(
+        "ReceiptUploadMetadataRequest",
+        ReceiptUploadMetadataInboundRequestSchema,
+    );
+    const receiptUploadResponse = registry.register(
+        "ReceiptUploadResponse",
+        ReceiptUploadOutboundResponseSchema,
     );
     const submitExpenseReportRequest = registry.register(
         "SubmitExpenseReportRequest",
@@ -181,6 +191,57 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "LoginErrorResponse",
         loginErrorResponseSchema,
     );
+
+    registry.registerPath({
+        method: "put",
+        path: "/v1/expense-reports/{id}/receipt-uploads/{uploadId}",
+        summary: "Upload a receipt to a Drafted Expense Report",
+        description:
+            "Stores receipt bytes for the authenticated Employee's own Drafted Expense Report before its metadata is attached to a line item.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: z.object({
+                id: z.uuid(),
+                uploadId: z.uuid(),
+            }),
+            query: receiptUploadMetadataRequest.pick({ filename: true }),
+            body: {
+                required: true,
+                content: {
+                    "application/pdf": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/png": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/jpeg": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/webp": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Receipt uploaded.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: receiptUploadResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed receipt upload."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Drafted Expense Report not found."),
+            413: problemJsonResponse("Receipt exceeds 10 MB."),
+            429: rateLimitExceededResponse.ref,
+            502: problemJsonResponse("Receipt storage rejected the upload."),
+        },
+    });
 
     registry.registerPath({
         method: "post",
@@ -450,6 +511,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         security: [{ bearerAuth: [] }],
         request: {
             params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128),
+            }),
             body: {
                 required: true,
                 content: {

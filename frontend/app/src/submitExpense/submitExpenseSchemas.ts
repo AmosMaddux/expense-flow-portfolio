@@ -68,6 +68,13 @@ export const assembledDraftSchema = z.object({
     receiptIds: z.array(z.uuid()),
 });
 
+export const receiptUploadResponseSchema = z.object({
+    uploadId: z.uuid(),
+    filename: z.string(),
+    contentType: z.enum(receiptContentTypes),
+    sizeBytes: z.number().int().positive(),
+});
+
 export const draftExpenseContentSchema = z.object({
     expenseReportId: z.uuid(),
     lineItems: z.array(

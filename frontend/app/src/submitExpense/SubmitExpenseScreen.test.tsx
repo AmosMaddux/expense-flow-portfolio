@@ -95,6 +95,29 @@ function createFetchMock(
             );
         }
         if (
+            typeof input === "string" &&
+            input.startsWith(
+                `/v1/expense-reports/${reportId}/receipt-uploads/`,
+            ) &&
+            init?.method === "PUT"
+        ) {
+            const uploadId = input
+                .split("/receipt-uploads/")[1]
+                ?.split("?")[0];
+
+            return Promise.resolve(
+                createJsonResponse(
+                    {
+                        uploadId,
+                        filename: "receipt.pdf",
+                        contentType: "application/pdf",
+                        sizeBytes: 17,
+                    },
+                    201,
+                ),
+            );
+        }
+        if (
             input === `/v1/expense-reports/${reportId}/submit` &&
             init?.method === "POST"
         ) {
@@ -222,6 +245,13 @@ describe("SubmitExpenseScreen", () => {
             );
             expect(contentCall).toBeDefined();
             expect(submitCall).toBeDefined();
+            const uploadCall = fetchImplementation.mock.calls.find(
+                ([input, init]) =>
+                    typeof input === "string" &&
+                    input.includes("/receipt-uploads/") &&
+                    init?.method === "PUT",
+            );
+            expect(uploadCall?.[1]?.body).toBe(receipt);
 
             const rawContentBody = contentCall?.[1]?.body;
             if (typeof rawContentBody !== "string") {
@@ -233,6 +263,7 @@ describe("SubmitExpenseScreen", () => {
                     filename: string;
                     contentType: string;
                     lineItemIndex: number;
+                    uploadId: string;
                 }>;
             };
             expect(contentBody.lineItems).toHaveLength(1);
@@ -243,6 +274,9 @@ describe("SubmitExpenseScreen", () => {
                     lineItemIndex: 0,
                 }),
             ]);
+            expect(contentBody.receipts[0]?.uploadId).toEqual(
+                expect.any(String),
+            );
             expect(
                 new Headers(contentCall?.[1]?.headers).get("Idempotency-Key"),
             ).toBeTruthy();

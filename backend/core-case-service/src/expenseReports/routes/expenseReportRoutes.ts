@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, raw } from "express";
 
 import {
     getCaseQueueStageRollups,
@@ -13,6 +13,7 @@ import {
     postExpenseReportTransition,
     postExpenseReport,
     postMileageEntry,
+    putReceiptUpload,
 } from "../controllers/expenseReportController.js";
 
 export const expenseReportRouter = Router();
@@ -27,6 +28,11 @@ expenseReportRouter.get("/expense-reports/config/mileage", getMileageConfig);
 expenseReportRouter.post(
     "/expense-reports/:id/mileage-entries",
     postMileageEntry,
+);
+expenseReportRouter.put(
+    "/expense-reports/:id/receipt-uploads/:uploadId",
+    raw({ limit: 10 * 1024 * 1024, type: () => true }),
+    putReceiptUpload,
 );
 expenseReportRouter.post(
     "/expense-reports/:id/draft-content",

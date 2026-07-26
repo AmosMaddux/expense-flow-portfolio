@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { useSession } from "../auth";
@@ -29,6 +29,7 @@ type DraftExpenseReport = {
 export function LogMileageScreen(): JSX.Element {
     const session = useSession();
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const idempotencyKey = useRef(crypto.randomUUID());
     const draftQuery = useExpenseFlowQuery<DraftExpenseReport>({
         input: "/v1/expense-reports/drafts/current",
         keyParts: ["expense-reports", "drafts", "current"],
@@ -69,7 +70,10 @@ export function LogMileageScreen(): JSX.Element {
                 `/v1/expense-reports/${draftQuery.data.id}/mileage-entries`,
                 {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": idempotencyKey.current,
+                    },
                     body: JSON.stringify({
                         route: `${values.routeFrom} → ${values.routeTo}`,
                         distance: values.distance,
@@ -85,6 +89,7 @@ export function LogMileageScreen(): JSX.Element {
             return mileageEntrySchema.parse(await response.json());
         },
         onSuccess: (entry: MileageEntry) => {
+            idempotencyKey.current = crypto.randomUUID();
             setSuccessMessage(
                 `${formatCurrency(entry.reimbursement.amount)} was added to your draft.`,
             );
