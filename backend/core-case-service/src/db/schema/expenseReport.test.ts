@@ -233,6 +233,7 @@ void describe("expenseReport schema", () => {
             "expense_report_tenant_owner_idx",
             "expense_report_tenant_priority_idx",
             "expense_report_tenant_id_unique_idx",
+            "expense_report_one_draft_per_owner_idx",
         ]);
 
         const tenantReportIndex = tableConfig.indexes.find(
@@ -246,6 +247,14 @@ void describe("expenseReport schema", () => {
         if (tenantReportIndex !== undefined) {
             expect(tenantReportIndex.config.unique).toBeTruthy();
         }
+
+        const oneDraftIndex = tableConfig.indexes.find(
+            (indexConfig) =>
+                indexConfig.config.name ===
+                "expense_report_one_draft_per_owner_idx",
+        );
+        expect(oneDraftIndex?.config.unique).toBeTruthy();
+        expect(oneDraftIndex?.config.where).toBeDefined();
     });
 
     void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
@@ -283,6 +292,9 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");
         expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
+        expect(migrationSql).toContain(
+            "expense_report_one_draft_per_owner_idx",
+        );
     });
 });
 
@@ -893,9 +905,13 @@ void describe("lineItem schema", () => {
         const expenseReportId = tableConfig.columns.find(
             (column) => column.name === "expense_report_id",
         );
+        const expenseDate = tableConfig.columns.find(
+            (column) => column.name === "expense_date",
+        );
 
         expect(tenantId).toBeDefined();
         expect(expenseReportId).toBeDefined();
+        expect(expenseDate?.default).toBeUndefined();
 
         if (tenantId !== undefined && expenseReportId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();
@@ -1183,12 +1199,13 @@ void describe("glCodingResult schema", () => {
         ]);
     });
 
-    void test("keeps source type and mapping status checks explicit", () => {
+    void test("keeps source type, mapping status, and line-item review checks explicit", () => {
         const tableConfig = getTableConfig(glCodingResult);
 
         expect(
             tableConfig.checks.map((constraint) => constraint.name).sort(),
         ).toEqual([
+            "gl_coding_result_line_item_review_check",
             "gl_coding_result_mapping_status_check",
             "gl_coding_result_source_type_check",
         ]);
@@ -1218,6 +1235,27 @@ void describe("glCodingResult schema", () => {
 
         expect(migrationSql).toContain("gl_coding_result_source_type_check");
         expect(migrationSql).toContain("gl_coding_result_mapping_status_check");
+        expect(migrationSql).toContain(
+            "gl_coding_result_line_item_review_check",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" is null and "gl_coding_result"."line_item_review_reason" is null and "gl_coding_result"."line_item_reviewed_by" is null and "gl_coding_result"."line_item_reviewed_at" is null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."source_type" = \'line_item\'',
+        );
+        expect(migrationSql).toContain(
+            "\"gl_coding_result\".\"line_item_review_action\" in ('approve', 'reject')",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_by" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_at" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" <> \'reject\' or nullif(btrim("gl_coding_result"."line_item_review_reason"), \'\') is not null',
+        );
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
         );

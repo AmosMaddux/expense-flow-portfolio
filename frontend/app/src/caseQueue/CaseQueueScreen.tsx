@@ -28,10 +28,7 @@ import {
     StatusBadge,
     type ExpenseReportStage,
 } from "../components";
-import {
-    QueryRequestError,
-    useExpenseFlowQuery,
-} from "../query/queryClient";
+import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
 const approvalQueueLineItemSchema = z.object({
     id: z.uuid(),
@@ -84,9 +81,7 @@ const expenseReportTransitionResponseSchema = z.object({
 });
 
 type FlagFilter = "all" | "flagged" | "clear";
-type LineItemReviewAction = NonNullable<
-    ApprovalQueueLineItem["reviewAction"]
->;
+type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
 type LineItemMutationVariables = {
     lineItem: ApprovalQueueLineItem;
     action: LineItemReviewAction;
@@ -155,17 +150,15 @@ export function CaseQueueScreen(): JSX.Element {
             setActionError(null);
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
-            setApprovalQueueData(
-                queryClient,
-                (current = []) =>
-                    current.map((lineItem) =>
-                        lineItem.id === variables.lineItem.id
-                            ? {
-                                  ...lineItem,
-                                  reviewAction: variables.action,
-                              }
-                            : lineItem,
-                    ),
+            setApprovalQueueData(queryClient, (current = []) =>
+                current.map((lineItem) =>
+                    lineItem.id === variables.lineItem.id
+                        ? {
+                              ...lineItem,
+                              reviewAction: variables.action,
+                          }
+                        : lineItem,
+                ),
             );
 
             return { previousLineItems };
@@ -182,7 +175,10 @@ export function CaseQueueScreen(): JSX.Element {
         },
     });
     const clearFlagMutation = useMutation({
-        mutationFn: async ({ lineItem, reason }: ClearFlagMutationVariables) => {
+        mutationFn: async ({
+            lineItem,
+            reason,
+        }: ClearFlagMutationVariables) => {
             const requestBody = clearFlagsRequestSchema.parse({
                 sourceIds: [lineItem.id],
                 reason,
@@ -204,16 +200,14 @@ export function CaseQueueScreen(): JSX.Element {
             setActionError(null);
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
-            setApprovalQueueData(
-                queryClient,
-                (current = []) =>
-                    recalculateAdvanceEligibility(
-                        current.map((lineItem) =>
-                            lineItem.id === variables.lineItem.id
-                                ? { ...lineItem, flaggedLineItem: false }
-                                : lineItem,
-                        ),
+            setApprovalQueueData(queryClient, (current = []) =>
+                recalculateAdvanceEligibility(
+                    current.map((lineItem) =>
+                        lineItem.id === variables.lineItem.id
+                            ? { ...lineItem, flaggedLineItem: false }
+                            : lineItem,
                     ),
+                ),
             );
 
             return { previousLineItems };
@@ -257,20 +251,17 @@ export function CaseQueueScreen(): JSX.Element {
             setActionError(null);
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
-            setApprovalQueueData(
-                queryClient,
-                (current = []) =>
-                    recalculateAdvanceEligibility(
-                        current.map((lineItem) =>
-                            lineItem.expenseReportId ===
-                            variables.expenseReportId
-                                ? {
-                                      ...lineItem,
-                                      currentStage: variables.toStage,
-                                  }
-                                : lineItem,
-                        ),
+            setApprovalQueueData(queryClient, (current = []) =>
+                recalculateAdvanceEligibility(
+                    current.map((lineItem) =>
+                        lineItem.expenseReportId === variables.expenseReportId
+                            ? {
+                                  ...lineItem,
+                                  currentStage: variables.toStage,
+                              }
+                            : lineItem,
                     ),
+                ),
             );
 
             return { previousLineItems };
@@ -331,6 +322,13 @@ export function CaseQueueScreen(): JSX.Element {
                                 expenseReportId: lineItem.expenseReportId,
                                 toStage: "AP Review",
                                 reason: "manager approved after flag review",
+                            })
+                        }
+                        onStartReview={(lineItem) =>
+                            transitionMutation.mutate({
+                                expenseReportId: lineItem.expenseReportId,
+                                toStage: "Manager Approval",
+                                reason: "manager review started",
                             })
                         }
                         onClearFlag={(lineItem) => {
@@ -397,6 +395,7 @@ function ApprovalQueueLineItemTable({
     onClearFlag,
     onReviewLineItem,
     onSendBackReport,
+    onStartReview,
 }: {
     isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
@@ -407,9 +406,14 @@ function ApprovalQueueLineItemTable({
         action: LineItemReviewAction,
     ) => void;
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
+    onStartReview: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+    const reportActionItems = useMemo(
+        () => getReportActionItems(lineItems),
+        [lineItems],
+    );
     const columns = useMemo<ColumnDef<ApprovalQueueLineItem>[]>(
         () => [
             {
@@ -478,8 +482,7 @@ function ApprovalQueueLineItemTable({
                                 className="button button--secondary button--compact"
                                 disabled={
                                     isActionPending ||
-                                    lineItem.currentStage !==
-                                        "Manager Approval"
+                                    lineItem.currentStage !== "Manager Approval"
                                 }
                                 type="button"
                                 onClick={() =>
@@ -492,8 +495,7 @@ function ApprovalQueueLineItemTable({
                                 className="button button--secondary button--compact"
                                 disabled={
                                     isActionPending ||
-                                    lineItem.currentStage !==
-                                        "Manager Approval"
+                                    lineItem.currentStage !== "Manager Approval"
                                 }
                                 type="button"
                                 onClick={() =>
@@ -507,8 +509,7 @@ function ApprovalQueueLineItemTable({
                                 disabled={
                                     isActionPending ||
                                     !lineItem.flaggedLineItem ||
-                                    lineItem.currentStage !==
-                                        "Manager Approval"
+                                    lineItem.currentStage !== "Manager Approval"
                                 }
                                 type="button"
                                 onClick={() => onClearFlag(lineItem)}
@@ -522,48 +523,8 @@ function ApprovalQueueLineItemTable({
                     );
                 },
             },
-            {
-                id: "reportActions",
-                header: "Report",
-                cell: ({ row }) => {
-                    const lineItem = row.original;
-
-                    return (
-                        <div className="case-queue-actions">
-                            <button
-                                className="button button--secondary button--compact"
-                                disabled={
-                                    isActionPending || !lineItem.canAdvance
-                                }
-                                type="button"
-                                onClick={() => onAdvanceReport(lineItem)}
-                            >
-                                Advance
-                            </button>
-                            <button
-                                className="button button--secondary button--compact"
-                                disabled={
-                                    isActionPending ||
-                                    lineItem.currentStage !==
-                                        "Manager Approval"
-                                }
-                                type="button"
-                                onClick={() => onSendBackReport(lineItem)}
-                            >
-                                Reject / Send back
-                            </button>
-                        </div>
-                    );
-                },
-            },
         ],
-        [
-            isActionPending,
-            onAdvanceReport,
-            onClearFlag,
-            onReviewLineItem,
-            onSendBackReport,
-        ],
+        [isActionPending, onClearFlag, onReviewLineItem],
     );
     const table = useReactTable({
         columns,
@@ -636,6 +597,60 @@ function ApprovalQueueLineItemTable({
                     </select>
                 </label>
             </div>
+            {reportActionItems.length === 0 ? null : (
+                <section
+                    className="case-queue-report-actions"
+                    aria-label="Expense Report actions"
+                >
+                    {reportActionItems.map((lineItem) => (
+                        <div
+                            className="case-queue-report-actions__item"
+                            key={lineItem.expenseReportId}
+                        >
+                            <span>
+                                Report {lineItem.expenseReportId.slice(0, 8)}
+                            </span>
+                            {lineItem.currentStage === "Submitted" ? (
+                                <button
+                                    className="button button--secondary button--compact"
+                                    disabled={isActionPending}
+                                    type="button"
+                                    onClick={() => onStartReview(lineItem)}
+                                >
+                                    Start review
+                                </button>
+                            ) : null}
+                            {lineItem.currentStage === "Manager Approval" ? (
+                                <>
+                                    <button
+                                        className="button button--secondary button--compact"
+                                        disabled={
+                                            isActionPending ||
+                                            !lineItem.canAdvance
+                                        }
+                                        type="button"
+                                        onClick={() =>
+                                            onAdvanceReport(lineItem)
+                                        }
+                                    >
+                                        Advance
+                                    </button>
+                                    <button
+                                        className="button button--secondary button--compact"
+                                        disabled={isActionPending}
+                                        type="button"
+                                        onClick={() =>
+                                            onSendBackReport(lineItem)
+                                        }
+                                    >
+                                        Reject / Send back
+                                    </button>
+                                </>
+                            ) : null}
+                        </div>
+                    ))}
+                </section>
+            )}
 
             <section
                 className="case-queue-table"
@@ -762,9 +777,7 @@ const approvalQueueQueryFilter = {
         query.queryKey.includes("line-items"),
 };
 
-function readApprovalQueueSnapshots(
-    queryClient: QueryClient,
-): QueueSnapshot {
+function readApprovalQueueSnapshots(queryClient: QueryClient): QueueSnapshot {
     return queryClient.getQueriesData<ApprovalQueueLineItem[]>(
         approvalQueueQueryFilter,
     );
@@ -795,16 +808,12 @@ function replaceQueueLineItem(
     queryClient: QueryClient,
     updatedLineItem: ApprovalQueueLineItem,
 ): void {
-    setApprovalQueueData(
-        queryClient,
-        (current = []) =>
-            recalculateAdvanceEligibility(
-                current.map((lineItem) =>
-                    lineItem.id === updatedLineItem.id
-                        ? updatedLineItem
-                        : lineItem,
-                ),
+    setApprovalQueueData(queryClient, (current = []) =>
+        recalculateAdvanceEligibility(
+            current.map((lineItem) =>
+                lineItem.id === updatedLineItem.id ? updatedLineItem : lineItem,
             ),
+        ),
     );
 }
 
@@ -812,19 +821,17 @@ function updateQueueReportStage(
     queryClient: QueryClient,
     report: z.infer<typeof expenseReportTransitionResponseSchema>,
 ): void {
-    setApprovalQueueData(
-        queryClient,
-        (current = []) =>
-            recalculateAdvanceEligibility(
-                current.map((lineItem) =>
-                    lineItem.expenseReportId === report.id
-                        ? {
-                              ...lineItem,
-                              currentStage: report.currentStage,
-                          }
-                        : lineItem,
-                ),
+    setApprovalQueueData(queryClient, (current = []) =>
+        recalculateAdvanceEligibility(
+            current.map((lineItem) =>
+                lineItem.expenseReportId === report.id
+                    ? {
+                          ...lineItem,
+                          currentStage: report.currentStage,
+                      }
+                    : lineItem,
             ),
+        ),
     );
 }
 
@@ -849,6 +856,21 @@ function recalculateAdvanceEligibility(
     }));
 }
 
+function getReportActionItems(
+    lineItems: ApprovalQueueLineItem[],
+): ApprovalQueueLineItem[] {
+    const lineItemByReportId = new Map<string, ApprovalQueueLineItem>();
+    for (const lineItem of lineItems) {
+        if (!lineItemByReportId.has(lineItem.expenseReportId)) {
+            lineItemByReportId.set(lineItem.expenseReportId, lineItem);
+        }
+    }
+
+    return [...lineItemByReportId.values()].filter((lineItem) =>
+        ["Submitted", "Manager Approval"].includes(lineItem.currentStage),
+    );
+}
+
 async function createQueueActionError(
     response: Response,
 ): Promise<QueryRequestError> {
@@ -868,9 +890,7 @@ function getProblemDetail(body: unknown): string | undefined {
 
     const detail = (body as Record<string, unknown>).detail;
 
-    return typeof detail === "string" && detail.length > 0
-        ? detail
-        : undefined;
+    return typeof detail === "string" && detail.length > 0 ? detail : undefined;
 }
 
 function getQueueActionErrorMessage(error: unknown): string {

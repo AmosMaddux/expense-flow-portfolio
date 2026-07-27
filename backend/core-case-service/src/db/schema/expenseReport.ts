@@ -123,6 +123,9 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.id,
         ),
+        uniqueIndex("expense_report_one_draft_per_owner_idx")
+            .on(table.tenantId, table.owner)
+            .where(sql`${table.currentStage} = 'Drafted'`),
     ],
 );
 
@@ -252,6 +255,7 @@ export const lineItem = pgTable(
     {
         id: uuid("id").defaultRandom().primaryKey(),
         merchant: text("merchant").notNull(),
+        expenseDate: date("expense_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
         currency: text("currency").notNull(),
         category: text("category").notNull(),

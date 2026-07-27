@@ -196,13 +196,18 @@ describe("CaseQueueScreen", () => {
         expect(within(metroRow).getByText("Submitted")).toBeTruthy();
         expect(within(metroRow).getByText("Clear")).toBeTruthy();
         expect(within(table).getAllByText("Over $500")).toHaveLength(2);
-        expect(within(table).getAllByRole("button", { name: "Approve" }))
-            .toHaveLength(3);
         expect(
-            within(table).getAllByRole("button", {
-                name: "Reject / Send back",
-            }),
+            within(table).getAllByRole("button", { name: "Approve" }),
         ).toHaveLength(3);
+        expect(
+            screen.getByRole("button", { name: "Start review" }),
+        ).toBeTruthy();
+        expect(screen.getAllByRole("button", { name: "Advance" })).toHaveLength(
+            1,
+        );
+        expect(
+            screen.getAllByRole("button", { name: "Reject / Send back" }),
+        ).toHaveLength(1);
         expect(screen.getByText("Showing 3 of 3 line items")).toBeTruthy();
     });
 
@@ -256,9 +261,7 @@ describe("CaseQueueScreen", () => {
             const rows = getBodyRows();
             expect(within(rows[0]).getByText("Metro Meals")).toBeTruthy();
             expect(within(rows[1]).getByText("Zenith Air")).toBeTruthy();
-            expect(
-                within(rows[2]).getByText("Northstar Hotels"),
-            ).toBeTruthy();
+            expect(within(rows[2]).getByText("Northstar Hotels")).toBeTruthy();
         });
     });
 
@@ -355,9 +358,11 @@ describe("CaseQueueScreen", () => {
         const northstarRow = await screen.findByRole("row", {
             name: /Northstar Hotels/i,
         });
-        fireEvent.click(within(northstarRow).getByRole("button", {
-            name: "Approve",
-        }));
+        fireEvent.click(
+            within(northstarRow).getByRole("button", {
+                name: "Approve",
+            }),
+        );
 
         await waitFor(() =>
             expect(
@@ -371,7 +376,9 @@ describe("CaseQueueScreen", () => {
             createProblemResponse("Synthetic review failure."),
         );
 
-        expect(await screen.findByText("Synthetic review failure.")).toBeTruthy();
+        expect(
+            await screen.findByText("Synthetic review failure."),
+        ).toBeTruthy();
         expect(
             within(
                 screen.getByRole("row", { name: /Northstar Hotels/i }),
@@ -392,9 +399,11 @@ describe("CaseQueueScreen", () => {
             name: /Northstar Hotels/i,
         });
         expect(
-            within(northstarRow).getByRole("button", {
-                name: "Advance",
-            }).hasAttribute("disabled"),
+            screen
+                .getByRole("button", {
+                    name: "Advance",
+                })
+                .hasAttribute("disabled"),
         ).toBe(true);
 
         fireEvent.click(
@@ -403,19 +412,194 @@ describe("CaseQueueScreen", () => {
             }),
         );
 
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
         const updatedNorthstarRow = screen.getByRole("row", {
             name: /Northstar Hotels/i,
         });
         expect(within(updatedNorthstarRow).getByText("Clear")).toBeTruthy();
         expect(
-            within(updatedNorthstarRow).getByRole("button", {
-                name: "Advance",
-            }).hasAttribute("disabled"),
+            screen
+                .getByRole("button", {
+                    name: "Advance",
+                })
+                .hasAttribute("disabled"),
         ).toBe(false);
         expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
             "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/flags/clear",
         );
+    });
+
+    test("rolls back optimistic flag clearing when the API rejects the action", async () => {
+        let resolveClearResponse: (response: Response) => void = () =>
+            undefined;
+        const clearResponse = new Promise<Response>((resolve) => {
+            resolveClearResponse = resolve;
+        });
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockReturnValueOnce(clearResponse);
+        vi.spyOn(window, "prompt").mockReturnValue("reviewed receipt detail");
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", {
+                name: "Clear flag",
+            }),
+        );
+
+        await waitFor(() =>
+            expect(
+                within(
+                    screen.getByRole("row", { name: /Northstar Hotels/i }),
+                ).getByText("Clear"),
+            ).toBeTruthy(),
+        );
+
+        resolveClearResponse(createProblemResponse("Synthetic clear failure."));
+
+        expect(
+            await screen.findByText("Synthetic clear failure."),
+        ).toBeTruthy();
+        expect(
+            within(
+                screen.getByRole("row", { name: /Northstar Hotels/i }),
+            ).getByText("Over $500"),
+        ).toBeTruthy();
+        expect(
+            screen
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
+    test("starts review for a Submitted report", async () => {
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: "d104c9ca-9de7-4f85-bb23-ed907e9db002",
+                    currentStage: "Manager Approval",
+                }),
+            );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        await screen.findByText("Metro Meals");
+        fireEvent.click(screen.getByRole("button", { name: "Start review" }));
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
+        expect(
+            within(screen.getByRole("row", { name: /Metro Meals/i })).getByText(
+                "Manager Approval",
+            ),
+        ).toBeTruthy();
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db002/transitions",
+        );
+        const transitionRequestBody =
+            fetchImplementation.mock.calls[1]?.[1]?.body;
+
+        expect(typeof transitionRequestBody).toBe("string");
+        expect(JSON.parse(transitionRequestBody as string)).toMatchObject({
+            toStage: "Manager Approval",
+            reason: "manager review started",
+        });
+    });
+
+    test("rolls back optimistic report transitions when the API rejects the action", async () => {
+        let resolveTransitionResponse: (response: Response) => void = () =>
+            undefined;
+        const transitionResponse = new Promise<Response>((resolve) => {
+            resolveTransitionResponse = resolve;
+        });
+        const clearLineItems = lineItems.map((lineItem) =>
+            lineItem.expenseReportId === "d104c9ca-9de7-4f85-bb23-ed907e9db001"
+                ? { ...lineItem, flaggedLineItem: false, canAdvance: true }
+                : lineItem,
+        );
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(clearLineItems))
+            .mockReturnValueOnce(transitionResponse);
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        await screen.findByText("Northstar Hotels");
+        fireEvent.click(screen.getByRole("button", { name: "Advance" }));
+
+        await waitFor(() =>
+            expect(
+                within(
+                    screen.getByRole("row", { name: /Northstar Hotels/i }),
+                ).getByText("AP Review"),
+            ).toBeTruthy(),
+        );
+
+        resolveTransitionResponse(
+            createProblemResponse("Synthetic transition failure."),
+        );
+
+        expect(
+            await screen.findByText("Synthetic transition failure."),
+        ).toBeTruthy();
+        expect(
+            within(
+                screen.getByRole("row", { name: /Northstar Hotels/i }),
+            ).getByText("Manager Approval"),
+        ).toBeTruthy();
+    });
+
+    test("rolls back optimistic send-back transitions when the API rejects the action", async () => {
+        let resolveTransitionResponse: (response: Response) => void = () =>
+            undefined;
+        const transitionResponse = new Promise<Response>((resolve) => {
+            resolveTransitionResponse = resolve;
+        });
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockReturnValueOnce(transitionResponse);
+        vi.spyOn(window, "prompt").mockReturnValue(
+            "employee correction needed",
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        await screen.findByText("Northstar Hotels");
+        fireEvent.click(
+            screen.getByRole("button", { name: "Reject / Send back" }),
+        );
+
+        await waitFor(() =>
+            expect(
+                within(
+                    screen.getByRole("row", { name: /Northstar Hotels/i }),
+                ).getByText("Drafted"),
+            ).toBeTruthy(),
+        );
+
+        resolveTransitionResponse(
+            createProblemResponse("Synthetic send-back failure."),
+        );
+
+        expect(
+            await screen.findByText("Synthetic send-back failure."),
+        ).toBeTruthy();
+        expect(
+            within(
+                screen.getByRole("row", { name: /Northstar Hotels/i }),
+            ).getByText("Manager Approval"),
+        ).toBeTruthy();
     });
 
     test("sends a report back to Drafted with a required reason", async () => {
@@ -428,20 +612,24 @@ describe("CaseQueueScreen", () => {
                     currentStage: "Drafted",
                 }),
             );
-        vi.spyOn(window, "prompt").mockReturnValue("employee correction needed");
+        vi.spyOn(window, "prompt").mockReturnValue(
+            "employee correction needed",
+        );
 
         renderCaseQueueScreen(fetchImplementation);
 
-        const northstarRow = await screen.findByRole("row", {
+        await screen.findByRole("row", {
             name: /Northstar Hotels/i,
         });
         fireEvent.click(
-            within(northstarRow).getByRole("button", {
+            screen.getByRole("button", {
                 name: "Reject / Send back",
             }),
         );
 
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
         expect(
             within(
                 screen.getByRole("row", { name: /Northstar Hotels/i }),

@@ -22,6 +22,7 @@ RoleName = Literal[
     "Employee",
     "Admin",
 ]
+ServicePermission = Literal["expense-report:submit"]
 ROLE_PRECEDENCE: tuple[RoleName, ...] = (
     "Finance Admin",
     "Department Manager",
@@ -42,6 +43,9 @@ class AuthenticatedIdentity(BaseModel):
     user_id: UUID = Field(alias="sub")
     tenant_id: UUID
     roles: list[RoleName] = Field(min_length=1)
+    service_permissions: list[ServicePermission] = Field(
+        default_factory=list, exclude=True
+    )
     iss: str
     iat: int
     exp: int
@@ -54,6 +58,9 @@ class AuthenticatedRequestContext(BaseModel):
     tenant_id: UUID
     role: RoleName
     roles: list[RoleName] = Field(min_length=1)
+    service_permissions: list[ServicePermission] = Field(
+        default_factory=list, exclude=True
+    )
 
 
 @dataclass(frozen=True)
@@ -286,6 +293,7 @@ async def require_request_context(
         tenant_id=identity.tenant_id,
         role=select_primary_role(identity.roles),
         roles=identity.roles,
+        service_permissions=identity.service_permissions,
     )
 
 
