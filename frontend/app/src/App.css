@@ -12,6 +12,305 @@
     font-synthesis: none;
 }
 
+.submit-expense-screen {
+    display: grid;
+    gap: 1.5rem;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+.submit-expense-screen__header {
+    position: relative;
+}
+
+.submit-expense-screen__header h2,
+.submit-expense-success h2 {
+    margin: 0.25rem 0;
+}
+
+.submit-expense-screen__status {
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+.submit-expense-form,
+.submit-expense-lines {
+    display: grid;
+    gap: 1rem;
+}
+
+.submit-expense-card {
+    overflow: hidden;
+    border: 1px solid #d9e2ec;
+    border-radius: 0.75rem;
+    background: #fff;
+    box-shadow: 0 10px 24px rgb(15 23 42 / 5%);
+}
+
+.submit-expense-card__heading,
+.submit-expense-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+}
+
+.submit-expense-card__heading {
+    border-bottom: 1px solid #d9e2ec;
+}
+
+.submit-expense-card__heading h3,
+.submit-expense-card__heading p {
+    margin: 0;
+}
+
+.submit-expense-card__heading p {
+    margin-top: 0.25rem;
+    color: #52606d;
+}
+
+.submit-expense-lines {
+    padding: 1rem;
+}
+
+.submit-expense-line {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 0.8fr 1.5fr;
+    gap: 0.875rem;
+    margin: 0;
+    padding: 1.25rem 1rem 1rem;
+    border: 1px solid #d9e2ec;
+    border-radius: 0.625rem;
+    background: #f7f9fb;
+}
+
+.submit-expense-line legend {
+    padding: 0 0.4rem;
+    font-weight: 700;
+}
+
+.submit-expense-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.submit-expense-field label {
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.submit-expense-field input,
+.submit-expense-field select {
+    min-width: 0;
+    min-height: 2.65rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid #bcccdc;
+    border-radius: 0.4rem;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+}
+
+.submit-expense-field input[type="file"] {
+    padding: 0.45rem;
+    font-size: 0.78rem;
+}
+
+.submit-expense-field small {
+    color: #52606d;
+}
+
+.submit-expense-field__error,
+.submit-expense-alert {
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
+.submit-expense-line__remove {
+    position: absolute;
+    top: -0.25rem;
+    right: 0.5rem;
+    border: 0;
+    background: transparent;
+    color: #b91c1c;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+}
+
+.submit-expense-actions {
+    border: 1px solid #d9e2ec;
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.submit-expense-actions__buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.submit-expense-reimbursement-summary {
+    display: grid;
+    min-width: 15rem;
+    gap: 0.3rem;
+    margin: 0;
+}
+
+.submit-expense-reimbursement-summary div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.submit-expense-reimbursement-summary dt {
+    color: #52606d;
+    font-size: 0.78rem;
+}
+
+.submit-expense-reimbursement-summary dd {
+    margin: 0;
+    font-weight: 700;
+}
+
+.submit-expense-reimbursement-summary__total {
+    margin-top: 0.2rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid #bcccdc;
+}
+
+.submit-expense-reimbursement-summary__total dt,
+.submit-expense-reimbursement-summary__total dd {
+    color: #102a43;
+    font-size: 0.95rem;
+}
+
+.submit-expense-actions__buttons .button--primary {
+    min-width: 14rem;
+}
+
+.submit-expense-guidance {
+    padding: 1rem 1.25rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.75rem;
+    background: #eff6ff;
+    color: #334e68;
+}
+
+.submit-expense-guidance h3 {
+    margin: 0 0 0.5rem;
+    color: #102a43;
+    font-size: 0.95rem;
+}
+
+.submit-expense-guidance div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+}
+
+.submit-expense-guidance p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.submit-expense-lines__empty {
+    margin: 0;
+    padding: 0.75rem;
+    color: #52606d;
+    text-align: center;
+}
+
+.submit-expense-saved__list {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.submit-expense-saved__list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid #d9e2ec;
+}
+
+.submit-expense-saved__list li div {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.submit-expense-saved__list .submit-expense-saved__amount {
+    justify-items: end;
+}
+
+.submit-expense-saved__list li span,
+.submit-expense-saved__receipts {
+    color: #52606d;
+    font-size: 0.8rem;
+}
+
+.submit-expense-saved__receipts {
+    margin: 0;
+    padding: 0.75rem 1.25rem;
+}
+
+.submit-expense-success-message {
+    margin: 0;
+    color: #047857;
+    font-weight: 700;
+}
+
+.submit-expense-success {
+    max-width: 680px;
+    margin: 3rem auto;
+    padding: 2rem;
+    border: 1px solid #d9e2ec;
+    border-radius: 0.75rem;
+    background: #fff;
+    text-align: center;
+}
+
+@media (max-width: 1000px) {
+    .submit-expense-line {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .submit-expense-card__heading,
+    .submit-expense-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .submit-expense-actions__buttons {
+        flex-direction: column;
+    }
+
+    .submit-expense-guidance div {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+
+    .submit-expense-actions__buttons .button--primary {
+        min-width: 0;
+    }
+
+    .submit-expense-line {
+        grid-template-columns: 1fr;
+    }
+}
+
 * {
     box-sizing: border-box;
 }
@@ -282,6 +581,11 @@ button:disabled {
     color: #93000a;
 }
 
+.form-message--success {
+    background: #dff7eb;
+    color: #075c3d;
+}
+
 .auth-card__support,
 .auth-form__secondary {
     border-top: 1px solid #e0e3e5;
@@ -448,9 +752,244 @@ button:disabled {
     line-height: 1.6;
 }
 
+.mileage-screen {
+    display: grid;
+    gap: 24px;
+}
+
+.mileage-loading {
+    display: grid;
+    min-height: 280px;
+    place-items: center;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #fff;
+    color: #52606d;
+    text-align: center;
+}
+
+.mileage-loading p {
+    margin: 0;
+}
+
+.mileage-empty__action {
+    width: auto;
+    padding: 0 20px;
+    text-decoration: none;
+}
+
+.mileage-screen__header h2 {
+    margin: 5px 0 6px;
+    color: #102a43;
+    font-size: 1.5rem;
+}
+
+.mileage-screen__header > p:last-child {
+    margin: 0;
+    color: #52606d;
+}
+
+.mileage-layout {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid #bcccdc;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 12px 32px rgb(16 42 67 / 7%);
+    grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.mileage-form {
+    display: grid;
+    gap: 24px;
+    padding: 32px;
+}
+
+.mileage-form__route,
+.mileage-form__calculation {
+    display: grid;
+    align-items: start;
+    gap: 20px;
+}
+
+.mileage-form__route {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mileage-form__calculation {
+    grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+}
+
+.mileage-field {
+    display: grid;
+    gap: 8px;
+}
+
+.mileage-field label {
+    color: #334e68;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.mileage-field input {
+    width: 100%;
+    min-height: 48px;
+    border: 1px solid #9fb3c8;
+    border-radius: 7px;
+    outline: none;
+    background: #fff;
+    color: #102a43;
+    padding: 0 14px;
+}
+
+.mileage-field input:focus {
+    border-color: #486581;
+    box-shadow: 0 0 0 3px rgb(72 101 129 / 13%);
+}
+
+.mileage-field input[aria-invalid="true"] {
+    border-color: #ba1a1a;
+}
+
+.mileage-field__error {
+    margin: 0;
+    color: #93000a;
+    font-size: 0.78rem;
+}
+
+.mileage-distance {
+    position: relative;
+}
+
+.mileage-distance input {
+    padding-right: 46px;
+}
+
+.mileage-distance span {
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    color: #627d98;
+    font-size: 0.78rem;
+    font-weight: 700;
+    transform: translateY(-50%);
+}
+
+.mileage-preview {
+    display: grid;
+    min-height: 76px;
+    align-content: center;
+    gap: 4px;
+    border: 1px solid #b6e5d1;
+    border-radius: 8px;
+    background: #edf9f3;
+    color: #075c3d;
+    padding: 12px 16px;
+}
+
+.mileage-preview span {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.mileage-preview strong {
+    font-size: 1.3rem;
+}
+
+.mileage-form__actions {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 1fr 2fr;
+}
+
+.mileage-save-success {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.mileage-save-success .form-message {
+    margin: 0;
+}
+
+.mileage-save-success .button {
+    flex: 0 0 auto;
+}
+
+.mileage-form__actions .button--primary {
+    width: auto;
+}
+
+.mileage-policy {
+    border-left: 1px solid #d9e2ec;
+    background: #f0f4f8;
+    padding: 32px 24px;
+}
+
+.mileage-policy h3 {
+    margin: 0 0 24px;
+    color: #102a43;
+    font-size: 1rem;
+}
+
+.mileage-policy p {
+    color: #52606d;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.mileage-policy strong {
+    display: block;
+    margin: 8px 0 28px;
+    color: #075c3d;
+    font-size: 1.25rem;
+}
+
 .case-queue {
     display: grid;
     gap: 24px;
+}
+
+@media (max-width: 900px) {
+    .mileage-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .mileage-policy {
+        border-top: 1px solid #d9e2ec;
+        border-left: 0;
+    }
+}
+
+@media (max-width: 700px) {
+    .app-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+    }
+
+    .workspace__content,
+    .mileage-form {
+        padding: 20px;
+    }
+
+    .mileage-form__route,
+    .mileage-form__calculation,
+    .mileage-form__actions {
+        grid-template-columns: 1fr;
+    }
+
+    .mileage-save-success {
+        align-items: stretch;
+        flex-direction: column;
+    }
 }
 
 .case-queue__header {

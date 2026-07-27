@@ -104,6 +104,11 @@ function buildProblemJsonTestApp(): Express {
             type: "entity.parse.failed",
         });
     });
+    app.get("/body-parser-size-failure", () => {
+        throw Object.assign(new Error("payload too large"), {
+            type: "entity.too.large",
+        });
+    });
     app.use(problemJsonErrorHandler);
 
     return app;
@@ -228,6 +233,23 @@ void describe("problemJsonErrorHandler", () => {
             status: 400,
             detail: "Malformed JSON body could not be parsed.",
             instance: "/body-parser-parse-failure",
+        });
+    });
+
+    void test("maps oversized receipt bodies to a 413 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/body-parser-size-failure",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(413);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Payload Too Large",
+            status: 413,
+            detail: "Receipt files must be 10 MB or smaller.",
+            instance: "/body-parser-size-failure",
         });
     });
 

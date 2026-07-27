@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    AddDraftExpenseContentInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    createAddDraftExpenseContentInboundRequestSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
@@ -109,6 +111,86 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
                 id: "expense-report-one",
             }),
         ).toThrow();
+    });
+});
+
+void describe("AddDraftExpenseContentInboundRequestSchema", () => {
+    const validRequest = {
+        lineItems: [
+            {
+                merchant: "Synthetic Conference Center",
+                expenseDate: "2026-07-23",
+                category: "Travel",
+                amount: 125.5,
+                currency: "USD",
+            },
+        ],
+        receipts: [
+            {
+                lineItemIndex: 0,
+                uploadId: "30000000-0000-4000-8000-000000000001",
+                filename: "synthetic-receipt.pdf",
+                contentType: "application/pdf",
+                sizeBytes: 2048,
+            },
+        ],
+    };
+
+    void test("validates line items and receipt references", () => {
+        expect(
+            AddDraftExpenseContentInboundRequestSchema.parse(validRequest),
+        ).toStrictEqual(validRequest);
+    });
+
+    void test("rejects a receipt that does not reference a line item", () => {
+        expect(() =>
+            AddDraftExpenseContentInboundRequestSchema.parse({
+                ...validRequest,
+                receipts: [
+                    {
+                        ...validRequest.receipts[0],
+                        lineItemIndex: 1,
+                    },
+                ],
+            }),
+        ).toThrow("Receipt must reference a submitted line item.");
+    });
+
+    void test("rejects unsupported receipt content and invalid amounts", () => {
+        expect(() =>
+            AddDraftExpenseContentInboundRequestSchema.parse({
+                lineItems: [
+                    {
+                        ...validRequest.lineItems[0],
+                        amount: -1,
+                    },
+                ],
+                receipts: [
+                    {
+                        ...validRequest.receipts[0],
+                        contentType: "application/octet-stream",
+                    },
+                ],
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects future expense dates using the backend clock", () => {
+        const schema = createAddDraftExpenseContentInboundRequestSchema(
+            () => new Date("2026-07-25T12:00:00.000Z"),
+        );
+
+        expect(() =>
+            schema.parse({
+                ...validRequest,
+                lineItems: [
+                    {
+                        ...validRequest.lineItems[0],
+                        expenseDate: "2026-07-26",
+                    },
+                ],
+            }),
+        ).toThrow("Expense date cannot be in the future.");
     });
 });
 
