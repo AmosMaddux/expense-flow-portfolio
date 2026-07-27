@@ -227,6 +227,12 @@ export const ReviewExpenseReportLineItemParamsSchema = z.object({
     sourceId: z.uuid(),
 });
 
+export const ReviewExpenseReportSourceParamsSchema = z.object({
+    id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
+    sourceId: z.uuid(),
+});
+
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     asOfDate: z.iso.date(),
@@ -306,11 +312,15 @@ export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     mileageDate: z.iso.date(),
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
 });
 
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
     expenseReportId: z.uuid(),
+    employee: z.uuid(),
     merchant: z.string().min(1),
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
@@ -318,6 +328,7 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     canAdvance: z.boolean(),
+    reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
 });
 
@@ -363,6 +374,9 @@ export const reviewExpenseReportLineItemRequestSchema =
 
 export const reviewExpenseReportLineItemParamsSchema =
     ReviewExpenseReportLineItemParamsSchema;
+
+export const reviewExpenseReportSourceParamsSchema =
+    ReviewExpenseReportSourceParamsSchema;
 
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
@@ -448,6 +462,10 @@ export type ReviewExpenseReportLineItemRequest = z.infer<
 
 export type ReviewExpenseReportLineItemParams = z.infer<
     typeof ReviewExpenseReportLineItemParamsSchema
+>;
+
+export type ReviewExpenseReportSourceParams = z.infer<
+    typeof ReviewExpenseReportSourceParamsSchema
 >;
 
 export type ExpenseReportResponse = z.infer<

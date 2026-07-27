@@ -10,6 +10,7 @@ import {
     getMileageConfig,
     postExpenseReportFlagClear,
     postExpenseReportLineItemReview,
+    postExpenseReportSourceReview,
     postDraftExpenseContent,
     postExpenseReportSubmission,
     postExpenseReportTransition,
@@ -60,6 +61,10 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/line-items/:sourceId/review",
     postExpenseReportLineItemReview,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/sources/:sourceType/:sourceId/review",
+    postExpenseReportSourceReview,
 );
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",

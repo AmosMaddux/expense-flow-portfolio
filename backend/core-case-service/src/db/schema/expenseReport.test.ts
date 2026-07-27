@@ -1242,7 +1242,7 @@ void describe("glCodingResult schema", () => {
             '"gl_coding_result"."line_item_review_action" is null and "gl_coding_result"."line_item_review_reason" is null and "gl_coding_result"."line_item_reviewed_by" is null and "gl_coding_result"."line_item_reviewed_at" is null',
         );
         expect(migrationSql).toContain(
-            '"gl_coding_result"."source_type" = \'line_item\'',
+            "\"gl_coding_result\".\"source_type\" in ('line_item', 'mileage')",
         );
         expect(migrationSql).toContain(
             "\"gl_coding_result\".\"line_item_review_action\" in ('approve', 'reject')",

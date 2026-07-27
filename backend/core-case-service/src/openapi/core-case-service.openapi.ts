@@ -25,6 +25,7 @@ import {
     ReceiptUploadOutboundResponseSchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
+    ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
@@ -117,6 +118,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const reviewExpenseReportLineItemParams = registry.register(
         "ReviewExpenseReportLineItemParams",
         ReviewExpenseReportLineItemParamsSchema,
+    );
+    const reviewExpenseReportSourceParams = registry.register(
+        "ReviewExpenseReportSourceParams",
+        ReviewExpenseReportSourceParamsSchema,
     );
     const approvalQueueLineItemResponse = registry.register(
         "ApprovalQueueLineItemResponse",
@@ -741,6 +746,46 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             404: problemJsonResponse("Expense Report line item not found."),
             409: problemJsonResponse(
                 "Line items can only be reviewed during Manager Approval.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review",
+        summary: "Review an Expense Report source",
+        description:
+            "Records a manager approve or reject decision for one latest-submission line item or mileage source during Manager Approval.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: reviewExpenseReportSourceParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: reviewExpenseReportLineItemRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report source reviewed.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: approvalQueueLineItemResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed source review request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report source not found."),
+            409: problemJsonResponse(
+                "Expense Report sources can only be reviewed during Manager Approval.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

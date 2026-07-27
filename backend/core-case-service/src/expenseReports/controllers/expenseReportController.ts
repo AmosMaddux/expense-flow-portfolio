@@ -18,6 +18,7 @@ import {
     ReadCaseQueueStageRollupsQuerySchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
+    ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
@@ -43,6 +44,7 @@ import {
     readExpenseReportAuditEntries,
     readMileageConfig,
     reviewExpenseReportLineItem,
+    reviewExpenseReportSource,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
     uploadReceiptFile,
@@ -478,6 +480,40 @@ export async function postExpenseReportLineItemReview(
             ReviewExpenseReportLineItemInboundRequestSchema.parse(req.body);
         const lineItem = await reviewExpenseReportLineItem({
             id: parsedParams.id,
+            sourceId: parsedParams.sourceId,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            action: parsedRequest.action,
+            reason: parsedRequest.reason,
+        });
+
+        res.status(200).json(lineItem);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles manager review decisions for one Expense Report source.
+ */
+export async function postExpenseReportSourceReview(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = ReviewExpenseReportSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceType: req.params.sourceType,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest =
+            ReviewExpenseReportLineItemInboundRequestSchema.parse(req.body);
+        const lineItem = await reviewExpenseReportSource({
+            id: parsedParams.id,
+            sourceType: parsedParams.sourceType,
             sourceId: parsedParams.sourceId,
             tenantId: auth.tenantId,
             actorId: auth.userId,

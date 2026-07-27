@@ -38,11 +38,15 @@ const approvalQueueMileageEntrySchema = z.object({
     mileageDate: z.iso.date(),
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(["approve", "reject"]).nullable(),
 });
 
 const approvalQueueLineItemSchema = z.object({
     id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
     expenseReportId: z.uuid(),
+    employee: z.uuid(),
     merchant: z.string().min(1),
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
@@ -50,6 +54,7 @@ const approvalQueueLineItemSchema = z.object({
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
     canAdvance: z.boolean(),
+    reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(approvalQueueMileageEntrySchema),
 });
 
@@ -58,19 +63,51 @@ export const approvalQueueLineItemListSchema = z.array(
 );
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
-type ApprovalQueueMileageEntry = z.infer<
-    typeof approvalQueueMileageEntrySchema
->;
 
+type ApprovalQueueReportRow = {
+    expenseReportId: string;
+    employee: string;
+    currentStage: ExpenseReportStage;
+    flaggedLineItem: boolean;
+    totalAmount: number;
+    totalMileage: number;
+    lineItems: ApprovalQueueLineItem[];
+};
+type ApprovalQueueReviewRow =
+    | {
+          type: "line_item";
+          id: string;
+          merchant: string;
+          amount: number;
+          mileage: number;
+          glCode: string;
+          flaggedLineItem: boolean;
+          reviewAction: ApprovalQueueLineItem["reviewAction"];
+          lineItem: ApprovalQueueLineItem;
+      }
+    | {
+          type: "mileage";
+          id: string;
+          merchant: string;
+          amount: number;
+          mileage: number;
+          glCode: string;
+          flaggedLineItem: boolean;
+          reviewAction: ApprovalQueueLineItem["reviewAction"];
+          lineItem: ApprovalQueueLineItem;
+      };
 type FlagFilter = "all" | "flagged" | "clear";
 type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
 type LineItemMutationVariables = {
     lineItem: ApprovalQueueLineItem;
+    sourceId: string;
+    sourceType: "line_item" | "mileage";
     action: LineItemReviewAction;
     reason?: string;
 };
 type ClearFlagMutationVariables = {
     lineItem: ApprovalQueueLineItem;
+    sourceId: string;
     reason: string;
 };
 type TransitionMutationVariables = {
@@ -150,13 +187,15 @@ export function CaseQueueScreen(): JSX.Element {
             action,
             lineItem,
             reason,
+            sourceId,
+            sourceType,
         }: LineItemMutationVariables) => {
             const requestBody = reviewLineItemRequestSchema.parse({
                 action,
                 ...(reason === undefined ? {} : { reason }),
             });
             const response = await session.authenticatedFetch(
-                `/v1/expense-reports/${lineItem.expenseReportId}/line-items/${lineItem.id}/review`,
+                `/v1/expense-reports/${lineItem.expenseReportId}/sources/${sourceType}/${sourceId}/review`,
                 {
                     body: JSON.stringify(requestBody),
                     headers: { "Content-Type": "application/json" },
@@ -176,12 +215,27 @@ export function CaseQueueScreen(): JSX.Element {
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
             setApprovalQueueData(queryClient, (current = []) =>
                 current.map((lineItem) =>
-                    lineItem.id === variables.lineItem.id
+                    lineItem.id === variables.lineItem.id &&
+                    variables.sourceId === lineItem.id
                         ? {
                               ...lineItem,
                               reviewAction: variables.action,
                           }
-                        : lineItem,
+                        : lineItem.id === variables.lineItem.id
+                          ? {
+                                ...lineItem,
+                                mileageEntries: lineItem.mileageEntries.map(
+                                    (entry) =>
+                                        entry.id === variables.sourceId
+                                            ? {
+                                                  ...entry,
+                                                  reviewAction:
+                                                      variables.action,
+                                              }
+                                            : entry,
+                                ),
+                            }
+                          : lineItem,
                 ),
             );
 
@@ -202,9 +256,10 @@ export function CaseQueueScreen(): JSX.Element {
         mutationFn: async ({
             lineItem,
             reason,
+            sourceId,
         }: ClearFlagMutationVariables) => {
             const requestBody = clearFlagsRequestSchema.parse({
-                sourceIds: [lineItem.id],
+                sourceIds: [sourceId],
                 reason,
             });
             const response = await session.authenticatedFetch(
@@ -228,7 +283,21 @@ export function CaseQueueScreen(): JSX.Element {
                 recalculateAdvanceEligibility(
                     current.map((lineItem) =>
                         lineItem.id === variables.lineItem.id
-                            ? { ...lineItem, flaggedLineItem: false }
+                            ? {
+                                  ...lineItem,
+                                  ...(variables.sourceId === lineItem.id
+                                      ? { flaggedLineItem: false }
+                                      : {}),
+                                  mileageEntries: lineItem.mileageEntries.map(
+                                      (entry) =>
+                                          entry.id === variables.sourceId
+                                              ? {
+                                                    ...entry,
+                                                    flaggedLineItem: false,
+                                                }
+                                              : entry,
+                                  ),
+                              }
                             : lineItem,
                     ),
                 ),
@@ -301,18 +370,25 @@ export function CaseQueueScreen(): JSX.Element {
         clearFlagMutation.isPending ||
         transitionMutation.isPending;
     const canPullSubmittedReportIntoReview =
-        session.user?.roles.includes("Department Manager") ?? false;
+        session.user?.roles.some(
+            (role) => role === "Department Manager" || role === "Finance Admin",
+        ) ?? false;
 
-    function handleOpenReview(lineItem: ApprovalQueueLineItem): void {
+    function handleOpenReview(report: ApprovalQueueReportRow): void {
+        const firstLineItem = report.lineItems[0];
+        if (firstLineItem === undefined) {
+            return;
+        }
+
         setActionError(null);
-        setSelectedReportId(lineItem.expenseReportId);
+        setSelectedReportId(report.expenseReportId);
 
         if (
             canPullSubmittedReportIntoReview &&
-            lineItem.currentStage === "Submitted"
+            firstLineItem.currentStage === "Submitted"
         ) {
             transitionMutation.mutate({
-                expenseReportId: lineItem.expenseReportId,
+                expenseReportId: report.expenseReportId,
                 toStage: "Manager Approval",
                 reason: "manager review started",
             });
@@ -367,7 +443,7 @@ export function CaseQueueScreen(): JSX.Element {
                                     reason: "manager approved after flag review",
                                 })
                             }
-                            onClearFlag={(lineItem) => {
+                            onClearFlag={(lineItem, sourceId) => {
                                 const reason = window.prompt(
                                     "Reason for clearing this flag",
                                     "reviewed receipt detail",
@@ -381,11 +457,17 @@ export function CaseQueueScreen(): JSX.Element {
 
                                 clearFlagMutation.mutate({
                                     lineItem,
+                                    sourceId,
                                     reason: reason.trim(),
                                 });
                             }}
                             onClose={() => setSelectedReportId(null)}
-                            onReviewLineItem={(lineItem, action) => {
+                            onReviewLineItem={(
+                                lineItem,
+                                sourceType,
+                                sourceId,
+                                action,
+                            ) => {
                                 let reason: string | undefined;
                                 if (action === "reject") {
                                     const promptedReason = window.prompt(
@@ -403,6 +485,8 @@ export function CaseQueueScreen(): JSX.Element {
 
                                 reviewMutation.mutate({
                                     lineItem,
+                                    sourceId,
+                                    sourceType,
                                     action,
                                     ...(reason === undefined ? {} : { reason }),
                                 });
@@ -437,22 +521,28 @@ function ApprovalQueueLineItemTable({
     onOpenReview,
 }: {
     lineItems: ApprovalQueueLineItem[];
-    onOpenReview: (lineItem: ApprovalQueueLineItem) => void;
+    onOpenReview: (report: ApprovalQueueReportRow) => void;
 }): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const columns = useMemo<ColumnDef<ApprovalQueueLineItem>[]>(
+    const reportRows = useMemo(
+        () => groupApprovalQueueReports(lineItems),
+        [lineItems],
+    );
+    const columns = useMemo<ColumnDef<ApprovalQueueReportRow>[]>(
         () => [
             {
-                accessorKey: "merchant",
+                accessorKey: "employee",
                 header: "Employee",
                 cell: ({ row }) => (
                     <div className="case-queue-employee">
                         <span className="case-queue-employee__avatar">
-                            {getMerchantInitials(row.original.merchant)}
+                            {getEmployeeInitials(row.original.employee)}
                         </span>
                         <span>
-                            <strong>{row.original.merchant}</strong>
+                            <strong>
+                                {getEmployeeDisplayName(row.original.employee)}
+                            </strong>
                             <small>
                                 Report{" "}
                                 {getReportDisplayId(
@@ -477,22 +567,24 @@ function ApprovalQueueLineItemTable({
                 ),
             },
             {
-                accessorKey: "amount",
+                accessorKey: "totalAmount",
                 header: "Total Amount",
                 cell: ({ getValue }) =>
-                    formatCurrency(getValue<ApprovalQueueLineItem["amount"]>()),
+                    formatCurrency(
+                        getValue<ApprovalQueueReportRow["totalAmount"]>(),
+                    ),
                 sortDescFirst: false,
                 sortingFn: "basic",
             },
             {
-                id: "mileage",
+                accessorKey: "totalMileage",
                 header: "Mileage",
-                cell: ({ row }) =>
-                    formatMileageTotal(row.original.mileageEntries),
-            },
-            {
-                accessorKey: "glCode",
-                header: "GL Code",
+                cell: ({ getValue }) =>
+                    formatMileageDistance(
+                        getValue<ApprovalQueueReportRow["totalMileage"]>(),
+                    ),
+                sortDescFirst: false,
+                sortingFn: "basic",
             },
             {
                 accessorKey: "currentStage",
@@ -521,14 +613,14 @@ function ApprovalQueueLineItemTable({
                 },
                 header: "Flag",
                 cell: ({ getValue }) =>
-                    getValue<ApprovalQueueLineItem["flaggedLineItem"]>() ? (
+                    getValue<ApprovalQueueReportRow["flaggedLineItem"]>() ? (
                         <Badge tone="warning">Over $500</Badge>
                     ) : (
                         <Badge tone="success">Clear</Badge>
                     ),
             },
             {
-                accessorKey: "reviewAction",
+                id: "actions",
                 header: "Actions",
                 cell: ({ row }) => (
                     <button
@@ -545,7 +637,7 @@ function ApprovalQueueLineItemTable({
     );
     const table = useReactTable({
         columns,
-        data: lineItems,
+        data: reportRows,
         getCoreRowModel: getCoreRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -619,9 +711,10 @@ function ApprovalQueueLineItemTable({
                         type="button"
                         onClick={() =>
                             setSorting((current) =>
-                                current[0]?.id === "amount" && current[0].desc
-                                    ? [{ id: "amount", desc: false }]
-                                    : [{ id: "amount", desc: true }],
+                                current[0]?.id === "totalAmount" &&
+                                current[0].desc
+                                    ? [{ id: "totalAmount", desc: false }]
+                                    : [{ id: "totalAmount", desc: true }],
                             )
                         }
                     >
@@ -642,16 +735,16 @@ function ApprovalQueueLineItemTable({
 
             <section
                 className="case-queue-table"
-                aria-label="Approval Queue line items"
+                aria-label="Approval Queue reports"
             >
-                {lineItems.length === 0 ? (
+                {reportRows.length === 0 ? (
                     <EmptyState
-                        body="There are no line items waiting in the Approval Queue."
-                        title="No line items waiting for review"
+                        body="There are no reports waiting in the Approval Queue."
+                        title="No reports waiting for review"
                     />
                 ) : (
                     <div className="case-queue-table__frame">
-                        <table aria-label="Approval Queue line items">
+                        <table aria-label="Approval Queue reports">
                             <thead>
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <tr key={headerGroup.id}>
@@ -705,8 +798,8 @@ function ApprovalQueueLineItemTable({
                             </div>
                         ) : null}
                         <footer>
-                            Showing {visibleRows.length} of {lineItems.length}{" "}
-                            line items
+                            Showing {visibleRows.length} of {reportRows.length}{" "}
+                            reports
                         </footer>
                     </div>
                 )}
@@ -727,28 +820,31 @@ function ApprovalQueueReviewDialog({
     isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
     onAdvanceReport: (lineItem: ApprovalQueueLineItem) => void;
-    onClearFlag: (lineItem: ApprovalQueueLineItem) => void;
+    onClearFlag: (lineItem: ApprovalQueueLineItem, sourceId: string) => void;
     onClose: () => void;
     onReviewLineItem: (
         lineItem: ApprovalQueueLineItem,
+        sourceType: "line_item" | "mileage",
+        sourceId: string,
         action: LineItemReviewAction,
     ) => void;
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const reportLineItem = lineItems[0];
-    const mileageEntries = reportLineItem.mileageEntries;
-    const canSendBackReport = reportLineItem.currentStage === "Manager Approval";
-    const areAllLineItemsReviewed = lineItems.every(
-        (lineItem) => lineItem.reviewAction !== null,
+    const canSendBackReport =
+        reportLineItem.currentStage === "Manager Approval";
+    const reviewRows = useMemo(
+        () => buildApprovalQueueReviewRows(lineItems),
+        [lineItems],
+    );
+    const areAllReviewRowsReviewed = reviewRows.every(
+        (reviewRow) => reviewRow.reviewAction !== null,
     );
     const lineItemTotal = lineItems.reduce(
         (total, lineItem) => total + lineItem.amount,
         0,
     );
-    const mileageTotal = mileageEntries.reduce(
-        (total, mileageEntry) => total + mileageEntry.amount,
-        0,
-    );
+    const mileageTotal = calculateReportMileageTotal(lineItems);
 
     return (
         <div className="case-queue-dialog__backdrop">
@@ -784,15 +880,19 @@ function ApprovalQueueReviewDialog({
                         Open flags
                         <strong>
                             {
-                                lineItems.filter(
-                                    (lineItem) => lineItem.flaggedLineItem,
+                                reviewRows.filter(
+                                    (reviewRow) => reviewRow.flaggedLineItem,
                                 ).length
                             }
                         </strong>
                     </span>
                     <span>
                         Total
-                        <strong>{formatCurrency(lineItemTotal + mileageTotal)}</strong>
+                        <strong>{formatCurrency(lineItemTotal)}</strong>
+                    </span>
+                    <span>
+                        Mileage
+                        <strong>{formatMileageDistance(mileageTotal)}</strong>
                     </span>
                 </div>
                 <div className="case-queue-dialog__table-wrap">
@@ -809,18 +909,18 @@ function ApprovalQueueReviewDialog({
                             </tr>
                         </thead>
                         <tbody>
-                            {lineItems.map((lineItem) => (
-                                <tr key={lineItem.id}>
-                                    <td>{lineItem.merchant}</td>
-                                    <td>{formatCurrency(lineItem.amount)}</td>
+                            {reviewRows.map((reviewRow) => (
+                                <tr key={reviewRow.id}>
+                                    <td>{reviewRow.merchant}</td>
+                                    <td>{formatCurrency(reviewRow.amount)}</td>
                                     <td>
-                                        {formatMileageTotal(
-                                            lineItem.mileageEntries,
+                                        {formatMileageDistance(
+                                            reviewRow.mileage,
                                         )}
                                     </td>
-                                    <td>{lineItem.glCode}</td>
+                                    <td>{reviewRow.glCode}</td>
                                     <td>
-                                        {lineItem.flaggedLineItem ? (
+                                        {reviewRow.flaggedLineItem ? (
                                             <Badge tone="warning">
                                                 Over $500
                                             </Badge>
@@ -830,7 +930,7 @@ function ApprovalQueueReviewDialog({
                                     </td>
                                     <td>
                                         {getReviewActionLabel(
-                                            lineItem.reviewAction,
+                                            reviewRow.reviewAction,
                                         )}
                                     </td>
                                     <td>
@@ -841,7 +941,9 @@ function ApprovalQueueReviewDialog({
                                                 type="button"
                                                 onClick={() =>
                                                     onReviewLineItem(
-                                                        lineItem,
+                                                        reviewRow.lineItem,
+                                                        reviewRow.type,
+                                                        reviewRow.id,
                                                         "approve",
                                                     )
                                                 }
@@ -854,7 +956,9 @@ function ApprovalQueueReviewDialog({
                                                 type="button"
                                                 onClick={() =>
                                                     onReviewLineItem(
-                                                        lineItem,
+                                                        reviewRow.lineItem,
+                                                        reviewRow.type,
+                                                        reviewRow.id,
                                                         "reject",
                                                     )
                                                 }
@@ -865,11 +969,14 @@ function ApprovalQueueReviewDialog({
                                                 className="button button--secondary button--compact"
                                                 disabled={
                                                     isActionPending ||
-                                                    !lineItem.flaggedLineItem
+                                                    !reviewRow.flaggedLineItem
                                                 }
                                                 type="button"
                                                 onClick={() =>
-                                                    onClearFlag(lineItem)
+                                                    onClearFlag(
+                                                        reviewRow.lineItem,
+                                                        reviewRow.id,
+                                                    )
                                                 }
                                             >
                                                 Clear flag
@@ -884,7 +991,11 @@ function ApprovalQueueReviewDialog({
                 <footer className="case-queue-dialog__footer">
                     <button
                         className="button button--secondary button--compact"
-                        disabled={isActionPending || !reportLineItem.canAdvance}
+                        disabled={
+                            isActionPending ||
+                            !reportLineItem.canAdvance ||
+                            !areAllReviewRowsReviewed
+                        }
                         type="button"
                         onClick={() => onAdvanceReport(reportLineItem)}
                     >
@@ -893,7 +1004,9 @@ function ApprovalQueueReviewDialog({
                     {canSendBackReport ? (
                         <button
                             className="button button--danger button--compact"
-                            disabled={isActionPending || !areAllLineItemsReviewed}
+                            disabled={
+                                isActionPending || !areAllReviewRowsReviewed
+                            }
                             type="button"
                             onClick={() => onSendBackReport(reportLineItem)}
                         >
@@ -927,14 +1040,7 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
-function formatMileageTotal(
-    mileageEntries: ApprovalQueueMileageEntry[],
-): string {
-    const mileageDistance = mileageEntries.reduce(
-        (total, entry) => total + entry.distance,
-        0,
-    );
-
+function formatMileageDistance(mileageDistance: number): string {
     if (mileageDistance === 0) {
         return "-";
     }
@@ -945,37 +1051,146 @@ function formatMileageTotal(
     }).format(mileageDistance)} miles`;
 }
 
-function getMerchantInitials(merchant: string): string {
-    return merchant
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? "")
-        .join("");
+function buildApprovalQueueReviewRows(
+    lineItems: ApprovalQueueLineItem[],
+): ApprovalQueueReviewRow[] {
+    const mileageEntryIds = new Set<string>();
+    const rows: ApprovalQueueReviewRow[] = lineItems.map((lineItem) => ({
+        type: lineItem.sourceType,
+        id: lineItem.id,
+        merchant: lineItem.merchant,
+        amount: lineItem.amount,
+        mileage:
+            lineItem.sourceType === "mileage" ? lineItem.reportTotalMileage : 0,
+        glCode: lineItem.glCode,
+        flaggedLineItem: lineItem.flaggedLineItem,
+        reviewAction: lineItem.reviewAction,
+        lineItem,
+    }));
+
+    for (const lineItem of lineItems) {
+        for (const mileageEntry of lineItem.mileageEntries) {
+            if (mileageEntryIds.has(mileageEntry.id)) {
+                continue;
+            }
+
+            mileageEntryIds.add(mileageEntry.id);
+            rows.push({
+                type: "mileage",
+                id: mileageEntry.id,
+                merchant: mileageEntry.route,
+                amount: mileageEntry.amount,
+                mileage: mileageEntry.distance,
+                glCode: mileageEntry.glCode,
+                flaggedLineItem: mileageEntry.flaggedLineItem,
+                reviewAction: mileageEntry.reviewAction,
+                lineItem,
+            });
+        }
+    }
+
+    return rows;
+}
+
+function groupApprovalQueueReports(
+    lineItems: ApprovalQueueLineItem[],
+): ApprovalQueueReportRow[] {
+    const reportsById = new Map<string, ApprovalQueueReportRow>();
+
+    for (const lineItem of lineItems) {
+        const existingReport = reportsById.get(lineItem.expenseReportId);
+        if (existingReport === undefined) {
+            reportsById.set(lineItem.expenseReportId, {
+                expenseReportId: lineItem.expenseReportId,
+                employee: lineItem.employee,
+                currentStage: lineItem.currentStage,
+                flaggedLineItem: hasOpenSourceFlag(lineItem),
+                totalAmount: lineItem.amount,
+                totalMileage: calculateReportMileageTotal([lineItem]),
+                lineItems: [lineItem],
+            });
+            continue;
+        }
+
+        existingReport.flaggedLineItem =
+            existingReport.flaggedLineItem || hasOpenSourceFlag(lineItem);
+        existingReport.totalAmount += lineItem.amount;
+        existingReport.lineItems.push(lineItem);
+        existingReport.totalMileage = calculateReportMileageTotal(
+            existingReport.lineItems,
+        );
+    }
+
+    return [...reportsById.values()];
+}
+
+function hasOpenSourceFlag(lineItem: ApprovalQueueLineItem): boolean {
+    return (
+        lineItem.flaggedLineItem ||
+        lineItem.mileageEntries.some((entry) => entry.flaggedLineItem)
+    );
+}
+
+function calculateReportMileageTotal(
+    lineItems: ApprovalQueueLineItem[],
+): number {
+    const mileageById = new Map<string, number>();
+    const reportMileageById = new Map<string, number>();
+    for (const lineItem of lineItems) {
+        if (lineItem.sourceType === "mileage") {
+            mileageById.set(lineItem.id, lineItem.reportTotalMileage);
+        } else if (lineItem.reportTotalMileage > 0) {
+            reportMileageById.set(
+                lineItem.expenseReportId,
+                lineItem.reportTotalMileage,
+            );
+        }
+
+        for (const mileageEntry of lineItem.mileageEntries) {
+            mileageById.set(mileageEntry.id, mileageEntry.distance);
+        }
+    }
+
+    if (mileageById.size === 0) {
+        return [...reportMileageById.values()].reduce(
+            (total, miles) => total + miles,
+            0,
+        );
+    }
+
+    return [...mileageById.values()].reduce((total, miles) => total + miles, 0);
+}
+
+function getEmployeeDisplayName(employee: string): string {
+    return `Employee ${employee.slice(-4)}`;
+}
+
+function getEmployeeInitials(employee: string): string {
+    return employee.slice(-2).toUpperCase();
 }
 
 function getReportDisplayId(expenseReportId: string): string {
     return expenseReportId.slice(0, 8);
 }
 
-function exportApprovalQueueCsv(lineItems: ApprovalQueueLineItem[]): void {
+function exportApprovalQueueCsv(reports: ApprovalQueueReportRow[]): void {
     const header = [
         "Employee",
         "Submission",
         "Total Amount",
-        "GL Code",
-        "Status",
+        "Mileage",
+        "Stage",
         "Flag",
-        "Review",
+        "Action",
     ];
-    const rows = lineItems.map((lineItem) => [
-        lineItem.merchant,
-        getReportDisplayId(lineItem.expenseReportId),
-        formatCurrency(lineItem.amount),
-        lineItem.glCode,
-        lineItem.currentStage,
-        lineItem.flaggedLineItem ? "Amount > $500" : "Clear",
-        getReviewActionLabel(lineItem.reviewAction),
+    const rows = reports.map((report) => [
+        getEmployeeDisplayName(report.employee),
+        getReportDisplayId(report.expenseReportId),
+        formatCurrency(report.totalAmount),
+        formatMileageDistance(report.totalMileage),
+        report.currentStage,
+        report.flaggedLineItem ? "Amount > $500" : "Clear",
+        "Review",
     ]);
     const csv = [header, ...rows]
         .map((row) => row.map(formatCsvCell).join(","))
@@ -1124,6 +1339,23 @@ function recalculateAdvanceEligibility(
                     1,
             );
         }
+
+        for (const mileageEntry of lineItem.mileageEntries) {
+            if (mileageEntry.flaggedLineItem) {
+                openFlagCounts.set(
+                    lineItem.expenseReportId,
+                    (openFlagCounts.get(lineItem.expenseReportId) ?? 0) + 1,
+                );
+            }
+
+            if (mileageEntry.reviewAction === null) {
+                unreviewedLineItemCounts.set(
+                    lineItem.expenseReportId,
+                    (unreviewedLineItemCounts.get(lineItem.expenseReportId) ??
+                        0) + 1,
+                );
+            }
+        }
     }
 
     return lineItems.map((lineItem) => ({
@@ -1131,8 +1363,7 @@ function recalculateAdvanceEligibility(
         canAdvance:
             lineItem.currentStage === "Manager Approval" &&
             (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
-            (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) ===
-                0,
+            (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) === 0,
     }));
 }
 

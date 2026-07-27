@@ -2441,7 +2441,7 @@ void describe("Expense Report routes", () => {
                 stageBeforeAction: "Manager Approval",
                 stageAfterProposedAction: "Drafted",
                 denialReason:
-                    "Expense Report has line items that have not been reviewed.",
+                    "Expense Report has reviewable sources that have not been reviewed.",
             }),
         );
     });
@@ -2567,15 +2567,19 @@ void describe("Expense Report routes", () => {
             },
         });
         const queueBody = (await queueResponse.json()) as Array<{
+            employee?: string;
             id?: string;
             mileageEntries?: unknown[];
+            reportTotalMileage?: number;
             reviewAction?: string;
         }>;
 
         expect(queueResponse.status).toBe(200);
         expect(queueBody).toContainEqual(
             expect.objectContaining({
+                employee: owner,
                 id: lineItemId,
+                reportTotalMileage: 18.5,
                 mileageEntries: [
                     expect.objectContaining({
                         id: mileageEntryId,
@@ -2589,6 +2593,290 @@ void describe("Expense Report routes", () => {
                 reviewAction: "reject",
             }),
         );
+    });
+
+    void test("reviews and clears flags for a Manager Approval mileage source", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000194";
+        const owner = "50000000-0000-4000-8000-000000000194";
+        const managerId = "51000000-0000-4000-8000-000000000194";
+        const reportId = "60000000-0000-4000-8000-000000000194";
+        const lineItemId = "30000000-0000-4000-8000-000000000194";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000194";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Air",
+            expenseDate: "2026-07-20",
+            amount: "428.50",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Airport to regional office",
+            distance: "24.60",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000194",
+                submissionId: "90000000-0000-4000-8000-000000000194",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6220",
+                glAccountName: "Airfare",
+                amount: "428.50",
+                currency: "USD",
+                flaggedLineItem: false,
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-22T12:00:00.000Z"),
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000194",
+                submissionId: "90000000-0000-4000-8000-000000000194",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                glAccountCode: "6250",
+                glAccountName: "Mileage Expense",
+                amount: "15.62",
+                currency: "USD",
+                flaggedLineItem: true,
+                flagCode: "mileage_review",
+                flagMessage: "Mileage requires manager review.",
+            },
+        ]);
+
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "reject",
+                    reason: "mileage route does not match itinerary",
+                }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            canAdvance?: boolean;
+            mileageEntries?: Array<{
+                id?: string;
+                flaggedLineItem?: boolean;
+                reviewAction?: string;
+            }>;
+        };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody.canAdvance).toBe(false);
+        expect(reviewBody.mileageEntries).toContainEqual(
+            expect.objectContaining({
+                id: mileageEntryId,
+                flaggedLineItem: true,
+                reviewAction: "reject",
+            }),
+        );
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "mileage_rejected",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Manager Approval",
+                outcomeReason: "mileage route does not match itinerary",
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const clearResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: [mileageEntryId],
+                    reason: "mileage review completed",
+                }),
+            },
+        );
+        const clearBody = (await clearResponse.json()) as {
+            clearedFlagCount?: number;
+        };
+        const [mileageReviewRow] = await db
+            .select({
+                flaggedLineItem: glCodingResult.flaggedLineItem,
+                reviewAction: glCodingResult.lineItemReviewAction,
+                reviewReason: glCodingResult.lineItemReviewReason,
+            })
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.sourceType, "mileage"),
+                    eq(glCodingResult.sourceId, mileageEntryId),
+                ),
+            );
+
+        expect(clearResponse.status).toBe(200);
+        expect(clearBody).toEqual({ clearedFlagCount: 1 });
+        expect(mileageReviewRow).toMatchObject({
+            flaggedLineItem: false,
+            reviewAction: "reject",
+            reviewReason: "mileage route does not match itinerary",
+        });
+    });
+
+    void test("exposes and reviews a mileage-only Manager Approval report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000195";
+        const owner = "50000000-0000-4000-8000-000000000195";
+        const managerId = "51000000-0000-4000-8000-000000000195";
+        const reportId = "60000000-0000-4000-8000-000000000195";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000195";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Office to customer site",
+            distance: "42.20",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values({
+            id: "92000000-0000-4000-8000-000000000195",
+            submissionId: "90000000-0000-4000-8000-000000000195",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "mileage",
+            sourceId: mileageEntryId,
+            category: "Mileage",
+            mappingStatus: "mapped",
+            glAccountCode: "6250",
+            glAccountName: "Mileage Expense",
+            amount: "26.80",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            sourceType?: string;
+            merchant?: string;
+            reportTotalMileage?: number;
+            mileageEntries?: unknown[];
+            canAdvance?: boolean;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: mileageEntryId,
+                sourceType: "mileage",
+                merchant: "Office to customer site",
+                reportTotalMileage: 42.2,
+                mileageEntries: [],
+                canAdvance: false,
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            id?: string;
+            sourceType?: string;
+            reviewAction?: string;
+            canAdvance?: boolean;
+        };
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody).toMatchObject({
+            id: mileageEntryId,
+            sourceType: "mileage",
+            reviewAction: "approve",
+            canAdvance: true,
+        });
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const advanceResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved mileage-only report",
+                }),
+            },
+        );
+
+        expect(advanceResponse.status).toBe(200);
     });
 
     void test("excludes Drafted reports from manager queue line items", async () => {

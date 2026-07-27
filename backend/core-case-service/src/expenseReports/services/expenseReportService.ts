@@ -57,6 +57,7 @@ import {
     type ReceiptUploadMetadataRequest,
     type ReceiptUploadResponse,
     type ReviewExpenseReportLineItemRequest,
+    type ReviewExpenseReportSourceParams,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
@@ -549,6 +550,23 @@ export async function reviewExpenseReportLineItem(
         roles: RoleName[];
     },
 ): Promise<ApprovalQueueLineItemResponse> {
+    return reviewExpenseReportSource({
+        ...request,
+        sourceType: "line_item",
+    });
+}
+
+/**
+ * Applies a manager approve/reject decision to one reviewable Expense Report source.
+ */
+export async function reviewExpenseReportSource(
+    request: ReviewExpenseReportLineItemRequest &
+        ReviewExpenseReportSourceParams & {
+            tenantId: string;
+            actorId: string;
+            roles: RoleName[];
+        },
+): Promise<ApprovalQueueLineItemResponse> {
     const report = await findExpenseReportById(request.tenantId, request.id);
     if (report === undefined) {
         throw new NotFoundError("Expense Report not found.");
@@ -562,18 +580,19 @@ export async function reviewExpenseReportLineItem(
         tenantId: request.tenantId,
         expenseReportId: request.id,
         sourceId: request.sourceId,
+        sourceType: request.sourceType,
         actorId: request.actorId,
         action: request.action,
         ...(request.reason === undefined ? {} : { reason: request.reason }),
     });
 
     if (result.kind === "not_found") {
-        throw new NotFoundError("Expense Report line item not found.");
+        throw new NotFoundError("Expense Report review source not found.");
     }
 
     if (result.kind === "invalid_stage") {
         throw new ConflictError(
-            `Line items can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
+            `Expense Report sources can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
         );
     }
 
