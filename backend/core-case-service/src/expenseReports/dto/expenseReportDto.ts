@@ -248,11 +248,10 @@ function isValidAllTransactionsCursor(cursor: string): boolean {
         return (
             parsed !== null &&
             typeof parsed === "object" &&
-            "createdAt" in parsed &&
+            "expenseDate" in parsed &&
             "id" in parsed &&
-            typeof parsed.createdAt === "string" &&
-            z.string().datetime({ offset: true }).safeParse(parsed.createdAt)
-                .success &&
+            typeof parsed.expenseDate === "string" &&
+            z.iso.date().safeParse(parsed.expenseDate).success &&
             z.uuid().safeParse(parsed.id).success
         );
     } catch {

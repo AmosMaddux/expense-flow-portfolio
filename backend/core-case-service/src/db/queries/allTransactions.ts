@@ -14,12 +14,12 @@ import type {
 export type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 
 type AllTransactionsCursor = {
-    createdAt: string;
+    expenseDate: string;
     id: string;
 };
 
 type AllTransactionWithCursor = AllTransaction & {
-    cursorCreatedAt: string;
+    cursorExpenseDate: string;
 };
 
 type AllTransactionsDatabase = {
@@ -50,22 +50,18 @@ export async function readAllTransactions(
     }
 
     if (params.startDate !== undefined) {
-        filters.push(
-            sql`${lineItem.createdAt} >= ${toUtcStartOfDay(params.startDate)}::timestamptz`,
-        );
+        filters.push(sql`${lineItem.expenseDate} >= ${params.startDate}`);
     }
 
     if (params.endDate !== undefined) {
-        filters.push(
-            sql`${lineItem.createdAt} < ${toUtcExclusiveEndOfDay(params.endDate)}::timestamptz`,
-        );
+        filters.push(sql`${lineItem.expenseDate} <= ${params.endDate}`);
     }
 
     if (cursor !== undefined) {
         filters.push(sql`(
-            ${lineItem.createdAt} < ${cursor.createdAt}
+            ${lineItem.expenseDate} < ${cursor.expenseDate}
             or (
-                ${lineItem.createdAt} = ${cursor.createdAt}
+                ${lineItem.expenseDate} = ${cursor.expenseDate}
                 and ${lineItem.id} > ${cursor.id}
             )
         )`);
@@ -76,8 +72,8 @@ export async function readAllTransactions(
         select
             ${lineItem.id} as "id",
             ${lineItem.expenseReportId} as "expenseReportId",
-            ${lineItem.createdAt} as "date",
-            to_char(${lineItem.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "cursorCreatedAt",
+            ${lineItem.expenseDate} as "date",
+            ${lineItem.expenseDate} as "cursorExpenseDate",
             ${lineItem.merchant} as "merchant",
             ${lineItem.category} as "category",
             ${lineItem.amount} as "amount",
@@ -89,7 +85,7 @@ export async function readAllTransactions(
             on ${expenseReport.id} = ${lineItem.expenseReportId}
             and ${expenseReport.tenantId} = ${lineItem.tenantId}
         where ${sql.join(filters, sql` and `)}
-        order by ${lineItem.createdAt} desc, ${lineItem.id} asc
+        order by ${lineItem.expenseDate} desc, ${lineItem.id} asc
         limit ${pageSize + 1}
     `);
     const rows = result.rows.map(toAllTransactionWithCursor);
@@ -127,7 +123,7 @@ function toAllTransactionWithCursor(
         currency: String(row.currency),
         status: status as ExpenseReportStage,
         deductible: typeof row.deductible === "boolean" ? row.deductible : null,
-        cursorCreatedAt: String(row.cursorCreatedAt),
+        cursorExpenseDate: toIsoDate(row.cursorExpenseDate),
     };
 }
 
@@ -148,22 +144,15 @@ function toPublicAllTransaction(
 }
 
 function toIsoDateTime(value: unknown): string {
+    return `${toIsoDate(value)}T00:00:00.000Z`;
+}
+
+function toIsoDate(value: unknown): string {
     if (value instanceof Date) {
-        return value.toISOString();
+        return value.toISOString().slice(0, 10);
     }
 
-    return new Date(String(value)).toISOString();
-}
-
-function toUtcStartOfDay(date: string): string {
-    return `${date}T00:00:00.000Z`;
-}
-
-function toUtcExclusiveEndOfDay(date: string): string {
-    const endDate = new Date(`${date}T00:00:00.000Z`);
-    endDate.setUTCDate(endDate.getUTCDate() + 1);
-
-    return endDate.toISOString();
+    return String(value).slice(0, 10);
 }
 
 function createCursor(
@@ -175,7 +164,7 @@ function createCursor(
 
     return Buffer.from(
         JSON.stringify({
-            createdAt: transaction.cursorCreatedAt,
+            expenseDate: transaction.cursorExpenseDate,
             id: transaction.id,
         } satisfies AllTransactionsCursor),
     ).toString("base64url");
@@ -196,13 +185,13 @@ function parseCursor(
         if (
             parsed !== null &&
             typeof parsed === "object" &&
-            "createdAt" in parsed &&
+            "expenseDate" in parsed &&
             "id" in parsed &&
-            typeof parsed.createdAt === "string" &&
+            typeof parsed.expenseDate === "string" &&
             typeof parsed.id === "string"
         ) {
             return {
-                createdAt: parsed.createdAt,
+                expenseDate: parsed.expenseDate,
                 id: parsed.id,
             };
         }

@@ -3340,7 +3340,7 @@ void describe("Expense Report routes", () => {
                 currency: "USD",
                 category: "Meals",
                 expenseDate: "2026-07-20",
-                createdAt: new Date("2026-07-20T12:00:00.000Z"),
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
             },
             {
                 id: "30000000-0000-4000-8000-000000000161",
@@ -3351,7 +3351,7 @@ void describe("Expense Report routes", () => {
                 currency: "USD",
                 category: "Meals",
                 expenseDate: "2026-07-20",
-                createdAt: new Date("2026-07-20T12:00:00.000Z"),
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
             },
         ]);
 
@@ -3388,7 +3388,7 @@ void describe("Expense Report routes", () => {
         expect(body.items?.[0]).toEqual({
             id: "30000000-0000-4000-8000-000000000160",
             expenseReportId: "60000000-0000-4000-8000-000000000160",
-            date: "2026-07-20T12:00:00.000Z",
+            date: "2026-07-20T00:00:00.000Z",
             merchant: "Cedar Bistro",
             category: "Meals",
             amount: "64.20",

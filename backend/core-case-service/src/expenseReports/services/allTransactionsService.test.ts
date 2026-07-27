@@ -84,4 +84,52 @@ void describe("readTenantAllTransactions", () => {
         ).rejects.toThrow();
         expect(readAllTransactions).not.toHaveBeenCalled();
     });
+
+    void test("accepts expense-date cursors and rejects created-at cursors", async () => {
+        const readAllTransactions = vi.fn().mockResolvedValue({
+            items: [],
+            nextCursor: null,
+        });
+        const dependencies: AllTransactionsServiceDependencies = {
+            transactionStore: { readAllTransactions },
+        };
+        const expenseDateCursor = Buffer.from(
+            JSON.stringify({
+                expenseDate: "2026-07-20",
+                id: "30000000-0000-4000-8000-000000000182",
+            }),
+        ).toString("base64url");
+        const createdAtCursor = Buffer.from(
+            JSON.stringify({
+                createdAt: "2026-07-20T00:00:00.000Z",
+                id: "30000000-0000-4000-8000-000000000182",
+            }),
+        ).toString("base64url");
+
+        await expect(
+            readTenantAllTransactions(
+                {
+                    tenantId: "40000000-0000-4000-8000-000000000182",
+                    cursor: expenseDateCursor,
+                },
+                dependencies,
+            ),
+        ).resolves.toEqual({ items: [], nextCursor: null });
+        expect(readAllTransactions).toHaveBeenCalledWith({
+            tenantId: "40000000-0000-4000-8000-000000000182",
+            cursor: expenseDateCursor,
+            limit: 50,
+        });
+
+        await expect(
+            readTenantAllTransactions(
+                {
+                    tenantId: "40000000-0000-4000-8000-000000000182",
+                    cursor: createdAtCursor,
+                },
+                dependencies,
+            ),
+        ).rejects.toThrow();
+        expect(readAllTransactions).toHaveBeenCalledTimes(1);
+    });
 });

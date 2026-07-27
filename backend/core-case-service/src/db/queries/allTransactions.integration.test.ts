@@ -75,7 +75,7 @@ void describe("readAllTransactions", () => {
                 currency: "USD",
                 category: "Travel",
                 expenseDate: "2026-07-05",
-                createdAt: new Date("2026-07-05T10:00:00.000Z"),
+                createdAt: new Date("2026-08-05T10:00:00.000Z"),
             },
             {
                 id: "85000000-0000-4000-8000-000000000104",
@@ -86,7 +86,7 @@ void describe("readAllTransactions", () => {
                 currency: "USD",
                 category: "Ground Transport",
                 expenseDate: "2026-07-05",
-                createdAt: new Date("2026-07-05T10:00:00.000Z"),
+                createdAt: new Date("2026-08-04T10:00:00.000Z"),
             },
             {
                 id: "85000000-0000-4000-8000-000000000201",
@@ -162,10 +162,10 @@ void describe("readAllTransactions", () => {
             status: "AP Review",
             deductible: null,
         });
-        expect(transactions.items[0]?.date).toBe("2026-07-05T10:00:00.000Z");
+        expect(transactions.items[0]?.date).toBe("2026-07-05T00:00:00.000Z");
     });
 
-    void test("uses UTC day boundaries for date filters", async () => {
+    void test("uses expense dates for date filters", async () => {
         const boundaryTenantId = "81000000-0000-4000-8000-000000000300";
         await db.insert(expenseReport).values({
             id: "84000000-0000-4000-8000-000000000301",
@@ -184,7 +184,7 @@ void describe("readAllTransactions", () => {
                 currency: "USD",
                 category: "Meals",
                 expenseDate: "2026-07-05",
-                createdAt: new Date("2026-07-05T23:59:59.999Z"),
+                createdAt: new Date("2026-08-05T23:59:59.999Z"),
             },
             {
                 id: "85000000-0000-4000-8000-000000000302",
@@ -195,7 +195,7 @@ void describe("readAllTransactions", () => {
                 currency: "USD",
                 category: "Meals",
                 expenseDate: "2026-07-06",
-                createdAt: new Date("2026-07-06T00:00:00.000Z"),
+                createdAt: new Date("2026-08-06T00:00:00.000Z"),
             },
         ]);
 
