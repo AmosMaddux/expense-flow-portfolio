@@ -374,6 +374,50 @@ describe("CaseQueueScreen", () => {
         expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
+    test("pulls a Submitted report into Manager Approval when a manager opens review", async () => {
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: "d104c9ca-9de7-4f85-bb23-ed907e9db002",
+                    currentStage: "Manager Approval",
+                }),
+            );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const metroRow = await screen.findByRole("row", {
+            name: /Metro Meals/i,
+        });
+        fireEvent.click(
+            within(metroRow).getByRole("button", { name: "Review" }),
+        );
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
+        expect(
+            screen.getByRole("dialog", {
+                name: "Report d104c9ca",
+            }),
+        ).toBeTruthy();
+        expect(screen.getAllByText("Manager Approval").length).toBeGreaterThan(
+            0,
+        );
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db002/transitions",
+        );
+        const transitionRequestBody =
+            fetchImplementation.mock.calls[1]?.[1]?.body;
+
+        expect(typeof transitionRequestBody).toBe("string");
+        expect(JSON.parse(transitionRequestBody as string)).toMatchObject({
+            toStage: "Manager Approval",
+            reason: "manager review started",
+        });
+    });
+
     test("approves a line item optimistically in the popup and rolls back when the API rejects the action", async () => {
         let resolveReviewResponse: (response: Response) => void = () =>
             undefined;

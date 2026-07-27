@@ -291,6 +291,24 @@ export function CaseQueueScreen(): JSX.Element {
         reviewMutation.isPending ||
         clearFlagMutation.isPending ||
         transitionMutation.isPending;
+    const canPullSubmittedReportIntoReview =
+        session.user?.roles.includes("Department Manager") ?? false;
+
+    function handleOpenReview(lineItem: ApprovalQueueLineItem): void {
+        setActionError(null);
+        setSelectedReportId(lineItem.expenseReportId);
+
+        if (
+            canPullSubmittedReportIntoReview &&
+            lineItem.currentStage === "Submitted"
+        ) {
+            transitionMutation.mutate({
+                expenseReportId: lineItem.expenseReportId,
+                toStage: "Manager Approval",
+                reason: "manager review started",
+            });
+        }
+    }
 
     return (
         <section className="case-queue" aria-labelledby="case-queue-heading">
@@ -326,10 +344,7 @@ export function CaseQueueScreen(): JSX.Element {
                     )}
                     <ApprovalQueueLineItemTable
                         lineItems={query.data ?? []}
-                        onOpenReview={(lineItem) => {
-                            setActionError(null);
-                            setSelectedReportId(lineItem.expenseReportId);
-                        }}
+                        onOpenReview={handleOpenReview}
                     />
                     {selectedReportId === null ||
                     selectedReportLineItems.length === 0 ? null : (
