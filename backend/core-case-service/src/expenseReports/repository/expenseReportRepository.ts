@@ -85,6 +85,17 @@ type ApprovalQueueLineItemRow = {
     submissionId: string;
 };
 
+type ApprovalQueueMileageEntryRow = {
+    id: string;
+    expenseReportId: string;
+    route: string;
+    distance: string;
+    mileageDate: string;
+    amount: string | null;
+    glCode: string | null;
+    submissionId: string;
+};
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -202,7 +213,15 @@ export async function findApprovalQueueLineItems(
             desc(glCodingResult.id),
         );
 
-    return toLatestApprovalQueueLineItems(rows as ApprovalQueueLineItemRow[]);
+    const lineItemRows = rows as ApprovalQueueLineItemRow[];
+    const latestSubmissionByReport =
+        readLatestSubmissionByReport(lineItemRows);
+    const mileageRows = await findApprovalQueueMileageEntries(
+        tenantId,
+        latestSubmissionByReport,
+    );
+
+    return toLatestApprovalQueueLineItems(lineItemRows, mileageRows);
 }
 
 /**
@@ -1424,15 +1443,71 @@ async function readApprovalQueueLineItemInTransaction(
     return rows[0] as ApprovalQueueLineItemRow | undefined;
 }
 
-function toLatestApprovalQueueLineItems(
+function readLatestSubmissionByReport(
     rows: ApprovalQueueLineItemRow[],
-): ApprovalQueueLineItemResponse[] {
+): Map<string, string> {
     const latestSubmissionByReport = new Map<string, string>();
     for (const row of rows) {
         if (!latestSubmissionByReport.has(row.expenseReportId)) {
             latestSubmissionByReport.set(row.expenseReportId, row.submissionId);
         }
     }
+
+    return latestSubmissionByReport;
+}
+
+async function findApprovalQueueMileageEntries(
+    tenantId: string,
+    latestSubmissionByReport: Map<string, string>,
+): Promise<ApprovalQueueMileageEntryRow[]> {
+    const reportIds = [...latestSubmissionByReport.keys()];
+    if (reportIds.length === 0) {
+        return [];
+    }
+
+    const rows = await db
+        .select({
+            id: glCodingResult.sourceId,
+            expenseReportId: glCodingResult.expenseReportId,
+            route: mileageEntry.route,
+            distance: mileageEntry.distance,
+            mileageDate: mileageEntry.mileageDate,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            submissionId: glCodingResult.submissionId,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            mileageEntry,
+            and(
+                eq(mileageEntry.tenantId, glCodingResult.tenantId),
+                eq(mileageEntry.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.sourceType, "mileage"),
+                inArray(glCodingResult.expenseReportId, reportIds),
+            ),
+        )
+        .orderBy(asc(mileageEntry.mileageDate), asc(glCodingResult.id));
+
+    return (rows as ApprovalQueueMileageEntryRow[]).filter(
+        (row) =>
+            latestSubmissionByReport.get(row.expenseReportId) ===
+            row.submissionId,
+    );
+}
+
+function toLatestApprovalQueueLineItems(
+    rows: ApprovalQueueLineItemRow[],
+    mileageRows: ApprovalQueueMileageEntryRow[],
+): ApprovalQueueLineItemResponse[] {
+    const latestSubmissionByReport = readLatestSubmissionByReport(rows);
+    const mileageEntriesByReport = groupApprovalQueueMileageEntries(
+        mileageRows,
+    );
 
     const openFlagCounts = new Map<string, number>();
     const unreviewedLineItemCounts = new Map<string, number>();
@@ -1471,6 +1546,7 @@ function toLatestApprovalQueueLineItems(
                 row,
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
+                mileageEntriesByReport.get(row.expenseReportId) ?? [],
             ),
         );
 }
@@ -1479,6 +1555,7 @@ function toApprovalQueueLineItemResponse(
     row: ApprovalQueueLineItemRow,
     openFlagCount: number,
     unreviewedLineItemCount: number,
+    mileageEntries: ApprovalQueueMileageEntryRow[] = [],
 ): ApprovalQueueLineItemResponse {
     return {
         id: row.id,
@@ -1493,6 +1570,41 @@ function toApprovalQueueLineItemResponse(
             row.currentStage === "Manager Approval" &&
             openFlagCount === 0 &&
             unreviewedLineItemCount === 0,
+        mileageEntries: mileageEntries.map(toApprovalQueueMileageEntryResponse),
+    };
+}
+
+function groupApprovalQueueMileageEntries(
+    mileageRows: ApprovalQueueMileageEntryRow[],
+): Map<string, ApprovalQueueMileageEntryRow[]> {
+    const mileageEntriesByReport = new Map<
+        string,
+        ApprovalQueueMileageEntryRow[]
+    >();
+
+    for (const row of mileageRows) {
+        const reportMileage = mileageEntriesByReport.get(row.expenseReportId);
+        if (reportMileage === undefined) {
+            mileageEntriesByReport.set(row.expenseReportId, [row]);
+        } else {
+            reportMileage.push(row);
+        }
+    }
+
+    return mileageEntriesByReport;
+}
+
+function toApprovalQueueMileageEntryResponse(
+    row: ApprovalQueueMileageEntryRow,
+) {
+    return {
+        id: row.id,
+        expenseReportId: row.expenseReportId,
+        route: row.route,
+        distance: Number(row.distance),
+        mileageDate: row.mileageDate,
+        amount: Number(row.amount ?? 0),
+        glCode: row.glCode ?? "Unmapped",
     };
 }
 

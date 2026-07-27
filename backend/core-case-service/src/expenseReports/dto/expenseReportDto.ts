@@ -298,6 +298,16 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
+export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string().min(1),
+    distance: z.coerce.number().positive(),
+    mileageDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+});
+
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),
@@ -308,6 +318,7 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     canAdvance: z.boolean(),
+    mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
 });
 
 export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(

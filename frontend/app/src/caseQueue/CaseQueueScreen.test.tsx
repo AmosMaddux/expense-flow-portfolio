@@ -28,6 +28,17 @@ const lineItems: ApprovalQueueLineItem[] = [
         flaggedLineItem: true,
         reviewAction: null,
         canAdvance: false,
+        mileageEntries: [
+            {
+                id: "f7b2017a-7d30-4d80-a360-53d00f387111",
+                expenseReportId: "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                route: "Office to client site",
+                distance: 18.5,
+                mileageDate: "2026-07-21",
+                amount: 12.4,
+                glCode: "6250",
+            },
+        ],
     },
     {
         id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
@@ -39,6 +50,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         flaggedLineItem: false,
         reviewAction: null,
         canAdvance: false,
+        mileageEntries: [],
     },
     {
         id: "e6f4d30b-20fc-4a72-9e44-190eb7d30c72",
@@ -50,6 +62,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         flaggedLineItem: true,
         reviewAction: "approve",
         canAdvance: false,
+        mileageEntries: [],
     },
 ];
 
@@ -187,6 +200,7 @@ describe("CaseQueueScreen", () => {
             name: /Metro Meals/i,
         });
         expect(within(northstarRow).getByText("$742.18")).toBeTruthy();
+        expect(within(northstarRow).getByText("18.50 miles")).toBeTruthy();
         expect(within(northstarRow).getByText("6240")).toBeTruthy();
         expect(within(northstarRow).getByText("Manager Approval")).toBeTruthy();
         expect(within(northstarRow).getByText("Over $500")).toBeTruthy();
@@ -363,6 +377,18 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByRole("table", { name: "Report review line items" }),
         ).toBeTruthy();
+        const reviewTable = screen.getByRole("table", {
+            name: "Report review line items",
+        });
+        expect(
+            within(reviewTable).getByRole("columnheader", { name: "Mileage" }),
+        ).toBeTruthy();
+        expect(within(reviewTable).getByText("18.50 miles")).toBeTruthy();
+        expect(
+            screen.queryByRole("table", {
+                name: "Report review mileage entries",
+            }),
+        ).toBeNull();
         expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
         expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
         expect(screen.getByRole("button", { name: "Clear flag" })).toBeTruthy();

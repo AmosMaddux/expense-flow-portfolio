@@ -2452,6 +2452,7 @@ void describe("Expense Report routes", () => {
         const managerId = "51000000-0000-4000-8000-000000000191";
         const reportId = "60000000-0000-4000-8000-000000000191";
         const lineItemId = "30000000-0000-4000-8000-000000000191";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000191";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -2470,24 +2471,49 @@ void describe("Expense Report routes", () => {
             currency: "USD",
             category: "Travel",
         });
-        await db.insert(glCodingResult).values({
-            id: "91000000-0000-4000-8000-000000000191",
-            submissionId: "90000000-0000-4000-8000-000000000191",
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
             tenantId,
             expenseReportId: reportId,
-            sourceType: "line_item",
-            sourceId: lineItemId,
-            category: "Travel",
-            mappingStatus: "mapped",
-            glAccountCode: "6000",
-            glAccountName: "Travel Expense",
-            amount: "642.30",
-            currency: "USD",
-            flaggedLineItem: true,
-            flagCode: "line_item_over_threshold",
-            flagMessage:
-                "Line item amount is above the MVP manual review threshold.",
+            route: "Office to client site",
+            distance: "18.50",
+            mileageDate: "2026-07-21",
         });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000191",
+                submissionId: "90000000-0000-4000-8000-000000000191",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: true,
+                flagCode: "line_item_over_threshold",
+                flagMessage:
+                    "Line item amount is above the MVP manual review threshold.",
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000191",
+                submissionId: "90000000-0000-4000-8000-000000000191",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                glAccountCode: "6250",
+                glAccountName: "Mileage Expense",
+                amount: "12.40",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+        ]);
 
         const reviewResponse = await requestApp(
             `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
@@ -2542,6 +2568,7 @@ void describe("Expense Report routes", () => {
         });
         const queueBody = (await queueResponse.json()) as Array<{
             id?: string;
+            mileageEntries?: unknown[];
             reviewAction?: string;
         }>;
 
@@ -2549,6 +2576,16 @@ void describe("Expense Report routes", () => {
         expect(queueBody).toContainEqual(
             expect.objectContaining({
                 id: lineItemId,
+                mileageEntries: [
+                    expect.objectContaining({
+                        id: mileageEntryId,
+                        route: "Office to client site",
+                        distance: 18.5,
+                        mileageDate: "2026-07-21",
+                        amount: 12.4,
+                        glCode: "6250",
+                    }),
+                ],
                 reviewAction: "reject",
             }),
         );

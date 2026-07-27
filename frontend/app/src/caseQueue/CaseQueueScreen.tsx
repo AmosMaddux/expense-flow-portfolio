@@ -30,6 +30,16 @@ import {
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
+const approvalQueueMileageEntrySchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string().min(1),
+    distance: z.coerce.number().positive(),
+    mileageDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+});
+
 const approvalQueueLineItemSchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),
@@ -40,6 +50,7 @@ const approvalQueueLineItemSchema = z.object({
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
     canAdvance: z.boolean(),
+    mileageEntries: z.array(approvalQueueMileageEntrySchema),
 });
 
 export const approvalQueueLineItemListSchema = z.array(
@@ -47,6 +58,9 @@ export const approvalQueueLineItemListSchema = z.array(
 );
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
+type ApprovalQueueMileageEntry = z.infer<
+    typeof approvalQueueMileageEntrySchema
+>;
 
 type FlagFilter = "all" | "flagged" | "clear";
 type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
@@ -471,6 +485,12 @@ function ApprovalQueueLineItemTable({
                 sortingFn: "basic",
             },
             {
+                id: "mileage",
+                header: "Mileage",
+                cell: ({ row }) =>
+                    formatMileageTotal(row.original.mileageEntries),
+            },
+            {
                 accessorKey: "glCode",
                 header: "GL Code",
             },
@@ -716,9 +736,18 @@ function ApprovalQueueReviewDialog({
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const reportLineItem = lineItems[0];
+    const mileageEntries = reportLineItem.mileageEntries;
     const canSendBackReport = reportLineItem.currentStage === "Manager Approval";
     const areAllLineItemsReviewed = lineItems.every(
         (lineItem) => lineItem.reviewAction !== null,
+    );
+    const lineItemTotal = lineItems.reduce(
+        (total, lineItem) => total + lineItem.amount,
+        0,
+    );
+    const mileageTotal = mileageEntries.reduce(
+        (total, mileageEntry) => total + mileageEntry.amount,
+        0,
     );
 
     return (
@@ -763,15 +792,7 @@ function ApprovalQueueReviewDialog({
                     </span>
                     <span>
                         Total
-                        <strong>
-                            {formatCurrency(
-                                lineItems.reduce(
-                                    (total, lineItem) =>
-                                        total + lineItem.amount,
-                                    0,
-                                ),
-                            )}
-                        </strong>
+                        <strong>{formatCurrency(lineItemTotal + mileageTotal)}</strong>
                     </span>
                 </div>
                 <div className="case-queue-dialog__table-wrap">
@@ -780,6 +801,7 @@ function ApprovalQueueReviewDialog({
                             <tr>
                                 <th scope="col">Merchant</th>
                                 <th scope="col">Amount</th>
+                                <th scope="col">Mileage</th>
                                 <th scope="col">GL Code</th>
                                 <th scope="col">Flag</th>
                                 <th scope="col">Review</th>
@@ -791,6 +813,11 @@ function ApprovalQueueReviewDialog({
                                 <tr key={lineItem.id}>
                                     <td>{lineItem.merchant}</td>
                                     <td>{formatCurrency(lineItem.amount)}</td>
+                                    <td>
+                                        {formatMileageTotal(
+                                            lineItem.mileageEntries,
+                                        )}
+                                    </td>
                                     <td>{lineItem.glCode}</td>
                                     <td>
                                         {lineItem.flaggedLineItem ? (
@@ -898,6 +925,24 @@ function formatCurrency(amount: number): string {
         currency: "USD",
         style: "currency",
     }).format(amount);
+}
+
+function formatMileageTotal(
+    mileageEntries: ApprovalQueueMileageEntry[],
+): string {
+    const mileageDistance = mileageEntries.reduce(
+        (total, entry) => total + entry.distance,
+        0,
+    );
+
+    if (mileageDistance === 0) {
+        return "-";
+    }
+
+    return `${new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: mileageDistance % 1 === 0 ? 0 : 2,
+    }).format(mileageDistance)} miles`;
 }
 
 function getMerchantInitials(merchant: string): string {
@@ -1009,7 +1054,15 @@ function replaceQueueLineItem(
     setApprovalQueueData(queryClient, (current = []) =>
         recalculateAdvanceEligibility(
             current.map((lineItem) =>
-                lineItem.id === updatedLineItem.id ? updatedLineItem : lineItem,
+                lineItem.id === updatedLineItem.id
+                    ? {
+                          ...updatedLineItem,
+                          mileageEntries:
+                              updatedLineItem.mileageEntries.length > 0
+                                  ? updatedLineItem.mileageEntries
+                                  : lineItem.mileageEntries,
+                      }
+                    : lineItem,
             ),
         ),
     );
