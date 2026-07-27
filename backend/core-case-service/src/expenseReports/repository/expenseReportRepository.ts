@@ -158,6 +158,29 @@ export async function findCurrentDraftExpenseReport(
 }
 
 /**
+ * Reads every Expense Report owned by one employee within one tenant.
+ */
+export async function findExpenseReportsByOwner(
+    tenantId: string,
+    ownerId: string,
+): Promise<ExpenseReport[]> {
+    return db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+            ),
+        )
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        );
+}
+
+/**
  * Reads saved content from an employee-owned Drafted Expense Report.
  */
 export async function findDraftExpenseContent(

@@ -7,6 +7,7 @@ import {
     getExpenseReportAuditEntries,
     getExpenseReportById,
     getMileageConfig,
+    getMySubmissions,
     postExpenseReportFlagClear,
     postDraftExpenseContent,
     postExpenseReportSubmission,
@@ -19,6 +20,7 @@ import {
 export const expenseReportRouter = Router();
 
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
+expenseReportRouter.get("/expense-reports/my-submissions", getMySubmissions);
 expenseReportRouter.post("/expense-reports", postExpenseReport);
 expenseReportRouter.get(
     "/expense-reports/drafts/current",

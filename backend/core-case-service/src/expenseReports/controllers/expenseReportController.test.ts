@@ -34,14 +34,20 @@ import {
 } from "../../errors/problem-json.js";
 
 const readCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
+const readMySubmissionsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/caseQueueService.js", () => ({
     readCachedCaseQueueStageRollups: readCachedCaseQueueStageRollupsMock,
 }));
 
+vi.mock("../services/mySubmissionsService.js", () => ({
+    readMySubmissions: readMySubmissionsMock,
+}));
+
 import {
     getCaseQueueStageRollups,
     getExpenseReportById,
+    getMySubmissions,
     postExpenseReport,
     getExpenseReportAuditEntries,
 } from "./expenseReportController.js";
@@ -49,6 +55,7 @@ import {
 void describe("Expense Report controller authorization", () => {
     beforeEach(() => {
         readCachedCaseQueueStageRollupsMock.mockReset();
+        readMySubmissionsMock.mockReset();
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
         idempotencyStoreMock.getResult.mockClear();
@@ -121,6 +128,55 @@ void describe("Expense Report controller authorization", () => {
         await getCaseQueueStageRollups(request, {} as Response, next);
 
         expect(readCachedCaseQueueStageRollupsMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
+    });
+
+    void test("scopes My Submissions from auth context instead of request input", async () => {
+        readMySubmissionsMock.mockResolvedValue([]);
+        const authenticatedTenantId = "40000000-0000-4000-8000-000000000021";
+        const authenticatedUserId = "50000000-0000-4000-8000-000000000021";
+        const request = {
+            auth: {
+                tenantId: authenticatedTenantId,
+                userId: authenticatedUserId,
+                roles: ["Employee"],
+            },
+            query: {
+                tenantId: "60000000-0000-4000-8000-000000000021",
+                ownerId: "70000000-0000-4000-8000-000000000021",
+            },
+        } as unknown as Request;
+        const json = vi.fn();
+        const status = vi.fn(() => ({ json }));
+        const next = vi.fn() as NextFunction;
+
+        await getMySubmissions(
+            request,
+            { status } as unknown as Response,
+            next,
+        );
+
+        expect(readMySubmissionsMock).toHaveBeenCalledExactlyOnceWith({
+            tenantId: authenticatedTenantId,
+            ownerId: authenticatedUserId,
+        });
+        expect(status).toHaveBeenCalledWith(200);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    void test("rejects internal roles before reading My Submissions", async () => {
+        const request = {
+            auth: {
+                tenantId: "40000000-0000-4000-8000-000000000022",
+                userId: "50000000-0000-4000-8000-000000000022",
+                roles: ["Finance Admin"],
+            },
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await getMySubmissions(request, {} as Response, next);
+
+        expect(readMySubmissionsMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
     });
 

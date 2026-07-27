@@ -18,6 +18,7 @@ import {
     ExpenseReportOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    MySubmissionListSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -121,6 +122,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
+    );
+    const mySubmissionList = registry.register(
+        "MySubmissionList",
+        MySubmissionListSchema,
     );
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
@@ -309,6 +314,30 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Employee Portal access required."),
             404: problemJsonResponse("Drafted Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/my-submissions",
+        summary: "Get the employee's Expense Reports",
+        description:
+            "Returns only Expense Reports owned by the authenticated Employee within the authenticated tenant, including workflow position and overdue state.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Employee submissions found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionList,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

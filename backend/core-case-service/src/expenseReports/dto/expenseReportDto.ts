@@ -214,6 +214,13 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
+export const ReadMySubmissionsInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+        ownerId: z.uuid(),
+    })
+    .strict();
+
 export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     id: z.uuid(),
@@ -276,6 +283,18 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
+export const MySubmissionSchema = z.object({
+    id: z.uuid(),
+    dueDate: z.iso.date(),
+    currentStage: z.enum(approvedWorkflowStages),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+});
+
+export const MySubmissionListSchema = z.array(MySubmissionSchema);
+
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -323,6 +342,8 @@ export const transitionExpenseReportStageRequestSchema =
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
+
+export const mySubmissionListSchema = MySubmissionListSchema;
 
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
@@ -398,6 +419,12 @@ export type TransitionExpenseReportStageRequest = z.infer<
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type ReadMySubmissionsParams = z.infer<
+    typeof ReadMySubmissionsInboundRequestSchema
+>;
+
+export type MySubmission = z.infer<typeof MySubmissionSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema

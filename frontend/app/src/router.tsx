@@ -25,6 +25,7 @@ import {
 } from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
+import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import {
     getNavigationItemsForRoles,
@@ -69,6 +70,8 @@ const protectedRoutes = navigationItems.map((item) =>
         component: () =>
             item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
+            ) : item.path === "/my-submissions" ? (
+                <MySubmissionsScreen />
             ) : item.path === "/log-mileage" ? (
                 <LogMileageScreen />
             ) : item.path === "/submit-expense" ? (
