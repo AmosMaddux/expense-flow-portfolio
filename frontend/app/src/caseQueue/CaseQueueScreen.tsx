@@ -48,6 +48,24 @@ export const approvalQueueLineItemListSchema = z.array(
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
 
+type FlagFilter = "all" | "flagged" | "clear";
+type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
+type LineItemMutationVariables = {
+    lineItem: ApprovalQueueLineItem;
+    action: LineItemReviewAction;
+    reason?: string;
+};
+type ClearFlagMutationVariables = {
+    lineItem: ApprovalQueueLineItem;
+    reason: string;
+};
+type TransitionMutationVariables = {
+    expenseReportId: string;
+    toStage: ExpenseReportStage;
+    reason: string;
+};
+type QueueSnapshot = Array<[QueryKey, ApprovalQueueLineItem[] | undefined]>;
+
 const reviewLineItemRequestSchema = z
     .object({
         action: z.enum(["approve", "reject"]),
@@ -80,24 +98,6 @@ const expenseReportTransitionResponseSchema = z.object({
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
 });
 
-type FlagFilter = "all" | "flagged" | "clear";
-type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
-type LineItemMutationVariables = {
-    lineItem: ApprovalQueueLineItem;
-    action: LineItemReviewAction;
-    reason?: string;
-};
-type ClearFlagMutationVariables = {
-    lineItem: ApprovalQueueLineItem;
-    reason: string;
-};
-type TransitionMutationVariables = {
-    expenseReportId: string;
-    toStage: ExpenseReportStage;
-    reason: string;
-};
-type QueueSnapshot = Array<[QueryKey, ApprovalQueueLineItem[] | undefined]>;
-
 const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
 
 /**
@@ -120,7 +120,17 @@ export function CaseQueueScreen(): JSX.Element {
     const query = useApprovalQueueLineItems();
     const session = useSession();
     const queryClient = useQueryClient();
+    const [selectedReportId, setSelectedReportId] = useState<string | null>(
+        null,
+    );
     const [actionError, setActionError] = useState<string | null>(null);
+    const selectedReportLineItems = useMemo(
+        () =>
+            (query.data ?? []).filter(
+                (lineItem) => lineItem.expenseReportId === selectedReportId,
+            ),
+        [query.data, selectedReportId],
+    );
     const reviewMutation = useMutation({
         mutationFn: async ({
             action,
@@ -277,6 +287,10 @@ export function CaseQueueScreen(): JSX.Element {
             updateQueueReportStage(queryClient, report);
         },
     });
+    const isActionPending =
+        reviewMutation.isPending ||
+        clearFlagMutation.isPending ||
+        transitionMutation.isPending;
 
     return (
         <section className="case-queue" aria-labelledby="case-queue-heading">
@@ -311,77 +325,83 @@ export function CaseQueueScreen(): JSX.Element {
                         </div>
                     )}
                     <ApprovalQueueLineItemTable
-                        isActionPending={
-                            reviewMutation.isPending ||
-                            clearFlagMutation.isPending ||
-                            transitionMutation.isPending
-                        }
                         lineItems={query.data ?? []}
-                        onAdvanceReport={(lineItem) =>
-                            transitionMutation.mutate({
-                                expenseReportId: lineItem.expenseReportId,
-                                toStage: "AP Review",
-                                reason: "manager approved after flag review",
-                            })
-                        }
-                        onStartReview={(lineItem) =>
-                            transitionMutation.mutate({
-                                expenseReportId: lineItem.expenseReportId,
-                                toStage: "Manager Approval",
-                                reason: "manager review started",
-                            })
-                        }
-                        onClearFlag={(lineItem) => {
-                            const reason = window.prompt(
-                                "Reason for clearing this flag",
-                                "reviewed receipt detail",
-                            );
-                            if (reason === null || reason.trim().length === 0) {
-                                return;
-                            }
-
-                            clearFlagMutation.mutate({
-                                lineItem,
-                                reason: reason.trim(),
-                            });
+                        onOpenReview={(lineItem) => {
+                            setActionError(null);
+                            setSelectedReportId(lineItem.expenseReportId);
                         }}
-                        onReviewLineItem={(lineItem, action) => {
-                            let reason: string | undefined;
-                            if (action === "reject") {
-                                const promptedReason = window.prompt(
-                                    "Reason for rejecting this line item",
+                    />
+                    {selectedReportId === null ||
+                    selectedReportLineItems.length === 0 ? null : (
+                        <ApprovalQueueReviewDialog
+                            isActionPending={isActionPending}
+                            lineItems={selectedReportLineItems}
+                            onAdvanceReport={(lineItem) =>
+                                transitionMutation.mutate({
+                                    expenseReportId: lineItem.expenseReportId,
+                                    toStage: "AP Review",
+                                    reason: "manager approved after flag review",
+                                })
+                            }
+                            onClearFlag={(lineItem) => {
+                                const reason = window.prompt(
+                                    "Reason for clearing this flag",
+                                    "reviewed receipt detail",
                                 );
                                 if (
-                                    promptedReason === null ||
-                                    promptedReason.trim().length === 0
+                                    reason === null ||
+                                    reason.trim().length === 0
                                 ) {
                                     return;
                                 }
 
-                                reason = promptedReason.trim();
-                            }
+                                clearFlagMutation.mutate({
+                                    lineItem,
+                                    reason: reason.trim(),
+                                });
+                            }}
+                            onClose={() => setSelectedReportId(null)}
+                            onReviewLineItem={(lineItem, action) => {
+                                let reason: string | undefined;
+                                if (action === "reject") {
+                                    const promptedReason = window.prompt(
+                                        "Reason for rejecting this line item",
+                                    );
+                                    if (
+                                        promptedReason === null ||
+                                        promptedReason.trim().length === 0
+                                    ) {
+                                        return;
+                                    }
 
-                            reviewMutation.mutate({
-                                lineItem,
-                                action,
-                                ...(reason === undefined ? {} : { reason }),
-                            });
-                        }}
-                        onSendBackReport={(lineItem) => {
-                            const reason = window.prompt(
-                                "Reason for sending this report back to Drafted",
-                            );
-                            if (reason === null || reason.trim().length === 0) {
-                                return;
-                            }
+                                    reason = promptedReason.trim();
+                                }
 
-                            transitionMutation.mutate({
-                                expenseReportId: lineItem.expenseReportId,
-                                toStage: "Drafted",
-                                reason: reason.trim(),
-                            });
-                        }}
-                    />
+                                reviewMutation.mutate({
+                                    lineItem,
+                                    action,
+                                    ...(reason === undefined ? {} : { reason }),
+                                });
+                            }}
+                            onSendBackReport={(lineItem) => {
+                                const reason = window.prompt(
+                                    "Reason for sending this report back to Drafted",
+                                );
+                                if (
+                                    reason === null ||
+                                    reason.trim().length === 0
+                                ) {
+                                    return;
+                                }
+
+                                transitionMutation.mutate({
+                                    expenseReportId: lineItem.expenseReportId,
+                                    toStage: "Drafted",
+                                    reason: reason.trim(),
+                                });
+                            }}
+                        />
+                    )}
                 </>
             )}
         </section>
@@ -389,45 +409,52 @@ export function CaseQueueScreen(): JSX.Element {
 }
 
 function ApprovalQueueLineItemTable({
-    isActionPending,
     lineItems,
-    onAdvanceReport,
-    onClearFlag,
-    onReviewLineItem,
-    onSendBackReport,
-    onStartReview,
+    onOpenReview,
 }: {
-    isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
-    onAdvanceReport: (lineItem: ApprovalQueueLineItem) => void;
-    onClearFlag: (lineItem: ApprovalQueueLineItem) => void;
-    onReviewLineItem: (
-        lineItem: ApprovalQueueLineItem,
-        action: LineItemReviewAction,
-    ) => void;
-    onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
-    onStartReview: (lineItem: ApprovalQueueLineItem) => void;
+    onOpenReview: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const reportActionItems = useMemo(
-        () => getReportActionItems(lineItems),
-        [lineItems],
-    );
     const columns = useMemo<ColumnDef<ApprovalQueueLineItem>[]>(
         () => [
             {
                 accessorKey: "merchant",
-                header: "Merchant",
+                header: "Employee",
+                cell: ({ row }) => (
+                    <div className="case-queue-employee">
+                        <span className="case-queue-employee__avatar">
+                            {getMerchantInitials(row.original.merchant)}
+                        </span>
+                        <span>
+                            <strong>{row.original.merchant}</strong>
+                            <small>
+                                Report{" "}
+                                {getReportDisplayId(
+                                    row.original.expenseReportId,
+                                )}
+                            </small>
+                        </span>
+                    </div>
+                ),
+            },
+            {
+                accessorKey: "expenseReportId",
+                header: "Submission",
                 cell: ({ getValue }) => (
-                    <strong>
-                        {getValue<ApprovalQueueLineItem["merchant"]>()}
-                    </strong>
+                    <span className="case-queue-table__muted">
+                        {getReportDisplayId(
+                            getValue<
+                                ApprovalQueueLineItem["expenseReportId"]
+                            >(),
+                        )}
+                    </span>
                 ),
             },
             {
                 accessorKey: "amount",
-                header: "Amount",
+                header: "Total Amount",
                 cell: ({ getValue }) =>
                     formatCurrency(getValue<ApprovalQueueLineItem["amount"]>()),
                 sortDescFirst: false,
@@ -472,59 +499,19 @@ function ApprovalQueueLineItemTable({
             },
             {
                 accessorKey: "reviewAction",
-                header: "Review",
-                cell: ({ row }) => {
-                    const lineItem = row.original;
-
-                    return (
-                        <div className="case-queue-actions">
-                            <button
-                                className="button button--secondary button--compact"
-                                disabled={
-                                    isActionPending ||
-                                    lineItem.currentStage !== "Manager Approval"
-                                }
-                                type="button"
-                                onClick={() =>
-                                    onReviewLineItem(lineItem, "approve")
-                                }
-                            >
-                                Approve
-                            </button>
-                            <button
-                                className="button button--secondary button--compact"
-                                disabled={
-                                    isActionPending ||
-                                    lineItem.currentStage !== "Manager Approval"
-                                }
-                                type="button"
-                                onClick={() =>
-                                    onReviewLineItem(lineItem, "reject")
-                                }
-                            >
-                                Reject
-                            </button>
-                            <button
-                                className="button button--secondary button--compact"
-                                disabled={
-                                    isActionPending ||
-                                    !lineItem.flaggedLineItem ||
-                                    lineItem.currentStage !== "Manager Approval"
-                                }
-                                type="button"
-                                onClick={() => onClearFlag(lineItem)}
-                            >
-                                Clear flag
-                            </button>
-                            <span className="case-queue-actions__state">
-                                {getReviewActionLabel(lineItem.reviewAction)}
-                            </span>
-                        </div>
-                    );
-                },
+                header: "Actions",
+                cell: ({ row }) => (
+                    <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={() => onOpenReview(row.original)}
+                    >
+                        Review
+                    </button>
+                ),
             },
         ],
-        [isActionPending, onClearFlag, onReviewLineItem],
+        [onOpenReview],
     );
     const table = useReactTable({
         columns,
@@ -545,6 +532,7 @@ function ApprovalQueueLineItemTable({
     const flagFilter =
         (table.getColumn("flaggedLineItem")?.getFilterValue() as
             FlagFilter | undefined) ?? "all";
+    const amountOverThresholdFilter = flagFilter === "flagged";
     const visibleRows = table.getRowModel().rows;
 
     return (
@@ -553,104 +541,74 @@ function ApprovalQueueLineItemTable({
                 className="case-queue-toolbar"
                 aria-label="Approval Queue filters"
             >
-                <label>
-                    <span>Stage</span>
-                    <select
-                        aria-label="Filter by stage"
-                        value={stageFilter}
-                        onChange={(event) =>
-                            table
-                                .getColumn("currentStage")
-                                ?.setFilterValue(
-                                    event.target.value === "all"
-                                        ? undefined
-                                        : event.target.value,
-                                )
-                        }
-                    >
-                        <option value="all">All stages</option>
-                        {EXPENSE_REPORT_STAGES.map((stage) => (
-                            <option key={stage} value={stage}>
-                                {stage}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label>
-                    <span>Flag</span>
-                    <select
-                        aria-label="Filter by flag status"
-                        value={flagFilter}
-                        onChange={(event) =>
-                            table
-                                .getColumn("flaggedLineItem")
-                                ?.setFilterValue(
-                                    event.target.value === "all"
-                                        ? undefined
-                                        : event.target.value,
-                                )
-                        }
-                    >
-                        <option value="all">All line items</option>
-                        <option value="flagged">Over $500</option>
-                        <option value="clear">Clear</option>
-                    </select>
-                </label>
-            </div>
-            {reportActionItems.length === 0 ? null : (
-                <section
-                    className="case-queue-report-actions"
-                    aria-label="Expense Report actions"
-                >
-                    {reportActionItems.map((lineItem) => (
-                        <div
-                            className="case-queue-report-actions__item"
-                            key={lineItem.expenseReportId}
+                <div className="case-queue-toolbar__filters">
+                    <span>Filter by:</span>
+                    <label>
+                        <span>Stage</span>
+                        <select
+                            aria-label="Filter by stage"
+                            value={stageFilter}
+                            onChange={(event) =>
+                                table
+                                    .getColumn("currentStage")
+                                    ?.setFilterValue(
+                                        event.target.value === "all"
+                                            ? undefined
+                                            : event.target.value,
+                                    )
+                            }
                         >
-                            <span>
-                                Report {lineItem.expenseReportId.slice(0, 8)}
-                            </span>
-                            {lineItem.currentStage === "Submitted" ? (
-                                <button
-                                    className="button button--secondary button--compact"
-                                    disabled={isActionPending}
-                                    type="button"
-                                    onClick={() => onStartReview(lineItem)}
-                                >
-                                    Start review
-                                </button>
-                            ) : null}
-                            {lineItem.currentStage === "Manager Approval" ? (
-                                <>
-                                    <button
-                                        className="button button--secondary button--compact"
-                                        disabled={
-                                            isActionPending ||
-                                            !lineItem.canAdvance
-                                        }
-                                        type="button"
-                                        onClick={() =>
-                                            onAdvanceReport(lineItem)
-                                        }
-                                    >
-                                        Advance
-                                    </button>
-                                    <button
-                                        className="button button--secondary button--compact"
-                                        disabled={isActionPending}
-                                        type="button"
-                                        onClick={() =>
-                                            onSendBackReport(lineItem)
-                                        }
-                                    >
-                                        Reject / Send back
-                                    </button>
-                                </>
-                            ) : null}
-                        </div>
-                    ))}
-                </section>
-            )}
+                            <option value="all">Stage: All</option>
+                            {EXPENSE_REPORT_STAGES.map((stage) => (
+                                <option key={stage} value={stage}>
+                                    {stage}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="case-queue-toolbar__check">
+                        <input
+                            aria-label="Filter to amount over 500"
+                            checked={amountOverThresholdFilter}
+                            type="checkbox"
+                            onChange={(event) =>
+                                table
+                                    .getColumn("flaggedLineItem")
+                                    ?.setFilterValue(
+                                        event.target.checked
+                                            ? "flagged"
+                                            : undefined,
+                                    )
+                            }
+                        />
+                        <span>Amount &gt; $500</span>
+                    </label>
+                </div>
+                <div className="case-queue-toolbar__actions">
+                    <button
+                        type="button"
+                        onClick={() =>
+                            setSorting((current) =>
+                                current[0]?.id === "amount" && current[0].desc
+                                    ? [{ id: "amount", desc: false }]
+                                    : [{ id: "amount", desc: true }],
+                            )
+                        }
+                    >
+                        Sort
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() =>
+                            exportApprovalQueueCsv(
+                                visibleRows.map((row) => row.original),
+                            )
+                        }
+                    >
+                        Export CSV
+                    </button>
+                </div>
+            </div>
 
             <section
                 className="case-queue-table"
@@ -663,7 +621,7 @@ function ApprovalQueueLineItemTable({
                     />
                 ) : (
                     <div className="case-queue-table__frame">
-                        <table>
+                        <table aria-label="Approval Queue line items">
                             <thead>
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <tr key={headerGroup.id}>
@@ -727,6 +685,184 @@ function ApprovalQueueLineItemTable({
     );
 }
 
+function ApprovalQueueReviewDialog({
+    isActionPending,
+    lineItems,
+    onAdvanceReport,
+    onClearFlag,
+    onClose,
+    onReviewLineItem,
+    onSendBackReport,
+}: {
+    isActionPending: boolean;
+    lineItems: ApprovalQueueLineItem[];
+    onAdvanceReport: (lineItem: ApprovalQueueLineItem) => void;
+    onClearFlag: (lineItem: ApprovalQueueLineItem) => void;
+    onClose: () => void;
+    onReviewLineItem: (
+        lineItem: ApprovalQueueLineItem,
+        action: LineItemReviewAction,
+    ) => void;
+    onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
+}): JSX.Element {
+    const reportLineItem = lineItems[0];
+
+    return (
+        <div className="case-queue-dialog__backdrop">
+            <section
+                aria-labelledby="case-queue-dialog-heading"
+                className="case-queue-dialog"
+                role="dialog"
+            >
+                <header className="case-queue-dialog__header">
+                    <div>
+                        <p className="screen-placeholder__label">
+                            Report Review
+                        </p>
+                        <h3 id="case-queue-dialog-heading">
+                            Report{" "}
+                            {getReportDisplayId(reportLineItem.expenseReportId)}
+                        </h3>
+                    </div>
+                    <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={onClose}
+                    >
+                        Close
+                    </button>
+                </header>
+                <div className="case-queue-dialog__summary">
+                    <span>
+                        Stage
+                        <strong>{reportLineItem.currentStage}</strong>
+                    </span>
+                    <span>
+                        Open flags
+                        <strong>
+                            {
+                                lineItems.filter(
+                                    (lineItem) => lineItem.flaggedLineItem,
+                                ).length
+                            }
+                        </strong>
+                    </span>
+                    <span>
+                        Total
+                        <strong>
+                            {formatCurrency(
+                                lineItems.reduce(
+                                    (total, lineItem) =>
+                                        total + lineItem.amount,
+                                    0,
+                                ),
+                            )}
+                        </strong>
+                    </span>
+                </div>
+                <div className="case-queue-dialog__table-wrap">
+                    <table aria-label="Report review line items">
+                        <thead>
+                            <tr>
+                                <th scope="col">Merchant</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">GL Code</th>
+                                <th scope="col">Flag</th>
+                                <th scope="col">Review</th>
+                                <th scope="col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {lineItems.map((lineItem) => (
+                                <tr key={lineItem.id}>
+                                    <td>{lineItem.merchant}</td>
+                                    <td>{formatCurrency(lineItem.amount)}</td>
+                                    <td>{lineItem.glCode}</td>
+                                    <td>
+                                        {lineItem.flaggedLineItem ? (
+                                            <Badge tone="warning">
+                                                Over $500
+                                            </Badge>
+                                        ) : (
+                                            <Badge tone="success">Clear</Badge>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {getReviewActionLabel(
+                                            lineItem.reviewAction,
+                                        )}
+                                    </td>
+                                    <td>
+                                        <div className="case-queue-dialog__actions">
+                                            <button
+                                                className="button button--secondary button--compact"
+                                                disabled={isActionPending}
+                                                type="button"
+                                                onClick={() =>
+                                                    onReviewLineItem(
+                                                        lineItem,
+                                                        "approve",
+                                                    )
+                                                }
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                className="button button--secondary button--compact"
+                                                disabled={isActionPending}
+                                                type="button"
+                                                onClick={() =>
+                                                    onReviewLineItem(
+                                                        lineItem,
+                                                        "reject",
+                                                    )
+                                                }
+                                            >
+                                                Reject
+                                            </button>
+                                            <button
+                                                className="button button--secondary button--compact"
+                                                disabled={
+                                                    isActionPending ||
+                                                    !lineItem.flaggedLineItem
+                                                }
+                                                type="button"
+                                                onClick={() =>
+                                                    onClearFlag(lineItem)
+                                                }
+                                            >
+                                                Clear flag
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <footer className="case-queue-dialog__footer">
+                    <button
+                        className="button button--secondary button--compact"
+                        disabled={isActionPending || !reportLineItem.canAdvance}
+                        type="button"
+                        onClick={() => onAdvanceReport(reportLineItem)}
+                    >
+                        Advance
+                    </button>
+                    <button
+                        className="button button--danger button--compact"
+                        disabled={isActionPending}
+                        type="button"
+                        onClick={() => onSendBackReport(reportLineItem)}
+                    >
+                        Reject / Send back to Drafted
+                    </button>
+                </footer>
+            </section>
+        </div>
+    );
+}
+
 function getReviewActionLabel(
     reviewAction: ApprovalQueueLineItem["reviewAction"],
 ): string {
@@ -746,6 +882,55 @@ function formatCurrency(amount: number): string {
         currency: "USD",
         style: "currency",
     }).format(amount);
+}
+
+function getMerchantInitials(merchant: string): string {
+    return merchant
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
+}
+
+function getReportDisplayId(expenseReportId: string): string {
+    return expenseReportId.slice(0, 8);
+}
+
+function exportApprovalQueueCsv(lineItems: ApprovalQueueLineItem[]): void {
+    const header = [
+        "Employee",
+        "Submission",
+        "Total Amount",
+        "GL Code",
+        "Status",
+        "Flag",
+        "Review",
+    ];
+    const rows = lineItems.map((lineItem) => [
+        lineItem.merchant,
+        getReportDisplayId(lineItem.expenseReportId),
+        formatCurrency(lineItem.amount),
+        lineItem.glCode,
+        lineItem.currentStage,
+        lineItem.flaggedLineItem ? "Amount > $500" : "Clear",
+        getReviewActionLabel(lineItem.reviewAction),
+    ]);
+    const csv = [header, ...rows]
+        .map((row) => row.map(formatCsvCell).join(","))
+        .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "approval-queue.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function formatCsvCell(value: string): string {
+    return `"${value.replaceAll('"', '""')}"`;
 }
 
 function getApprovalQueueErrorMessage(error: Error | null): string {
@@ -851,21 +1036,6 @@ function recalculateAdvanceEligibility(
             lineItem.currentStage === "Manager Approval" &&
             (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0,
     }));
-}
-
-function getReportActionItems(
-    lineItems: ApprovalQueueLineItem[],
-): ApprovalQueueLineItem[] {
-    const lineItemByReportId = new Map<string, ApprovalQueueLineItem>();
-    for (const lineItem of lineItems) {
-        if (!lineItemByReportId.has(lineItem.expenseReportId)) {
-            lineItemByReportId.set(lineItem.expenseReportId, lineItem);
-        }
-    }
-
-    return [...lineItemByReportId.values()].filter((lineItem) =>
-        ["Submitted", "Manager Approval"].includes(lineItem.currentStage),
-    );
 }
 
 async function createQueueActionError(
