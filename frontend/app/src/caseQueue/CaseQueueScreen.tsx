@@ -1,28 +1,19 @@
-import { z } from "zod";
-
 import {
     Badge,
     Button,
     EmptyState,
     ErrorState,
-    EXPENSE_REPORT_STAGES,
     LoadingSkeleton,
     StatusBadge,
     type ExpenseReportStage,
 } from "../components";
-import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
-
-const caseQueueStageRollupSchema = z.object({
-    currentStage: z.enum(EXPENSE_REPORT_STAGES),
-    reportCount: z.number().int().nonnegative(),
-    overdueCount: z.number().int().nonnegative(),
-});
-
-export const caseQueueStageRollupListSchema = z.array(
-    caseQueueStageRollupSchema,
-);
-
-export type CaseQueueStageRollup = z.infer<typeof caseQueueStageRollupSchema>;
+import { QueryRequestError } from "../query/queryClient";
+import {
+    hasNoCaseQueueReports,
+    normalizeCaseQueueRollups,
+    useCaseQueueRollups,
+    type CaseQueueStageRollup,
+} from "./caseQueueRollups";
 
 export type CaseQueueScreenProps = {
     asOfDate?: string;
@@ -35,21 +26,6 @@ const reviewRelevantStages = new Set<ExpenseReportStage>([
 ]);
 
 /**
- * Fetches authenticated Case Queue rollups for the current tenant.
- */
-export function useCaseQueueRollups(asOfDate: string) {
-    const queryString = new URLSearchParams({ asOfDate });
-
-    return useExpenseFlowQuery<CaseQueueStageRollup[]>({
-        input: `/v1/case-queue/rollups?${queryString.toString()}`,
-        keyParts: ["case-queue", "rollups", { asOfDate }],
-        parseResponse: async (response) =>
-            caseQueueStageRollupListSchema.parse(await response.json()),
-        staleTime: 30_000,
-    });
-}
-
-/**
  * Renders the wireframe-aligned Approval Queue workspace.
  */
 export function CaseQueueScreen({
@@ -59,9 +35,7 @@ export function CaseQueueScreen({
     const rollups = normalizeCaseQueueRollups(query.data ?? []);
     const metrics = calculateCaseQueueMetrics(rollups);
     const hasNoReports =
-        query.isSuccess &&
-        (rollups.length === 0 ||
-            rollups.every((rollup) => rollup.reportCount === 0));
+        query.isSuccess && hasNoCaseQueueReports(query.data ?? []);
 
     return (
         <section className="case-queue" aria-labelledby="case-queue-heading">
@@ -168,7 +142,9 @@ function SummaryCard({
     value: number | string;
 }): JSX.Element {
     return (
-        <article className={`case-queue-summary-card case-queue-summary-card--${tone}`}>
+        <article
+            className={`case-queue-summary-card case-queue-summary-card--${tone}`}
+        >
             <p>{label}</p>
             <strong>{value}</strong>
             <span>{helper}</span>
@@ -292,8 +268,8 @@ function CaseQueueSupportPanels(): JSX.Element {
                 <h3>Approval Tip</h3>
                 <p>
                     GL codes starting with '62xx' are Travel &amp;
-                    Entertainment. Ensure receipts are attached for entries
-                    over $25.
+                    Entertainment. Ensure receipts are attached for entries over
+                    $25.
                 </p>
                 <Button disabled variant="ghost">
                     View Expense Policy
@@ -327,8 +303,7 @@ function calculateCaseQueueMetrics(
             .filter((rollup) => isReviewRelevantStage(rollup.currentStage))
             .reduce((total, rollup) => total + rollup.overdueCount, 0),
         managerApprovalCount,
-        pendingApproval:
-            submittedCount + managerApprovalCount + apReviewCount,
+        pendingApproval: submittedCount + managerApprovalCount + apReviewCount,
         submittedCount,
     };
 }
@@ -341,36 +316,6 @@ function getStageReportCount(
         rollups.find((rollup) => rollup.currentStage === stage)?.reportCount ??
         0
     );
-}
-
-function normalizeCaseQueueRollups(
-    rollups: CaseQueueStageRollup[],
-): CaseQueueStageRollup[] {
-    const countsByStage = new Map<
-        ExpenseReportStage,
-        Pick<CaseQueueStageRollup, "overdueCount" | "reportCount">
-    >();
-
-    for (const rollup of rollups) {
-        const existing = countsByStage.get(rollup.currentStage) ?? {
-            overdueCount: 0,
-            reportCount: 0,
-        };
-        countsByStage.set(rollup.currentStage, {
-            overdueCount: existing.overdueCount + rollup.overdueCount,
-            reportCount: existing.reportCount + rollup.reportCount,
-        });
-    }
-
-    return EXPENSE_REPORT_STAGES.map((stage) => {
-        const counts = countsByStage.get(stage);
-
-        return {
-            currentStage: stage,
-            overdueCount: counts?.overdueCount ?? 0,
-            reportCount: counts?.reportCount ?? 0,
-        };
-    });
 }
 
 function getCaseQueueErrorMessage(error: Error | null): string {

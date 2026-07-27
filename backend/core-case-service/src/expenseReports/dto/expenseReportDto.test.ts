@@ -5,6 +5,8 @@ import {
     AuditEntryOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
+    CreateMileageEntryInboundRequestSchema,
+    createMileageEntryInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
     type AuditEntryResponse,
@@ -126,6 +128,54 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
                 id: "expense-report-one",
             }),
         ).toThrow();
+    });
+});
+
+void describe("CreateMileageEntryInboundRequestSchema", () => {
+    void test("parses route, distance, and date", () => {
+        expect(
+            CreateMileageEntryInboundRequestSchema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-23",
+            }),
+        ).toStrictEqual({
+            route: "Synthetic Office → Synthetic Client Site",
+            distance: 12.5,
+            mileageDate: "2026-07-23",
+        });
+    });
+
+    void test("rejects zero distance, malformed dates, and tenant scope", () => {
+        expect(() =>
+            CreateMileageEntryInboundRequestSchema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 0,
+                mileageDate: "July 23, 2026",
+                tenantId: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects mileage dates after the clock's current date", () => {
+        const schema = createMileageEntryInboundRequestSchema(
+            () => new Date("2026-07-25T12:00:00.000Z"),
+        );
+
+        expect(() =>
+            schema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-26",
+            }),
+        ).toThrow("Mileage date cannot be in the future.");
+        expect(
+            schema.parse({
+                route: "Synthetic Office → Synthetic Client Site",
+                distance: 12.5,
+                mileageDate: "2026-07-25",
+            }).mileageDate,
+        ).toBe("2026-07-25");
     });
 });
 

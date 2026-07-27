@@ -31,6 +31,32 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(transactionsPath?.get).toBeDefined();
     });
 
+    void test("documents receipt-byte uploads and idempotent mileage creation", () => {
+        const receiptUploadPath =
+            document.paths?.[
+                "/v1/expense-reports/{id}/receipt-uploads/{uploadId}"
+            ];
+        const mileagePath =
+            document.paths?.["/v1/expense-reports/{id}/mileage-entries"];
+        const mileageIdempotencyHeader = mileagePath?.post?.parameters?.find(
+            (parameter) =>
+                "name" in parameter && parameter.name === "Idempotency-Key",
+        );
+
+        expect(receiptUploadPath?.put).toBeDefined();
+        expect(JSON.stringify(receiptUploadPath?.put?.requestBody)).toContain(
+            "application/pdf",
+        );
+        expect(
+            JSON.stringify(receiptUploadPath?.put?.responses?.[201]),
+        ).toContain("#/components/schemas/ReceiptUploadResponse");
+        expect(mileageIdempotencyHeader).toMatchObject({
+            in: "header",
+            name: "Idempotency-Key",
+            required: true,
+        });
+    });
+
     void test("documents the login endpoint and token response fields", () => {
         const loginPath = document.paths?.["/v1/auth/login"];
         const requestBody = loginPath?.post?.requestBody;

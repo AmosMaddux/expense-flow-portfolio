@@ -145,8 +145,22 @@
         {
             "idx": 20,
             "version": "7",
+            "when": 1784937600001,
+            "tag": "0020_stale_joseph",
+            "breakpoints": true
+        },
+        {
+            "idx": 21,
+            "version": "7",
+            "when": 1785030786825,
+            "tag": "0021_known_talos",
+            "breakpoints": true
+        },
+        {
+            "idx": 22,
+            "version": "7",
             "when": 1785024000000,
-            "tag": "0020_all_transactions_pagination_idx",
+            "tag": "0022_all_transactions_pagination_idx",
             "breakpoints": true
         }
     ]

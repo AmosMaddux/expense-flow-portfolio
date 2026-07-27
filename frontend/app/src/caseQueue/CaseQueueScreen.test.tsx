@@ -11,7 +11,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
-import { CaseQueueScreen, type CaseQueueStageRollup } from "./CaseQueueScreen";
+import type { CaseQueueStageRollup } from "./caseQueueRollups";
+import { CaseQueueScreen } from "./CaseQueueScreen";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
@@ -36,10 +37,7 @@ function createAuthClientMock(): AuthClient {
     };
 }
 
-function createJsonResponse(
-    body: unknown,
-    init: ResponseInit = {},
-): Response {
+function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     return new Response(JSON.stringify(body), {
         headers: { "Content-Type": "application/json" },
         status: 200,
@@ -88,7 +86,6 @@ function renderCaseQueueScreen(
     fetchImplementation: typeof fetch,
     queryClient = createNoRetryQueryClient(),
 ): void {
-
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
@@ -159,7 +156,9 @@ describe("CaseQueueScreen", () => {
         expect(within(summary).getByText("9")).toBeTruthy();
         expect(screen.getByText("Overdue Reviews")).toBeTruthy();
         expect(within(summary).getByText("4")).toBeTruthy();
-        expect(screen.getByText("Reports past their review due date")).toBeTruthy();
+        expect(
+            screen.getByText("Reports past their review due date"),
+        ).toBeTruthy();
         expect(
             screen.getByRole("table", {
                 name: "Stage rollups from the authenticated Case Queue fetch",
@@ -168,7 +167,9 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByRole("row", { name: /Submitted 4 1 Needs review/i }),
         ).toBeTruthy();
-        expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /AP Review 2 1/i }),
+        ).toBeTruthy();
         expect(
             screen.getByRole("row", { name: /Drafted 1 6 Clear/i }),
         ).toBeTruthy();
@@ -178,7 +179,9 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByRole("row", { name: /Reconciled 6 8 Clear/i }),
         ).toBeTruthy();
-        expect(screen.getByText("Showing 6 workflow stages with 21 total reports")).toBeTruthy();
+        expect(
+            screen.getByText("Showing 6 workflow stages with 21 total reports"),
+        ).toBeTruthy();
     });
 
     test("normalizes returned rollups into canonical workflow-stage order", async () => {
@@ -194,8 +197,12 @@ describe("CaseQueueScreen", () => {
         expect(
             await screen.findByRole("row", { name: /Drafted 0 0/i }),
         ).toBeTruthy();
-        expect(screen.getByRole("row", { name: /Submitted 0 0/i })).toBeTruthy();
-        expect(screen.getByRole("row", { name: /AP Review 2 1/i })).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /Submitted 0 0/i }),
+        ).toBeTruthy();
+        expect(
+            screen.getByRole("row", { name: /AP Review 2 1/i }),
+        ).toBeTruthy();
         expect(
             screen.getByText("Showing 6 workflow stages with 2 total reports"),
         ).toBeTruthy();
@@ -246,7 +253,9 @@ describe("CaseQueueScreen", () => {
 
         renderCaseQueueScreen(fetchImplementation);
 
-        expect(await screen.findByText("Synthetic rollup outage.")).toBeTruthy();
+        expect(
+            await screen.findByText("Synthetic rollup outage."),
+        ).toBeTruthy();
         expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
         expect(screen.queryByLabelText("Case Queue summary")).toBeNull();
         expect(screen.queryByRole("table")).toBeNull();
@@ -321,7 +330,9 @@ describe("CaseQueueScreen", () => {
             createFastProductionRetryQueryClient(),
         );
 
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(3));
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(3),
+        );
         expect(await screen.findByText("Synthetic retry outage.")).toBeTruthy();
         expect(screen.queryByLabelText("Case Queue summary")).toBeNull();
     });
@@ -345,7 +356,9 @@ describe("CaseQueueScreen", () => {
         expect(await screen.findByText("Synthetic outage.")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-        await waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(2));
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
         expect(
             await screen.findByRole("row", { name: /Submitted 2 0/i }),
         ).toBeTruthy();

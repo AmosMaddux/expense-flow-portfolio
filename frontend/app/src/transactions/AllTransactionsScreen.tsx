@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import {
@@ -34,6 +34,10 @@ const allTransactionPageSchema = z.object({
 
 export type AllTransaction = z.infer<typeof allTransactionSchema>;
 export type AllTransactionPage = z.infer<typeof allTransactionPageSchema>;
+type LoadedTransactionPage = {
+    cursor: string | null;
+    page: AllTransactionPage;
+};
 
 export type AllTransactionsFilters = {
     category: string;
@@ -80,10 +84,13 @@ export function AllTransactionsScreen(): JSX.Element {
     const [appliedFilters, setAppliedFilters] =
         useState<AllTransactionsFilters>(emptyFilters);
     const [cursor, setCursor] = useState<string | null>(null);
-    const [transactions, setTransactions] = useState<AllTransaction[]>([]);
+    const [loadedPages, setLoadedPages] = useState<LoadedTransactionPage[]>([]);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
-    const loadedPageKeys = useRef(new Set<string>());
     const query = useAllTransactions(appliedFilters, cursor);
+    const transactions = useMemo(
+        () => loadedPages.flatMap((loadedPage) => loadedPage.page.items),
+        [loadedPages],
+    );
     const categories = useMemo(
         () =>
             Array.from(
@@ -98,18 +105,29 @@ export function AllTransactionsScreen(): JSX.Element {
         page: AllTransactionPage,
         pageCursor: string | null,
     ) => {
-        const pageKey = pageCursor ?? "first";
-        if (loadedPageKeys.current.has(pageKey)) {
-            setNextCursor(page.nextCursor);
-            return;
-        }
+        setLoadedPages((currentPages) => {
+            const existingPageIndex = currentPages.findIndex(
+                (loadedPage) => loadedPage.cursor === pageCursor,
+            );
+            if (existingPageIndex === -1) {
+                return [...currentPages, { cursor: pageCursor, page }];
+            }
 
-        loadedPageKeys.current.add(pageKey);
-        setTransactions((currentTransactions) =>
-            pageCursor === null
-                ? page.items
-                : [...currentTransactions, ...page.items],
-        );
+            const nextPage = currentPages[existingPageIndex + 1];
+            const shouldKeepFollowingPages =
+                nextPage === undefined || nextPage.cursor === page.nextCursor;
+            const updatedPages = currentPages
+                .slice(0, existingPageIndex + 1)
+                .map((loadedPage, index) =>
+                    index === existingPageIndex
+                        ? { cursor: pageCursor, page }
+                        : loadedPage,
+                );
+
+            return shouldKeepFollowingPages
+                ? [...updatedPages, ...currentPages.slice(existingPageIndex + 1)]
+                : updatedPages;
+        });
         setNextCursor(page.nextCursor);
     };
 
@@ -123,10 +141,9 @@ export function AllTransactionsScreen(): JSX.Element {
     }, [cursor, query.data]);
 
     const resetPagination = () => {
-        loadedPageKeys.current.clear();
         setCursor(null);
         setNextCursor(null);
-        setTransactions([]);
+        setLoadedPages([]);
     };
 
     const applyFilters = () => {
@@ -353,17 +370,19 @@ function AllTransactionsFiltersForm({
                     value={filters.endDate}
                 />
             </label>
-            <Button size="sm" type="submit" variant="primary">
-                Apply
-            </Button>
-            <Button
-                onClick={onClear}
-                size="sm"
-                type="button"
-                variant="secondary"
-            >
-                Clear
-            </Button>
+            <div className="all-transactions-filters__actions">
+                <Button size="sm" type="submit" variant="primary">
+                    Apply
+                </Button>
+                <Button
+                    onClick={onClear}
+                    size="sm"
+                    type="button"
+                    variant="secondary"
+                >
+                    Clear
+                </Button>
+            </div>
         </form>
     );
 }

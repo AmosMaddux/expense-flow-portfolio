@@ -274,8 +274,8 @@ describe("authentication UI", () => {
 
 describe("role landing selection", () => {
     test.each([
-        ["Finance Admin", "Case Queue"],
-        ["Department Manager", "Case Queue"],
+        ["Finance Admin", "Finance Dashboard"],
+        ["Department Manager", "Finance Dashboard"],
         ["Employee", "Employee Portal"],
         ["Admin", "Administration"],
     ] satisfies Array<[Role, string]>)(

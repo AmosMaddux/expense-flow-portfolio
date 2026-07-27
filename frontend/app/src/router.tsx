@@ -24,6 +24,9 @@ import {
     SignInScreen,
 } from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
+import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
+import { LogMileageScreen } from "./mileage/LogMileageScreen";
+import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
     getNavigationItemsForRoles,
@@ -66,10 +69,16 @@ const protectedRoutes = navigationItems.map((item) =>
         getParentRoute: () => authenticatedRoute,
         path: item.path,
         component: () =>
-            item.path === "/approval-queue" ? (
+            item.path === "/finance-dashboard" ? (
+                <FinanceDashboardScreen />
+            ) : item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
+            ) : item.path === "/log-mileage" ? (
+                <LogMileageScreen />
+            ) : item.path === "/submit-expense" ? (
+                <SubmitExpenseScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),
@@ -113,7 +122,7 @@ function IndexRedirect(): JSX.Element {
 
 function LoginRoute(): JSX.Element {
     const session = useSession();
-    const search = loginRoute.useSearch();
+    const { redirect } = loginRoute.useSearch();
     const [view, setView] = useState<UnauthenticatedView>("sign-in");
     const [pendingCredentials, setPendingCredentials] =
         useState<PendingCredentials | null>(null);
@@ -125,7 +134,7 @@ function LoginRoute(): JSX.Element {
     if (session.user !== null) {
         return (
             <RouteRedirect
-                to={getPostLoginPath(session.user, search.redirect)}
+                to={getPostLoginPath(session.user, redirect)}
             />
         );
     }
@@ -197,13 +206,19 @@ function LoginRoute(): JSX.Element {
 function AuthenticatedLayout(): JSX.Element {
     const session = useSession();
     const location = useLocation();
+    const [isExplicitSignOut, setIsExplicitSignOut] = useState(false);
 
     if (session.isRestoring) {
         return <AppStatus message="Restoring session" />;
     }
 
     if (session.user === null) {
-        return <RouteRedirect redirect={location.pathname} to="/login" />;
+        return (
+            <RouteRedirect
+                redirect={isExplicitSignOut ? undefined : location.pathname}
+                to="/login"
+            />
+        );
     }
 
     if (!isPathAllowedForUser(location.pathname, session.user)) {
@@ -216,7 +231,13 @@ function AuthenticatedLayout(): JSX.Element {
             signedInRole={session.user.role}
             signedInRoles={session.user.roles}
             onLogout={async () => {
-                await session.logout();
+                setIsExplicitSignOut(true);
+                try {
+                    await session.logout();
+                } catch (error: unknown) {
+                    setIsExplicitSignOut(false);
+                    throw error;
+                }
             }}
         >
             <RoutedWorkspaceOutlet />
@@ -279,13 +300,17 @@ function getDashboardPathForUser(user: SessionUser): string {
     return getNavigationItemsForRoles(user.roles)[0]?.path ?? "/login";
 }
 
-function getPostLoginPath(user: SessionUser, redirectPath?: string): string {
+function getPostLoginPath(
+    user: SessionUser,
+    requestedPath: string | undefined,
+): string {
     if (
-        redirectPath !== undefined &&
-        redirectPath.startsWith("/") &&
-        isPathAllowedForUser(redirectPath, user)
+        requestedPath !== undefined &&
+        requestedPath.startsWith("/") &&
+        !requestedPath.startsWith("//") &&
+        isPathAllowedForUser(requestedPath, user)
     ) {
-        return redirectPath;
+        return requestedPath;
     }
 
     return getDashboardPathForUser(user);

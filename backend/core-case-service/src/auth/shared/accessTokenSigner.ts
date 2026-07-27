@@ -7,6 +7,7 @@ export type AccessTokenSubject = {
     tenantId: string;
     userId: string;
     roles: RoleName[];
+    servicePermissions?: ["expense-report:submit"];
 };
 
 export type IssuedAccessToken = {
@@ -34,6 +35,9 @@ export function signAccessToken(
         sub: subject.userId,
         tenant_id: subject.tenantId,
         roles: subject.roles,
+        ...(subject.servicePermissions === undefined
+            ? {}
+            : { service_permissions: subject.servicePermissions }),
         token_use: "access",
         iat: issuedAtSeconds,
         exp: expiresAtSeconds,

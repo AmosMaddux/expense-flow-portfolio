@@ -171,6 +171,59 @@ describe("AllTransactionsScreen", () => {
         expect(screen.getByText("Showing 2 line items")).toBeTruthy();
     });
 
+    test("replaces already-loaded rows when a page refetch returns newer transactions", async () => {
+        const originalTransactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000176",
+                expenseReportId: "60000000-0000-4000-8000-000000000176",
+                date: "2026-07-20T12:00:00.000Z",
+                merchant: "Cedar Bistro",
+                category: "Meals",
+                amount: "64.20",
+                currency: "USD",
+                status: "AP Review",
+                deductible: null,
+            },
+        ];
+        const updatedTransactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000177",
+                expenseReportId: "60000000-0000-4000-8000-000000000177",
+                date: "2026-07-21T12:00:00.000Z",
+                merchant: "Skyline Supply",
+                category: "Office Supplies",
+                amount: "118.75",
+                currency: "USD",
+                status: "Submitted",
+                deductible: true,
+            },
+        ];
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                createJsonResponse(
+                    createTransactionPage(originalTransactions),
+                ),
+            )
+            .mockResolvedValueOnce(
+                createJsonResponse(
+                    createTransactionPage(updatedTransactions),
+                ),
+            );
+        const queryClient = createNoRetryQueryClient();
+
+        renderAllTransactionsScreen(fetchImplementation, queryClient);
+
+        expect(await screen.findByText("Cedar Bistro")).toBeTruthy();
+
+        await queryClient.invalidateQueries();
+
+        expect(await screen.findByText("Skyline Supply")).toBeTruthy();
+        expect(screen.queryByText("Cedar Bistro")).toBeNull();
+        expect(screen.getByText("Showing 1 line items")).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    });
+
     test("keeps current rows when already-applied filters are applied again", async () => {
         const transactions: AllTransaction[] = [
             {

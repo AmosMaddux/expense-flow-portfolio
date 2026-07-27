@@ -52,6 +52,7 @@ void describe("readAllTransactions", () => {
                 amount: "92.41",
                 currency: "USD",
                 category: "Office Supplies",
+                expenseDate: "2026-07-01",
                 createdAt: new Date("2026-07-01T10:00:00.000Z"),
             },
             {
@@ -62,6 +63,7 @@ void describe("readAllTransactions", () => {
                 amount: "41.25",
                 currency: "USD",
                 category: "Meals",
+                expenseDate: "2026-07-03",
                 createdAt: new Date("2026-07-03T10:00:00.000Z"),
             },
             {
@@ -72,6 +74,7 @@ void describe("readAllTransactions", () => {
                 amount: "512.09",
                 currency: "USD",
                 category: "Travel",
+                expenseDate: "2026-07-05",
                 createdAt: new Date("2026-07-05T10:00:00.000Z"),
             },
             {
@@ -82,6 +85,7 @@ void describe("readAllTransactions", () => {
                 amount: "37.00",
                 currency: "USD",
                 category: "Ground Transport",
+                expenseDate: "2026-07-05",
                 createdAt: new Date("2026-07-05T10:00:00.000Z"),
             },
             {
@@ -92,6 +96,7 @@ void describe("readAllTransactions", () => {
                 amount: "18.00",
                 currency: "USD",
                 category: "Travel",
+                expenseDate: "2026-07-06",
                 createdAt: new Date("2026-07-06T10:00:00.000Z"),
             },
         ]);
@@ -178,6 +183,7 @@ void describe("readAllTransactions", () => {
                 amount: "24.00",
                 currency: "USD",
                 category: "Meals",
+                expenseDate: "2026-07-05",
                 createdAt: new Date("2026-07-05T23:59:59.999Z"),
             },
             {
@@ -188,6 +194,7 @@ void describe("readAllTransactions", () => {
                 amount: "18.00",
                 currency: "USD",
                 category: "Meals",
+                expenseDate: "2026-07-06",
                 createdAt: new Date("2026-07-06T00:00:00.000Z"),
             },
         ]);
