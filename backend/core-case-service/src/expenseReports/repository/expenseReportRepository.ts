@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -29,6 +29,8 @@ export const expenseReportSubmittedReason = "report_submitted";
 export const transitionDeniedReasonPrefix = "transition_denied:";
 export const unclearedFlagTransitionDenialReason =
     "Expense Report has uncleared over-threshold line-item flags.";
+export const unreviewedLineItemTransitionDenialReason =
+    "Expense Report has line items that have not been reviewed.";
 
 type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
@@ -1043,12 +1045,19 @@ export async function reviewExpenseReportLineItem(request: {
             request.tenantId,
             request.expenseReportId,
         );
+        const unreviewedLineItemCount =
+            await countUnreviewedLineItemsInTransaction(
+                transaction,
+                request.tenantId,
+                request.expenseReportId,
+            );
 
         return {
             kind: "reviewed",
             lineItem: toApprovalQueueLineItemResponse(
                 lineItemRow,
                 openFlagCount,
+                unreviewedLineItemCount,
             ),
         };
     });
@@ -1101,6 +1110,26 @@ export async function transitionExpenseReportStage(
                     request,
                     currentStage,
                     unclearedFlagTransitionDenialReason,
+                );
+
+                return false;
+            }
+        }
+
+        if (isManagerApprovalLineItemReviewGate(request)) {
+            const unreviewedLineItemCount =
+                await countUnreviewedLineItemsInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.id,
+                );
+
+            if (unreviewedLineItemCount > 0) {
+                await writeDeniedTransitionLog(
+                    transaction,
+                    request,
+                    currentStage,
+                    unreviewedLineItemTransitionDenialReason,
                 );
 
                 return false;
@@ -1316,6 +1345,37 @@ async function countOpenExpenseReportFlagsInTransaction(
     return rows.length;
 }
 
+async function countUnreviewedLineItemsInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<number> {
+    const latestSubmissionId = await readLatestSubmissionId(
+        transaction,
+        tenantId,
+        expenseReportId,
+    );
+
+    if (latestSubmissionId === undefined) {
+        return 0;
+    }
+
+    const rows = await transaction
+        .select({ id: glCodingResult.id })
+        .from(glCodingResult)
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.submissionId, latestSubmissionId),
+                eq(glCodingResult.sourceType, "line_item"),
+                isNull(glCodingResult.lineItemReviewAction),
+            ),
+        );
+
+    return rows.length;
+}
+
 async function readApprovalQueueLineItemInTransaction(
     transaction: TransactionContext,
     tenantId: string,
@@ -1375,6 +1435,7 @@ function toLatestApprovalQueueLineItems(
     }
 
     const openFlagCounts = new Map<string, number>();
+    const unreviewedLineItemCounts = new Map<string, number>();
     for (const row of rows) {
         if (
             latestSubmissionByReport.get(row.expenseReportId) ===
@@ -1384,6 +1445,17 @@ function toLatestApprovalQueueLineItems(
             openFlagCounts.set(
                 row.expenseReportId,
                 (openFlagCounts.get(row.expenseReportId) ?? 0) + 1,
+            );
+        }
+
+        if (
+            latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId &&
+            row.reviewAction === null
+        ) {
+            unreviewedLineItemCounts.set(
+                row.expenseReportId,
+                (unreviewedLineItemCounts.get(row.expenseReportId) ?? 0) + 1,
             );
         }
     }
@@ -1398,6 +1470,7 @@ function toLatestApprovalQueueLineItems(
             toApprovalQueueLineItemResponse(
                 row,
                 openFlagCounts.get(row.expenseReportId) ?? 0,
+                unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
             ),
         );
 }
@@ -1405,6 +1478,7 @@ function toLatestApprovalQueueLineItems(
 function toApprovalQueueLineItemResponse(
     row: ApprovalQueueLineItemRow,
     openFlagCount: number,
+    unreviewedLineItemCount: number,
 ): ApprovalQueueLineItemResponse {
     return {
         id: row.id,
@@ -1416,7 +1490,9 @@ function toApprovalQueueLineItemResponse(
         flaggedLineItem: row.flaggedLineItem,
         reviewAction: row.reviewAction,
         canAdvance:
-            row.currentStage === "Manager Approval" && openFlagCount === 0,
+            row.currentStage === "Manager Approval" &&
+            openFlagCount === 0 &&
+            unreviewedLineItemCount === 0,
     };
 }
 
@@ -1446,6 +1522,15 @@ function isManagerApprovalFlagGate(
     return (
         request.fromStage === "Manager Approval" &&
         request.toStage === "AP Review"
+    );
+}
+
+function isManagerApprovalLineItemReviewGate(
+    request: TransitionExpenseReportStageRequest,
+): boolean {
+    return (
+        request.fromStage === "Manager Approval" &&
+        (request.toStage === "AP Review" || request.toStage === "Drafted")
     );
 }
 

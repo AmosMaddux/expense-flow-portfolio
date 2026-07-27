@@ -717,6 +717,9 @@ function ApprovalQueueReviewDialog({
 }): JSX.Element {
     const reportLineItem = lineItems[0];
     const canSendBackReport = reportLineItem.currentStage === "Manager Approval";
+    const areAllLineItemsReviewed = lineItems.every(
+        (lineItem) => lineItem.reviewAction !== null,
+    );
 
     return (
         <div className="case-queue-dialog__backdrop">
@@ -863,7 +866,7 @@ function ApprovalQueueReviewDialog({
                     {canSendBackReport ? (
                         <button
                             className="button button--danger button--compact"
-                            disabled={isActionPending}
+                            disabled={isActionPending || !areAllLineItemsReviewed}
                             type="button"
                             onClick={() => onSendBackReport(reportLineItem)}
                         >
@@ -1052,11 +1055,20 @@ function recalculateAdvanceEligibility(
     lineItems: ApprovalQueueLineItem[],
 ): ApprovalQueueLineItem[] {
     const openFlagCounts = new Map<string, number>();
+    const unreviewedLineItemCounts = new Map<string, number>();
     for (const lineItem of lineItems) {
         if (lineItem.flaggedLineItem) {
             openFlagCounts.set(
                 lineItem.expenseReportId,
                 (openFlagCounts.get(lineItem.expenseReportId) ?? 0) + 1,
+            );
+        }
+
+        if (lineItem.reviewAction === null) {
+            unreviewedLineItemCounts.set(
+                lineItem.expenseReportId,
+                (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) +
+                    1,
             );
         }
     }
@@ -1065,7 +1077,9 @@ function recalculateAdvanceEligibility(
         ...lineItem,
         canAdvance:
             lineItem.currentStage === "Manager Approval" &&
-            (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0,
+            (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
+            (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) ===
+                0,
     }));
 }
 

@@ -454,11 +454,19 @@ describe("CaseQueueScreen", () => {
         );
     });
 
-    test("clears the last report flag from the popup and enables the advance action", async () => {
+    test("requires every line item to be reviewed before enabling the advance action", async () => {
         const fetchImplementation = vi
             .fn<typeof fetch>()
             .mockResolvedValueOnce(createJsonResponse(lineItems))
-            .mockResolvedValueOnce(createJsonResponse({ clearedFlagCount: 1 }));
+            .mockResolvedValueOnce(createJsonResponse({ clearedFlagCount: 1 }))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    ...lineItems[0],
+                    flaggedLineItem: false,
+                    reviewAction: "approve",
+                    canAdvance: true,
+                }),
+            );
         vi.spyOn(window, "prompt").mockReturnValue("reviewed receipt detail");
 
         renderCaseQueueScreen(fetchImplementation);
@@ -485,9 +493,24 @@ describe("CaseQueueScreen", () => {
             screen
                 .getByRole("button", { name: "Advance" })
                 .hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(3),
+        );
+        expect(screen.getByText("Approved")).toBeTruthy();
+        expect(
+            screen
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
         ).toBe(false);
         expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
             "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/flags/clear",
+        );
+        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/line-items/a7a69670-b8ad-4850-9d55-4c15db31786f/review",
         );
     });
 
@@ -536,6 +559,13 @@ describe("CaseQueueScreen", () => {
             .mockResolvedValueOnce(createJsonResponse(lineItems))
             .mockResolvedValueOnce(
                 createJsonResponse({
+                    ...lineItems[0],
+                    reviewAction: "reject",
+                    canAdvance: false,
+                }),
+            )
+            .mockResolvedValueOnce(
+                createJsonResponse({
                     id: "d104c9ca-9de7-4f85-bb23-ed907e9db001",
                     currentStage: "Drafted",
                 }),
@@ -552,6 +582,28 @@ describe("CaseQueueScreen", () => {
         fireEvent.click(
             within(northstarRow).getByRole("button", { name: "Review" }),
         );
+        expect(
+            screen
+                .getByRole("button", {
+                    name: "Reject / Send back to Drafted",
+                })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
+        expect(screen.getByText("Rejected")).toBeTruthy();
+        expect(
+            screen
+                .getByRole("button", {
+                    name: "Reject / Send back to Drafted",
+                })
+                .hasAttribute("disabled"),
+        ).toBe(false);
+
         fireEvent.click(
             screen.getByRole("button", {
                 name: "Reject / Send back to Drafted",
@@ -559,17 +611,17 @@ describe("CaseQueueScreen", () => {
         );
 
         await waitFor(() =>
-            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+            expect(fetchImplementation).toHaveBeenCalledTimes(3),
         );
         expect(screen.queryByRole("dialog")).toBeNull();
         expect(screen.queryByText("Northstar Hotels")).toBeNull();
         expect(screen.queryByRole("row", { name: /Drafted/i })).toBeNull();
         expect(screen.getByText("Showing 2 of 2 line items")).toBeTruthy();
-        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
             "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/transitions",
         );
         const transitionRequestBody =
-            fetchImplementation.mock.calls[1]?.[1]?.body;
+            fetchImplementation.mock.calls[2]?.[1]?.body;
 
         expect(typeof transitionRequestBody).toBe("string");
         expect(JSON.parse(transitionRequestBody as string)).toMatchObject({

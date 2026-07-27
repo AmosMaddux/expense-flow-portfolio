@@ -2203,7 +2203,7 @@ void describe("Expense Report routes", () => {
             );
         },
     );
-    void test("blocks Manager Approval while flags remain and advances after clearing the last flag", async () => {
+    void test("blocks Manager Approval until flags are clear and all line items are reviewed", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000152";
         const owner = "50000000-0000-4000-8000-000000000152";
         const managerId = "51000000-0000-4000-8000-000000000152";
@@ -2216,6 +2216,16 @@ void describe("Expense Report routes", () => {
             owner,
             dueDate: "2026-08-17",
             currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
         });
         await db.insert(glCodingResult).values({
             id: "91000000-0000-4000-8000-000000000152",
@@ -2298,7 +2308,7 @@ void describe("Expense Report routes", () => {
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
-        const advanceResponse = await requestApp(
+        const unreviewedAdvanceResponse = await requestApp(
             `/v1/expense-reports/${reportId}/transitions`,
             {
                 method: "POST",
@@ -2314,6 +2324,41 @@ void describe("Expense Report routes", () => {
                 }),
             },
         );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const advanceResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved after line-item review",
+                }),
+            },
+        );
         const advanceBody = (await advanceResponse.json()) as {
             currentStage?: string;
         };
@@ -2321,8 +2366,84 @@ void describe("Expense Report routes", () => {
         expect(blockedResponse.status).toBe(409);
         expect(clearResponse.status).toBe(200);
         expect(clearBody).toMatchObject({ clearedFlagCount: 1 });
+        expect(unreviewedAdvanceResponse.status).toBe(409);
+        expect(reviewResponse.status).toBe(200);
         expect(advanceResponse.status).toBe(200);
         expect(advanceBody.currentStage).toBe("AP Review");
+    });
+
+    void test("blocks Manager Approval send-back until all line items are reviewed", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000193";
+        const owner = "50000000-0000-4000-8000-000000000193";
+        const managerId = "51000000-0000-4000-8000-000000000193";
+        const reportId = "60000000-0000-4000-8000-000000000193";
+        const lineItemId = "30000000-0000-4000-8000-000000000193";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000193",
+            submissionId: "90000000-0000-4000-8000-000000000193",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "642.30",
+            currency: "USD",
+            flaggedLineItem: false,
+            lineItemReviewAction: null,
+        });
+
+        const sendBackResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "employee correction needed",
+                }),
+            },
+        );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(sendBackResponse.status).toBe(409);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_denied",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Drafted",
+                denialReason:
+                    "Expense Report has line items that have not been reviewed.",
+            }),
+        );
     });
 
     void test("reviews a Manager Approval line item and exposes the updated queue row", async () => {
@@ -2957,7 +3078,7 @@ void describe("Expense Report routes", () => {
                 id: lineItemId,
                 glCode: "6010",
                 flaggedLineItem: false,
-                canAdvance: true,
+                canAdvance: false,
             }),
         ]);
         expect(reviewResponse.status).toBe(200);
@@ -3266,6 +3387,20 @@ void describe("Expense Report routes", () => {
             },
         );
         await resetRateLimit();
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await resetRateLimit();
         const apReviewResponse = await requestApp(
             `/v1/expense-reports/${created.id}/transitions`,
             {
@@ -3303,6 +3438,7 @@ void describe("Expense Report routes", () => {
         );
 
         expect(managerApprovalResponse.status).toBe(200);
+        expect(reviewResponse.status).toBe(200);
         expect(apReviewResponse.status).toBe(200);
         expect(sendBackResponse.status).toBe(200);
         await resetRateLimit();
