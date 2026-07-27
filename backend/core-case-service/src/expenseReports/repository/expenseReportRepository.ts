@@ -187,6 +187,11 @@ export async function findApprovalQueueLineItems(
             and(
                 eq(glCodingResult.tenantId, tenantId),
                 eq(glCodingResult.sourceType, "line_item"),
+                inArray(expenseReport.currentStage, [
+                    "Submitted",
+                    "Manager Approval",
+                    "AP Review",
+                ]),
             ),
         )
         .orderBy(

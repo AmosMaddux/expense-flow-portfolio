@@ -262,15 +262,10 @@ export function CaseQueueScreen(): JSX.Element {
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
             setApprovalQueueData(queryClient, (current = []) =>
-                recalculateAdvanceEligibility(
-                    current.map((lineItem) =>
-                        lineItem.expenseReportId === variables.expenseReportId
-                            ? {
-                                  ...lineItem,
-                                  currentStage: variables.toStage,
-                              }
-                            : lineItem,
-                    ),
+                updateQueueReportStageInLineItems(
+                    current,
+                    variables.expenseReportId,
+                    variables.toStage,
                 ),
             );
 
@@ -721,6 +716,7 @@ function ApprovalQueueReviewDialog({
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
 }): JSX.Element {
     const reportLineItem = lineItems[0];
+    const canSendBackReport = reportLineItem.currentStage === "Manager Approval";
 
     return (
         <div className="case-queue-dialog__backdrop">
@@ -864,14 +860,16 @@ function ApprovalQueueReviewDialog({
                     >
                         Advance
                     </button>
-                    <button
-                        className="button button--danger button--compact"
-                        disabled={isActionPending}
-                        type="button"
-                        onClick={() => onSendBackReport(reportLineItem)}
-                    >
-                        Reject / Send back to Drafted
-                    </button>
+                    {canSendBackReport ? (
+                        <button
+                            className="button button--danger button--compact"
+                            disabled={isActionPending}
+                            type="button"
+                            onClick={() => onSendBackReport(reportLineItem)}
+                        >
+                            Reject / Send back to Drafted
+                        </button>
+                    ) : null}
                 </footer>
             </section>
         </div>
@@ -1019,15 +1017,33 @@ function updateQueueReportStage(
     report: z.infer<typeof expenseReportTransitionResponseSchema>,
 ): void {
     setApprovalQueueData(queryClient, (current = []) =>
-        recalculateAdvanceEligibility(
-            current.map((lineItem) =>
-                lineItem.expenseReportId === report.id
-                    ? {
-                          ...lineItem,
-                          currentStage: report.currentStage,
-                      }
-                    : lineItem,
-            ),
+        updateQueueReportStageInLineItems(
+            current,
+            report.id,
+            report.currentStage,
+        ),
+    );
+}
+
+function updateQueueReportStageInLineItems(
+    lineItems: ApprovalQueueLineItem[],
+    expenseReportId: string,
+    currentStage: ExpenseReportStage,
+): ApprovalQueueLineItem[] {
+    if (currentStage === "Drafted") {
+        return lineItems.filter(
+            (lineItem) => lineItem.expenseReportId !== expenseReportId,
+        );
+    }
+
+    return recalculateAdvanceEligibility(
+        lineItems.map((lineItem) =>
+            lineItem.expenseReportId === expenseReportId
+                ? {
+                      ...lineItem,
+                      currentStage,
+                  }
+                : lineItem,
         ),
     );
 }

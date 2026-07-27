@@ -530,7 +530,7 @@ describe("CaseQueueScreen", () => {
         ).toBe(true);
     });
 
-    test("sends a report back to Drafted from the popup with a required reason", async () => {
+    test("sends a report back to Drafted and removes it from the manager queue", async () => {
         const fetchImplementation = vi
             .fn<typeof fetch>()
             .mockResolvedValueOnce(createJsonResponse(lineItems))
@@ -561,7 +561,10 @@ describe("CaseQueueScreen", () => {
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledTimes(2),
         );
-        expect(screen.getAllByText("Drafted").length).toBeGreaterThan(0);
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(screen.queryByText("Northstar Hotels")).toBeNull();
+        expect(screen.queryByRole("row", { name: /Drafted/i })).toBeNull();
+        expect(screen.getByText("Showing 2 of 2 line items")).toBeTruthy();
         expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
             "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/transitions",
         );
@@ -573,6 +576,33 @@ describe("CaseQueueScreen", () => {
             toStage: "Drafted",
             reason: "employee correction needed",
         });
+    });
+
+    test("does not expose report send-back after a report reaches AP Review", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Zenith Air/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        expect(
+            screen.getByRole("dialog", {
+                name: "Report d104c9ca",
+            }),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole("button", {
+                name: "Reject / Send back to Drafted",
+            }),
+        ).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
     test("does not send a report back when the required reason is omitted", async () => {

@@ -2433,6 +2433,113 @@ void describe("Expense Report routes", () => {
         );
     });
 
+    void test("excludes Drafted reports from manager queue line items", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000192";
+        const owner = "50000000-0000-4000-8000-000000000192";
+        const managerId = "51000000-0000-4000-8000-000000000192";
+        const draftedReportId = "60000000-0000-4000-8000-000000000192";
+        const draftedLineItemId = "30000000-0000-4000-8000-000000000192";
+        const reviewReportId = "61000000-0000-4000-8000-000000000192";
+        const reviewLineItemId = "31000000-0000-4000-8000-000000000192";
+
+        await db.insert(expenseReport).values([
+            {
+                id: draftedReportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-17",
+                currentStage: "Drafted",
+            },
+            {
+                id: reviewReportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-18",
+                currentStage: "Manager Approval",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: draftedLineItemId,
+                tenantId,
+                expenseReportId: draftedReportId,
+                merchant: "Synthetic Drafted Hotel",
+                expenseDate: "2026-07-20",
+                amount: "642.30",
+                currency: "USD",
+                category: "Travel",
+            },
+            {
+                id: reviewLineItemId,
+                tenantId,
+                expenseReportId: reviewReportId,
+                merchant: "Synthetic Review Hotel",
+                expenseDate: "2026-07-21",
+                amount: "712.40",
+                currency: "USD",
+                category: "Travel",
+            },
+        ]);
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000192",
+                submissionId: "90000000-0000-4000-8000-000000000192",
+                tenantId,
+                expenseReportId: draftedReportId,
+                sourceType: "line_item",
+                sourceId: draftedLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: true,
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000192",
+                submissionId: "90000000-0000-4000-8000-000000000192",
+                tenantId,
+                expenseReportId: reviewReportId,
+                sourceType: "line_item",
+                sourceId: reviewLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "712.40",
+                currency: "USD",
+                flaggedLineItem: true,
+            },
+        ]);
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            currentStage?: string;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: reviewLineItemId,
+                currentStage: "Manager Approval",
+            }),
+        );
+        expect(queueBody).not.toContainEqual(
+            expect.objectContaining({
+                id: draftedLineItemId,
+                currentStage: "Drafted",
+            }),
+        );
+    });
+
     void test("does not let Employee or platform Admin read or mutate manager queue line items", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000185";
         const owner = "50000000-0000-4000-8000-000000000185";
