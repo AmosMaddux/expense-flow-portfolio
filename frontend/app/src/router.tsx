@@ -26,6 +26,7 @@ import {
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
+import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -67,7 +68,9 @@ const protectedRoutes = navigationItems.map((item) =>
         getParentRoute: () => authenticatedRoute,
         path: item.path,
         component: () =>
-            item.path === "/approval-queue" ? (
+            item.path === "/finance-dashboard" ? (
+                <FinanceDashboardScreen />
+            ) : item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
             ) : item.path === "/log-mileage" ? (
                 <LogMileageScreen />
