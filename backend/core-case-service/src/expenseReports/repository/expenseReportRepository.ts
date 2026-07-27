@@ -84,6 +84,12 @@ export type DraftExpenseContent = {
     mileageEntries: (typeof mileageEntry.$inferSelect)[];
 };
 
+export type EmployeeSubmissionDetailContent = {
+    report: ExpenseReport;
+    lineItems: (typeof lineItem.$inferSelect)[];
+    mileageEntries: (typeof mileageEntry.$inferSelect)[];
+};
+
 type ExpenseReportTransaction = Parameters<
     Parameters<typeof db.transaction>[0]
 >[0];
@@ -178,6 +184,53 @@ export async function findExpenseReportsByOwner(
             desc(expenseReport.createdAt),
             desc(expenseReport.id),
         );
+}
+
+/**
+ * Reads line items and mileage after proving the report belongs to the employee and tenant.
+ */
+export async function findEmployeeSubmissionDetail(
+    tenantId: string,
+    expenseReportId: string,
+    ownerId: string,
+): Promise<EmployeeSubmissionDetailContent | undefined> {
+    const report = await findExpenseReportById(
+        tenantId,
+        expenseReportId,
+        ownerId,
+    );
+    if (report === undefined) {
+        return undefined;
+    }
+
+    const [savedLineItems, mileageEntries] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+    ]);
+
+    return {
+        report,
+        lineItems: savedLineItems,
+        mileageEntries,
+    };
 }
 
 /**

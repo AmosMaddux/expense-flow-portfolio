@@ -20,6 +20,7 @@ import {
 import {
     auditEntry,
     expenseReport,
+    lineItem,
     stageTransition,
 } from "../db/schema/expenseReport.js";
 import * as schema from "../db/schema/index.js";
@@ -265,6 +266,34 @@ async function seedOverdueEmployeeSubmission(
             },
         ])
         .onConflictDoNothing();
+
+    await transaction
+        .insert(lineItem)
+        .values({
+            id: "7a000000-0000-4000-8000-000000000008",
+            tenantId,
+            expenseReportId: overdueSubmissionId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-06-18",
+            category: "Travel",
+            amount: "84.25",
+            currency: "USD",
+            createdAt: seededAt,
+            updatedAt: seededAt,
+        })
+        .onConflictDoUpdate({
+            target: lineItem.id,
+            set: {
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-06-18",
+                category: "Travel",
+                amount: "84.25",
+                currency: "USD",
+                updatedAt: seededAt,
+            },
+        });
 }
 
 async function readCurrentLocalTotpCode(

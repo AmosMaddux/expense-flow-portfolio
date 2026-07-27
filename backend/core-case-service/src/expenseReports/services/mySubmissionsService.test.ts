@@ -1,10 +1,21 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { ExpenseReport } from "../../db/schema/index.js";
-import { readMySubmissions } from "./mySubmissionsService.js";
+import {
+    readMySubmissionDetail,
+    readMySubmissions,
+} from "./mySubmissionsService.js";
 
 const tenantId = "10000000-0000-4000-8000-000000000001";
 const ownerId = "20000000-0000-4000-8000-000000000001";
+
+beforeEach(() => {
+    vi.stubEnv("MILEAGE_REIMBURSEMENT_RATE", "0.67");
+});
+
+afterEach(() => {
+    vi.unstubAllEnvs();
+});
 
 function buildReport(overrides: Partial<ExpenseReport> = {}): ExpenseReport {
     return {
@@ -79,5 +90,59 @@ describe("readMySubmissions", () => {
 
         expect(result[0]).not.toHaveProperty("tenantId");
         expect(result[0]).not.toHaveProperty("owner");
+    });
+});
+
+describe("readMySubmissionDetail", () => {
+    test("scopes the detail read and maps line items and mileage", async () => {
+        const reportId = "30000000-0000-4000-8000-000000000010";
+        const findDetail = vi.fn().mockResolvedValue({
+            report: buildReport({ id: reportId }),
+            lineItems: [
+                {
+                    id: "40000000-0000-4000-8000-000000000010",
+                    tenantId,
+                    expenseReportId: reportId,
+                    merchant: "Synthetic Rail",
+                    expenseDate: "2026-07-18",
+                    category: "Travel",
+                    amount: "84.25",
+                    currency: "USD",
+                    createdAt: new Date("2026-07-18T12:00:00.000Z"),
+                    updatedAt: new Date("2026-07-18T12:00:00.000Z"),
+                },
+            ],
+            mileageEntries: [
+                {
+                    id: "50000000-0000-4000-8000-000000000010",
+                    tenantId,
+                    expenseReportId: reportId,
+                    route: "Synthetic Office to Client Site",
+                    distance: "10.00",
+                    mileageDate: "2026-07-19",
+                    createdAt: new Date("2026-07-19T12:00:00.000Z"),
+                    updatedAt: new Date("2026-07-19T12:00:00.000Z"),
+                },
+            ],
+        });
+
+        const detail = await readMySubmissionDetail(
+            { id: reportId, tenantId, ownerId },
+            { findDetail },
+        );
+
+        expect(findDetail).toHaveBeenCalledExactlyOnceWith(
+            tenantId,
+            reportId,
+            ownerId,
+        );
+        expect(detail.lineItems[0]).toMatchObject({
+            merchant: "Synthetic Rail",
+            amount: 84.25,
+        });
+        expect(detail.mileageEntries[0]).toMatchObject({
+            distance: 10,
+            currency: "USD",
+        });
     });
 });

@@ -34,6 +34,7 @@ import {
 } from "../../errors/problem-json.js";
 
 const readCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
+const readMySubmissionDetailMock = vi.hoisted(() => vi.fn());
 const readMySubmissionsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/caseQueueService.js", () => ({
@@ -41,12 +42,14 @@ vi.mock("../services/caseQueueService.js", () => ({
 }));
 
 vi.mock("../services/mySubmissionsService.js", () => ({
+    readMySubmissionDetail: readMySubmissionDetailMock,
     readMySubmissions: readMySubmissionsMock,
 }));
 
 import {
     getCaseQueueStageRollups,
     getExpenseReportById,
+    getMySubmissionDetail,
     getMySubmissions,
     postExpenseReport,
     getExpenseReportAuditEntries,
@@ -55,6 +58,7 @@ import {
 void describe("Expense Report controller authorization", () => {
     beforeEach(() => {
         readCachedCaseQueueStageRollupsMock.mockReset();
+        readMySubmissionDetailMock.mockReset();
         readMySubmissionsMock.mockReset();
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
@@ -177,6 +181,62 @@ void describe("Expense Report controller authorization", () => {
         await getMySubmissions(request, {} as Response, next);
 
         expect(readMySubmissionsMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
+    });
+
+    void test("scopes submission details to the authenticated employee", async () => {
+        const reportId = "30000000-0000-4000-8000-000000000023";
+        const authenticatedTenantId = "40000000-0000-4000-8000-000000000023";
+        const authenticatedUserId = "50000000-0000-4000-8000-000000000023";
+        readMySubmissionDetailMock.mockResolvedValue({
+            id: reportId,
+            currentStage: "Submitted",
+            lineItems: [],
+            mileageEntries: [],
+        });
+        const request = {
+            auth: {
+                tenantId: authenticatedTenantId,
+                userId: authenticatedUserId,
+                roles: ["Employee"],
+            },
+            params: { id: reportId },
+        } as unknown as Request;
+        const json = vi.fn();
+        const status = vi.fn(() => ({ json }));
+        const next = vi.fn() as NextFunction;
+
+        await getMySubmissionDetail(
+            request,
+            { status } as unknown as Response,
+            next,
+        );
+
+        expect(readMySubmissionDetailMock).toHaveBeenCalledExactlyOnceWith({
+            id: reportId,
+            tenantId: authenticatedTenantId,
+            ownerId: authenticatedUserId,
+        });
+        expect(status).toHaveBeenCalledWith(200);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    void test("rejects non-employee roles before reading submission details", async () => {
+        const request = {
+            auth: {
+                tenantId: "40000000-0000-4000-8000-000000000024",
+                userId: "50000000-0000-4000-8000-000000000024",
+                roles: ["Department Manager"],
+            },
+            params: {
+                id: "30000000-0000-4000-8000-000000000024",
+            },
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await getMySubmissionDetail(request, {} as Response, next);
+
+        expect(readMySubmissionDetailMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
     });
 

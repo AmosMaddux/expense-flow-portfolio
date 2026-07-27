@@ -18,6 +18,7 @@ import {
     ExpenseReportOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    MySubmissionDetailSchema,
     MySubmissionListSchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
@@ -126,6 +127,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const mySubmissionList = registry.register(
         "MySubmissionList",
         MySubmissionListSchema,
+    );
+    const mySubmissionDetail = registry.register(
+        "MySubmissionDetail",
+        MySubmissionDetailSchema,
     );
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
@@ -338,6 +343,35 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             },
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Employee Portal access required."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/submission-detail",
+        summary: "Get an employee submission's line items and mileage",
+        description:
+            "Returns line items and mileage only when the Expense Report belongs to the authenticated Employee within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Employee submission detail found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionDetail,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed Expense Report identifier."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Expense Report not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

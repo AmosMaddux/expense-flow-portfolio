@@ -221,6 +221,14 @@ export const ReadMySubmissionsInboundRequestSchema = z
     })
     .strict();
 
+export const ReadMySubmissionDetailInboundRequestSchema = z
+    .object({
+        id: z.uuid(),
+        tenantId: z.uuid(),
+        ownerId: z.uuid(),
+    })
+    .strict();
+
 export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     id: z.uuid(),
@@ -294,6 +302,31 @@ export const MySubmissionSchema = z.object({
 });
 
 export const MySubmissionListSchema = z.array(MySubmissionSchema);
+
+export const MySubmissionDetailSchema = z.object({
+    id: z.uuid(),
+    currentStage: z.enum(approvedWorkflowStages),
+    lineItems: z.array(
+        z.object({
+            id: z.uuid(),
+            merchant: z.string(),
+            expenseDate: z.iso.date(),
+            category: z.string(),
+            amount: z.number().nonnegative(),
+            currency: z.string(),
+        }),
+    ),
+    mileageEntries: z.array(
+        z.object({
+            id: z.uuid(),
+            route: z.string(),
+            distance: z.number().positive(),
+            mileageDate: z.iso.date(),
+            reimbursementAmount: z.number().nonnegative(),
+            currency: z.literal("USD"),
+        }),
+    ),
+});
 
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
@@ -425,6 +458,12 @@ export type ReadMySubmissionsParams = z.infer<
 >;
 
 export type MySubmission = z.infer<typeof MySubmissionSchema>;
+
+export type ReadMySubmissionDetailParams = z.infer<
+    typeof ReadMySubmissionDetailInboundRequestSchema
+>;
+
+export type MySubmissionDetail = z.infer<typeof MySubmissionDetailSchema>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema

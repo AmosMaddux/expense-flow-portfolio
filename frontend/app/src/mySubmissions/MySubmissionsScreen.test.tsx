@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
     cleanup,
+    fireEvent,
     render,
     screen,
     waitFor,
@@ -118,6 +119,77 @@ describe("MySubmissionsScreen", () => {
             "Expense Report 30000000-0000-4000-8000-000000000002",
         );
         expect(within(onTrackReport).queryByText("Overdue")).toBeNull();
+        expect(
+            within(onTrackReport).getByRole("button", {
+                name: "View details",
+            }),
+        ).toBeTruthy();
+    });
+
+    test("loads and displays employee line items when details are opened", async () => {
+        const reportId = "30000000-0000-4000-8000-000000000011";
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            const path =
+                typeof input === "string"
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url;
+            const body = path.endsWith("/submission-detail")
+                ? {
+                      id: reportId,
+                      currentStage: "Submitted",
+                      lineItems: [
+                          {
+                              id: "40000000-0000-4000-8000-000000000011",
+                              merchant: "Synthetic Rail",
+                              expenseDate: "2026-07-18",
+                              category: "Travel",
+                              amount: 84.25,
+                              currency: "USD",
+                          },
+                      ],
+                      mileageEntries: [],
+                  }
+                : [
+                      {
+                          id: reportId,
+                          dueDate: "2026-08-01",
+                          currentStage: "Submitted",
+                          onHold: false,
+                          isOverdue: false,
+                          createdAt: "2026-07-20T12:00:00.000Z",
+                          updatedAt: "2026-07-21T12:00:00.000Z",
+                      },
+                  ];
+
+            return Promise.resolve(
+                new Response(JSON.stringify(body), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            );
+        });
+
+        renderScreen(fetchImplementation);
+
+        const report = await screen.findByLabelText(
+            `Expense Report ${reportId}`,
+        );
+        fireEvent.click(
+            within(report).getByRole("button", { name: "View details" }),
+        );
+
+        expect(await within(report).findByText("Synthetic Rail")).toBeTruthy();
+        expect(within(report).getByText("Travel")).toBeTruthy();
+        expect(within(report).getByText("$84.25")).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            expect.any(Object),
+        );
+        expect(
+            within(report).getByRole("button", { name: "Hide details" }),
+        ).toBeTruthy();
     });
 
     test("renders an empty state when the employee has no reports", async () => {

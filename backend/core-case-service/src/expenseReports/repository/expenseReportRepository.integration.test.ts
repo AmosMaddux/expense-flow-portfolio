@@ -34,6 +34,7 @@ import {
     clearExpenseReportFlags,
     countOpenExpenseReportFlags,
     findAuditEntriesByExpenseReportId,
+    findEmployeeSubmissionDetail,
     findExpenseReportById,
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
@@ -332,6 +333,49 @@ void describe("expenseReportRepository", () => {
 
         expect(reports.map((report) => report.id)).toEqual([targetReport?.id]);
         expect(reports).toHaveLength(1);
+    });
+
+    void test("reads submission detail only for the owning employee and tenant", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000288";
+        const targetOwnerId = "20000000-0000-4000-8000-000000000288";
+        const otherOwnerId = "20000000-0000-4000-8000-000000000298";
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            buildNewExpenseReport(targetTenantId, targetOwnerId),
+            targetOwnerId,
+        );
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+        await db.insert(lineItem).values({
+            tenantId: targetTenantId,
+            expenseReportId: report.id,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-18",
+            amount: "84.25",
+            currency: "USD",
+            category: "Travel",
+        });
+
+        const ownedDetail = await findEmployeeSubmissionDetail(
+            targetTenantId,
+            report.id,
+            targetOwnerId,
+        );
+        const otherEmployeeDetail = await findEmployeeSubmissionDetail(
+            targetTenantId,
+            report.id,
+            otherOwnerId,
+        );
+        const otherTenantDetail = await findEmployeeSubmissionDetail(
+            "00000000-0000-4000-8000-000000000298",
+            report.id,
+            targetOwnerId,
+        );
+
+        expect(ownedDetail?.lineItems).toHaveLength(1);
+        expect(otherEmployeeDetail).toBeUndefined();
+        expect(otherTenantDetail).toBeUndefined();
     });
 
     void test("submits a Drafted report with appended GL coding history", async () => {
