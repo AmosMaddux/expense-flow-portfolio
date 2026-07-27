@@ -664,9 +664,6 @@ function ApprovalQueueLineItemTable({
                 ) : (
                     <div className="case-queue-table__frame">
                         <table>
-                            <caption>
-                                Tenant-scoped Approval Queue line items
-                            </caption>
                             <thead>
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <tr key={headerGroup.id}>
