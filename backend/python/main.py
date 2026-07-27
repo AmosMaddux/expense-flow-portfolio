@@ -40,16 +40,23 @@ app = FastAPI(lifespan=lifespan)
 AP_REVIEW_GL_CODING_ROLES: frozenset[RoleName] = frozenset(
     {"Finance Admin", "Department Manager"}
 )
+EXPENSE_REPORT_SUBMIT_PERMISSION = "expense-report:submit"
 
 
 async def require_ap_review_gl_coding_context(
     context: Annotated[AuthenticatedRequestContext, Depends(require_request_context)],
 ) -> AuthenticatedRequestContext:
     """Require a tenant-scoped internal role allowed to use AP Review GL coding."""
-    if AP_REVIEW_GL_CODING_ROLES.isdisjoint(context.roles):
+    has_submission_permission = (
+        EXPENSE_REPORT_SUBMIT_PERMISSION in context.service_permissions
+    )
+    if (
+        AP_REVIEW_GL_CODING_ROLES.isdisjoint(context.roles)
+        and not has_submission_permission
+    ):
         raise HTTPException(
             status_code=403,
-            detail="AP Review GL coding requires Finance Admin or Department Manager.",
+            detail="GL coding requires an internal reviewer or Expense Report submission permission.",
         )
 
     return context

@@ -10,6 +10,7 @@ export type LoadingSkeletonProps = {
 export type EmptyStateProps = {
     action?: ReactNode;
     body: string;
+    icon?: ReactNode;
     title: string;
 };
 
@@ -55,13 +56,16 @@ export function LoadingSkeleton({
 export function EmptyState({
     action,
     body,
+    icon = "0",
     title,
 }: EmptyStateProps): JSX.Element {
     return (
         <section className="ef-state ef-state--empty" aria-label={title}>
-            <div className="ef-state__icon" aria-hidden="true">
-                0
-            </div>
+            {icon === null ? null : (
+                <div className="ef-state__icon" aria-hidden="true">
+                    {icon}
+                </div>
+            )}
             <h2>{title}</h2>
             <p>{body}</p>
             {action}
