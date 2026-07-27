@@ -193,7 +193,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/finance-dashboard/trends",
         summary: "Get Finance Dashboard report trends",
         description:
-            "Loads tenant-scoped daily Expense Report creation volume and spend grouped by currency for the Finance Dashboard.",
+            "Loads Finance Admin-only tenant-scoped daily Expense Report creation volume and spend grouped by currency for the Finance Dashboard. Requests may span at most 31 days.",
         security: [{ bearerAuth: [] }],
         request: {
             query: readFinanceDashboardTrendRequest,
@@ -211,7 +211,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Malformed Finance Dashboard trend request.",
             ),
             401: problemJsonResponse("Missing or invalid bearer access token."),
-            403: problemJsonResponse("Authenticated user is not permitted."),
+            403: problemJsonResponse(
+                "Finance Dashboard access is limited to Finance Admins.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

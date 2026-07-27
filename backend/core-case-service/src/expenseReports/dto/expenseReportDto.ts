@@ -8,6 +8,8 @@ import {
 
 extendZodWithOpenApi(z);
 
+const financeDashboardTrendMaxDays = 31;
+
 export const CreateExpenseReportInboundRequestSchema = z
     .object({
         owner: z.uuid(),
@@ -45,26 +47,27 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
-export const ReadFinanceDashboardTrendInboundRequestSchema = z
+const financeDashboardTrendDateRangeSchema = z
     .object({
-        tenantId: z.uuid(),
         fromDate: z.iso.date(),
         toDate: z.iso.date(),
     })
     .refine((request) => request.fromDate <= request.toDate, {
         message: "fromDate must be on or before toDate.",
         path: ["fromDate"],
+    })
+    .refine((request) => isWithinFinanceDashboardTrendRange(request), {
+        message: `Finance Dashboard trends support at most ${financeDashboardTrendMaxDays} days.`,
+        path: ["toDate"],
     });
 
-export const ReadFinanceDashboardTrendQuerySchema = z
-    .object({
-        fromDate: z.iso.date(),
-        toDate: z.iso.date(),
-    })
-    .refine((request) => request.fromDate <= request.toDate, {
-        message: "fromDate must be on or before toDate.",
-        path: ["fromDate"],
+export const ReadFinanceDashboardTrendInboundRequestSchema =
+    financeDashboardTrendDateRangeSchema.extend({
+        tenantId: z.uuid(),
     });
+
+export const ReadFinanceDashboardTrendQuerySchema =
+    financeDashboardTrendDateRangeSchema;
 
 export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     tenantId: z.uuid(),
@@ -83,6 +86,17 @@ export const IdempotentSubmissionHeaderSchema = z.object({
         .max(128)
         .regex(/^[A-Za-z0-9._:-]+$/),
 });
+
+function isWithinFinanceDashboardTrendRange(request: {
+    fromDate: string;
+    toDate: string;
+}): boolean {
+    const fromTime = Date.parse(`${request.fromDate}T00:00:00.000Z`);
+    const toTime = Date.parse(`${request.toDate}T00:00:00.000Z`);
+    const dayCount = (toTime - fromTime) / 86_400_000 + 1;
+
+    return dayCount <= financeDashboardTrendMaxDays;
+}
 
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
 export const ExpenseReportOutboundResponseSchema = z.object({

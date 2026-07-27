@@ -282,7 +282,7 @@ export async function getFinanceDashboardTrend(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireInternalCaseQueueAccess(auth);
+        requireFinanceDashboardAccess(auth);
         const parsedQuery = ReadFinanceDashboardTrendQuerySchema.parse({
             fromDate: req.query.fromDate,
             toDate: req.query.toDate,
@@ -357,6 +357,18 @@ function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     }
 
     return req.auth;
+}
+
+function requireFinanceDashboardAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Finance Dashboard access is limited to Finance Admins.",
+    );
 }
 
 function requireInternalAuditTrailAccess(

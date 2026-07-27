@@ -143,7 +143,7 @@ describe("ExpenseFlowRouter", () => {
 
     test.each([
         ["Finance Admin", "/finance-dashboard", "Finance Dashboard"],
-        ["Department Manager", "/finance-dashboard", "Finance Dashboard"],
+        ["Department Manager", "/expense-reports", "Expense Reports"],
         ["Employee", "/my-submissions", "My Submissions"],
         ["Admin", "/roles-permissions", "Roles & Permissions"],
     ] as const)(
@@ -156,7 +156,11 @@ describe("ExpenseFlowRouter", () => {
             window.history.pushState(null, "", "/login");
             render(<RoutedApp authClient={authClient} />);
 
-            await screen.findByRole("heading", { name: expectedHeading });
+            expect(
+                await screen.findAllByRole("heading", {
+                    name: expectedHeading,
+                }),
+            ).not.toHaveLength(0);
             await waitFor(() =>
                 expect(window.location.pathname).toBe(expectedPath),
             );
@@ -203,9 +207,7 @@ describe("ExpenseFlowRouter", () => {
                 .getAttribute("aria-current"),
         ).toBe("page");
         expect(
-            screen
-                .getByRole("link", { name: "Finance Dashboard" })
-                .getAttribute("aria-current"),
+            screen.queryByRole("link", { name: "Finance Dashboard" }),
         ).toBeNull();
     });
 
@@ -238,6 +240,19 @@ describe("ExpenseFlowRouter", () => {
         );
     });
 
+    test("redirects Department Manager users away from the Finance Dashboard route", async () => {
+        const authClient = createAuthClientMock("Department Manager");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Department Manager"),
+        );
+        window.history.pushState(null, "", "/finance-dashboard");
+        render(<RoutedApp authClient={authClient} />);
+
+        await screen.findByRole("heading", { name: "Expense Reports" });
+        await waitFor(() =>
+            expect(window.location.pathname).toBe("/expense-reports"),
+        );
+    });
     test("redirects Employee users away from the internal Case Queue route", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(

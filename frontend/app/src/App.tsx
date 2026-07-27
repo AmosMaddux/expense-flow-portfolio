@@ -33,8 +33,8 @@ const roleLandings: Record<Role, RoleLanding> = {
         path: "/finance-dashboard",
     },
     "Department Manager": {
-        label: "Finance Dashboard",
-        path: "/finance-dashboard",
+        label: "Expense Reports",
+        path: "/expense-reports",
     },
     Employee: { label: "Employee Portal", path: "/my-submissions" },
     Admin: { label: "Administration", path: "/roles-permissions" },

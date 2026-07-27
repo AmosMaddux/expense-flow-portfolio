@@ -592,7 +592,7 @@
         "/v1/finance-dashboard/trends": {
             "get": {
                 "summary": "Get Finance Dashboard report trends",
-                "description": "Loads tenant-scoped daily Expense Report creation volume and spend grouped by currency for the Finance Dashboard.",
+                "description": "Loads Finance Admin-only tenant-scoped daily Expense Report creation volume and spend grouped by currency for the Finance Dashboard. Requests may span at most 31 days.",
                 "security": [
                     {
                         "bearerAuth": []
@@ -650,7 +650,7 @@
                         }
                     },
                     "403": {
-                        "description": "Authenticated user is not permitted.",
+                        "description": "Finance Dashboard access is limited to Finance Admins.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

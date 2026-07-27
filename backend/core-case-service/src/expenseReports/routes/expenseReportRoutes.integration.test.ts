@@ -2791,17 +2791,70 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(403);
         expect(body).toMatchObject({
-            detail: "Case Queue access is limited to internal roles.",
+            detail: "Finance Dashboard access is limited to Finance Admins.",
             status: 403,
             title: "Forbidden",
         });
     });
 
+    void test("returns 403 for Finance Dashboard trends with a Department Manager role", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000226";
+        const managerId = "50000000-0000-4000-8000-000000000226";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-07-04",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            detail?: string;
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({
+            detail: "Finance Dashboard access is limited to Finance Admins.",
+            status: 403,
+            title: "Forbidden",
+        });
+    });
     void test("returns 400 for Finance Dashboard trends with an invalid date range", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000225";
         const financeAdminId = "50000000-0000-4000-8000-000000000225";
         const response = await requestApp(
             "/v1/finance-dashboard/trends?fromDate=2026-07-04&toDate=2026-07-01",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            status: 400,
+            title: "Bad Request",
+        });
+    });
+
+    void test("returns 400 for Finance Dashboard trends with an over-limit date range", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000227";
+        const financeAdminId = "50000000-0000-4000-8000-000000000227";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-08-01",
             {
                 headers: {
                     authorization: authorizationHeader(
