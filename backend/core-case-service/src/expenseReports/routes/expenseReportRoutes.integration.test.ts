@@ -227,6 +227,215 @@ void describe("Expense Report routes", () => {
         app = (await import("../../app.js")).app;
     });
 
+    void test("lists only the employee's reports with stable bounded pages", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000810";
+        const ownerId = "50000000-0000-4000-8000-000000000810";
+        const otherOwnerId = "50000000-0000-4000-8000-000000000811";
+        const reports = [
+            {
+                id: "60000000-0000-4000-8000-000000000810",
+                updatedAt: new Date("2026-07-23T12:00:00.000Z"),
+                createdAt: new Date("2026-07-20T12:00:00.000Z"),
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000811",
+                updatedAt: new Date("2026-07-22T12:00:00.000Z"),
+                createdAt: new Date("2026-07-19T12:00:00.000Z"),
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000812",
+                updatedAt: new Date("2026-07-21T12:00:00.000Z"),
+                createdAt: new Date("2026-07-18T12:00:00.000Z"),
+            },
+        ];
+        await db.insert(expenseReport).values([
+            ...reports.map((report) => ({
+                ...report,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Submitted",
+            })),
+            {
+                id: "60000000-0000-4000-8000-000000000813",
+                tenantId,
+                owner: otherOwnerId,
+                dueDate: "2026-08-01",
+                currentStage: "Submitted",
+            },
+        ]);
+
+        const firstResponse = await requestApp(
+            "/v1/expense-reports/my-submissions?pageSize=2",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const firstPage = (await firstResponse.json()) as {
+            items?: Array<{ id?: string; tenantId?: string; owner?: string }>;
+            nextCursor?: string | null;
+        };
+
+        expect(firstResponse.status).toBe(200);
+        expect(firstPage.items?.map((report) => report.id)).toEqual([
+            reports[0]?.id,
+            reports[1]?.id,
+        ]);
+        expect(firstPage.items?.[0]).not.toHaveProperty("tenantId");
+        expect(firstPage.items?.[0]).not.toHaveProperty("owner");
+        expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+        const secondResponse = await requestApp(
+            `/v1/expense-reports/my-submissions?pageSize=2&cursor=${firstPage.nextCursor}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const secondPage = (await secondResponse.json()) as {
+            items?: Array<{ id?: string }>;
+            nextCursor?: string | null;
+        };
+
+        expect(secondResponse.status).toBe(200);
+        expect(secondPage.items?.map((report) => report.id)).toEqual([
+            reports[2]?.id,
+        ]);
+        expect(secondPage.nextCursor).toBeNull();
+    });
+
+    void test("serializes line items from an employee-owned submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000820";
+        const ownerId = "50000000-0000-4000-8000-000000000820";
+        const reportId = "60000000-0000-4000-8000-000000000820";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Submitted",
+        });
+        await db.insert(lineItem).values({
+            id: "70000000-0000-4000-8000-000000000820",
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-18",
+            category: "Travel",
+            amount: "84.25",
+            currency: "USD",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            id?: string;
+            lineItems?: Array<{
+                merchant?: string;
+                amount?: number;
+                currency?: string;
+            }>;
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+            id: reportId,
+            lineItems: [
+                {
+                    merchant: "Synthetic Rail",
+                    amount: 84.25,
+                    currency: "USD",
+                },
+            ],
+        });
+    });
+
+    void test("returns 404 for another employee or tenant submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000830";
+        const otherTenantId = "40000000-0000-4000-8000-000000000831";
+        const ownerId = "50000000-0000-4000-8000-000000000830";
+        const otherOwnerId = "50000000-0000-4000-8000-000000000831";
+        const reportId = "60000000-0000-4000-8000-000000000830";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Submitted",
+        });
+
+        const otherOwnerResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherOwnerId),
+                },
+            },
+        );
+        const otherTenantResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(otherTenantId, ownerId),
+                },
+            },
+        );
+
+        expect(otherOwnerResponse.status).toBe(404);
+        expect(otherTenantResponse.status).toBe(404);
+    });
+
+    void test("returns 403 for internal roles reading employee submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000840";
+        const internalUserId = "50000000-0000-4000-8000-000000000840";
+        const response = await requestApp(
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000840/submission-detail",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        internalUserId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+
+        expect(response.status).toBe(403);
+        await expect(response.json()).resolves.toMatchObject({
+            title: "Forbidden",
+            status: 403,
+        });
+    });
+
+    void test("returns 400 for a malformed submission detail identifier", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000850";
+        const ownerId = "50000000-0000-4000-8000-000000000850";
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-uuid/submission-detail",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+            title: "Bad Request",
+            status: 400,
+        });
+    });
+
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
         const owner = "71000000-0000-4000-8000-000000000001";

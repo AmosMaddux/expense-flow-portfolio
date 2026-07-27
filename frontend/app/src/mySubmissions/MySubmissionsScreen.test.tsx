@@ -59,26 +59,29 @@ describe("MySubmissionsScreen", () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 new Response(
-                    JSON.stringify([
-                        {
-                            id: "30000000-0000-4000-8000-000000000001",
-                            dueDate: "2026-07-26",
-                            currentStage: "Manager Approval",
-                            onHold: false,
-                            isOverdue: true,
-                            createdAt: "2026-07-20T12:00:00.000Z",
-                            updatedAt: "2026-07-25T12:00:00.000Z",
-                        },
-                        {
-                            id: "30000000-0000-4000-8000-000000000002",
-                            dueDate: "2026-08-01",
-                            currentStage: "Paid",
-                            onHold: false,
-                            isOverdue: false,
-                            createdAt: "2026-07-21T12:00:00.000Z",
-                            updatedAt: "2026-07-26T12:00:00.000Z",
-                        },
-                    ]),
+                    JSON.stringify({
+                        items: [
+                            {
+                                id: "30000000-0000-4000-8000-000000000001",
+                                dueDate: "2026-07-26",
+                                currentStage: "Manager Approval",
+                                onHold: false,
+                                isOverdue: true,
+                                createdAt: "2026-07-20T12:00:00.000Z",
+                                updatedAt: "2026-07-25T12:00:00.000Z",
+                            },
+                            {
+                                id: "30000000-0000-4000-8000-000000000002",
+                                dueDate: "2026-08-01",
+                                currentStage: "Paid",
+                                onHold: false,
+                                isOverdue: false,
+                                createdAt: "2026-07-21T12:00:00.000Z",
+                                updatedAt: "2026-07-26T12:00:00.000Z",
+                            },
+                        ],
+                        nextCursor: null,
+                    }),
                     {
                         headers: { "Content-Type": "application/json" },
                         status: 200,
@@ -94,7 +97,7 @@ describe("MySubmissionsScreen", () => {
         ).toBeTruthy();
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledWith(
-                "/v1/expense-reports/my-submissions",
+                "/v1/expense-reports/my-submissions?pageSize=25",
                 expect.any(Object),
             ),
         );
@@ -151,17 +154,20 @@ describe("MySubmissionsScreen", () => {
                       ],
                       mileageEntries: [],
                   }
-                : [
-                      {
-                          id: reportId,
-                          dueDate: "2026-08-01",
-                          currentStage: "Submitted",
-                          onHold: false,
-                          isOverdue: false,
-                          createdAt: "2026-07-20T12:00:00.000Z",
-                          updatedAt: "2026-07-21T12:00:00.000Z",
-                      },
-                  ];
+                : {
+                      items: [
+                          {
+                              id: reportId,
+                              dueDate: "2026-08-01",
+                              currentStage: "Submitted",
+                              onHold: false,
+                              isOverdue: false,
+                              createdAt: "2026-07-20T12:00:00.000Z",
+                              updatedAt: "2026-07-21T12:00:00.000Z",
+                          },
+                      ],
+                      nextCursor: null,
+                  };
 
             return Promise.resolve(
                 new Response(JSON.stringify(body), {
@@ -192,14 +198,68 @@ describe("MySubmissionsScreen", () => {
         ).toBeTruthy();
     });
 
+    test("loads the next bounded page when the employee selects Load more", async () => {
+        const firstReportId = "30000000-0000-4000-8000-000000000021";
+        const secondReportId = "30000000-0000-4000-8000-000000000022";
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            const path =
+                typeof input === "string"
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url;
+            const isNextPage = path.includes("cursor=cursor_one");
+            const body = {
+                items: [
+                    {
+                        id: isNextPage ? secondReportId : firstReportId,
+                        dueDate: "2026-08-01",
+                        currentStage: isNextPage ? "Submitted" : "Drafted",
+                        onHold: false,
+                        isOverdue: false,
+                        createdAt: "2026-07-20T12:00:00.000Z",
+                        updatedAt: "2026-07-21T12:00:00.000Z",
+                    },
+                ],
+                nextCursor: isNextPage ? null : "cursor_one",
+            };
+
+            return Promise.resolve(
+                new Response(JSON.stringify(body), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            );
+        });
+
+        renderScreen(fetchImplementation);
+
+        expect(
+            await screen.findByLabelText(`Expense Report ${firstReportId}`),
+        ).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+        expect(
+            await screen.findByLabelText(`Expense Report ${secondReportId}`),
+        ).toBeTruthy();
+        expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "/v1/expense-reports/my-submissions?cursor=cursor_one&pageSize=25",
+            expect.any(Object),
+        );
+    });
+
     test("renders an empty state when the employee has no reports", async () => {
         renderScreen(
             vi.fn<typeof fetch>(() =>
                 Promise.resolve(
-                    new Response("[]", {
-                        headers: { "Content-Type": "application/json" },
-                        status: 200,
-                    }),
+                    new Response(
+                        JSON.stringify({ items: [], nextCursor: null }),
+                        {
+                            headers: { "Content-Type": "application/json" },
+                            status: 200,
+                        },
+                    ),
                 ),
             ),
         );

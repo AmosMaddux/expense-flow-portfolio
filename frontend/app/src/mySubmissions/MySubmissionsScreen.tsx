@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 
+import { useSession } from "../auth";
 import {
     Button,
     EmptyState,
@@ -28,6 +29,15 @@ const mySubmissionSchema = z
 export const mySubmissionListSchema = z.array(mySubmissionSchema);
 
 export type MySubmission = z.infer<typeof mySubmissionSchema>;
+
+const mySubmissionPageSchema = z
+    .object({
+        items: mySubmissionListSchema,
+        nextCursor: z.string().nullable(),
+    })
+    .strict();
+
+type MySubmissionPage = z.infer<typeof mySubmissionPageSchema>;
 
 const mySubmissionDetailSchema = z
     .object({
@@ -66,11 +76,11 @@ type MySubmissionDetail = z.infer<typeof mySubmissionDetailSchema>;
  * Fetches Expense Reports scoped by the BFF to the authenticated employee.
  */
 export function useMySubmissions() {
-    return useExpenseFlowQuery<MySubmission[]>({
-        input: "/v1/expense-reports/my-submissions",
+    return useExpenseFlowQuery<MySubmissionPage>({
+        input: "/v1/expense-reports/my-submissions?pageSize=25",
         keyParts: ["my-submissions"],
         parseResponse: async (response) =>
-            mySubmissionListSchema.parse(await response.json()),
+            mySubmissionPageSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -79,7 +89,59 @@ export function useMySubmissions() {
  * Renders the employee's submission history and workflow position.
  */
 export function MySubmissionsScreen(): JSX.Element {
+    const session = useSession();
     const query = useMySubmissions();
+    const [additionalPages, setAdditionalPages] = useState<MySubmissionPage[]>(
+        [],
+    );
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+    const submissions = [
+        ...(query.data?.items ?? []),
+        ...additionalPages.flatMap((page) => page.items),
+    ];
+    const nextCursor =
+        additionalPages.length === 0
+            ? (query.data?.nextCursor ?? null)
+            : (additionalPages.at(-1)?.nextCursor ?? null);
+
+    useEffect(() => {
+        setAdditionalPages([]);
+        setLoadMoreError(null);
+    }, [session.user?.id, session.user?.tenantId]);
+
+    async function loadMore(): Promise<void> {
+        if (nextCursor === null || isLoadingMore) {
+            return;
+        }
+
+        setIsLoadingMore(true);
+        setLoadMoreError(null);
+        try {
+            const queryString = new URLSearchParams({
+                cursor: nextCursor,
+                pageSize: "25",
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/my-submissions?${queryString.toString()}`,
+            );
+            if (!response.ok) {
+                throw new QueryRequestError(
+                    response.status,
+                    "Unable to load more submissions.",
+                );
+            }
+
+            const page = mySubmissionPageSchema.parse(await response.json());
+            setAdditionalPages((pages) => [...pages, page]);
+        } catch {
+            setLoadMoreError(
+                "More submissions could not be loaded. Please try again.",
+            );
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }
 
     return (
         <section
@@ -108,7 +170,7 @@ export function MySubmissionsScreen(): JSX.Element {
                     }}
                     title="Unable to load My Submissions"
                 />
-            ) : query.data.length === 0 ? (
+            ) : submissions.length === 0 ? (
                 <EmptyState
                     body="Submitted Expense Reports and saved drafts will appear here."
                     title="No submissions yet"
@@ -118,12 +180,32 @@ export function MySubmissionsScreen(): JSX.Element {
                     className="my-submissions__list"
                     aria-label="My Expense Reports"
                 >
-                    {query.data.map((submission) => (
+                    {submissions.map((submission) => (
                         <SubmissionRow
                             key={submission.id}
                             submission={submission}
                         />
                     ))}
+                    {loadMoreError === null ? null : (
+                        <p className="my-submissions__load-error" role="alert">
+                            {loadMoreError}
+                        </p>
+                    )}
+                    {nextCursor === null ? null : (
+                        <div className="my-submissions__load-more">
+                            <Button
+                                disabled={isLoadingMore}
+                                onClick={() => {
+                                    void loadMore();
+                                }}
+                                variant="secondary"
+                            >
+                                {isLoadingMore
+                                    ? "Loading more..."
+                                    : "Load more"}
+                            </Button>
+                        </div>
+                    )}
                 </div>
             )}
         </section>

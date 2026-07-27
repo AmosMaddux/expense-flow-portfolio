@@ -163,6 +163,7 @@ void describe("Expense Report controller authorization", () => {
         expect(readMySubmissionsMock).toHaveBeenCalledExactlyOnceWith({
             tenantId: authenticatedTenantId,
             ownerId: authenticatedUserId,
+            pageSize: 25,
         });
         expect(status).toHaveBeenCalledWith(200);
         expect(next).not.toHaveBeenCalled();

@@ -40,6 +40,18 @@
     gap: 16px;
 }
 
+.my-submissions__load-more {
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+}
+
+.my-submissions__load-error {
+    margin: 0;
+    color: #8a1c1c;
+    text-align: center;
+}
+
 .my-submission {
     display: grid;
     gap: 24px;

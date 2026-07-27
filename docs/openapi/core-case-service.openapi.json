@@ -833,55 +833,64 @@
                     "mileageEntries"
                 ]
             },
-            "MySubmissionList": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "dueDate": {
-                            "type": "string",
-                            "format": "date"
-                        },
-                        "currentStage": {
-                            "type": "string",
-                            "enum": [
-                                "Drafted",
-                                "Submitted",
-                                "Manager Approval",
-                                "AP Review",
-                                "Paid",
-                                "Reconciled"
+            "MySubmissionPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "currentStage": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Drafted",
+                                        "Submitted",
+                                        "Manager Approval",
+                                        "AP Review",
+                                        "Paid",
+                                        "Reconciled"
+                                    ]
+                                },
+                                "onHold": {
+                                    "type": "boolean"
+                                },
+                                "isOverdue": {
+                                    "type": "boolean"
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "dueDate",
+                                "currentStage",
+                                "onHold",
+                                "isOverdue",
+                                "createdAt",
+                                "updatedAt"
                             ]
-                        },
-                        "onHold": {
-                            "type": "boolean"
-                        },
-                        "isOverdue": {
-                            "type": "boolean"
-                        },
-                        "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                        },
-                        "updatedAt": {
-                            "type": "string",
-                            "format": "date-time"
                         }
                     },
-                    "required": [
-                        "id",
-                        "dueDate",
-                        "currentStage",
-                        "onHold",
-                        "isOverdue",
-                        "createdAt",
-                        "updatedAt"
-                    ]
-                }
+                    "nextCursor": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": ["items", "nextCursor"]
             },
             "ProblemJson": {
                 "type": "object",
@@ -913,6 +922,24 @@
                     }
                 },
                 "required": ["asOfDate"]
+            },
+            "ReadMySubmissionsQuery": {
+                "type": "object",
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "pageSize": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 25
+                    }
+                },
+                "additionalProperties": false
             },
             "ReceiptUploadMetadataRequest": {
                 "type": "object",
@@ -1384,6 +1411,30 @@
                         "bearerAuth": []
                     }
                 ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 25
+                        },
+                        "required": false,
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Employee submissions found.",
@@ -1404,7 +1455,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/MySubmissionList"
+                                    "$ref": "#/components/schemas/MySubmissionPage"
                                 }
                             }
                         }

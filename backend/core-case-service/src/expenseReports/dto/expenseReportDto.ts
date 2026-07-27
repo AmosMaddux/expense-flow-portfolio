@@ -218,6 +218,29 @@ export const ReadMySubmissionsInboundRequestSchema = z
     .object({
         tenantId: z.uuid(),
         ownerId: z.uuid(),
+        cursor: z.string().max(512).optional(),
+        pageSize: z.number().int().min(1).max(50),
+    })
+    .strict();
+
+export const ReadMySubmissionsQuerySchema = z
+    .object({
+        cursor: z
+            .string()
+            .trim()
+            .min(1)
+            .max(512)
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
+        pageSize: z.coerce.number().int().min(1).max(50).default(25),
+    })
+    .strict();
+
+export const MySubmissionsCursorSchema = z
+    .object({
+        updatedAt: z.iso.datetime({ offset: true }),
+        createdAt: z.iso.datetime({ offset: true }),
+        id: z.uuid(),
     })
     .strict();
 
@@ -302,6 +325,11 @@ export const MySubmissionSchema = z.object({
 });
 
 export const MySubmissionListSchema = z.array(MySubmissionSchema);
+
+export const MySubmissionPageSchema = z.object({
+    items: MySubmissionListSchema,
+    nextCursor: z.string().nullable(),
+});
 
 export const MySubmissionDetailSchema = z.object({
     id: z.uuid(),
@@ -457,7 +485,13 @@ export type ReadMySubmissionsParams = z.infer<
     typeof ReadMySubmissionsInboundRequestSchema
 >;
 
+export type ReadMySubmissionsQuery = z.infer<
+    typeof ReadMySubmissionsQuerySchema
+>;
+
 export type MySubmission = z.infer<typeof MySubmissionSchema>;
+
+export type MySubmissionPage = z.infer<typeof MySubmissionPageSchema>;
 
 export type ReadMySubmissionDetailParams = z.infer<
     typeof ReadMySubmissionDetailInboundRequestSchema

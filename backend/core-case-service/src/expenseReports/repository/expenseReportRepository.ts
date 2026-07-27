@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -90,6 +90,12 @@ export type EmployeeSubmissionDetailContent = {
     mileageEntries: (typeof mileageEntry.$inferSelect)[];
 };
 
+export type ExpenseReportOwnerCursor = {
+    updatedAt: Date;
+    createdAt: Date;
+    id: string;
+};
+
 type ExpenseReportTransaction = Parameters<
     Parameters<typeof db.transaction>[0]
 >[0];
@@ -169,7 +175,27 @@ export async function findCurrentDraftExpenseReport(
 export async function findExpenseReportsByOwner(
     tenantId: string,
     ownerId: string,
+    pagination: {
+        cursor?: ExpenseReportOwnerCursor;
+        limit: number;
+    } = { limit: 26 },
 ): Promise<ExpenseReport[]> {
+    const cursorCondition =
+        pagination.cursor === undefined
+            ? undefined
+            : or(
+                  lt(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      lt(expenseReport.createdAt, pagination.cursor.createdAt),
+                  ),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      eq(expenseReport.createdAt, pagination.cursor.createdAt),
+                      lt(expenseReport.id, pagination.cursor.id),
+                  ),
+              );
+
     return db
         .select()
         .from(expenseReport)
@@ -177,13 +203,15 @@ export async function findExpenseReportsByOwner(
             and(
                 eq(expenseReport.tenantId, tenantId),
                 eq(expenseReport.owner, ownerId),
+                cursorCondition,
             ),
         )
         .orderBy(
             desc(expenseReport.updatedAt),
             desc(expenseReport.createdAt),
             desc(expenseReport.id),
-        );
+        )
+        .limit(pagination.limit);
 }
 
 /**

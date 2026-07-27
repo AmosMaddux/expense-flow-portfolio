@@ -16,6 +16,7 @@ import {
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
@@ -63,9 +64,14 @@ export async function getMySubmissions(
     try {
         const auth = requireAuthContext(req);
         requireEmployeeAccess(auth);
+        const parsedQuery = ReadMySubmissionsQuerySchema.parse({
+            cursor: req.query.cursor,
+            pageSize: req.query.pageSize,
+        });
         const submissions = await readMySubmissions({
             tenantId: auth.tenantId,
             ownerId: auth.userId,
+            ...parsedQuery,
         });
 
         res.status(200).json(submissions);

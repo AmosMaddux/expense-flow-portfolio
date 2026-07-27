@@ -19,8 +19,9 @@ import {
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
-    MySubmissionListSchema,
+    MySubmissionPageSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
     SubmitExpenseReportInboundRequestSchema,
@@ -124,9 +125,13 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
     );
-    const mySubmissionList = registry.register(
-        "MySubmissionList",
-        MySubmissionListSchema,
+    const mySubmissionPage = registry.register(
+        "MySubmissionPage",
+        MySubmissionPageSchema,
+    );
+    const readMySubmissionsQuery = registry.register(
+        "ReadMySubmissionsQuery",
+        ReadMySubmissionsQuerySchema,
     );
     const mySubmissionDetail = registry.register(
         "MySubmissionDetail",
@@ -331,13 +336,16 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         description:
             "Returns only Expense Reports owned by the authenticated Employee within the authenticated tenant, including workflow position and overdue state.",
         security: [{ bearerAuth: [] }],
+        request: {
+            query: readMySubmissionsQuery,
+        },
         responses: {
             200: {
                 description: "Employee submissions found.",
                 headers: rateLimitHeaders,
                 content: {
                     "application/json": {
-                        schema: mySubmissionList,
+                        schema: mySubmissionPage,
                     },
                 },
             },
