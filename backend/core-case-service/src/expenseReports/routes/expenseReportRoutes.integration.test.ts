@@ -1641,7 +1641,7 @@ void describe("Expense Report routes", () => {
         expect(rows).toHaveLength(0);
     });
 
-    void test("reuses one active draft for the same employee", async () => {
+    void test("creates distinct drafts for the same employee", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000148";
         const owner = "50000000-0000-4000-8000-000000000148";
         const create = (idempotencyKey: string) =>
@@ -1675,8 +1675,8 @@ void describe("Expense Report routes", () => {
 
         expect(firstResponse.status).toBe(201);
         expect(secondResponse.status).toBe(201);
-        expect(secondBody.id).toBe(firstBody.id);
-        expect(rows).toHaveLength(1);
+        expect(secondBody.id).not.toBe(firstBody.id);
+        expect(rows).toHaveLength(2);
     });
 
     void test("isolates employee draft content, mileage, and receipt uploads by owner and tenant", async () => {
