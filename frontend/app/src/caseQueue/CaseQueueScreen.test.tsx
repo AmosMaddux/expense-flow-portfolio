@@ -1046,6 +1046,47 @@ describe("CaseQueueScreen", () => {
         ).toEqual({ deductible: true });
     });
 
+    test("clears the manual deductibility checkbox during AP Review", async () => {
+        const deductibleLineItems = lineItems.map((lineItem) =>
+            lineItem.id === "e6f4d30b-20fc-4a72-9e44-190eb7d30c72"
+                ? { ...lineItem, deductible: true }
+                : lineItem,
+        );
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(deductibleLineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    ...lineItems[2],
+                    deductible: false,
+                }),
+            );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const checkbox = screen.getByLabelText("Mark Zenith Air as deductible");
+        expect(checkbox.disabled).toBe(false);
+        expect(checkbox.checked).toBe(true);
+
+        fireEvent.click(checkbox);
+
+        await waitFor(() => expect(checkbox.checked).toBe(false));
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/sources/line_item/e6f4d30b-20fc-4a72-9e44-190eb7d30c72/deductibility",
+        );
+        expect(fetchImplementation.mock.calls[1]?.[1]?.method).toBe("PATCH");
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toEqual({ deductible: false });
+    });
+
     test("toggles a nested mileage deductibility checkbox during AP Review", async () => {
         const apReviewMileageItems = multiLineReportItems.map((lineItem) => ({
             ...lineItem,

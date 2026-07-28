@@ -3598,6 +3598,101 @@ void describe("Expense Report routes", () => {
                 outcomeReason: `manual_deductibility_updated:source_type=line_item;source_id=${lineItemId};deductible=true`,
             }),
         );
+
+        const clearResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${lineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: false }),
+            },
+        );
+        const clearBody = (await clearResponse.json()) as {
+            deductible?: boolean;
+        };
+        const clearedCodingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const clearedAuditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(clearResponse.status).toBe(200);
+        expect(clearBody.deductible).toBe(false);
+        expect(clearedCodingRows[0]?.deductible).toBe(false);
+        expect(clearedAuditRows).toContainEqual(
+            expect.objectContaining({
+                actorId: managerId,
+                action: "source_deductibility_updated",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "AP Review",
+                denialReason: null,
+                outcomeReason: `manual_deductibility_updated:source_type=line_item;source_id=${lineItemId};deductible=false`,
+            }),
+        );
+    });
+
+    void test("does not persist deductibility when the source row is missing", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000478";
+        const owner = "50000000-0000-4000-8000-000000000478";
+        const managerId = "52000000-0000-4000-8000-000000000478";
+        const reportId = "60000000-0000-4000-8000-000000000478";
+        const missingLineItemId = "30000000-0000-4000-8000-000000000478";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000478",
+            submissionId: "90000000-0000-4000-8000-000000000478",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: missingLineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: false,
+            deductible: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${missingLineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(codingRows[0]?.deductible).toBe(false);
+        expect(auditRows).toHaveLength(0);
     });
 
     void test("updates mileage deductibility in a mixed AP Review report", async () => {

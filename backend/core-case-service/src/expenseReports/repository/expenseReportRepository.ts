@@ -1192,6 +1192,34 @@ export async function updateExpenseReportSourceDeductibility(request: {
             return { kind: "not_found" };
         }
 
+        if (request.sourceType === "mileage") {
+            const mileageRows =
+                await readApprovalQueueMileageEntriesInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.expenseReportId,
+                    latestSubmissionId,
+                );
+            if (
+                mileageRows.find((row) => row.id === request.sourceId) ===
+                undefined
+            ) {
+                return { kind: "not_found" };
+            }
+        } else {
+            const existingLineItem =
+                await readApprovalQueueLineItemInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.expenseReportId,
+                    request.sourceId,
+                    latestSubmissionId,
+                );
+            if (existingLineItem === undefined) {
+                return { kind: "not_found" };
+            }
+        }
+
         const updatedRows = await transaction
             .update(glCodingResult)
             .set({ deductible: request.deductible })
@@ -2061,7 +2089,7 @@ function isManagerApprovalLineItemReviewGate(
 ): boolean {
     return (
         request.fromStage === "Manager Approval" &&
-        request.toStage === "AP Review"
+        (request.toStage === "AP Review" || request.toStage === "Drafted")
     );
 }
 

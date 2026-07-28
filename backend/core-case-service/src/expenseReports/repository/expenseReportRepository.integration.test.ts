@@ -1087,6 +1087,10 @@ void describe("expenseReportRepository", () => {
             flagCode: "line_item_over_threshold",
             flagMessage:
                 "Line item amount is above the MVP manual review threshold.",
+            lineItemReviewAction: "reject",
+            lineItemReviewReason: "receipt detail required",
+            lineItemReviewedBy: actorId,
+            lineItemReviewedAt: new Date("2026-07-20T12:00:00.000Z"),
         });
 
         const didTransition = await transitionExpenseReportStage({
