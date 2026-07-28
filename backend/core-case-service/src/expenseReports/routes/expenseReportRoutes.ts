@@ -1,6 +1,7 @@
 import { Router, raw } from "express";
 
 import {
+    getCaseQueueLineItems,
     getCaseQueueStageRollups,
     getCurrentDraftExpenseReport,
     getDraftExpenseContent,
@@ -10,6 +11,8 @@ import {
     getMySubmissionDetail,
     getMySubmissions,
     postExpenseReportFlagClear,
+    postExpenseReportLineItemReview,
+    postExpenseReportSourceReview,
     postDraftExpenseContent,
     postExpenseReportSubmission,
     postExpenseReportTransition,
@@ -20,6 +23,7 @@ import {
 
 export const expenseReportRouter = Router();
 
+expenseReportRouter.get("/case-queue/line-items", getCaseQueueLineItems);
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
 expenseReportRouter.get("/expense-reports/my-submissions", getMySubmissions);
 expenseReportRouter.get(
@@ -60,6 +64,14 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/flags/clear",
     postExpenseReportFlagClear,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/line-items/:sourceId/review",
+    postExpenseReportLineItemReview,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/sources/:sourceType/:sourceId/review",
+    postExpenseReportSourceReview,
 );
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",

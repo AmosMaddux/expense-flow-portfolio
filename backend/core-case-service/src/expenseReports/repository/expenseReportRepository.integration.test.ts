@@ -1024,6 +1024,9 @@ void describe("expenseReportRepository", () => {
                 glAccountCode: "6000",
                 glAccountName: "Travel Expense",
                 flaggedLineItem: false,
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: actorId,
+                lineItemReviewedAt: new Date("2026-07-18T10:06:00.000Z"),
                 codedAt: new Date("2026-07-18T10:05:00.000Z"),
             },
         ]);
@@ -1153,6 +1156,9 @@ void describe("expenseReportRepository", () => {
             flagCode: "line_item_over_threshold",
             flagMessage:
                 "Line item amount is above the MVP manual review threshold.",
+            lineItemReviewAction: "approve",
+            lineItemReviewedBy: actorId,
+            lineItemReviewedAt: new Date("2026-07-22T10:00:00.000Z"),
         });
 
         const didTransition = await transitionExpenseReportStage({

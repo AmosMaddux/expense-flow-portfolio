@@ -11,6 +11,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     buildSubmissionSourceKeys: vi.fn(),
     clearExpenseReportFlags: vi.fn(),
     countOpenExpenseReportFlags: vi.fn(),
+    findApprovalQueueLineItems: vi.fn(),
     findAuditEntriesByExpenseReportId: findAuditEntriesByExpenseReportIdMock,
     findCurrentDraftExpenseReport: findCurrentDraftExpenseReportMock,
     findExpenseReportById: findExpenseReportByIdMock,
@@ -19,6 +20,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     insertDraftExpenseReport: vi.fn(),
     insertMileageEntry: insertMileageEntryMock,
     readDraftSubmissionSources: vi.fn(),
+    reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
     transitionExpenseReportStage: vi.fn(),
 }));

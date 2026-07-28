@@ -201,6 +201,263 @@
                 },
                 "required": ["expenseReportId", "lineItemIds", "receiptIds"]
             },
+            "ApprovalQueueLineItemListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "sourceType": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "employee": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "merchant": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "amount": {
+                            "type": ["number", "null"],
+                            "minimum": 0
+                        },
+                        "glCode": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "flaggedLineItem": {
+                            "type": "boolean"
+                        },
+                        "reviewAction": {
+                            "type": ["string", "null"],
+                            "enum": ["approve", "reject", null]
+                        },
+                        "canAdvance": {
+                            "type": "boolean"
+                        },
+                        "reportTotalMileage": {
+                            "type": ["number", "null"],
+                            "minimum": 0
+                        },
+                        "mileageEntries": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "expenseReportId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "route": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "distance": {
+                                        "type": "number",
+                                        "exclusiveMinimum": 0
+                                    },
+                                    "mileageDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "amount": {
+                                        "type": ["number", "null"],
+                                        "minimum": 0
+                                    },
+                                    "glCode": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "flaggedLineItem": {
+                                        "type": "boolean"
+                                    },
+                                    "reviewAction": {
+                                        "type": ["string", "null"],
+                                        "enum": ["approve", "reject", null]
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "expenseReportId",
+                                    "route",
+                                    "distance",
+                                    "mileageDate",
+                                    "amount",
+                                    "glCode",
+                                    "flaggedLineItem",
+                                    "reviewAction"
+                                ]
+                            }
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "sourceType",
+                        "expenseReportId",
+                        "employee",
+                        "merchant",
+                        "amount",
+                        "glCode",
+                        "currentStage",
+                        "flaggedLineItem",
+                        "reviewAction",
+                        "canAdvance",
+                        "reportTotalMileage",
+                        "mileageEntries"
+                    ]
+                }
+            },
+            "ApprovalQueueLineItemResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "sourceType": {
+                        "type": "string",
+                        "enum": ["line_item", "mileage"]
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "employee": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "amount": {
+                        "type": ["number", "null"],
+                        "minimum": 0
+                    },
+                    "glCode": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "currentStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "flaggedLineItem": {
+                        "type": "boolean"
+                    },
+                    "reviewAction": {
+                        "type": ["string", "null"],
+                        "enum": ["approve", "reject", null]
+                    },
+                    "canAdvance": {
+                        "type": "boolean"
+                    },
+                    "reportTotalMileage": {
+                        "type": ["number", "null"],
+                        "minimum": 0
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "expenseReportId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "route": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "distance": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                },
+                                "mileageDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": ["number", "null"],
+                                    "minimum": 0
+                                },
+                                "glCode": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "expenseReportId",
+                                "route",
+                                "distance",
+                                "mileageDate",
+                                "amount",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "sourceType",
+                    "expenseReportId",
+                    "employee",
+                    "merchant",
+                    "amount",
+                    "glCode",
+                    "currentStage",
+                    "flaggedLineItem",
+                    "reviewAction",
+                    "canAdvance",
+                    "reportTotalMileage",
+                    "mileageEntries"
+                ]
+            },
             "AuditEntryListResponse": {
                 "type": "array",
                 "items": {
@@ -998,6 +1255,53 @@
                 },
                 "required": ["uploadId", "filename", "contentType", "sizeBytes"]
             },
+            "ReviewExpenseReportLineItemParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "sourceId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id", "sourceId"]
+            },
+            "ReviewExpenseReportLineItemRequest": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["approve", "reject"]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            },
+            "ReviewExpenseReportSourceParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "sourceType": {
+                        "type": "string",
+                        "enum": ["line_item", "mileage"]
+                    },
+                    "sourceId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id", "sourceType", "sourceId"]
+            },
             "SubmitExpenseReportRequest": {
                 "type": "object",
                 "properties": {},
@@ -1578,6 +1882,76 @@
                     },
                     "404": {
                         "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/case-queue/line-items": {
+            "get": {
+                "summary": "List Approval Queue line items",
+                "description": "Loads latest-submission line items waiting for manager review within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Approval Queue line items found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Case Queue access is limited to internal roles.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -2505,6 +2879,275 @@
                     },
                     "409": {
                         "description": "Expense Report cannot transition from its current stage or has uncleared flags.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/line-items/{sourceId}/review": {
+            "post": {
+                "summary": "Review an Expense Report line item",
+                "description": "Records a manager approve or reject decision for one latest-submission line item during Manager Approval.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReviewExpenseReportLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Line item reviewed.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed line-item review request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report line item not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Line items can only be reviewed during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review": {
+            "post": {
+                "summary": "Review an Expense Report source",
+                "description": "Records a manager approve or reject decision for one latest-submission line item or mileage source during Manager Approval.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "required": true,
+                        "name": "sourceType",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReviewExpenseReportLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report source reviewed.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed source review request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report source not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense Report sources can only be reviewed during Manager Approval.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

@@ -1203,12 +1203,13 @@ void describe("glCodingResult schema", () => {
         ]);
     });
 
-    void test("keeps source type and mapping status checks explicit", () => {
+    void test("keeps source type, mapping status, and line-item review checks explicit", () => {
         const tableConfig = getTableConfig(glCodingResult);
 
         expect(
             tableConfig.checks.map((constraint) => constraint.name).sort(),
         ).toEqual([
+            "gl_coding_result_line_item_review_check",
             "gl_coding_result_mapping_status_check",
             "gl_coding_result_source_type_check",
         ]);
@@ -1238,6 +1239,27 @@ void describe("glCodingResult schema", () => {
 
         expect(migrationSql).toContain("gl_coding_result_source_type_check");
         expect(migrationSql).toContain("gl_coding_result_mapping_status_check");
+        expect(migrationSql).toContain(
+            "gl_coding_result_line_item_review_check",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" is null and "gl_coding_result"."line_item_review_reason" is null and "gl_coding_result"."line_item_reviewed_by" is null and "gl_coding_result"."line_item_reviewed_at" is null',
+        );
+        expect(migrationSql).toContain(
+            "\"gl_coding_result\".\"source_type\" in ('line_item', 'mileage')",
+        );
+        expect(migrationSql).toContain(
+            "\"gl_coding_result\".\"line_item_review_action\" in ('approve', 'reject')",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_by" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_at" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" <> \'reject\' or nullif(btrim("gl_coding_result"."line_item_review_reason"), \'\') is not null',
+        );
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
         );

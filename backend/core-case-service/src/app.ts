@@ -25,6 +25,12 @@ const authJwtConfig = loadAuthJwtConfig();
 loadDefaultGlCodingConfig();
 const v1Router = express.Router();
 
+/*
+Read each line as: "for any request whose URL starts with path, run this next."
+ Multiple .use() calls with the same path prefix just keep appending to that path's chain
+  — they don't override each other or replace anything.
+*/
+
 v1Router.use("/auth", express.json());
 v1Router.use(
     "/",
@@ -41,6 +47,8 @@ v1Router.use(
         ),
     ),
 );
+
+// Any request to /expense-reports/* or /case-queue/* must pass through createAccessTokenMiddleware first
 v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use("/case-queue", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use(
