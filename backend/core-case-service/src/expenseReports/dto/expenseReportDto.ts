@@ -172,6 +172,7 @@ export const DraftExpenseContentOutboundResponseSchema = z.object({
     receipts: z.array(
         z.object({
             id: z.uuid(),
+            lineItemId: z.uuid().nullable(),
             filename: z.string().nullable(),
             merchant: z.string(),
             receiptDate: z.iso.date(),

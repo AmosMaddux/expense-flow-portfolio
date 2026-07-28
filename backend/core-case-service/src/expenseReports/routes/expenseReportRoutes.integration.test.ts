@@ -1038,6 +1038,7 @@ void describe("Expense Report routes", () => {
         expect(lineItemRows).toHaveLength(1);
         expect(lineItemRows[0]?.expenseDate).toBe("2026-07-23");
         expect(receiptRows).toHaveLength(1);
+        expect(receiptRows[0]?.lineItemId).toBe(lineItemRows[0]?.id);
         expect(attachmentRows).toHaveLength(1);
 
         await db

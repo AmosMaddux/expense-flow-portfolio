@@ -467,13 +467,18 @@ export async function insertDraftExpenseContent(request: {
 
         const receiptValues = request.receipts.map((receipt) => {
             const sourceLineItem = request.lineItems[receipt.lineItemIndex];
-            if (sourceLineItem === undefined) {
+            const insertedLineItem = insertedLineItems[receipt.lineItemIndex];
+            if (
+                sourceLineItem === undefined ||
+                insertedLineItem === undefined
+            ) {
                 throw new Error("Receipt line item reference is invalid.");
             }
 
             return {
                 tenantId: request.tenantId,
                 expenseReportId: request.expenseReportId,
+                lineItemId: insertedLineItem.id,
                 merchant: sourceLineItem.merchant,
                 receiptDate: sourceLineItem.expenseDate,
                 amount: sourceLineItem.amount.toFixed(2),

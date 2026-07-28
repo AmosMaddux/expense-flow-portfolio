@@ -125,7 +125,25 @@
 
 .my-submission-detail table {
     width: 100%;
+    min-width: 680px;
+    table-layout: fixed;
     border-collapse: collapse;
+}
+
+.my-submission-detail th:nth-child(1) {
+    width: 28%;
+}
+
+.my-submission-detail th:nth-child(2) {
+    width: 32%;
+}
+
+.my-submission-detail th:nth-child(3) {
+    width: 30%;
+}
+
+.my-submission-detail th:nth-child(4) {
+    width: 10%;
 }
 
 .my-submission-detail th,

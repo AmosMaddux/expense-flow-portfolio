@@ -426,6 +426,10 @@
                                     "type": "string",
                                     "format": "uuid"
                                 },
+                                "lineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
                                 "filename": {
                                     "type": ["string", "null"]
                                 },
@@ -443,6 +447,7 @@
                             },
                             "required": [
                                 "id",
+                                "lineItemId",
                                 "filename",
                                 "merchant",
                                 "receiptDate",

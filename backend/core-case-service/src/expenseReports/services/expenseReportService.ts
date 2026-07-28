@@ -159,6 +159,7 @@ export async function readDraftExpenseContent(request: {
         })),
         receipts: content.receipts.map((receipt) => ({
             id: receipt.id,
+            lineItemId: receipt.lineItemId,
             filename: readReceiptFilename(receipt.blobReference),
             merchant: receipt.merchant,
             receiptDate: receipt.receiptDate,
