@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
     approvedWorkflowStages,
+    lineItemReviewActions,
     priorityLevels,
 } from "../../db/schema/index.js";
 
@@ -205,6 +206,33 @@ export const ClearExpenseReportFlagsInboundRequestSchema = z
     })
     .strict();
 
+export const ReviewExpenseReportLineItemInboundRequestSchema = z
+    .object({
+        action: z.enum(lineItemReviewActions),
+        reason: z.string().trim().min(1).optional(),
+    })
+    .strict()
+    .superRefine((request, context) => {
+        if (request.action === "reject" && request.reason === undefined) {
+            context.addIssue({
+                code: "custom",
+                message: "Line-item rejection requires a reason.",
+                path: ["reason"],
+            });
+        }
+    });
+
+export const ReviewExpenseReportLineItemParamsSchema = z.object({
+    id: z.uuid(),
+    sourceId: z.uuid(),
+});
+
+export const ReviewExpenseReportSourceParamsSchema = z.object({
+    id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
+    sourceId: z.uuid(),
+});
+
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
     asOfDate: z.iso.date(),
@@ -276,6 +304,38 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
+export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string().min(1),
+    distance: z.coerce.number().positive(),
+    mileageDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
+});
+
+export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
+    expenseReportId: z.uuid(),
+    employee: z.uuid(),
+    merchant: z.string().min(1),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+    currentStage: z.enum(approvedWorkflowStages),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
+    canAdvance: z.boolean(),
+    reportTotalMileage: z.coerce.number().nonnegative(),
+    mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
+});
+
+export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(
+    ApprovalQueueLineItemOutboundResponseSchema,
+);
+
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -309,6 +369,15 @@ export const transitionExpenseReportWorkflowRequestSchema =
 export const clearExpenseReportFlagsRequestSchema =
     ClearExpenseReportFlagsInboundRequestSchema;
 
+export const reviewExpenseReportLineItemRequestSchema =
+    ReviewExpenseReportLineItemInboundRequestSchema;
+
+export const reviewExpenseReportLineItemParamsSchema =
+    ReviewExpenseReportLineItemParamsSchema;
+
+export const reviewExpenseReportSourceParamsSchema =
+    ReviewExpenseReportSourceParamsSchema;
+
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export const readCaseQueueStageRollupsRequestSchema =
@@ -323,6 +392,12 @@ export const transitionExpenseReportStageRequestSchema =
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
+
+export const approvalQueueLineItemResponseSchema =
+    ApprovalQueueLineItemOutboundResponseSchema;
+
+export const approvalQueueLineItemListResponseSchema =
+    ApprovalQueueLineItemListOutboundResponseSchema;
 
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
@@ -381,6 +456,18 @@ export type ClearExpenseReportFlagsRequest = z.infer<
     typeof ClearExpenseReportFlagsInboundRequestSchema
 >;
 
+export type ReviewExpenseReportLineItemRequest = z.infer<
+    typeof ReviewExpenseReportLineItemInboundRequestSchema
+>;
+
+export type ReviewExpenseReportLineItemParams = z.infer<
+    typeof ReviewExpenseReportLineItemParamsSchema
+>;
+
+export type ReviewExpenseReportSourceParams = z.infer<
+    typeof ReviewExpenseReportSourceParamsSchema
+>;
+
 export type ExpenseReportResponse = z.infer<
     typeof ExpenseReportOutboundResponseSchema
 >;
@@ -398,6 +485,10 @@ export type TransitionExpenseReportStageRequest = z.infer<
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type ApprovalQueueLineItemResponse = z.infer<
+    typeof ApprovalQueueLineItemOutboundResponseSchema
+>;
 
 export type IdempotentSubmissionHeader = z.infer<
     typeof IdempotentSubmissionHeaderSchema

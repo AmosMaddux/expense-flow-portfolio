@@ -2203,7 +2203,7 @@ void describe("Expense Report routes", () => {
             );
         },
     );
-    void test("blocks Manager Approval while flags remain and advances after clearing the last flag", async () => {
+    void test("blocks Manager Approval until flags are clear and all line items are reviewed", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000152";
         const owner = "50000000-0000-4000-8000-000000000152";
         const managerId = "51000000-0000-4000-8000-000000000152";
@@ -2216,6 +2216,16 @@ void describe("Expense Report routes", () => {
             owner,
             dueDate: "2026-08-17",
             currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
         });
         await db.insert(glCodingResult).values({
             id: "91000000-0000-4000-8000-000000000152",
@@ -2298,7 +2308,7 @@ void describe("Expense Report routes", () => {
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
-        const advanceResponse = await requestApp(
+        const unreviewedAdvanceResponse = await requestApp(
             `/v1/expense-reports/${reportId}/transitions`,
             {
                 method: "POST",
@@ -2314,6 +2324,41 @@ void describe("Expense Report routes", () => {
                 }),
             },
         );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const advanceResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved after line-item review",
+                }),
+            },
+        );
         const advanceBody = (await advanceResponse.json()) as {
             currentStage?: string;
         };
@@ -2321,8 +2366,1060 @@ void describe("Expense Report routes", () => {
         expect(blockedResponse.status).toBe(409);
         expect(clearResponse.status).toBe(200);
         expect(clearBody).toMatchObject({ clearedFlagCount: 1 });
+        expect(unreviewedAdvanceResponse.status).toBe(409);
+        expect(reviewResponse.status).toBe(200);
         expect(advanceResponse.status).toBe(200);
         expect(advanceBody.currentStage).toBe("AP Review");
+    });
+
+    void test("blocks Manager Approval send-back until all line items are reviewed", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000193";
+        const owner = "50000000-0000-4000-8000-000000000193";
+        const managerId = "51000000-0000-4000-8000-000000000193";
+        const reportId = "60000000-0000-4000-8000-000000000193";
+        const lineItemId = "30000000-0000-4000-8000-000000000193";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000193",
+            submissionId: "90000000-0000-4000-8000-000000000193",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "642.30",
+            currency: "USD",
+            flaggedLineItem: false,
+            lineItemReviewAction: null,
+        });
+
+        const sendBackResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "employee correction needed",
+                }),
+            },
+        );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(sendBackResponse.status).toBe(409);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_denied",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Drafted",
+                denialReason:
+                    "Expense Report has reviewable sources that have not been reviewed.",
+            }),
+        );
+    });
+
+    void test("reviews a Manager Approval line item and exposes the updated queue row", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000191";
+        const owner = "50000000-0000-4000-8000-000000000191";
+        const managerId = "51000000-0000-4000-8000-000000000191";
+        const reportId = "60000000-0000-4000-8000-000000000191";
+        const lineItemId = "30000000-0000-4000-8000-000000000191";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000191";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Office to client site",
+            distance: "18.50",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000191",
+                submissionId: "90000000-0000-4000-8000-000000000191",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: true,
+                flagCode: "line_item_over_threshold",
+                flagMessage:
+                    "Line item amount is above the MVP manual review threshold.",
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000191",
+                submissionId: "90000000-0000-4000-8000-000000000191",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                glAccountCode: "6250",
+                glAccountName: "Mileage Expense",
+                amount: "12.40",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+        ]);
+
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "reject",
+                    reason: "receipt does not match policy",
+                }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            id?: string;
+            reviewAction?: string;
+            canAdvance?: boolean;
+        };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody).toMatchObject({
+            id: lineItemId,
+            reviewAction: "reject",
+            canAdvance: false,
+        });
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "line_item_rejected",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Manager Approval",
+                outcomeReason: "receipt does not match policy",
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            employee?: string;
+            id?: string;
+            mileageEntries?: unknown[];
+            reportTotalMileage?: number;
+            reviewAction?: string;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                employee: owner,
+                id: lineItemId,
+                reportTotalMileage: 18.5,
+                mileageEntries: [
+                    expect.objectContaining({
+                        id: mileageEntryId,
+                        route: "Office to client site",
+                        distance: 18.5,
+                        mileageDate: "2026-07-21",
+                        amount: 12.4,
+                        glCode: "6250",
+                    }),
+                ],
+                reviewAction: "reject",
+            }),
+        );
+    });
+
+    void test("reviews and clears flags for a Manager Approval mileage source", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000194";
+        const owner = "50000000-0000-4000-8000-000000000194";
+        const managerId = "51000000-0000-4000-8000-000000000194";
+        const reportId = "60000000-0000-4000-8000-000000000194";
+        const lineItemId = "30000000-0000-4000-8000-000000000194";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000194";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Air",
+            expenseDate: "2026-07-20",
+            amount: "428.50",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Airport to regional office",
+            distance: "24.60",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000194",
+                submissionId: "90000000-0000-4000-8000-000000000194",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6220",
+                glAccountName: "Airfare",
+                amount: "428.50",
+                currency: "USD",
+                flaggedLineItem: false,
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-22T12:00:00.000Z"),
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000194",
+                submissionId: "90000000-0000-4000-8000-000000000194",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                glAccountCode: "6250",
+                glAccountName: "Mileage Expense",
+                amount: "15.62",
+                currency: "USD",
+                flaggedLineItem: true,
+                flagCode: "mileage_review",
+                flagMessage: "Mileage requires manager review.",
+            },
+        ]);
+
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "reject",
+                    reason: "mileage route does not match itinerary",
+                }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            canAdvance?: boolean;
+            mileageEntries?: Array<{
+                id?: string;
+                flaggedLineItem?: boolean;
+                reviewAction?: string;
+            }>;
+        };
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody.canAdvance).toBe(false);
+        expect(reviewBody.mileageEntries).toContainEqual(
+            expect.objectContaining({
+                id: mileageEntryId,
+                flaggedLineItem: true,
+                reviewAction: "reject",
+            }),
+        );
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "mileage_rejected",
+                stageBeforeAction: "Manager Approval",
+                stageAfterProposedAction: "Manager Approval",
+                outcomeReason: "mileage route does not match itinerary",
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const clearResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/flags/clear`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceIds: [mileageEntryId],
+                    reason: "mileage review completed",
+                }),
+            },
+        );
+        const clearBody = (await clearResponse.json()) as {
+            clearedFlagCount?: number;
+        };
+        const [mileageReviewRow] = await db
+            .select({
+                flaggedLineItem: glCodingResult.flaggedLineItem,
+                reviewAction: glCodingResult.lineItemReviewAction,
+                reviewReason: glCodingResult.lineItemReviewReason,
+            })
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.sourceType, "mileage"),
+                    eq(glCodingResult.sourceId, mileageEntryId),
+                ),
+            );
+
+        expect(clearResponse.status).toBe(200);
+        expect(clearBody).toEqual({ clearedFlagCount: 1 });
+        expect(mileageReviewRow).toMatchObject({
+            flaggedLineItem: false,
+            reviewAction: "reject",
+            reviewReason: "mileage route does not match itinerary",
+        });
+    });
+
+    void test("exposes and reviews a mileage-only Manager Approval report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000195";
+        const owner = "50000000-0000-4000-8000-000000000195";
+        const managerId = "51000000-0000-4000-8000-000000000195";
+        const reportId = "60000000-0000-4000-8000-000000000195";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000195";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Office to customer site",
+            distance: "42.20",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values({
+            id: "92000000-0000-4000-8000-000000000195",
+            submissionId: "90000000-0000-4000-8000-000000000195",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "mileage",
+            sourceId: mileageEntryId,
+            category: "Mileage",
+            mappingStatus: "mapped",
+            glAccountCode: "6250",
+            glAccountName: "Mileage Expense",
+            amount: "26.80",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            sourceType?: string;
+            merchant?: string;
+            reportTotalMileage?: number;
+            mileageEntries?: unknown[];
+            canAdvance?: boolean;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: mileageEntryId,
+                sourceType: "mileage",
+                merchant: "Office to customer site",
+                reportTotalMileage: 42.2,
+                mileageEntries: [],
+                canAdvance: false,
+            }),
+        );
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        const reviewBody = (await reviewResponse.json()) as {
+            id?: string;
+            sourceType?: string;
+            reviewAction?: string;
+            canAdvance?: boolean;
+        };
+
+        expect(reviewResponse.status).toBe(200);
+        expect(reviewBody).toMatchObject({
+            id: mileageEntryId,
+            sourceType: "mileage",
+            reviewAction: "approve",
+            canAdvance: true,
+        });
+
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const advanceResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "manager approved mileage-only report",
+                }),
+            },
+        );
+
+        expect(advanceResponse.status).toBe(200);
+    });
+
+    void test("excludes Drafted reports from manager queue line items", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000192";
+        const owner = "50000000-0000-4000-8000-000000000192";
+        const managerId = "51000000-0000-4000-8000-000000000192";
+        const draftedReportId = "60000000-0000-4000-8000-000000000192";
+        const draftedLineItemId = "30000000-0000-4000-8000-000000000192";
+        const reviewReportId = "61000000-0000-4000-8000-000000000192";
+        const reviewLineItemId = "31000000-0000-4000-8000-000000000192";
+
+        await db.insert(expenseReport).values([
+            {
+                id: draftedReportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-17",
+                currentStage: "Drafted",
+            },
+            {
+                id: reviewReportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-18",
+                currentStage: "Manager Approval",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: draftedLineItemId,
+                tenantId,
+                expenseReportId: draftedReportId,
+                merchant: "Synthetic Drafted Hotel",
+                expenseDate: "2026-07-20",
+                amount: "642.30",
+                currency: "USD",
+                category: "Travel",
+            },
+            {
+                id: reviewLineItemId,
+                tenantId,
+                expenseReportId: reviewReportId,
+                merchant: "Synthetic Review Hotel",
+                expenseDate: "2026-07-21",
+                amount: "712.40",
+                currency: "USD",
+                category: "Travel",
+            },
+        ]);
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000192",
+                submissionId: "90000000-0000-4000-8000-000000000192",
+                tenantId,
+                expenseReportId: draftedReportId,
+                sourceType: "line_item",
+                sourceId: draftedLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: true,
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000192",
+                submissionId: "90000000-0000-4000-8000-000000000192",
+                tenantId,
+                expenseReportId: reviewReportId,
+                sourceType: "line_item",
+                sourceId: reviewLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "712.40",
+                currency: "USD",
+                flaggedLineItem: true,
+            },
+        ]);
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            currentStage?: string;
+        }>;
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: reviewLineItemId,
+                currentStage: "Manager Approval",
+            }),
+        );
+        expect(queueBody).not.toContainEqual(
+            expect.objectContaining({
+                id: draftedLineItemId,
+                currentStage: "Drafted",
+            }),
+        );
+    });
+
+    void test("does not let Employee or platform Admin read or mutate manager queue line items", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000185";
+        const owner = "50000000-0000-4000-8000-000000000185";
+        const adminId = "51000000-0000-4000-8000-000000000185";
+        const reportId = "60000000-0000-4000-8000-000000000185";
+        const lineItemId = "30000000-0000-4000-8000-000000000185";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000185",
+            submissionId: "90000000-0000-4000-8000-000000000185",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "642.30",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const employeeQueueResponse = await requestApp(
+            "/v1/case-queue/line-items",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const adminQueueResponse = await requestApp(
+            "/v1/case-queue/line-items",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, adminId, [
+                        "Admin",
+                    ]),
+                },
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const employeeReviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const adminReviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, adminId, [
+                        "Admin",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+
+        expect(employeeQueueResponse.status).toBe(403);
+        expect(adminQueueResponse.status).toBe(403);
+        expect(employeeReviewResponse.status).toBe(403);
+        expect(adminReviewResponse.status).toBe(403);
+        expect(codingRows[0]).toMatchObject({
+            lineItemReviewAction: null,
+            lineItemReviewedBy: null,
+        });
+    });
+
+    void test("does not expose or review cross-tenant manager queue line items", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000186";
+        const otherTenantId = "40000000-0000-4000-8000-000000000187";
+        const owner = "50000000-0000-4000-8000-000000000186";
+        const otherOwner = "50000000-0000-4000-8000-000000000187";
+        const managerId = "51000000-0000-4000-8000-000000000186";
+        const reportId = "60000000-0000-4000-8000-000000000186";
+        const otherReportId = "60000000-0000-4000-8000-000000000187";
+        const lineItemId = "30000000-0000-4000-8000-000000000186";
+        const otherLineItemId = "30000000-0000-4000-8000-000000000187";
+
+        await db.insert(expenseReport).values([
+            {
+                id: reportId,
+                tenantId,
+                owner,
+                dueDate: "2026-08-17",
+                currentStage: "Manager Approval",
+            },
+            {
+                id: otherReportId,
+                tenantId: otherTenantId,
+                owner: otherOwner,
+                dueDate: "2026-08-17",
+                currentStage: "Manager Approval",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: lineItemId,
+                tenantId,
+                expenseReportId: reportId,
+                merchant: "Synthetic Lodge",
+                expenseDate: "2026-07-20",
+                amount: "642.30",
+                currency: "USD",
+                category: "Travel",
+            },
+            {
+                id: otherLineItemId,
+                tenantId: otherTenantId,
+                expenseReportId: otherReportId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-07-21",
+                amount: "225.00",
+                currency: "USD",
+                category: "Travel",
+            },
+        ]);
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000186",
+                submissionId: "90000000-0000-4000-8000-000000000186",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+            {
+                id: "91000000-0000-4000-8000-000000000187",
+                submissionId: "90000000-0000-4000-8000-000000000187",
+                tenantId: otherTenantId,
+                expenseReportId: otherReportId,
+                sourceType: "line_item",
+                sourceId: otherLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "225.00",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+        ]);
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            expenseReportId?: string;
+        }>;
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${otherReportId}/line-items/${otherLineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        const otherCodingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, otherReportId));
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toContainEqual(
+            expect.objectContaining({
+                id: lineItemId,
+                expenseReportId: reportId,
+            }),
+        );
+        expect(queueBody).not.toContainEqual(
+            expect.objectContaining({
+                id: otherLineItemId,
+                expenseReportId: otherReportId,
+            }),
+        );
+        expect(reviewResponse.status).toBe(404);
+        expect(otherCodingRows[0]).toMatchObject({
+            lineItemReviewAction: null,
+            lineItemReviewedBy: null,
+        });
+    });
+
+    void test("rejects line-item review outside Manager Approval and rejects missing rejection reason", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000188";
+        const owner = "50000000-0000-4000-8000-000000000188";
+        const managerId = "51000000-0000-4000-8000-000000000188";
+        const reportId = "60000000-0000-4000-8000-000000000188";
+        const lineItemId = "30000000-0000-4000-8000-000000000188";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Submitted",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000188",
+            submissionId: "90000000-0000-4000-8000-000000000188",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "642.30",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const invalidStageResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, reportId));
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const missingReasonResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "reject" }),
+            },
+        );
+
+        expect(invalidStageResponse.status).toBe(409);
+        expect(missingReasonResponse.status).toBe(400);
+    });
+
+    void test("uses only the latest submission when reading and reviewing line items", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000189";
+        const owner = "50000000-0000-4000-8000-000000000189";
+        const managerId = "51000000-0000-4000-8000-000000000189";
+        const reportId = "60000000-0000-4000-8000-000000000189";
+        const lineItemId = "30000000-0000-4000-8000-000000000189";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-17",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Lodge",
+            expenseDate: "2026-07-20",
+            amount: "642.30",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000189",
+                submissionId: "90000000-0000-4000-8000-000000000189",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: true,
+                codedAt: new Date("2026-07-18T10:00:00.000Z"),
+            },
+            {
+                id: "91000000-0000-4000-8000-000000000190",
+                submissionId: "90000000-0000-4000-8000-000000000190",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6010",
+                glAccountName: "Updated Travel Expense",
+                amount: "642.30",
+                currency: "USD",
+                flaggedLineItem: false,
+                codedAt: new Date("2026-07-18T10:05:00.000Z"),
+            },
+        ]);
+
+        const queueResponse = await requestApp("/v1/case-queue/line-items", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const queueBody = (await queueResponse.json()) as Array<{
+            id?: string;
+            glCode?: string;
+            flaggedLineItem?: boolean;
+            canAdvance?: boolean;
+        }>;
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+
+        expect(queueResponse.status).toBe(200);
+        expect(queueBody).toEqual([
+            expect.objectContaining({
+                id: lineItemId,
+                glCode: "6010",
+                flaggedLineItem: false,
+                canAdvance: false,
+            }),
+        ]);
+        expect(reviewResponse.status).toBe(200);
+        expect(codingRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    submissionId: "90000000-0000-4000-8000-000000000189",
+                    lineItemReviewAction: null,
+                }),
+                expect.objectContaining({
+                    submissionId: "90000000-0000-4000-8000-000000000190",
+                    lineItemReviewAction: "approve",
+                    lineItemReviewedBy: managerId,
+                }),
+            ]),
+        );
     });
 
     void test("sends AP Review back to Drafted without removing line items or flags", async () => {
@@ -2615,6 +3712,20 @@ void describe("Expense Report routes", () => {
             },
         );
         await resetRateLimit();
+        const reviewResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/line-items/${lineItemId}/review`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ action: "approve" }),
+            },
+        );
+        await resetRateLimit();
         const apReviewResponse = await requestApp(
             `/v1/expense-reports/${created.id}/transitions`,
             {
@@ -2652,6 +3763,7 @@ void describe("Expense Report routes", () => {
         );
 
         expect(managerApprovalResponse.status).toBe(200);
+        expect(reviewResponse.status).toBe(200);
         expect(apReviewResponse.status).toBe(200);
         expect(sendBackResponse.status).toBe(200);
         await resetRateLimit();

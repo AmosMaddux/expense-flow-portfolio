@@ -9,6 +9,8 @@ import { z } from "zod";
 import {
     AddDraftExpenseContentInboundRequestSchema,
     AddDraftExpenseContentOutboundResponseSchema,
+    ApprovalQueueLineItemListOutboundResponseSchema,
+    ApprovalQueueLineItemOutboundResponseSchema,
     CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
@@ -21,6 +23,9 @@ import {
     ReadCaseQueueStageRollupsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
+    ReviewExpenseReportLineItemInboundRequestSchema,
+    ReviewExpenseReportLineItemParamsSchema,
+    ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
@@ -105,6 +110,26 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const transitionExpenseReportWorkflowRequest = registry.register(
         "TransitionExpenseReportWorkflowRequest",
         TransitionExpenseReportWorkflowInboundRequestSchema,
+    );
+    const reviewExpenseReportLineItemRequest = registry.register(
+        "ReviewExpenseReportLineItemRequest",
+        ReviewExpenseReportLineItemInboundRequestSchema,
+    );
+    const reviewExpenseReportLineItemParams = registry.register(
+        "ReviewExpenseReportLineItemParams",
+        ReviewExpenseReportLineItemParamsSchema,
+    );
+    const reviewExpenseReportSourceParams = registry.register(
+        "ReviewExpenseReportSourceParams",
+        ReviewExpenseReportSourceParamsSchema,
+    );
+    const approvalQueueLineItemResponse = registry.register(
+        "ApprovalQueueLineItemResponse",
+        ApprovalQueueLineItemOutboundResponseSchema,
+    );
+    const approvalQueueLineItemListResponse = registry.register(
+        "ApprovalQueueLineItemListResponse",
+        ApprovalQueueLineItemListOutboundResponseSchema,
     );
     const clearExpenseReportFlagsRequest = registry.register(
         "ClearExpenseReportFlagsRequest",
@@ -309,6 +334,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Employee Portal access required."),
             404: problemJsonResponse("Drafted Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/case-queue/line-items",
+        summary: "List Approval Queue line items",
+        description:
+            "Loads latest-submission line items waiting for manager review within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Approval Queue line items found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: approvalQueueLineItemListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse(
+                "Case Queue access is limited to internal roles.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -655,6 +706,86 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             404: problemJsonResponse("Expense Report not found."),
             409: problemJsonResponse(
                 "Expense Report cannot transition from its current stage or has uncleared flags.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/line-items/{sourceId}/review",
+        summary: "Review an Expense Report line item",
+        description:
+            "Records a manager approve or reject decision for one latest-submission line item during Manager Approval.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: reviewExpenseReportLineItemParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: reviewExpenseReportLineItemRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Line item reviewed.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: approvalQueueLineItemResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed line-item review request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report line item not found."),
+            409: problemJsonResponse(
+                "Line items can only be reviewed during Manager Approval.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review",
+        summary: "Review an Expense Report source",
+        description:
+            "Records a manager approve or reject decision for one latest-submission line item or mileage source during Manager Approval.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: reviewExpenseReportSourceParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: reviewExpenseReportLineItemRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report source reviewed.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: approvalQueueLineItemResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed source review request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report source not found."),
+            409: problemJsonResponse(
+                "Expense Report sources can only be reviewed during Manager Approval.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
