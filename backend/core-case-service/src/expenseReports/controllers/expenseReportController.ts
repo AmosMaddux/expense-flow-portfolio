@@ -21,6 +21,7 @@ import {
     ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
@@ -47,6 +48,7 @@ import {
     reviewExpenseReportSource,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
+    updateExpenseReportSourceDeductibility,
     uploadReceiptFile,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
@@ -528,6 +530,40 @@ export async function postExpenseReportSourceReview(
     }
 }
 
+/**
+ * Handles manual AP Review deductibility decisions for one Expense Report source.
+ */
+export async function patchExpenseReportSourceDeductibility(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = ReviewExpenseReportSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceType: req.params.sourceType,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest =
+            UpdateExpenseReportSourceDeductibilityInboundRequestSchema.parse(
+                req.body,
+            );
+        const lineItem = await updateExpenseReportSourceDeductibility({
+            id: parsedParams.id,
+            sourceType: parsedParams.sourceType,
+            sourceId: parsedParams.sourceId,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            deductible: parsedRequest.deductible,
+        });
+
+        res.status(200).json(lineItem);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 /**
  * Handles Approval Queue line-item read requests.
  */

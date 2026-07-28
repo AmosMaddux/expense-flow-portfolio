@@ -47,6 +47,11 @@ type ReviewExpenseReportLineItemResult =
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
 
+type UpdateExpenseReportSourceDeductibilityResult =
+    | { kind: "updated"; lineItem: ApprovalQueueLineItemResponse }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
 const validTransitionEdges = new Set<string>([
     "Drafted->Submitted",
     "Submitted->Manager Approval",
@@ -86,6 +91,7 @@ type ApprovalQueueLineItemRow = {
     currentStage: string;
     flaggedLineItem: boolean;
     reviewAction: "approve" | "reject" | null;
+    deductible: boolean;
     submissionId: string;
     codedAt: Date;
     codingResultId: string;
@@ -104,6 +110,7 @@ type ApprovalQueueMileageEntryRow = {
     currentStage: string;
     flaggedLineItem: boolean;
     reviewAction: "approve" | "reject" | null;
+    deductible: boolean;
     submissionId: string;
     codedAt: Date;
     codingResultId: string;
@@ -194,6 +201,7 @@ export async function findApprovalQueueLineItems(
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
             reviewAction: glCodingResult.lineItemReviewAction,
+            deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
             codedAt: glCodingResult.codedAt,
             codingResultId: glCodingResult.id,
@@ -1103,7 +1111,13 @@ export async function reviewExpenseReportLineItem(request: {
             );
         const lineItemRow =
             request.sourceType === "mileage"
-                ? toReviewedMileageQueueRow(mileageEntries, request.sourceId)
+                ? ((await readFirstApprovalQueueLineItemInTransaction(
+                      transaction,
+                      request.tenantId,
+                      request.expenseReportId,
+                      latestSubmissionId,
+                  )) ??
+                  toReviewedMileageQueueRow(mileageEntries, request.sourceId))
                 : await readApprovalQueueLineItemInTransaction(
                       transaction,
                       request.tenantId,
@@ -1139,6 +1153,124 @@ export async function reviewExpenseReportLineItem(request: {
     });
 }
 
+/**
+ * Records a manual AP Review deductibility decision for one reviewable source.
+ */
+export async function updateExpenseReportSourceDeductibility(request: {
+    tenantId: string;
+    expenseReportId: string;
+    sourceId: string;
+    sourceType: ReviewableExpenseSourceType;
+    actorId: string;
+    deductible: boolean;
+}): Promise<UpdateExpenseReportSourceDeductibilityResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage !== "AP Review") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        const latestSubmissionId = await readLatestSubmissionId(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+        if (latestSubmissionId === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const updatedRows = await transaction
+            .update(glCodingResult)
+            .set({ deductible: request.deductible })
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, request.tenantId),
+                    eq(glCodingResult.expenseReportId, request.expenseReportId),
+                    eq(glCodingResult.sourceType, request.sourceType),
+                    eq(glCodingResult.sourceId, request.sourceId),
+                    eq(glCodingResult.submissionId, latestSubmissionId),
+                ),
+            )
+            .returning({ id: glCodingResult.id });
+
+        if (updatedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: "source_deductibility_updated",
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: buildDeductibilityAuditOutcomeReason(request),
+        });
+
+        const mileageEntries =
+            await readApprovalQueueMileageEntriesInTransaction(
+                transaction,
+                request.tenantId,
+                request.expenseReportId,
+                latestSubmissionId,
+            );
+        const lineItemRow =
+            request.sourceType === "mileage"
+                ? ((await readFirstApprovalQueueLineItemInTransaction(
+                      transaction,
+                      request.tenantId,
+                      request.expenseReportId,
+                      latestSubmissionId,
+                  )) ??
+                  toReviewedMileageQueueRow(mileageEntries, request.sourceId))
+                : await readApprovalQueueLineItemInTransaction(
+                      transaction,
+                      request.tenantId,
+                      request.expenseReportId,
+                      request.sourceId,
+                      latestSubmissionId,
+                  );
+
+        if (lineItemRow === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const openFlagCount = await countOpenExpenseReportFlagsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+        const unreviewedLineItemCount =
+            await countUnreviewedLineItemsInTransaction(
+                transaction,
+                request.tenantId,
+                request.expenseReportId,
+            );
+
+        return {
+            kind: "updated",
+            lineItem: toApprovalQueueLineItemResponse(
+                lineItemRow,
+                openFlagCount,
+                unreviewedLineItemCount,
+                lineItemRow.sourceType === "mileage" ? [] : mileageEntries,
+            ),
+        };
+    });
+}
 /**
  * Transitions an Expense Report stage and writes the required audit records.
  */
@@ -1421,6 +1553,13 @@ async function countOpenExpenseReportFlagsInTransaction(
     return rows.length;
 }
 
+function buildDeductibilityAuditOutcomeReason(request: {
+    sourceId: string;
+    sourceType: ReviewableExpenseSourceType;
+    deductible: boolean;
+}): string {
+    return `manual_deductibility_updated:source_type=${request.sourceType};source_id=${request.sourceId};deductible=${String(request.deductible)}`;
+}
 function buildReviewAuditAction(
     sourceType: ReviewableExpenseSourceType,
     action: "approve" | "reject",
@@ -1463,6 +1602,57 @@ async function countUnreviewedLineItemsInTransaction(
     return rows.length;
 }
 
+async function readFirstApprovalQueueLineItemInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+    submissionId: string,
+): Promise<ApprovalQueueLineItemRow | undefined> {
+    const rows = await transaction
+        .select({
+            id: glCodingResult.sourceId,
+            sourceType: glCodingResult.sourceType,
+            expenseReportId: glCodingResult.expenseReportId,
+            employee: expenseReport.owner,
+            merchant: lineItem.merchant,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            deductible: glCodingResult.deductible,
+            submissionId: glCodingResult.submissionId,
+            codedAt: glCodingResult.codedAt,
+            codingResultId: glCodingResult.id,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            lineItem,
+            and(
+                eq(lineItem.tenantId, glCodingResult.tenantId),
+                eq(lineItem.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.sourceType, "line_item"),
+                eq(glCodingResult.submissionId, submissionId),
+            ),
+        )
+        .orderBy(asc(lineItem.createdAt), asc(lineItem.id))
+        .limit(1);
+
+    return rows[0] as ApprovalQueueLineItemRow | undefined;
+}
 async function readApprovalQueueLineItemInTransaction(
     transaction: TransactionContext,
     tenantId: string,
@@ -1482,6 +1672,7 @@ async function readApprovalQueueLineItemInTransaction(
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
             reviewAction: glCodingResult.lineItemReviewAction,
+            deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
             codedAt: glCodingResult.codedAt,
             codingResultId: glCodingResult.id,
@@ -1559,6 +1750,7 @@ async function findApprovalQueueMileageEntries(
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
             reviewAction: glCodingResult.lineItemReviewAction,
+            deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
             codedAt: glCodingResult.codedAt,
             codingResultId: glCodingResult.id,
@@ -1614,6 +1806,7 @@ async function readApprovalQueueMileageEntriesInTransaction(
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
             reviewAction: glCodingResult.lineItemReviewAction,
+            deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
             codedAt: glCodingResult.codedAt,
             codingResultId: glCodingResult.id,
@@ -1745,6 +1938,7 @@ function toMileageOnlyApprovalQueueLineItemRow(
         currentStage: row.currentStage,
         flaggedLineItem: row.flaggedLineItem,
         reviewAction: row.reviewAction,
+        deductible: row.deductible,
         submissionId: row.submissionId,
         codedAt: row.codedAt,
         codingResultId: row.codingResultId,
@@ -1780,6 +1974,7 @@ function toApprovalQueueLineItemResponse(
         currentStage: row.currentStage as ExpenseReportStage,
         flaggedLineItem: row.flaggedLineItem,
         reviewAction: row.reviewAction,
+        deductible: row.deductible,
         canAdvance:
             row.currentStage === "Manager Approval" &&
             openFlagCount === 0 &&
@@ -1828,6 +2023,7 @@ function toApprovalQueueMileageEntryResponse(
         glCode: row.glCode ?? "Unmapped",
         flaggedLineItem: row.flaggedLineItem,
         reviewAction: row.reviewAction,
+        deductible: row.deductible,
     };
 }
 

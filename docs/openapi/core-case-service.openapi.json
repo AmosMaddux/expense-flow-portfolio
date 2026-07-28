@@ -252,6 +252,9 @@
                             "type": ["string", "null"],
                             "enum": ["approve", "reject", null]
                         },
+                        "deductible": {
+                            "type": "boolean"
+                        },
                         "canAdvance": {
                             "type": "boolean"
                         },
@@ -298,6 +301,9 @@
                                     "reviewAction": {
                                         "type": ["string", "null"],
                                         "enum": ["approve", "reject", null]
+                                    },
+                                    "deductible": {
+                                        "type": "boolean"
                                     }
                                 },
                                 "required": [
@@ -309,7 +315,8 @@
                                     "amount",
                                     "glCode",
                                     "flaggedLineItem",
-                                    "reviewAction"
+                                    "reviewAction",
+                                    "deductible"
                                 ]
                             }
                         }
@@ -325,6 +332,7 @@
                         "currentStage",
                         "flaggedLineItem",
                         "reviewAction",
+                        "deductible",
                         "canAdvance",
                         "reportTotalMileage",
                         "mileageEntries"
@@ -380,6 +388,9 @@
                         "type": ["string", "null"],
                         "enum": ["approve", "reject", null]
                     },
+                    "deductible": {
+                        "type": "boolean"
+                    },
                     "canAdvance": {
                         "type": "boolean"
                     },
@@ -426,6 +437,9 @@
                                 "reviewAction": {
                                     "type": ["string", "null"],
                                     "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": "boolean"
                                 }
                             },
                             "required": [
@@ -437,7 +451,8 @@
                                 "amount",
                                 "glCode",
                                 "flaggedLineItem",
-                                "reviewAction"
+                                "reviewAction",
+                                "deductible"
                             ]
                         }
                     }
@@ -453,6 +468,7 @@
                     "currentStage",
                     "flaggedLineItem",
                     "reviewAction",
+                    "deductible",
                     "canAdvance",
                     "reportTotalMileage",
                     "mileageEntries"
@@ -1143,6 +1159,16 @@
                     }
                 },
                 "required": ["toStage", "reason"],
+                "additionalProperties": false
+            },
+            "UpdateExpenseReportSourceDeductibilityRequest": {
+                "type": "object",
+                "properties": {
+                    "deductible": {
+                        "type": "boolean"
+                    }
+                },
+                "required": ["deductible"],
                 "additionalProperties": false
             }
         },
@@ -2769,6 +2795,145 @@
                     },
                     "409": {
                         "description": "Expense Report sources can only be reviewed during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/deductibility": {
+            "patch": {
+                "summary": "Update Expense Report source deductibility",
+                "description": "Records a manual deductibility flag for one latest-submission line item or mileage source during AP Review. No auto-classification is performed.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "required": true,
+                        "name": "sourceType",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateExpenseReportSourceDeductibilityRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report source deductibility updated.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed deductibility request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report source not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Deductibility can only be updated during AP Review.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
