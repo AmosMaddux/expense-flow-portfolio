@@ -1011,6 +1011,9 @@
                             "Reconciled"
                         ]
                     },
+                    "rejectionReason": {
+                        "type": ["string", "null"]
+                    },
                     "lineItems": {
                         "type": "array",
                         "items": {
@@ -1036,6 +1039,10 @@
                                 },
                                 "currency": {
                                     "type": "string"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
                                 }
                             },
                             "required": [
@@ -1044,7 +1051,8 @@
                                 "expenseDate",
                                 "category",
                                 "amount",
-                                "currency"
+                                "currency",
+                                "reviewAction"
                             ]
                         }
                     },
@@ -1075,6 +1083,10 @@
                                 "currency": {
                                     "type": "string",
                                     "enum": ["USD"]
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
                                 }
                             },
                             "required": [
@@ -1083,7 +1095,8 @@
                                 "distance",
                                 "mileageDate",
                                 "reimbursementAmount",
-                                "currency"
+                                "currency",
+                                "reviewAction"
                             ]
                         }
                     }
@@ -1091,6 +1104,7 @@
                 "required": [
                     "id",
                     "currentStage",
+                    "rejectionReason",
                     "lineItems",
                     "mileageEntries"
                 ]
@@ -1122,6 +1136,9 @@
                                         "Reconciled"
                                     ]
                                 },
+                                "isSentBack": {
+                                    "type": "boolean"
+                                },
                                 "onHold": {
                                     "type": "boolean"
                                 },
@@ -1141,6 +1158,7 @@
                                 "id",
                                 "dueDate",
                                 "currentStage",
+                                "isSentBack",
                                 "onHold",
                                 "isOverdue",
                                 "createdAt",
@@ -1327,6 +1345,41 @@
                     }
                 },
                 "required": ["toStage", "reason"],
+                "additionalProperties": false
+            },
+            "UpdateDraftLineItemRequest": {
+                "type": "object",
+                "properties": {
+                    "merchant": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                    },
+                    "expenseDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["Travel", "Meals", "Lodging"]
+                    },
+                    "amount": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9999999999.99
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": ["USD"]
+                    }
+                },
+                "required": [
+                    "merchant",
+                    "expenseDate",
+                    "category",
+                    "amount",
+                    "currency"
+                ],
                 "additionalProperties": false
             }
         },
@@ -1707,6 +1760,442 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/line-items/{sourceId}": {
+            "patch": {
+                "summary": "Update a saved draft line item",
+                "description": "Updates one line item in the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateDraftLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed draft update.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a saved draft line item",
+                "description": "Deletes one line item from the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/mileage-entries/{sourceId}": {
+            "patch": {
+                "summary": "Update a saved draft mileage entry",
+                "description": "Updates one mileage entry in the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMileageEntryRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed draft update.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a saved draft mileage entry",
+                "description": "Deletes one mileage entry from the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
                     }
                 }
             }

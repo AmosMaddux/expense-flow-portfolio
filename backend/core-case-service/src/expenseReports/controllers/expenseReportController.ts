@@ -11,6 +11,7 @@ import {
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
+    DraftExpenseSourceParamsSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReceiptUploadMetadataInboundRequestSchema,
@@ -22,6 +23,7 @@ import {
     ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateDraftLineItemInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
@@ -42,6 +44,8 @@ import {
     clearExpenseReportFlags,
     addMileageEntry,
     createDraftExpenseReport,
+    deleteDraftLineItem,
+    deleteDraftMileageEntry,
     readApprovalQueueLineItems,
     readCurrentDraftExpenseReport,
     readDraftExpenseContent,
@@ -52,6 +56,8 @@ import {
     reviewExpenseReportSource,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
+    updateDraftLineItem,
+    updateDraftMileageEntry,
     uploadReceiptFile,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
@@ -152,6 +158,126 @@ export async function getDraftExpenseContent(
             id: parsedParams.id,
             tenantId: auth.tenantId,
             ownerId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles updates to one saved line item in an employee-owned draft.
+ */
+export async function patchDraftLineItem(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest = UpdateDraftLineItemInboundRequestSchema.parse(
+            req.body,
+        );
+        const content = await updateDraftLineItem({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles deletion of one saved line item in an employee-owned draft.
+ */
+export async function deleteDraftLineItemEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const content = await deleteDraftLineItem({
+            ...parsedParams,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles updates to one saved mileage entry in an employee-owned draft.
+ */
+export async function patchDraftMileageEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest = CreateMileageEntryInboundRequestSchema.parse(
+            req.body,
+        );
+        const content = await updateDraftMileageEntry({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles deletion of one saved mileage entry in an employee-owned draft.
+ */
+export async function deleteDraftMileageEntryRecord(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const content = await deleteDraftMileageEntry({
+            ...parsedParams,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
         });
 
         res.status(200).json(content);

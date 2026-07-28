@@ -359,6 +359,190 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns the latest send-back reason to the report owner", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000821";
+        const ownerId = "50000000-0000-4000-8000-000000000821";
+        const managerId = "51000000-0000-4000-8000-000000000821";
+        const reportId = "60000000-0000-4000-8000-000000000821";
+        const lineItemId = "70000000-0000-4000-8000-000000000821";
+        const mileageEntryId = "71000000-0000-4000-8000-000000000821";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Drafted",
+        });
+        await db.insert(auditEntry).values({
+            tenantId,
+            expenseReportId: reportId,
+            actorId: managerId,
+            action: "transition_sent_back",
+            stageBeforeAction: "Manager Approval",
+            stageAfterProposedAction: "Drafted",
+            outcomeReason: "Receipt does not match the submitted amount.",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Cafe",
+            expenseDate: "2026-07-18",
+            category: "Meals",
+            amount: "24.50",
+            currency: "USD",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Synthetic Office to Client Site",
+            distance: "12.00",
+            mileageDate: "2026-07-19",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                submissionId: "90000000-0000-4000-8000-000000000821",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Meals",
+                mappingStatus: "mapped",
+                lineItemReviewAction: "reject",
+                lineItemReviewReason: "Receipt amount does not match.",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-27T12:00:00.000Z"),
+            },
+            {
+                submissionId: "90000000-0000-4000-8000-000000000821",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-27T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            id: reportId,
+            rejectionReason: "Receipt does not match the submitted amount.",
+            lineItems: [{ id: lineItemId, reviewAction: "reject" }],
+            mileageEntries: [{ id: mileageEntryId, reviewAction: "approve" }],
+        });
+
+        const listResponse = await requestApp(
+            "/v1/expense-reports/my-submissions",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(listResponse.status).toBe(200);
+        await expect(listResponse.json()).resolves.toMatchObject({
+            items: [{ id: reportId, isSentBack: true }],
+        });
+    });
+
+    void test("sends a report back when the employee already has another draft", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000695";
+        const ownerId = "50000000-0000-4000-8000-000000000695";
+        const managerId = "51000000-0000-4000-8000-000000000695";
+        const activeDraftId = "60000000-0000-4000-8000-000000000695";
+        const reportId = "61000000-0000-4000-8000-000000000695";
+        await db.insert(expenseReport).values([
+            {
+                id: activeDraftId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Drafted",
+            },
+            {
+                id: reportId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Manager Approval",
+            },
+        ]);
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "Receipt correction required.",
+                }),
+            },
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            id: reportId,
+            currentStage: "Drafted",
+        });
+
+        const draftedReports = await db
+            .select({
+                id: expenseReport.id,
+                currentStage: expenseReport.currentStage,
+            })
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.owner, ownerId),
+                    eq(expenseReport.currentStage, "Drafted"),
+                ),
+            );
+
+        expect(draftedReports).toEqual(
+            expect.arrayContaining([
+                { id: activeDraftId, currentStage: "Drafted" },
+                { id: reportId, currentStage: "Drafted" },
+            ]),
+        );
+
+        const currentDraftResponse = await requestApp(
+            "/v1/expense-reports/drafts/current",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(currentDraftResponse.status).toBe(200);
+        await expect(currentDraftResponse.json()).resolves.toMatchObject({
+            id: activeDraftId,
+            currentStage: "Drafted",
+        });
+    });
+
     void test("returns 404 for another employee or tenant submission detail", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000830";
         const otherTenantId = "40000000-0000-4000-8000-000000000831";
@@ -1071,6 +1255,153 @@ void describe("Expense Report routes", () => {
             }),
         ]);
         expect(savedContent.mileageEntries).toEqual([]);
+    });
+
+    void test("lets an employee update and delete entries in a selected draft", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000144";
+        const owner = "50000000-0000-4000-8000-000000000144";
+        const otherOwner = "51000000-0000-4000-8000-000000000144";
+        const reportId = "60000000-0000-4000-8000-000000000144";
+        const lineItemId = "70000000-0000-4000-8000-000000000144";
+        const mileageEntryId = "71000000-0000-4000-8000-000000000144";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-25",
+            currentStage: "Drafted",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Cafe",
+            expenseDate: "2026-07-20",
+            category: "Meals",
+            amount: "12.00",
+            currency: "USD",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Synthetic Office to Site A",
+            distance: "10.00",
+            mileageDate: "2026-07-20",
+        });
+
+        const deniedUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherOwner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    merchant: "Synthetic Updated Cafe",
+                    expenseDate: "2026-07-21",
+                    category: "Meals",
+                    amount: 18.5,
+                    currency: "USD",
+                }),
+            },
+        );
+        expect(deniedUpdate.status).toBe(404);
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const lineUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    merchant: "Synthetic Updated Cafe",
+                    expenseDate: "2026-07-21",
+                    category: "Meals",
+                    amount: 18.5,
+                    currency: "USD",
+                }),
+            },
+        );
+        expect(lineUpdate.status).toBe(200);
+        await expect(lineUpdate.json()).resolves.toMatchObject({
+            lineItems: [
+                {
+                    id: lineItemId,
+                    merchant: "Synthetic Updated Cafe",
+                    amount: 18.5,
+                },
+            ],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const mileageUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/mileage-entries/${mileageEntryId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    route: "Synthetic Office to Site B",
+                    distance: 14.25,
+                    mileageDate: "2026-07-21",
+                }),
+            },
+        );
+        expect(mileageUpdate.status).toBe(200);
+        await expect(mileageUpdate.json()).resolves.toMatchObject({
+            mileageEntries: [
+                {
+                    id: mileageEntryId,
+                    route: "Synthetic Office to Site B",
+                    distance: 14.25,
+                },
+            ],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const lineDelete = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        expect(lineDelete.status).toBe(200);
+        await expect(lineDelete.json()).resolves.toMatchObject({
+            lineItems: [],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const mileageDelete = await requestApp(
+            `/v1/expense-reports/${reportId}/mileage-entries/${mileageEntryId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        expect(mileageDelete.status).toBe(200);
+        await expect(mileageDelete.json()).resolves.toMatchObject({
+            mileageEntries: [],
+        });
     });
 
     void test("rejects future mileage dates from API clients", async () => {

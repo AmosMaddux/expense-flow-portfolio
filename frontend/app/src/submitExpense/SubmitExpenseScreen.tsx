@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { ZodIssue } from "zod";
+import { z, type ZodIssue } from "zod";
 
 import { useSession } from "../auth";
 import { Badge } from "../components/Badge";
@@ -32,6 +32,41 @@ type EditableLineItem = {
 
 type DraftAction = "save" | "mileage" | "submit";
 
+const selectedDraftSearchSchema = z.object({
+    draftId: z.uuid().optional(),
+});
+
+const savedDraftSourceMutationSchema = z.discriminatedUnion("sourceType", [
+    z.object({
+        sourceType: z.literal("line_item"),
+        sourceId: z.uuid(),
+        action: z.enum(["update", "delete"]),
+        values: z
+            .object({
+                merchant: z.string().trim().min(1).max(240),
+                expenseDate: z.iso.date(),
+                category: z.enum(expenseCategories),
+                amount: z.number().positive().multipleOf(0.01),
+                currency: z.literal("USD"),
+            })
+            .optional(),
+    }),
+    z.object({
+        sourceType: z.literal("mileage"),
+        sourceId: z.uuid(),
+        action: z.enum(["update", "delete"]),
+        values: z
+            .object({
+                route: z.string().trim().min(3).max(500),
+                distance: z.number().positive().multipleOf(0.01),
+                mileageDate: z.iso.date(),
+            })
+            .optional(),
+    }),
+]);
+
+type SavedDraftSourceMutation = z.infer<typeof savedDraftSourceMutationSchema>;
+
 type DraftMutationResult = {
     action: DraftAction;
     addedContent: ReturnType<typeof assembledDraftSchema.parse> | null;
@@ -60,6 +95,7 @@ const emptyDraftContent = (expenseReportId = ""): DraftExpenseContent => ({
  */
 export function SubmitExpenseScreen(): JSX.Element {
     const session = useSession();
+    const location = useLocation();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [lineItems, setLineItems] = useState<EditableLineItem[]>([
@@ -80,13 +116,17 @@ export function SubmitExpenseScreen(): JSX.Element {
         submit: crypto.randomUUID(),
     });
     const receiptUploadIds = useRef(new WeakMap<File, string>());
+    const selectedDraftId = selectedDraftSearchSchema.safeParse(location.search)
+        .data?.draftId;
     const draftQuery = useExpenseFlowQuery({
         input: "/v1/expense-reports/drafts/current",
         keyParts: ["expense-reports", "drafts", "current"],
+        enabled: selectedDraftId === undefined,
         parseResponse: async (response) =>
             draftExpenseReportSchema.parse(await response.json()),
     });
-    const activeDraftId = draftIdOverride ?? draftQuery.data?.id;
+    const activeDraftId =
+        draftIdOverride ?? selectedDraftId ?? draftQuery.data?.id;
     const contentQuery = useExpenseFlowQuery({
         input:
             activeDraftId === undefined
@@ -240,6 +280,60 @@ export function SubmitExpenseScreen(): JSX.Element {
                         });
                     },
                 );
+            }
+        },
+    });
+
+    const savedSourceMutation = useMutation({
+        mutationFn: async (input: SavedDraftSourceMutation) => {
+            const parsedInput = savedDraftSourceMutationSchema.parse(input);
+            if (activeDraftId === undefined) {
+                throw new SubmitExpenseRequestError(
+                    "Choose a Drafted Expense Report before changing entries.",
+                );
+            }
+
+            const sourcePath =
+                parsedInput.sourceType === "line_item"
+                    ? "line-items"
+                    : "mileage-entries";
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${activeDraftId}/${sourcePath}/${parsedInput.sourceId}`,
+                {
+                    method:
+                        parsedInput.action === "update" ? "PATCH" : "DELETE",
+                    ...(parsedInput.action === "update"
+                        ? {
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(parsedInput.values),
+                          }
+                        : {}),
+                },
+            );
+            if (!response.ok) {
+                throw await createSubmitExpenseRequestError(response);
+            }
+
+            return draftExpenseContentSchema.parse(await response.json());
+        },
+        onSuccess: async (content) => {
+            setSavedContentOverride(content);
+            setSuccessMessage("Draft entry updated.");
+            if (session.user !== null) {
+                await Promise.all([
+                    queryClient.invalidateQueries({
+                        queryKey: createTenantQueryKey(session.user, [
+                            "expense-reports",
+                            content.expenseReportId,
+                            "draft-content",
+                        ]),
+                    }),
+                    queryClient.invalidateQueries({
+                        queryKey: createTenantQueryKey(session.user, [
+                            "my-submissions",
+                        ]),
+                    }),
+                ]);
             }
         },
     });
@@ -405,12 +499,16 @@ export function SubmitExpenseScreen(): JSX.Element {
     }
 
     const hasNoCurrentDraft =
+        selectedDraftId === undefined &&
         draftQuery.error instanceof QueryRequestError &&
         draftQuery.error.status === 404;
-    const draftLoadFailed = draftQuery.error !== null && !hasNoCurrentDraft;
+    const draftLoadFailed =
+        selectedDraftId === undefined &&
+        draftQuery.error !== null &&
+        !hasNoCurrentDraft;
     const contentLoadFailed = contentQuery.error !== null;
     const isLoading =
-        draftQuery.isPending ||
+        (selectedDraftId === undefined && draftQuery.isPending) ||
         (activeDraftId !== undefined && contentQuery.isPending);
 
     if (isLoading) {
@@ -455,9 +553,35 @@ export function SubmitExpenseScreen(): JSX.Element {
                     className="submit-expense-screen__status"
                     tone={activeDraftId === undefined ? "neutral" : "info"}
                 >
-                    {activeDraftId === undefined ? "New Draft" : "Drafted"}
+                    {activeDraftId === undefined
+                        ? "New Draft"
+                        : selectedDraftId === undefined
+                          ? "Drafted"
+                          : "Selected Draft"}
                 </Badge>
             </header>
+
+            {selectedDraftId === undefined ? null : (
+                <div className="submit-expense-selected-draft" role="status">
+                    <div>
+                        <strong>Editing selected draft</strong>
+                        <span>
+                            Expense Report {selectedDraftId.slice(0, 8)}
+                        </span>
+                    </div>
+                    <button
+                        className="button button--secondary"
+                        onClick={() => {
+                            void Promise.resolve(
+                                navigate({ to: "/my-submissions" }),
+                            );
+                        }}
+                        type="button"
+                    >
+                        Back to My Submissions
+                    </button>
+                </div>
+            )}
 
             {draftLoadFailed || contentLoadFailed ? (
                 <p className="submit-expense-alert" role="alert">
@@ -495,7 +619,13 @@ export function SubmitExpenseScreen(): JSX.Element {
 
                 {savedContent.lineItems.length > 0 ||
                 savedContent.mileageEntries.length > 0 ? (
-                    <SavedDraftContent content={savedContent} />
+                    <SavedDraftContent
+                        content={savedContent}
+                        isMutating={savedSourceMutation.isPending}
+                        onMutate={(input) =>
+                            savedSourceMutation.mutateAsync(input)
+                        }
+                    />
                 ) : null}
 
                 <div className="submit-expense-card">
@@ -581,6 +711,11 @@ export function SubmitExpenseScreen(): JSX.Element {
                         {getErrorMessage(mutation.error)}
                     </p>
                 )}
+                {savedSourceMutation.error === null ? null : (
+                    <p className="submit-expense-alert" role="alert">
+                        {getErrorMessage(savedSourceMutation.error)}
+                    </p>
+                )}
                 {successMessage === null ? null : (
                     <p className="submit-expense-success-message" role="status">
                         {successMessage}
@@ -641,9 +776,102 @@ export function SubmitExpenseScreen(): JSX.Element {
 
 function SavedDraftContent({
     content,
+    isMutating,
+    onMutate,
 }: {
     content: DraftExpenseContent;
+    isMutating: boolean;
+    onMutate: (input: SavedDraftSourceMutation) => Promise<DraftExpenseContent>;
 }): JSX.Element {
+    const [editing, setEditing] = useState<
+        | {
+              sourceType: "line_item";
+              sourceId: string;
+              merchant: string;
+              expenseDate: string;
+              category: (typeof expenseCategories)[number];
+              amount: string;
+          }
+        | {
+              sourceType: "mileage";
+              sourceId: string;
+              route: string;
+              distance: string;
+              mileageDate: string;
+          }
+        | null
+    >(null);
+    const [editError, setEditError] = useState<string | null>(null);
+
+    const saveEditing = async (): Promise<void> => {
+        if (editing === null) {
+            return;
+        }
+
+        const input: SavedDraftSourceMutation =
+            editing.sourceType === "line_item"
+                ? {
+                      sourceType: "line_item",
+                      sourceId: editing.sourceId,
+                      action: "update",
+                      values: {
+                          merchant: editing.merchant,
+                          expenseDate: editing.expenseDate,
+                          category: editing.category,
+                          amount: Number(editing.amount),
+                          currency: "USD",
+                      },
+                  }
+                : {
+                      sourceType: "mileage",
+                      sourceId: editing.sourceId,
+                      action: "update",
+                      values: {
+                          route: editing.route,
+                          distance: Number(editing.distance),
+                          mileageDate: editing.mileageDate,
+                      },
+                  };
+        const parsedInput = savedDraftSourceMutationSchema.safeParse(input);
+        if (!parsedInput.success) {
+            setEditError(
+                "Complete every field with a valid date and positive amount or distance.",
+            );
+            return;
+        }
+
+        setEditError(null);
+        try {
+            await onMutate(parsedInput.data);
+            setEditing(null);
+        } catch {
+            // The parent mutation renders the Problem+JSON detail.
+        }
+    };
+
+    const deleteSource = async (
+        sourceType: "line_item" | "mileage",
+        sourceId: string,
+    ): Promise<void> => {
+        if (
+            !window.confirm(
+                "Remove this entry from the Drafted Expense Report?",
+            )
+        ) {
+            return;
+        }
+
+        setEditError(null);
+        try {
+            await onMutate({ sourceType, sourceId, action: "delete" });
+            if (editing?.sourceId === sourceId) {
+                setEditing(null);
+            }
+        } catch {
+            // The parent mutation renders the Problem+JSON detail.
+        }
+    };
+
     return (
         <section
             className="submit-expense-card submit-expense-saved"
@@ -656,34 +884,293 @@ function SavedDraftContent({
                 </div>
             </div>
             <ul className="submit-expense-saved__list">
-                {content.lineItems.map((item) => (
-                    <li key={item.id}>
-                        <div>
-                            <strong>{item.merchant}</strong>
-                            <span>
-                                {item.expenseDate} · {item.category}
-                            </span>
-                        </div>
-                        <strong>{formatCurrency(item.amount)}</strong>
-                    </li>
-                ))}
-                {content.mileageEntries.map((entry) => (
-                    <li key={entry.id}>
-                        <div>
-                            <strong>{entry.route}</strong>
-                            <span>
-                                {entry.mileageDate} · Mileage · {entry.distance}{" "}
-                                miles
-                            </span>
-                        </div>
-                        <div className="submit-expense-saved__amount">
-                            <strong>
-                                {formatCurrency(entry.reimbursementAmount)}
-                            </strong>
-                        </div>
-                    </li>
-                ))}
+                {content.lineItems.map((item) => {
+                    const isEditing =
+                        editing?.sourceType === "line_item" &&
+                        editing.sourceId === item.id;
+
+                    return (
+                        <li key={item.id}>
+                            {isEditing ? (
+                                <div className="submit-expense-saved__editor">
+                                    <label>
+                                        Merchant
+                                        <input
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    merchant:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            value={editing.merchant}
+                                        />
+                                    </label>
+                                    <label>
+                                        Expense date
+                                        <input
+                                            max={getToday()}
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    expenseDate:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            type="date"
+                                            value={editing.expenseDate}
+                                        />
+                                    </label>
+                                    <label>
+                                        Category
+                                        <select
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    category: event.target
+                                                        .value as (typeof expenseCategories)[number],
+                                                })
+                                            }
+                                            value={editing.category}
+                                        >
+                                            {expenseCategories.map(
+                                                (category) => (
+                                                    <option
+                                                        key={category}
+                                                        value={category}
+                                                    >
+                                                        {category}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
+                                    </label>
+                                    <label>
+                                        Amount
+                                        <input
+                                            min="0.01"
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    amount: event.target.value,
+                                                })
+                                            }
+                                            step="0.01"
+                                            type="number"
+                                            value={editing.amount}
+                                        />
+                                    </label>
+                                </div>
+                            ) : (
+                                <div>
+                                    <strong>{item.merchant}</strong>
+                                    <span>
+                                        {item.expenseDate} · {item.category}
+                                    </span>
+                                </div>
+                            )}
+                            <div className="submit-expense-saved__entry-actions">
+                                {isEditing ? (
+                                    <>
+                                        <button
+                                            className="button button--primary"
+                                            disabled={isMutating}
+                                            onClick={() => {
+                                                void saveEditing();
+                                            }}
+                                            type="button"
+                                        >
+                                            Save changes
+                                        </button>
+                                        <button
+                                            className="button button--secondary"
+                                            disabled={isMutating}
+                                            onClick={() => setEditing(null)}
+                                            type="button"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>
+                                            {formatCurrency(item.amount)}
+                                        </strong>
+                                        <button
+                                            className="button button--secondary"
+                                            disabled={isMutating}
+                                            onClick={() =>
+                                                setEditing({
+                                                    sourceType: "line_item",
+                                                    sourceId: item.id,
+                                                    merchant: item.merchant,
+                                                    expenseDate:
+                                                        item.expenseDate,
+                                                    category: item.category,
+                                                    amount: item.amount.toFixed(
+                                                        2,
+                                                    ),
+                                                })
+                                            }
+                                            type="button"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            className="button button--danger"
+                                            disabled={isMutating}
+                                            onClick={() => {
+                                                void deleteSource(
+                                                    "line_item",
+                                                    item.id,
+                                                );
+                                            }}
+                                            type="button"
+                                        >
+                                            Delete
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </li>
+                    );
+                })}
+                {content.mileageEntries.map((entry) => {
+                    const isEditing =
+                        editing?.sourceType === "mileage" &&
+                        editing.sourceId === entry.id;
+
+                    return (
+                        <li key={entry.id}>
+                            {isEditing ? (
+                                <div className="submit-expense-saved__editor">
+                                    <label>
+                                        Route
+                                        <input
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    route: event.target.value,
+                                                })
+                                            }
+                                            value={editing.route}
+                                        />
+                                    </label>
+                                    <label>
+                                        Mileage date
+                                        <input
+                                            max={getToday()}
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    mileageDate:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            type="date"
+                                            value={editing.mileageDate}
+                                        />
+                                    </label>
+                                    <label>
+                                        Distance
+                                        <input
+                                            min="0.01"
+                                            onChange={(event) =>
+                                                setEditing({
+                                                    ...editing,
+                                                    distance:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            step="0.01"
+                                            type="number"
+                                            value={editing.distance}
+                                        />
+                                    </label>
+                                </div>
+                            ) : (
+                                <div>
+                                    <strong>{entry.route}</strong>
+                                    <span>
+                                        {entry.mileageDate} · Mileage ·{" "}
+                                        {entry.distance} miles
+                                    </span>
+                                </div>
+                            )}
+                            <div className="submit-expense-saved__entry-actions">
+                                {isEditing ? (
+                                    <>
+                                        <button
+                                            className="button button--primary"
+                                            disabled={isMutating}
+                                            onClick={() => {
+                                                void saveEditing();
+                                            }}
+                                            type="button"
+                                        >
+                                            Save changes
+                                        </button>
+                                        <button
+                                            className="button button--secondary"
+                                            disabled={isMutating}
+                                            onClick={() => setEditing(null)}
+                                            type="button"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>
+                                            {formatCurrency(
+                                                entry.reimbursementAmount,
+                                            )}
+                                        </strong>
+                                        <button
+                                            className="button button--secondary"
+                                            disabled={isMutating}
+                                            onClick={() =>
+                                                setEditing({
+                                                    sourceType: "mileage",
+                                                    sourceId: entry.id,
+                                                    route: entry.route,
+                                                    distance:
+                                                        entry.distance.toFixed(
+                                                            2,
+                                                        ),
+                                                    mileageDate:
+                                                        entry.mileageDate,
+                                                })
+                                            }
+                                            type="button"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            className="button button--danger"
+                                            disabled={isMutating}
+                                            onClick={() => {
+                                                void deleteSource(
+                                                    "mileage",
+                                                    entry.id,
+                                                );
+                                            }}
+                                            type="button"
+                                        >
+                                            Delete
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </li>
+                    );
+                })}
             </ul>
+            {editError === null ? null : (
+                <p className="submit-expense-alert" role="alert">
+                    {editError}
+                </p>
+            )}
             <p className="submit-expense-saved__receipts">
                 {content.receipts.length} receipt
                 {content.receipts.length === 1 ? "" : "s"} attached

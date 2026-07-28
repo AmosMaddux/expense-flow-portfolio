@@ -13,9 +13,13 @@ import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { SubmitExpenseScreen } from "./SubmitExpenseScreen";
 
 const navigateMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const locationSearchMock = vi.hoisted(
+    (): { current: Record<string, unknown> } => ({ current: {} }),
+);
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+    useLocation: () => ({ search: locationSearchMock.current }),
     useNavigate: () => navigateMock,
 }));
 
@@ -165,6 +169,7 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     navigateMock.mockClear();
+    locationSearchMock.current = {};
 });
 
 describe("SubmitExpenseScreen", () => {
@@ -175,6 +180,113 @@ describe("SubmitExpenseScreen", () => {
 
         expect(screen.queryByText("Employee Portal")).toBeNull();
         expect(draftedBadge.className).toContain("ef-badge--info");
+    });
+
+    test("opens a selected returned draft and edits or deletes its saved entries", async () => {
+        locationSearchMock.current = { draftId: reportId };
+        vi.spyOn(window, "confirm").mockReturnValue(true);
+        let content = {
+            expenseReportId: reportId,
+            lineItems: [
+                {
+                    id: lineItemId,
+                    merchant: "Synthetic Cafe",
+                    expenseDate: "2026-07-20",
+                    category: "Meals",
+                    amount: 12,
+                    currency: "USD",
+                },
+            ],
+            receipts: [],
+            mileageEntries: [
+                {
+                    id: receiptId,
+                    route: "Synthetic Office to Site A",
+                    distance: 10,
+                    mileageDate: "2026-07-20",
+                    reimbursementAmount: 6.7,
+                },
+            ],
+        };
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            if (
+                input ===
+                    `/v1/expense-reports/${reportId}/line-items/${lineItemId}` &&
+                init?.method === "PATCH"
+            ) {
+                content = {
+                    ...content,
+                    lineItems: [
+                        {
+                            ...content.lineItems[0],
+                            merchant: "Synthetic Updated Cafe",
+                            amount: 18.5,
+                        },
+                    ],
+                };
+                return Promise.resolve(createJsonResponse(content));
+            }
+            if (
+                input ===
+                    `/v1/expense-reports/${reportId}/mileage-entries/${receiptId}` &&
+                init?.method === "DELETE"
+            ) {
+                content = { ...content, mileageEntries: [] };
+                return Promise.resolve(createJsonResponse(content));
+            }
+            if (
+                input === `/v1/expense-reports/${reportId}/draft-content` &&
+                (init?.method === undefined || init.method === "GET")
+            ) {
+                return Promise.resolve(createJsonResponse(content));
+            }
+
+            return Promise.resolve(createJsonResponse({}, 404));
+        });
+
+        renderScreen(fetchImplementation);
+
+        expect(await screen.findByText("Selected Draft")).toBeTruthy();
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([input]) => input === "/v1/expense-reports/drafts/current",
+            ),
+        ).toBe(false);
+
+        const lineItemRow = screen.getByText("Synthetic Cafe").closest("li");
+        if (lineItemRow === null) {
+            throw new Error("Expected the saved line-item row.");
+        }
+        fireEvent.click(
+            within(lineItemRow).getByRole("button", { name: "Edit" }),
+        );
+        fireEvent.change(screen.getByLabelText("Merchant"), {
+            target: { value: "Synthetic Updated Cafe" },
+        });
+        fireEvent.change(screen.getByLabelText("Amount"), {
+            target: { value: "18.50" },
+        });
+        fireEvent.click(
+            within(lineItemRow).getByRole("button", {
+                name: "Save changes",
+            }),
+        );
+
+        expect(await screen.findByText("Synthetic Updated Cafe")).toBeTruthy();
+
+        const mileageRow = screen
+            .getByText("Synthetic Office to Site A")
+            .closest("li");
+        if (mileageRow === null) {
+            throw new Error("Expected the saved mileage row.");
+        }
+        fireEvent.click(
+            within(mileageRow).getByRole("button", { name: "Delete" }),
+        );
+
+        await waitFor(() =>
+            expect(screen.queryByText("Synthetic Office to Site A")).toBeNull(),
+        );
     });
 
     test("shows zod validation errors for an empty line item", async () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { ExpenseReport } from "../../db/schema/index.js";
+import type { EmployeeSubmissionSummary } from "../repository/expenseReportRepository.js";
 import {
     readMySubmissionDetail,
     readMySubmissions,
@@ -17,7 +17,9 @@ afterEach(() => {
     vi.unstubAllEnvs();
 });
 
-function buildReport(overrides: Partial<ExpenseReport> = {}): ExpenseReport {
+function buildReport(
+    overrides: Partial<EmployeeSubmissionSummary> = {},
+): EmployeeSubmissionSummary {
     return {
         id: "30000000-0000-4000-8000-000000000001",
         tenantId,
@@ -25,6 +27,7 @@ function buildReport(overrides: Partial<ExpenseReport> = {}): ExpenseReport {
         dueDate: "2026-07-26",
         priority: "Normal",
         currentStage: "Manager Approval",
+        isSentBack: false,
         onHold: false,
         holdReason: null,
         createdAt: new Date("2026-07-20T12:00:00.000Z"),
@@ -96,6 +99,24 @@ describe("readMySubmissions", () => {
         expect(result.items[0]).not.toHaveProperty("owner");
     });
 
+    test("identifies a Drafted report that was sent back", async () => {
+        const result = await readMySubmissions(
+            { tenantId, ownerId, pageSize: 25 },
+            {
+                store: {
+                    findByOwner: vi.fn().mockResolvedValue([
+                        buildReport({
+                            currentStage: "Drafted",
+                            isSentBack: true,
+                        }),
+                    ]),
+                },
+            },
+        );
+
+        expect(result.items[0]?.isSentBack).toBe(true);
+    });
+
     test("returns an opaque cursor and decodes it for the next page", async () => {
         const reports = [
             buildReport({
@@ -146,6 +167,7 @@ describe("readMySubmissionDetail", () => {
         const reportId = "30000000-0000-4000-8000-000000000010";
         const findDetail = vi.fn().mockResolvedValue({
             report: buildReport({ id: reportId }),
+            rejectionReason: "Receipt does not match the submitted amount.",
             lineItems: [
                 {
                     id: "40000000-0000-4000-8000-000000000010",
@@ -156,6 +178,7 @@ describe("readMySubmissionDetail", () => {
                     category: "Travel",
                     amount: "84.25",
                     currency: "USD",
+                    reviewAction: "reject",
                     createdAt: new Date("2026-07-18T12:00:00.000Z"),
                     updatedAt: new Date("2026-07-18T12:00:00.000Z"),
                 },
@@ -168,6 +191,7 @@ describe("readMySubmissionDetail", () => {
                     route: "Synthetic Office to Client Site",
                     distance: "10.00",
                     mileageDate: "2026-07-19",
+                    reviewAction: "approve",
                     createdAt: new Date("2026-07-19T12:00:00.000Z"),
                     updatedAt: new Date("2026-07-19T12:00:00.000Z"),
                 },
@@ -187,10 +211,15 @@ describe("readMySubmissionDetail", () => {
         expect(detail.lineItems[0]).toMatchObject({
             merchant: "Synthetic Rail",
             amount: 84.25,
+            reviewAction: "reject",
         });
+        expect(detail.rejectionReason).toBe(
+            "Receipt does not match the submitted amount.",
+        );
         expect(detail.mileageEntries[0]).toMatchObject({
             distance: 10,
             currency: "USD",
+            reviewAction: "approve",
         });
     });
 
@@ -203,6 +232,7 @@ describe("readMySubmissionDetail", () => {
             {
                 findDetail: vi.fn().mockResolvedValue({
                     report: buildReport({ id: reportId }),
+                    rejectionReason: null,
                     lineItems: [],
                     mileageEntries: [],
                 }),

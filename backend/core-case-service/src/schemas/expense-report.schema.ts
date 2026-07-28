@@ -11,6 +11,7 @@ export {
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     DraftExpenseContentOutboundResponseSchema,
+    DraftExpenseSourceParamsSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
@@ -35,6 +36,7 @@ export {
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportStageInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateDraftLineItemInboundRequestSchema,
     approvalQueueLineItemListResponseSchema,
     approvalQueueLineItemResponseSchema,
     auditEntryListResponseSchema,
@@ -85,4 +87,5 @@ export {
     type SubmitExpenseReportRequest,
     type TransitionExpenseReportStageRequest,
     type TransitionExpenseReportWorkflowRequest,
+    type UpdateDraftLineItemRequest,
 } from "../expenseReports/dto/expenseReportDto.js";

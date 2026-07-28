@@ -12,6 +12,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { MySubmissionsScreen } from "./MySubmissionsScreen";
 
+const navigateMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+    useNavigate: () => navigateMock,
+}));
+
 const tenantId = "10000000-0000-4000-8000-000000000001";
 const userId = "20000000-0000-4000-8000-000000000001";
 
@@ -52,6 +59,7 @@ function renderScreen(fetchImplementation: typeof fetch): void {
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    navigateMock.mockClear();
 });
 
 describe("MySubmissionsScreen", () => {
@@ -65,6 +73,7 @@ describe("MySubmissionsScreen", () => {
                                 id: "30000000-0000-4000-8000-000000000001",
                                 dueDate: "2026-07-26",
                                 currentStage: "Manager Approval",
+                                isSentBack: false,
                                 onHold: false,
                                 isOverdue: true,
                                 createdAt: "2026-07-20T12:00:00.000Z",
@@ -74,6 +83,7 @@ describe("MySubmissionsScreen", () => {
                                 id: "30000000-0000-4000-8000-000000000002",
                                 dueDate: "2026-08-01",
                                 currentStage: "Paid",
+                                isSentBack: false,
                                 onHold: false,
                                 isOverdue: false,
                                 createdAt: "2026-07-21T12:00:00.000Z",
@@ -142,6 +152,7 @@ describe("MySubmissionsScreen", () => {
                 ? {
                       id: reportId,
                       currentStage: "Submitted",
+                      rejectionReason: null,
                       lineItems: [
                           {
                               id: "40000000-0000-4000-8000-000000000011",
@@ -150,6 +161,7 @@ describe("MySubmissionsScreen", () => {
                               category: "Travel",
                               amount: 84.25,
                               currency: "USD",
+                              reviewAction: null,
                           },
                       ],
                       mileageEntries: [],
@@ -160,6 +172,7 @@ describe("MySubmissionsScreen", () => {
                               id: reportId,
                               dueDate: "2026-08-01",
                               currentStage: "Submitted",
+                              isSentBack: false,
                               onHold: false,
                               isOverdue: false,
                               createdAt: "2026-07-20T12:00:00.000Z",
@@ -198,6 +211,118 @@ describe("MySubmissionsScreen", () => {
         ).toBeTruthy();
     });
 
+    test("shows the send-back reason and submits the selected draft from details", async () => {
+        const reportId = "30000000-0000-4000-8000-000000000012";
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const path =
+                typeof input === "string"
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url;
+            if (path.endsWith("/submit") && init?.method === "POST") {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            id: reportId,
+                            currentStage: "Submitted",
+                        }),
+                        {
+                            headers: { "Content-Type": "application/json" },
+                            status: 201,
+                        },
+                    ),
+                );
+            }
+
+            const body = path.endsWith("/submission-detail")
+                ? {
+                      id: reportId,
+                      currentStage: "Drafted",
+                      rejectionReason:
+                          "Receipt does not match the submitted amount.",
+                      lineItems: [
+                          {
+                              id: "40000000-0000-4000-8000-000000000012",
+                              merchant: "Synthetic Cafe",
+                              expenseDate: "2026-07-18",
+                              category: "Meals",
+                              amount: 24.5,
+                              currency: "USD",
+                              reviewAction: "reject",
+                          },
+                      ],
+                      mileageEntries: [
+                          {
+                              id: "50000000-0000-4000-8000-000000000012",
+                              route: "Synthetic Office to Client Site",
+                              distance: 12,
+                              mileageDate: "2026-07-19",
+                              reimbursementAmount: 8.04,
+                              currency: "USD",
+                              reviewAction: "approve",
+                          },
+                      ],
+                  }
+                : {
+                      items: [
+                          {
+                              id: reportId,
+                              dueDate: "2026-08-01",
+                              currentStage: "Drafted",
+                              isSentBack: true,
+                              onHold: false,
+                              isOverdue: false,
+                              createdAt: "2026-07-20T12:00:00.000Z",
+                              updatedAt: "2026-07-21T12:00:00.000Z",
+                          },
+                      ],
+                      nextCursor: null,
+                  };
+
+            return Promise.resolve(
+                new Response(JSON.stringify(body), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            );
+        });
+
+        renderScreen(fetchImplementation);
+
+        const report = await screen.findByLabelText(
+            `Expense Report ${reportId}`,
+        );
+        expect(within(report).getByText("Sent back")).toBeTruthy();
+        fireEvent.click(
+            within(report).getByRole("button", { name: "View details" }),
+        );
+
+        expect(
+            await within(report).findByText(
+                "Receipt does not match the submitted amount.",
+            ),
+        ).toBeTruthy();
+        expect(within(report).getByText("Denied")).toBeTruthy();
+        expect(within(report).getByText("Approved")).toBeTruthy();
+        fireEvent.click(
+            within(report).getByRole("button", {
+                name: "Submit this draft",
+            }),
+        );
+
+        expect(
+            await within(report).findByText("Expense Report submitted."),
+        ).toBeTruthy();
+        const submitCall = fetchImplementation.mock.calls.find(
+            ([input]) => input === `/v1/expense-reports/${reportId}/submit`,
+        );
+        expect(submitCall?.[1]?.method).toBe("POST");
+        expect(
+            new Headers(submitCall?.[1]?.headers).get("Idempotency-Key"),
+        ).toEqual(expect.any(String));
+    });
+
     test("loads the next bounded page when the employee selects Load more", async () => {
         const firstReportId = "30000000-0000-4000-8000-000000000021";
         const secondReportId = "30000000-0000-4000-8000-000000000022";
@@ -215,6 +340,7 @@ describe("MySubmissionsScreen", () => {
                         id: isNextPage ? secondReportId : firstReportId,
                         dueDate: "2026-08-01",
                         currentStage: isNextPage ? "Submitted" : "Drafted",
+                        isSentBack: false,
                         onHold: false,
                         isOverdue: false,
                         createdAt: "2026-07-20T12:00:00.000Z",

@@ -31,6 +31,7 @@ import {
     ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -54,6 +55,10 @@ const problemJsonSchema = z.object({
 
 const expenseReportIdPathParamsSchema = z.object({
     id: z.uuid(),
+});
+const expenseReportSourcePathParamsSchema = z.object({
+    id: z.uuid(),
+    sourceId: z.uuid(),
 });
 
 /**
@@ -89,6 +94,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const draftExpenseContentResponse = registry.register(
         "DraftExpenseContentResponse",
         DraftExpenseContentOutboundResponseSchema,
+    );
+    const updateDraftLineItemRequest = registry.register(
+        "UpdateDraftLineItemRequest",
+        UpdateDraftLineItemInboundRequestSchema,
     );
     const mileageEntryResponse = registry.register(
         "MileageEntryResponse",
@@ -353,6 +362,85 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             500: problemJsonResponse("Unexpected server error."),
         },
     });
+
+    for (const source of [
+        {
+            path: "/v1/expense-reports/{id}/line-items/{sourceId}",
+            label: "line item",
+            updateSchema: updateDraftLineItemRequest,
+        },
+        {
+            path: "/v1/expense-reports/{id}/mileage-entries/{sourceId}",
+            label: "mileage entry",
+            updateSchema: createMileageEntryRequest,
+        },
+    ] as const) {
+        registry.registerPath({
+            method: "patch",
+            path: source.path,
+            summary: `Update a saved draft ${source.label}`,
+            description: `Updates one ${source.label} in the authenticated Employee's own Drafted Expense Report.`,
+            security: [{ bearerAuth: [] }],
+            request: {
+                params: expenseReportSourcePathParamsSchema,
+                body: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: source.updateSchema,
+                        },
+                    },
+                },
+            },
+            responses: {
+                200: {
+                    description: "Updated draft content.",
+                    headers: rateLimitHeaders,
+                    content: {
+                        "application/json": {
+                            schema: draftExpenseContentResponse,
+                        },
+                    },
+                },
+                400: problemJsonResponse("Malformed draft update."),
+                401: problemJsonResponse("Valid access token required."),
+                403: problemJsonResponse("Employee Portal access required."),
+                404: problemJsonResponse("Draft expense entry not found."),
+                409: problemJsonResponse(
+                    "Expense entries can only be changed while Drafted.",
+                ),
+                429: rateLimitExceededResponse.ref,
+            },
+        });
+        registry.registerPath({
+            method: "delete",
+            path: source.path,
+            summary: `Delete a saved draft ${source.label}`,
+            description: `Deletes one ${source.label} from the authenticated Employee's own Drafted Expense Report.`,
+            security: [{ bearerAuth: [] }],
+            request: {
+                params: expenseReportSourcePathParamsSchema,
+            },
+            responses: {
+                200: {
+                    description: "Updated draft content.",
+                    headers: rateLimitHeaders,
+                    content: {
+                        "application/json": {
+                            schema: draftExpenseContentResponse,
+                        },
+                    },
+                },
+                401: problemJsonResponse("Valid access token required."),
+                403: problemJsonResponse("Employee Portal access required."),
+                404: problemJsonResponse("Draft expense entry not found."),
+                409: problemJsonResponse(
+                    "Expense entries can only be changed while Drafted.",
+                ),
+                429: rateLimitExceededResponse.ref,
+            },
+        });
+    }
 
     registry.registerPath({
         method: "get",

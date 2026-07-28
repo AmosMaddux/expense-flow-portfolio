@@ -1,5 +1,4 @@
 import { loadMileageConfig } from "../../config/mileageConfig.js";
-import type { ExpenseReport } from "../../db/schema/index.js";
 import { NotFoundError } from "../../errors/problem-json.js";
 import {
     MySubmissionDetailSchema,
@@ -16,6 +15,7 @@ import {
     findEmployeeSubmissionDetail,
     findExpenseReportsByOwner,
     type EmployeeSubmissionDetailContent,
+    type EmployeeSubmissionSummary,
     type ExpenseReportOwnerCursor,
 } from "../repository/expenseReportRepository.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
@@ -28,7 +28,7 @@ export type MySubmissionsStore = {
             cursor?: ExpenseReportOwnerCursor;
             limit: number;
         },
-    ): Promise<ExpenseReport[]>;
+    ): Promise<EmployeeSubmissionSummary[]>;
 };
 
 export type MySubmissionsServiceDependencies = {
@@ -76,6 +76,7 @@ export async function readMySubmissions(
             id: report.id,
             dueDate: report.dueDate,
             currentStage: report.currentStage,
+            isSentBack: report.isSentBack,
             onHold: report.onHold,
             isOverdue:
                 report.currentStage !== "Reconciled" && report.dueDate < today,
@@ -120,6 +121,7 @@ export async function readMySubmissionDetail(
     return MySubmissionDetailSchema.parse({
         id: content.report.id,
         currentStage: content.report.currentStage,
+        rejectionReason: content.rejectionReason,
         lineItems: content.lineItems.map((item) => ({
             id: item.id,
             merchant: item.merchant,
@@ -127,12 +129,13 @@ export async function readMySubmissionDetail(
             category: item.category,
             amount: Number(item.amount),
             currency: item.currency,
+            reviewAction: item.reviewAction,
         })),
         mileageEntries,
     });
 }
 
-function encodeMySubmissionsCursor(report: ExpenseReport): string {
+function encodeMySubmissionsCursor(report: EmployeeSubmissionSummary): string {
     return Buffer.from(
         [
             report.updatedAt.toISOString(),
@@ -174,6 +177,7 @@ function mapMileageEntries(
             reimbursementRateDecimal,
         ),
         currency: "USD",
+        reviewAction: entry.reviewAction,
     }));
 }
 

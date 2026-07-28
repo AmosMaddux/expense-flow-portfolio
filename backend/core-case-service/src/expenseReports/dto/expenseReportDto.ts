@@ -73,6 +73,34 @@ const DraftLineItemInboundSchema = z
     })
     .strict();
 
+/**
+ * Builds saved line-item update validation against a testable current-date clock.
+ */
+export function createUpdateDraftLineItemInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return DraftLineItemInboundSchema.superRefine((request, context) => {
+        const currentUtcDate = now().toISOString().slice(0, 10);
+        if (request.expenseDate > currentUtcDate) {
+            context.addIssue({
+                code: "custom",
+                message: "Expense date cannot be in the future.",
+                path: ["expenseDate"],
+            });
+        }
+    });
+}
+
+export const UpdateDraftLineItemInboundRequestSchema =
+    createUpdateDraftLineItemInboundRequestSchema();
+
+export const DraftExpenseSourceParamsSchema = z
+    .object({
+        id: z.uuid(),
+        sourceId: z.uuid(),
+    })
+    .strict();
+
 const DraftReceiptInboundSchema = z
     .object({
         lineItemIndex: z.number().int().nonnegative(),
@@ -347,6 +375,7 @@ export const MySubmissionSchema = z.object({
     id: z.uuid(),
     dueDate: z.iso.date(),
     currentStage: z.enum(approvedWorkflowStages),
+    isSentBack: z.boolean(),
     onHold: z.boolean(),
     isOverdue: z.boolean(),
     createdAt: z.date(),
@@ -363,6 +392,7 @@ export const MySubmissionPageSchema = z.object({
 export const MySubmissionDetailSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(approvedWorkflowStages),
+    rejectionReason: z.string().nullable(),
     lineItems: z.array(
         z.object({
             id: z.uuid(),
@@ -371,6 +401,7 @@ export const MySubmissionDetailSchema = z.object({
             category: z.string(),
             amount: z.number().nonnegative(),
             currency: z.string(),
+            reviewAction: z.enum(lineItemReviewActions).nullable(),
         }),
     ),
     mileageEntries: z.array(
@@ -381,6 +412,7 @@ export const MySubmissionDetailSchema = z.object({
             mileageDate: z.iso.date(),
             reimbursementAmount: z.number().nonnegative(),
             currency: z.literal("USD"),
+            reviewAction: z.enum(lineItemReviewActions).nullable(),
         }),
     ),
 });
@@ -499,6 +531,10 @@ export type CreateMileageEntryRequest = z.infer<
 
 export type AddDraftExpenseContentRequest = z.infer<
     typeof AddDraftExpenseContentInboundRequestSchema
+>;
+
+export type UpdateDraftLineItemRequest = z.infer<
+    typeof UpdateDraftLineItemInboundRequestSchema
 >;
 
 export type AddDraftExpenseContentResponse = z.infer<

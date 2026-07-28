@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+    and,
+    asc,
+    desc,
+    eq,
+    inArray,
+    isNull,
+    lt,
+    notExists,
+    or,
+    sql,
+} from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -114,6 +125,11 @@ export type InsertMileageEntryResult =
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
 
+export type ModifyDraftSourceResult =
+    | { kind: "modified" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
 export type AddDraftExpenseContentResult =
     | {
           kind: "created";
@@ -132,8 +148,21 @@ export type DraftExpenseContent = {
 
 export type EmployeeSubmissionDetailContent = {
     report: ExpenseReport;
-    lineItems: (typeof lineItem.$inferSelect)[];
-    mileageEntries: (typeof mileageEntry.$inferSelect)[];
+    rejectionReason: string | null;
+    lineItems: Array<
+        typeof lineItem.$inferSelect & {
+            reviewAction: "approve" | "reject" | null;
+        }
+    >;
+    mileageEntries: Array<
+        typeof mileageEntry.$inferSelect & {
+            reviewAction: "approve" | "reject" | null;
+        }
+    >;
+};
+
+export type EmployeeSubmissionSummary = ExpenseReport & {
+    isSentBack: boolean;
 };
 
 export type ExpenseReportOwnerCursor = {
@@ -255,7 +284,39 @@ export async function findCurrentDraftExpenseReport(
     tenantId: string,
     ownerId: string,
 ): Promise<ExpenseReport | undefined> {
-    const reports = await db
+    const sentBackAuditRows = db
+        .select({ id: auditEntry.id })
+        .from(auditEntry)
+        .where(
+            and(
+                eq(auditEntry.tenantId, expenseReport.tenantId),
+                eq(auditEntry.expenseReportId, expenseReport.id),
+                eq(auditEntry.action, "transition_sent_back"),
+            ),
+        );
+    const workingDrafts = await db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+                eq(expenseReport.currentStage, "Drafted"),
+                notExists(sentBackAuditRows),
+            ),
+        )
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        )
+        .limit(1);
+
+    if (workingDrafts[0] !== undefined) {
+        return workingDrafts[0];
+    }
+
+    const returnedDrafts = await db
         .select()
         .from(expenseReport)
         .where(
@@ -272,7 +333,7 @@ export async function findCurrentDraftExpenseReport(
         )
         .limit(1);
 
-    return reports[0];
+    return returnedDrafts[0];
 }
 
 /**
@@ -285,7 +346,7 @@ export async function findExpenseReportsByOwner(
         cursor?: ExpenseReportOwnerCursor;
         limit: number;
     } = { limit: 26 },
-): Promise<ExpenseReport[]> {
+): Promise<EmployeeSubmissionSummary[]> {
     const cursorCondition =
         pagination.cursor === undefined
             ? undefined
@@ -302,7 +363,7 @@ export async function findExpenseReportsByOwner(
                   ),
               );
 
-    return db
+    const reports = await db
         .select()
         .from(expenseReport)
         .where(
@@ -318,6 +379,34 @@ export async function findExpenseReportsByOwner(
             desc(expenseReport.id),
         )
         .limit(pagination.limit);
+
+    if (reports.length === 0) {
+        return [];
+    }
+
+    const sentBackRows = await db
+        .select({ expenseReportId: auditEntry.expenseReportId })
+        .from(auditEntry)
+        .where(
+            and(
+                eq(auditEntry.tenantId, tenantId),
+                inArray(
+                    auditEntry.expenseReportId,
+                    reports.map((report) => report.id),
+                ),
+                eq(auditEntry.action, "transition_sent_back"),
+            ),
+        );
+    const sentBackReportIds = new Set(
+        sentBackRows.map((row) => row.expenseReportId),
+    );
+
+    return reports.map((report) => ({
+        ...report,
+        isSentBack:
+            report.currentStage === "Drafted" &&
+            sentBackReportIds.has(report.id),
+    }));
 }
 
 /**
@@ -337,7 +426,12 @@ export async function findEmployeeSubmissionDetail(
         return undefined;
     }
 
-    const [savedLineItems, mileageEntries] = await Promise.all([
+    const [
+        savedLineItems,
+        mileageEntries,
+        latestSendBackRows,
+        latestReviewRows,
+    ] = await Promise.all([
         db
             .select()
             .from(lineItem)
@@ -358,13 +452,66 @@ export async function findEmployeeSubmissionDetail(
                 ),
             )
             .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+        db
+            .select({ rejectionReason: auditEntry.outcomeReason })
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, expenseReportId),
+                    eq(auditEntry.action, "transition_sent_back"),
+                ),
+            )
+            .orderBy(desc(auditEntry.createdAt), desc(auditEntry.id))
+            .limit(1),
+        db
+            .select({
+                sourceType: glCodingResult.sourceType,
+                sourceId: glCodingResult.sourceId,
+                reviewAction: glCodingResult.lineItemReviewAction,
+            })
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
     ]);
+    const latestReviewBySource = new Map<string, string | null>();
+    for (const row of latestReviewRows) {
+        const sourceKey = `${row.sourceType}:${row.sourceId}`;
+        if (!latestReviewBySource.has(sourceKey)) {
+            latestReviewBySource.set(sourceKey, row.reviewAction);
+        }
+    }
 
     return {
         report,
-        lineItems: savedLineItems,
-        mileageEntries,
+        rejectionReason:
+            report.currentStage === "Drafted"
+                ? (latestSendBackRows[0]?.rejectionReason ?? null)
+                : null,
+        lineItems: savedLineItems.map((item) => ({
+            ...item,
+            reviewAction: parseReviewAction(
+                latestReviewBySource.get(`line_item:${item.id}`),
+            ),
+        })),
+        mileageEntries: mileageEntries.map((entry) => ({
+            ...entry,
+            reviewAction: parseReviewAction(
+                latestReviewBySource.get(`mileage:${entry.id}`),
+            ),
+        })),
     };
+}
+
+function parseReviewAction(
+    value: string | null | undefined,
+): "approve" | "reject" | null {
+    return value === "approve" || value === "reject" ? value : null;
 }
 
 /**
@@ -431,6 +578,73 @@ export async function findDraftExpenseContent(
         receipts,
         mileageEntries,
     };
+}
+
+async function lockOwnedDraft(
+    transaction: ExpenseReportTransaction,
+    request: {
+        tenantId: string;
+        expenseReportId: string;
+        ownerId: string;
+    },
+): Promise<
+    | { kind: "draft" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" }
+> {
+    const reports = await transaction
+        .select({ currentStage: expenseReport.currentStage })
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, request.tenantId),
+                eq(expenseReport.id, request.expenseReportId),
+                eq(expenseReport.owner, request.ownerId),
+            ),
+        )
+        .limit(1)
+        .for("update");
+    const report = reports[0];
+
+    if (report === undefined) {
+        return { kind: "not_found" };
+    }
+    if (report.currentStage !== "Drafted") {
+        return {
+            kind: "invalid_stage",
+            currentStage: report.currentStage as ExpenseReportStage,
+        };
+    }
+
+    return { kind: "draft" };
+}
+
+async function touchDraftAndAudit(
+    transaction: ExpenseReportTransaction,
+    request: {
+        tenantId: string;
+        expenseReportId: string;
+        actorId: string;
+    },
+    action: string,
+): Promise<void> {
+    await transaction
+        .update(expenseReport)
+        .set({ updatedAt: new Date() })
+        .where(
+            and(
+                eq(expenseReport.tenantId, request.tenantId),
+                eq(expenseReport.id, request.expenseReportId),
+            ),
+        );
+    await appendAuditEntry(transaction, {
+        tenantId: request.tenantId,
+        expenseReportId: request.expenseReportId,
+        actorId: request.actorId,
+        action,
+        stageBeforeAction: "Drafted",
+        stageAfterProposedAction: "Drafted",
+    });
 }
 
 /**
@@ -505,6 +719,227 @@ export async function insertMileageEntry(request: {
         });
 
         return { kind: "created", entry };
+    });
+}
+
+/**
+ * Updates one saved line item in an employee-owned Drafted Expense Report.
+ */
+export async function updateDraftLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+    merchant: string;
+    expenseDate: string;
+    category: string;
+    amount: string;
+    currency: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const updatedRows = await transaction
+            .update(lineItem)
+            .set({
+                merchant: request.merchant,
+                expenseDate: request.expenseDate,
+                category: request.category,
+                amount: request.amount,
+                currency: request.currency,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            )
+            .returning({ id: lineItem.id });
+        if (updatedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await transaction
+            .update(receiptMetadata)
+            .set({
+                merchant: request.merchant,
+                receiptDate: request.expenseDate,
+                amount: request.amount,
+            })
+            .where(
+                and(
+                    eq(receiptMetadata.tenantId, request.tenantId),
+                    eq(
+                        receiptMetadata.expenseReportId,
+                        request.expenseReportId,
+                    ),
+                    eq(receiptMetadata.lineItemId, request.sourceId),
+                ),
+            );
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_line_item_updated",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Deletes one saved line item and its receipt metadata from an employee-owned draft.
+ */
+export async function deleteDraftLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const sourceRows = await transaction
+            .select({ id: lineItem.id })
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            )
+            .limit(1);
+        if (sourceRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await transaction
+            .delete(receiptMetadata)
+            .where(
+                and(
+                    eq(receiptMetadata.tenantId, request.tenantId),
+                    eq(
+                        receiptMetadata.expenseReportId,
+                        request.expenseReportId,
+                    ),
+                    eq(receiptMetadata.lineItemId, request.sourceId),
+                ),
+            );
+        await transaction
+            .delete(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            );
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_line_item_deleted",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Updates one mileage entry in an employee-owned Drafted Expense Report.
+ */
+export async function updateDraftMileageEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+    route: string;
+    distance: string;
+    mileageDate: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const updatedRows = await transaction
+            .update(mileageEntry)
+            .set({
+                route: request.route,
+                distance: request.distance,
+                mileageDate: request.mileageDate,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, request.tenantId),
+                    eq(mileageEntry.expenseReportId, request.expenseReportId),
+                    eq(mileageEntry.id, request.sourceId),
+                ),
+            )
+            .returning({ id: mileageEntry.id });
+        if (updatedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_mileage_entry_updated",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Deletes one mileage entry from an employee-owned Drafted Expense Report.
+ */
+export async function deleteDraftMileageEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const deletedRows = await transaction
+            .delete(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, request.tenantId),
+                    eq(mileageEntry.expenseReportId, request.expenseReportId),
+                    eq(mileageEntry.id, request.sourceId),
+                ),
+            )
+            .returning({ id: mileageEntry.id });
+        if (deletedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_mileage_entry_deleted",
+        );
+
+        return { kind: "modified" };
     });
 }
 

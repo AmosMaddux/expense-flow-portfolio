@@ -123,9 +123,6 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.id,
         ),
-        uniqueIndex("expense_report_one_draft_per_owner_idx")
-            .on(table.tenantId, table.owner)
-            .where(sql`${table.currentStage} = 'Drafted'`),
     ],
 );
 

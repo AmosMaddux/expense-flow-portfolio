@@ -192,6 +192,7 @@ void describe("Expense Report controller authorization", () => {
         readMySubmissionDetailMock.mockResolvedValue({
             id: reportId,
             currentStage: "Submitted",
+            rejectionReason: null,
             lineItems: [],
             mileageEntries: [],
         });

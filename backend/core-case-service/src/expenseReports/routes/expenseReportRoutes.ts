@@ -1,6 +1,8 @@
 import { Router, raw } from "express";
 
 import {
+    deleteDraftLineItemEntry,
+    deleteDraftMileageEntryRecord,
     getCaseQueueLineItems,
     getCaseQueueStageRollups,
     getCurrentDraftExpenseReport,
@@ -18,6 +20,8 @@ import {
     postExpenseReportTransition,
     postExpenseReport,
     postMileageEntry,
+    patchDraftLineItem,
+    patchDraftMileageEntry,
     putReceiptUpload,
 } from "../controllers/expenseReportController.js";
 
@@ -52,6 +56,22 @@ expenseReportRouter.post(
 expenseReportRouter.get(
     "/expense-reports/:id/draft-content",
     getDraftExpenseContent,
+);
+expenseReportRouter.patch(
+    "/expense-reports/:id/line-items/:sourceId",
+    patchDraftLineItem,
+);
+expenseReportRouter.delete(
+    "/expense-reports/:id/line-items/:sourceId",
+    deleteDraftLineItemEntry,
+);
+expenseReportRouter.patch(
+    "/expense-reports/:id/mileage-entries/:sourceId",
+    patchDraftMileageEntry,
+);
+expenseReportRouter.delete(
+    "/expense-reports/:id/mileage-entries/:sourceId",
+    deleteDraftMileageEntryRecord,
 );
 expenseReportRouter.post(
     "/expense-reports/:id/submit",

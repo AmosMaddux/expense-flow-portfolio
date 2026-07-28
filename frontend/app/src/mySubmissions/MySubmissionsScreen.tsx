@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import { useSession } from "../auth";
@@ -12,13 +14,18 @@ import {
     StageStepper,
     StatusBadge,
 } from "../components";
-import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
+import {
+    createTenantQueryKey,
+    QueryRequestError,
+    useExpenseFlowQuery,
+} from "../query/queryClient";
 
 const mySubmissionSchema = z
     .object({
         id: z.uuid(),
         dueDate: z.iso.date(),
         currentStage: z.enum(EXPENSE_REPORT_STAGES),
+        isSentBack: z.boolean(),
         onHold: z.boolean(),
         isOverdue: z.boolean(),
         createdAt: z.iso.datetime({ offset: true }),
@@ -43,6 +50,7 @@ const mySubmissionDetailSchema = z
     .object({
         id: z.uuid(),
         currentStage: z.enum(EXPENSE_REPORT_STAGES),
+        rejectionReason: z.string().nullable(),
         lineItems: z.array(
             z
                 .object({
@@ -52,6 +60,7 @@ const mySubmissionDetailSchema = z
                     category: z.string(),
                     amount: z.number().nonnegative(),
                     currency: z.string(),
+                    reviewAction: z.enum(["approve", "reject"]).nullable(),
                 })
                 .strict(),
         ),
@@ -64,6 +73,7 @@ const mySubmissionDetailSchema = z
                     mileageDate: z.iso.date(),
                     reimbursementAmount: z.number().nonnegative(),
                     currency: z.literal("USD"),
+                    reviewAction: z.enum(["approve", "reject"]).nullable(),
                 })
                 .strict(),
         ),
@@ -236,6 +246,9 @@ function SubmissionRow({
                 </div>
                 <div className="my-submission__actions">
                     <div className="my-submission__badges">
+                        {submission.isSentBack ? (
+                            <StatusBadge label="Sent back" tone="danger" />
+                        ) : null}
                         <StatusBadge
                             label={submission.currentStage}
                             tone={getStageTone(submission.currentStage)}
@@ -270,12 +283,62 @@ function SubmissionDetails({
 }: {
     submissionId: string;
 }): JSX.Element {
+    const session = useSession();
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const submitIdempotencyKey = useRef(crypto.randomUUID());
+    const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
     const query = useExpenseFlowQuery<MySubmissionDetail>({
         input: `/v1/expense-reports/${submissionId}/submission-detail`,
         keyParts: ["my-submissions", submissionId, "detail"],
         parseResponse: async (response) =>
             mySubmissionDetailSchema.parse(await response.json()),
         staleTime: 30_000,
+    });
+    const submitMutation = useMutation({
+        mutationFn: async () => {
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${submissionId}/submit`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": submitIdempotencyKey.current,
+                    },
+                    body: JSON.stringify({}),
+                },
+            );
+            if (!response.ok) {
+                const body: unknown = await response
+                    .json()
+                    .catch(() => undefined);
+                throw new QueryRequestError(
+                    response.status,
+                    readProblemDetail(body) ??
+                        "This draft could not be submitted.",
+                    body,
+                );
+            }
+
+            return z
+                .object({
+                    id: z.uuid(),
+                    currentStage: z.literal("Submitted"),
+                })
+                .passthrough()
+                .parse(await response.json());
+        },
+        onSuccess: async () => {
+            setSubmitSuccess("Expense Report submitted.");
+            submitIdempotencyKey.current = crypto.randomUUID();
+            if (session.user !== null) {
+                await queryClient.invalidateQueries({
+                    queryKey: createTenantQueryKey(session.user, [
+                        "my-submissions",
+                    ]),
+                });
+            }
+        },
     });
 
     if (query.isPending) {
@@ -295,30 +358,85 @@ function SubmissionDetails({
         );
     }
 
-    if (
-        query.data.lineItems.length === 0 &&
-        query.data.mileageEntries.length === 0
-    ) {
-        return (
-            <div className="my-submission-detail my-submission-detail--empty">
-                No line items or mileage entries have been added to this report.
-            </div>
-        );
-    }
+    const hasReportContent =
+        query.data.lineItems.length > 0 || query.data.mileageEntries.length > 0;
 
     return (
         <section
             className="my-submission-detail"
             aria-label="Submission details"
         >
+            {query.data.rejectionReason === null ? null : (
+                <div className="my-submission-detail__rejection" role="status">
+                    <strong>Reason sent back</strong>
+                    <p>{query.data.rejectionReason}</p>
+                </div>
+            )}
             {query.data.lineItems.length > 0 ? (
                 <LineItemTable lineItems={query.data.lineItems} />
             ) : null}
             {query.data.mileageEntries.length > 0 ? (
                 <MileageTable mileageEntries={query.data.mileageEntries} />
             ) : null}
+            {hasReportContent ? null : (
+                <div className="my-submission-detail--empty">
+                    No line items or mileage entries have been added to this
+                    report.
+                </div>
+            )}
+            {query.data.currentStage === "Drafted" ? (
+                <div className="my-submission-detail__submit">
+                    <Button
+                        onClick={() => {
+                            void Promise.resolve(
+                                navigate({
+                                    to: "/submit-expense",
+                                    search: { draftId: submissionId },
+                                }),
+                            );
+                        }}
+                        variant="secondary"
+                    >
+                        Edit this draft
+                    </Button>
+                    {hasReportContent ? (
+                        <Button
+                            disabled={submitMutation.isPending}
+                            onClick={() => {
+                                setSubmitSuccess(null);
+                                submitMutation.mutate();
+                            }}
+                            variant="primary"
+                        >
+                            {submitMutation.isPending
+                                ? "Submitting..."
+                                : "Submit this draft"}
+                        </Button>
+                    ) : null}
+                </div>
+            ) : null}
+            {submitMutation.isError ? (
+                <p className="form-message form-message--error" role="alert">
+                    {submitMutation.error.message}
+                </p>
+            ) : null}
+            {submitSuccess === null ? null : (
+                <p className="form-message form-message--success" role="status">
+                    {submitSuccess}
+                </p>
+            )}
         </section>
     );
+}
+
+function readProblemDetail(body: unknown): string | undefined {
+    if (body === null || typeof body !== "object") {
+        return undefined;
+    }
+
+    const detail = (body as Record<string, unknown>).detail;
+
+    return typeof detail === "string" && detail.length > 0 ? detail : undefined;
 }
 
 function LineItemTable({
@@ -330,13 +448,14 @@ function LineItemTable({
         <div className="my-submission-detail__section">
             <h4>Line items</h4>
             <div className="my-submission-detail__table-frame">
-                <table>
+                <table className="my-submission-detail__table--line-items">
                     <thead>
                         <tr>
                             <th scope="col">Date</th>
                             <th scope="col">Merchant</th>
                             <th scope="col">Category</th>
                             <th scope="col">Amount</th>
+                            <th scope="col">Review</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -345,8 +464,13 @@ function LineItemTable({
                                 <td>{formatDate(item.expenseDate)}</td>
                                 <td>{item.merchant}</td>
                                 <td>{item.category}</td>
-                                <td>
+                                <td className="my-submission-detail__amount">
                                     {formatCurrency(item.amount, item.currency)}
+                                </td>
+                                <td>
+                                    <ReviewDecisionBadge
+                                        reviewAction={item.reviewAction}
+                                    />
                                 </td>
                             </tr>
                         ))}
@@ -366,13 +490,14 @@ function MileageTable({
         <div className="my-submission-detail__section">
             <h4>Mileage</h4>
             <div className="my-submission-detail__table-frame">
-                <table>
+                <table className="my-submission-detail__table--mileage">
                     <thead>
                         <tr>
                             <th scope="col">Date</th>
                             <th scope="col">Route</th>
                             <th scope="col">Distance</th>
                             <th scope="col">Reimbursement</th>
+                            <th scope="col">Review</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -381,11 +506,16 @@ function MileageTable({
                                 <td>{formatDate(entry.mileageDate)}</td>
                                 <td>{entry.route}</td>
                                 <td>{entry.distance.toFixed(2)} mi</td>
-                                <td>
+                                <td className="my-submission-detail__amount">
                                     {formatCurrency(
                                         entry.reimbursementAmount,
                                         entry.currency,
                                     )}
+                                </td>
+                                <td>
+                                    <ReviewDecisionBadge
+                                        reviewAction={entry.reviewAction}
+                                    />
                                 </td>
                             </tr>
                         ))}
@@ -393,6 +523,23 @@ function MileageTable({
                 </table>
             </div>
         </div>
+    );
+}
+
+function ReviewDecisionBadge({
+    reviewAction,
+}: {
+    reviewAction: "approve" | "reject" | null;
+}): JSX.Element {
+    if (reviewAction === null) {
+        return <span className="my-submission-detail__not-reviewed">—</span>;
+    }
+
+    return (
+        <StatusBadge
+            label={reviewAction === "approve" ? "Approved" : "Denied"}
+            tone={reviewAction === "approve" ? "success" : "danger"}
+        />
     );
 }
 
