@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -128,6 +128,18 @@ export type DraftExpenseContent = {
     lineItems: (typeof lineItem.$inferSelect)[];
     receipts: (typeof receiptMetadata.$inferSelect)[];
     mileageEntries: (typeof mileageEntry.$inferSelect)[];
+};
+
+export type EmployeeSubmissionDetailContent = {
+    report: ExpenseReport;
+    lineItems: (typeof lineItem.$inferSelect)[];
+    mileageEntries: (typeof mileageEntry.$inferSelect)[];
+};
+
+export type ExpenseReportOwnerCursor = {
+    updatedAt: Date;
+    createdAt: Date;
+    id: string;
 };
 
 type ExpenseReportTransaction = Parameters<
@@ -261,6 +273,98 @@ export async function findCurrentDraftExpenseReport(
         .limit(1);
 
     return reports[0];
+}
+
+/**
+ * Reads every Expense Report owned by one employee within one tenant.
+ */
+export async function findExpenseReportsByOwner(
+    tenantId: string,
+    ownerId: string,
+    pagination: {
+        cursor?: ExpenseReportOwnerCursor;
+        limit: number;
+    } = { limit: 26 },
+): Promise<ExpenseReport[]> {
+    const cursorCondition =
+        pagination.cursor === undefined
+            ? undefined
+            : or(
+                  lt(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      lt(expenseReport.createdAt, pagination.cursor.createdAt),
+                  ),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      eq(expenseReport.createdAt, pagination.cursor.createdAt),
+                      lt(expenseReport.id, pagination.cursor.id),
+                  ),
+              );
+
+    return db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+                cursorCondition,
+            ),
+        )
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        )
+        .limit(pagination.limit);
+}
+
+/**
+ * Reads line items and mileage after proving the report belongs to the employee and tenant.
+ */
+export async function findEmployeeSubmissionDetail(
+    tenantId: string,
+    expenseReportId: string,
+    ownerId: string,
+): Promise<EmployeeSubmissionDetailContent | undefined> {
+    const report = await findExpenseReportById(
+        tenantId,
+        expenseReportId,
+        ownerId,
+    );
+    if (report === undefined) {
+        return undefined;
+    }
+
+    const [savedLineItems, mileageEntries] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+    ]);
+
+    return {
+        report,
+        lineItems: savedLineItems,
+        mileageEntries,
+    };
 }
 
 /**
@@ -469,13 +573,18 @@ export async function insertDraftExpenseContent(request: {
 
         const receiptValues = request.receipts.map((receipt) => {
             const sourceLineItem = request.lineItems[receipt.lineItemIndex];
-            if (sourceLineItem === undefined) {
+            const insertedLineItem = insertedLineItems[receipt.lineItemIndex];
+            if (
+                sourceLineItem === undefined ||
+                insertedLineItem === undefined
+            ) {
                 throw new Error("Receipt line item reference is invalid.");
             }
 
             return {
                 tenantId: request.tenantId,
                 expenseReportId: request.expenseReportId,
+                lineItemId: insertedLineItem.id,
                 merchant: sourceLineItem.merchant,
                 receiptDate: sourceLineItem.expenseDate,
                 amount: sourceLineItem.amount.toFixed(2),
@@ -1133,7 +1242,7 @@ export async function reviewExpenseReportLineItem(request: {
                 lineItemRow,
                 openFlagCount,
                 unreviewedLineItemCount,
-                lineItemRow.sourceType === "mileage" ? [] : mileageEntries,
+                mileageEntries,
             ),
         };
     });

@@ -273,6 +273,11 @@ export const lineItem = pgTable(
             table.tenantId,
             table.expenseReportId,
         ),
+        // Receipt metadata uses this composite key to enforce tenant ownership.
+        uniqueIndex("line_item_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
         foreignKey({
             name: "line_item_tenant_expense_report_fk",
             // Tenant joins prevent line items from attaching to another tenant's report.
@@ -493,6 +498,8 @@ export const receiptMetadata = pgTable(
         id: uuid("id").defaultRandom().primaryKey(),
         expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
+        // Nullable only for receipt metadata created before line-item links existed.
+        lineItemId: uuid("line_item_id"),
         merchant: text("merchant").notNull(),
         receiptDate: date("receipt_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -512,9 +519,19 @@ export const receiptMetadata = pgTable(
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
+        foreignKey({
+            name: "receipt_metadata_line_item_tenant_fk",
+            // The authenticated tenant must own both the receipt and its line item.
+            columns: [table.tenantId, table.lineItemId],
+            foreignColumns: [lineItem.tenantId, lineItem.id],
+        }),
         index("receipt_metadata_tenant_report_idx").on(
             table.tenantId,
             table.expenseReportId,
+        ),
+        index("receipt_metadata_tenant_line_item_idx").on(
+            table.tenantId,
+            table.lineItemId,
         ),
     ],
 );

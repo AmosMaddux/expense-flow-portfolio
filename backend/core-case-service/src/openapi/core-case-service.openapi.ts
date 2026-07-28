@@ -20,7 +20,10 @@ import {
     ExpenseReportOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    MySubmissionDetailSchema,
+    MySubmissionPageSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
@@ -146,6 +149,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
+    );
+    const mySubmissionPage = registry.register(
+        "MySubmissionPage",
+        MySubmissionPageSchema,
+    );
+    const readMySubmissionsQuery = registry.register(
+        "ReadMySubmissionsQuery",
+        ReadMySubmissionsQuerySchema,
+    );
+    const mySubmissionDetail = registry.register(
+        "MySubmissionDetail",
+        MySubmissionDetailSchema,
     );
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
@@ -334,6 +349,62 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Employee Portal access required."),
             404: problemJsonResponse("Drafted Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/my-submissions",
+        summary: "Get the employee's Expense Reports",
+        description:
+            "Returns only Expense Reports owned by the authenticated Employee within the authenticated tenant, including workflow position and overdue state.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readMySubmissionsQuery,
+        },
+        responses: {
+            200: {
+                description: "Employee submissions found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionPage,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/submission-detail",
+        summary: "Get an employee submission's line items and mileage",
+        description:
+            "Returns line items and mileage only when the Expense Report belongs to the authenticated Employee within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Employee submission detail found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionDetail,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed Expense Report identifier."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Expense Report not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

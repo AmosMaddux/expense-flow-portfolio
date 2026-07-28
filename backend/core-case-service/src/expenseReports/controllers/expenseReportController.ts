@@ -16,6 +16,7 @@ import {
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
@@ -28,6 +29,10 @@ import {
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
+import {
+    readMySubmissionDetail,
+    readMySubmissions,
+} from "../services/mySubmissionsService.js";
 import {
     logExpenseReportAuditError,
     logExpenseReportAuditSuccess,
@@ -53,6 +58,59 @@ import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRep
 
 const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
+
+/**
+ * Handles reads for the signed-in employee's own submission list.
+ */
+export async function getMySubmissions(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedQuery = ReadMySubmissionsQuerySchema.parse({
+            cursor: req.query.cursor,
+            pageSize: req.query.pageSize,
+        });
+        const submissions = await readMySubmissions({
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            ...parsedQuery,
+        });
+
+        res.status(200).json(submissions);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles detail reads for one signed-in employee submission.
+ */
+export async function getMySubmissionDetail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const detail = await readMySubmissionDetail({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+        });
+
+        res.status(200).json(detail);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 
 /**
  * Handles reads for the employee's current Drafted Expense Report.

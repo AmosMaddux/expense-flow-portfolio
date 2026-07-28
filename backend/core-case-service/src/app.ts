@@ -25,7 +25,6 @@ const authJwtConfig = loadAuthJwtConfig();
 loadDefaultGlCodingConfig();
 const v1Router = express.Router();
 
-
 /*
 Read each line as: "for any request whose URL starts with path, run this next."
  Multiple .use() calls with the same path prefix just keep appending to that path's chain

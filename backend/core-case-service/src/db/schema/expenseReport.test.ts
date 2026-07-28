@@ -98,6 +98,7 @@ const attachmentMetadataRequiredColumnNames = [
 const receiptMetadataRequiredColumnNames = [
     "expense_report_id",
     "tenant_id",
+    "line_item_id",
     "merchant",
     "receipt_date",
     "amount",
@@ -924,7 +925,10 @@ void describe("lineItem schema", () => {
 
         expect(
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-        ).toEqual(["line_item_tenant_expense_report_idx"]);
+        ).toEqual([
+            "line_item_tenant_expense_report_idx",
+            "line_item_tenant_id_unique_idx",
+        ]);
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -1306,13 +1310,32 @@ void describe("receiptMetadata schema", () => {
             receiptMetadataConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
             ),
-        ).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
+        ).toEqual([
+            "receipt_metadata_expense_report_tenant_fk",
+            "receipt_metadata_line_item_tenant_fk",
+        ]);
+        const lineItemForeignKey = receiptMetadataConfig.foreignKeys
+            .find(
+                (foreignKey) =>
+                    foreignKey.getName() ===
+                    "receipt_metadata_line_item_tenant_fk",
+            )
+            ?.reference();
+        expect(
+            lineItemForeignKey?.columns.map((column) => column.name),
+        ).toEqual(["tenant_id", "line_item_id"]);
+        expect(
+            lineItemForeignKey?.foreignColumns.map((column) => column.name),
+        ).toEqual(["tenant_id", "id"]);
 
         expect(
             receiptMetadataConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
             ),
-        ).toEqual(["receipt_metadata_tenant_report_idx"]);
+        ).toEqual([
+            "receipt_metadata_tenant_report_idx",
+            "receipt_metadata_tenant_line_item_idx",
+        ]);
     });
 
     void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
@@ -1350,7 +1373,9 @@ void describe("receiptMetadata schema", () => {
         expect(migrationSql).toContain(
             "receipt_metadata_expense_report_tenant_fk",
         );
+        expect(migrationSql).toContain("receipt_metadata_line_item_tenant_fk");
         expect(migrationSql).toContain("receipt_metadata_tenant_report_idx");
+        expect(migrationSql).toContain("receipt_metadata_tenant_line_item_idx");
     });
 });
 

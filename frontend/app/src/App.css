@@ -12,6 +12,185 @@
     font-synthesis: none;
 }
 
+.my-submissions {
+    display: grid;
+    max-width: 1180px;
+    margin: 0 auto;
+    gap: 24px;
+}
+
+.my-submissions__header h2,
+.my-submission h3,
+.my-submissions__header p {
+    margin: 0;
+}
+
+.my-submissions__header h2 {
+    margin-top: 4px;
+    color: #102a43;
+}
+
+.my-submissions__header > div > p:last-child {
+    margin-top: 8px;
+    color: #52606d;
+}
+
+.my-submissions__list {
+    display: grid;
+    gap: 16px;
+}
+
+.my-submissions__load-more {
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+}
+
+.my-submissions__load-error {
+    margin: 0;
+    color: #8a1c1c;
+    text-align: center;
+}
+
+.my-submission {
+    display: grid;
+    gap: 24px;
+    overflow: hidden;
+    border: 1px solid #d9e2ec;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 22px 24px 24px;
+    box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
+}
+
+.my-submission__summary {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.my-submission__summary h3 {
+    color: #102a43;
+    font-size: 1rem;
+}
+
+.my-submission__summary p {
+    margin: 6px 0 0;
+    color: #52606d;
+    font-size: 0.85rem;
+}
+
+.my-submission__badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.my-submission__actions {
+    display: grid;
+    justify-items: end;
+    gap: 10px;
+}
+
+.my-submission-detail {
+    display: grid;
+    gap: 20px;
+    border-top: 1px solid #d9e2ec;
+    padding-top: 22px;
+}
+
+.my-submission-detail--empty {
+    color: #52606d;
+    font-size: 0.9rem;
+}
+
+.my-submission-detail__section {
+    display: grid;
+    gap: 10px;
+}
+
+.my-submission-detail__section h4 {
+    margin: 0;
+    color: #102a43;
+    font-size: 0.9rem;
+}
+
+.my-submission-detail__table-frame {
+    overflow-x: auto;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+}
+
+.my-submission-detail table {
+    width: 100%;
+    min-width: 680px;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.my-submission-detail th:nth-child(1) {
+    width: 28%;
+}
+
+.my-submission-detail th:nth-child(2) {
+    width: 32%;
+}
+
+.my-submission-detail th:nth-child(3) {
+    width: 30%;
+}
+
+.my-submission-detail th:nth-child(4) {
+    width: 10%;
+}
+
+.my-submission-detail th,
+.my-submission-detail td {
+    border-bottom: 1px solid #d9e2ec;
+    padding: 11px 14px;
+    text-align: left;
+}
+
+.my-submission-detail th {
+    background: #f0f4f8;
+    color: #334e68;
+    font-size: 0.75rem;
+}
+
+.my-submission-detail td {
+    color: #243b53;
+    font-size: 0.85rem;
+}
+
+.my-submission-detail tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.my-submission-detail th:last-child,
+.my-submission-detail td:last-child {
+    text-align: right;
+}
+
+@media (max-width: 700px) {
+    .my-submission {
+        padding: 18px 16px;
+    }
+
+    .my-submission__summary {
+        flex-direction: column;
+    }
+
+    .my-submission__badges {
+        justify-content: flex-start;
+    }
+
+    .my-submission__actions {
+        justify-items: start;
+    }
+}
+
 .submit-expense-screen {
     display: grid;
     gap: 1.5rem;
