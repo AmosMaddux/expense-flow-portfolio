@@ -133,7 +133,7 @@ const glReferenceMigrationSqlUrl = new URL(
     import.meta.url,
 );
 const allTransactionsPaginationMigrationSqlUrl = new URL(
-    "../../../drizzle/0020_all_transactions_pagination_idx.sql",
+    "../../../drizzle/0022_all_transactions_pagination_idx.sql",
     import.meta.url,
 );
 
@@ -930,8 +930,8 @@ void describe("lineItem schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "line_item_tenant_expense_report_idx",
-            "line_item_tenant_created_id_idx",
-            "line_item_tenant_category_created_id_idx",
+            "line_item_tenant_expense_date_id_idx",
+            "line_item_tenant_category_expense_date_id_idx",
         ]);
     });
 
@@ -988,9 +988,9 @@ void describe("lineItem schema", () => {
         );
 
         expect(migrationSql).toContain("line_item_tenant_expense_report_idx");
-        expect(migrationSql).toContain("line_item_tenant_created_id_idx");
+        expect(migrationSql).toContain("line_item_tenant_expense_date_id_idx");
         expect(migrationSql).toContain(
-            "line_item_tenant_category_created_id_idx",
+            "line_item_tenant_category_expense_date_id_idx",
         );
     });
 
@@ -1000,10 +1000,10 @@ void describe("lineItem schema", () => {
         ).toLowerCase();
 
         expect(migrationSql).toContain(
-            'create index concurrently if not exists "line_item_tenant_created_id_idx"',
+            'create index concurrently if not exists "line_item_tenant_expense_date_id_idx" on "line_item" using btree ("tenant_id","expense_date" desc,"id" asc)',
         );
         expect(migrationSql).toContain(
-            'create index concurrently if not exists "line_item_tenant_category_created_id_idx"',
+            'create index concurrently if not exists "line_item_tenant_category_expense_date_id_idx" on "line_item" using btree ("tenant_id","category","expense_date" desc,"id" asc)',
         );
     });
 });
