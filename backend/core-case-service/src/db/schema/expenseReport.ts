@@ -37,6 +37,7 @@ export const approvedAttachmentContentTypes = [
 ] as const;
 
 export const glCodingSourceTypes = ["line_item", "mileage"] as const;
+export const lineItemReviewActions = ["approve", "reject"] as const;
 
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
@@ -61,6 +62,9 @@ const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
 );
 const glCodingSourceTypeCheckSql =
     buildStaticStringInListSql(glCodingSourceTypes);
+const lineItemReviewActionCheckSql = buildStaticStringInListSql(
+    lineItemReviewActions,
+);
 
 export const expenseReport = pgTable(
     "expense_report",
@@ -119,9 +123,6 @@ export const expenseReport = pgTable(
             table.tenantId,
             table.id,
         ),
-        uniqueIndex("expense_report_one_draft_per_owner_idx")
-            .on(table.tenantId, table.owner)
-            .where(sql`${table.currentStage} = 'Drafted'`),
     ],
 );
 
@@ -280,6 +281,11 @@ export const lineItem = pgTable(
             table.expenseDate.desc(),
             table.id.asc(),
         ),
+        // Receipt metadata uses this composite key to enforce tenant ownership.
+        uniqueIndex("line_item_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
         foreignKey({
             name: "line_item_tenant_expense_report_fk",
             // Tenant joins prevent line items from attaching to another tenant's report.
@@ -379,6 +385,12 @@ export const glCodingResult = pgTable(
         flaggedLineItem: boolean("flagged_line_item").notNull().default(false),
         flagCode: text("flag_code"),
         flagMessage: text("flag_message"),
+        lineItemReviewAction: text("line_item_review_action"),
+        lineItemReviewReason: text("line_item_review_reason"),
+        lineItemReviewedBy: uuid("line_item_reviewed_by"),
+        lineItemReviewedAt: timestamp("line_item_reviewed_at", {
+            withTimezone: true,
+        }),
         codedAt: timestamp("coded_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -391,6 +403,10 @@ export const glCodingResult = pgTable(
         check(
             "gl_coding_result_mapping_status_check",
             sql`${table.mappingStatus} in ('mapped', 'unmapped')`,
+        ),
+        check(
+            "gl_coding_result_line_item_review_check",
+            sql`(${table.lineItemReviewAction} is null and ${table.lineItemReviewReason} is null and ${table.lineItemReviewedBy} is null and ${table.lineItemReviewedAt} is null) or (${table.sourceType} in ('line_item', 'mileage') and ${table.lineItemReviewAction} in (${lineItemReviewActionCheckSql}) and ${table.lineItemReviewedBy} is not null and ${table.lineItemReviewedAt} is not null and (${table.lineItemReviewAction} <> 'reject' or nullif(btrim(${table.lineItemReviewReason}), '') is not null))`,
         ),
         foreignKey({
             name: "gl_coding_result_expense_report_tenant_fk",
@@ -490,6 +506,8 @@ export const receiptMetadata = pgTable(
         id: uuid("id").defaultRandom().primaryKey(),
         expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
+        // Nullable only for receipt metadata created before line-item links existed.
+        lineItemId: uuid("line_item_id"),
         merchant: text("merchant").notNull(),
         receiptDate: date("receipt_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -509,9 +527,19 @@ export const receiptMetadata = pgTable(
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
+        foreignKey({
+            name: "receipt_metadata_line_item_tenant_fk",
+            // The authenticated tenant must own both the receipt and its line item.
+            columns: [table.tenantId, table.lineItemId],
+            foreignColumns: [lineItem.tenantId, lineItem.id],
+        }),
         index("receipt_metadata_tenant_report_idx").on(
             table.tenantId,
             table.expenseReportId,
+        ),
+        index("receipt_metadata_tenant_line_item_idx").on(
+            table.tenantId,
+            table.lineItemId,
         ),
     ],
 );

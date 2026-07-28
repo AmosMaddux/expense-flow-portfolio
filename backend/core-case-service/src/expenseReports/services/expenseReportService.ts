@@ -18,6 +18,9 @@ import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
+    deleteDraftLineItem as deleteDraftLineItemInStore,
+    deleteDraftMileageEntry as deleteDraftMileageEntryInStore,
+    findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
@@ -29,8 +32,11 @@ import {
     insertDeniedSubmissionAuditEntry,
     insertDeniedWorkflowTransitionAttempt,
     readDraftSubmissionSources,
+    reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
+    updateDraftLineItem as updateDraftLineItemInStore,
+    updateDraftMileageEntry as updateDraftMileageEntryInStore,
 } from "../repository/expenseReportRepository.js";
 import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
@@ -43,6 +49,7 @@ import {
     type AddDraftExpenseContentRequest,
     type AddDraftExpenseContentResponse,
     type AuditEntryResponse,
+    type ApprovalQueueLineItemResponse,
     type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
     type CreateMileageEntryRequest,
@@ -53,6 +60,8 @@ import {
     type MileageEntryResponse,
     type ReceiptUploadMetadataRequest,
     type ReceiptUploadResponse,
+    type ReviewExpenseReportLineItemRequest,
+    type ReviewExpenseReportSourceParams,
     type TransitionExpenseReportWorkflowRequest,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
@@ -111,6 +120,20 @@ export async function readExpenseReport(
 }
 
 /**
+ * Reads manager-review line items in the authenticated tenant's Approval Queue.
+ */
+export async function readApprovalQueueLineItems(request: {
+    tenantId: string;
+    roles: RoleName[];
+}): Promise<ApprovalQueueLineItemResponse[]> {
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    return findApprovalQueueLineItems(request.tenantId);
+}
+
+/**
  * Reads the employee's most recently updated Drafted Expense Report.
  */
 export async function readCurrentDraftExpenseReport(request: {
@@ -159,6 +182,7 @@ export async function readDraftExpenseContent(request: {
         })),
         receipts: content.receipts.map((receipt) => ({
             id: receipt.id,
+            lineItemId: receipt.lineItemId,
             filename: readReceiptFilename(receipt.blobReference),
             merchant: receipt.merchant,
             receiptDate: receipt.receiptDate,
@@ -179,6 +203,124 @@ export async function readDraftExpenseContent(request: {
             };
         }),
     });
+}
+
+/**
+ * Updates one saved line item and returns the refreshed employee-owned draft.
+ */
+export async function updateDraftLineItem(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+    merchant: string;
+    expenseDate: string;
+    category: string;
+    amount: number;
+    currency: "USD";
+}): Promise<DraftExpenseContentResponse> {
+    const result = await updateDraftLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+        merchant: request.merchant,
+        expenseDate: request.expenseDate,
+        category: request.category,
+        amount: request.amount.toFixed(2),
+        currency: request.currency,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Deletes one saved line item and returns the refreshed employee-owned draft.
+ */
+export async function deleteDraftLineItem(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await deleteDraftLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Updates one saved mileage entry and returns the refreshed employee-owned draft.
+ */
+export async function updateDraftMileageEntry(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+    route: string;
+    distance: number;
+    mileageDate: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await updateDraftMileageEntryInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+        route: request.route,
+        distance: request.distance.toFixed(2),
+        mileageDate: request.mileageDate,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Deletes one saved mileage entry and returns the refreshed employee-owned draft.
+ */
+export async function deleteDraftMileageEntry(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await deleteDraftMileageEntryInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+function assertDraftSourceModified(result: {
+    kind: "modified" | "invalid_stage" | "not_found";
+    currentStage?: ExpenseReportResponse["currentStage"];
+}): asserts result is { kind: "modified" } {
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Draft expense entry not found.");
+    }
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Expense entries can only be changed in Drafted; this report is in ${result.currentStage ?? "another stage"}.`,
+        );
+    }
 }
 
 /**
@@ -517,6 +659,67 @@ export async function clearExpenseReportFlags(
     }
 
     return { clearedFlagCount: clearResult.clearedFlagCount };
+}
+
+/**
+ * Applies a manager approve/reject decision to one Expense Report line item.
+ */
+export async function reviewExpenseReportLineItem(
+    request: ReviewExpenseReportLineItemRequest & {
+        id: string;
+        sourceId: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+    },
+): Promise<ApprovalQueueLineItemResponse> {
+    return reviewExpenseReportSource({
+        ...request,
+        sourceType: "line_item",
+    });
+}
+
+/**
+ * Applies a manager approve/reject decision to one reviewable Expense Report source.
+ */
+export async function reviewExpenseReportSource(
+    request: ReviewExpenseReportLineItemRequest &
+        ReviewExpenseReportSourceParams & {
+            tenantId: string;
+            actorId: string;
+            roles: RoleName[];
+        },
+): Promise<ApprovalQueueLineItemResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    const result = await reviewExpenseReportLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        sourceId: request.sourceId,
+        sourceType: request.sourceType,
+        actorId: request.actorId,
+        action: request.action,
+        ...(request.reason === undefined ? {} : { reason: request.reason }),
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Expense Report review source not found.");
+    }
+
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Expense Report sources can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
+        );
+    }
+
+    return result.lineItem;
 }
 
 /**

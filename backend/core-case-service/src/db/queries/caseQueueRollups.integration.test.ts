@@ -11,7 +11,6 @@ import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDataba
 
 const tenantOneId = "10000000-0000-4000-8000-000000000100";
 const tenantTwoId = "99900000-0000-4000-8000-000000000999";
-const ownerId = "20000000-0000-4000-8000-000000000001";
 let syntheticReportSequence = 0;
 let tenantTwoSubmittedReportIds: string[] = [];
 
@@ -32,7 +31,7 @@ function buildExpenseReportValues(
             id: `30000000-0000-4000-8000-${String(syntheticReportSequence).padStart(12, "0")}`,
             currentStage,
             dueDate,
-            owner: ownerId,
+            owner: `20000000-0000-4000-8000-${String(syntheticReportSequence).padStart(12, "0")}`,
             tenantId,
         };
     });

@@ -20,6 +20,17 @@ export const caseQueueStageRollupListSchema = z.array(
 export type CaseQueueStageRollup = z.infer<typeof caseQueueStageRollupSchema>;
 
 /**
+ * Formats the browser's current local calendar date for Case Queue rollups.
+ */
+export function getCurrentLocalDate(now = new Date()): string {
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+}
+
+/**
  * Fetches authenticated Case Queue rollups for the current tenant.
  */
 export function useCaseQueueRollups(asOfDate: string) {

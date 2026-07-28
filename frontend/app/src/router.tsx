@@ -26,6 +26,7 @@ import {
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
+import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
@@ -75,6 +76,8 @@ const protectedRoutes = navigationItems.map((item) =>
                 <CaseQueueScreen />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
+            ) : item.path === "/my-submissions" ? (
+                <MySubmissionsScreen />
             ) : item.path === "/log-mileage" ? (
                 <LogMileageScreen />
             ) : item.path === "/submit-expense" ? (

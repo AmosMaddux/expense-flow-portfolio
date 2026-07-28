@@ -526,9 +526,33 @@ void describe("Expense Report submission across Core Case and GL-coding services
         expect(secondClearResponse.status).toBe(200);
         expect(secondClearBody.clearedFlagCount).toBe(1);
 
+        const reviewResponses = await Promise.all(
+            [lineItemId, secondFlaggedLineItemId, unflaggedLineItemId].map(
+                (sourceId) =>
+                    requestApp(
+                        `/v1/expense-reports/${reportId}/line-items/${sourceId}/review`,
+                        {
+                            method: "POST",
+                            headers: {
+                                authorization: authorizationHeader(
+                                    tenantId,
+                                    financeAdminId,
+                                    ["Finance Admin"],
+                                ),
+                                "content-type": "application/json",
+                            },
+                            body: JSON.stringify({ action: "approve" }),
+                        },
+                    ),
+            ),
+        );
+        expect(reviewResponses.map((response) => response.status)).toEqual([
+            200, 200, 200,
+        ]);
+
         const apReviewResponse = await transitionReport(
             "AP Review",
-            "flag reviewed and coding ready",
+            "flags and line items reviewed",
         );
         const apReviewBody = (await apReviewResponse.json()) as {
             currentStage?: string;

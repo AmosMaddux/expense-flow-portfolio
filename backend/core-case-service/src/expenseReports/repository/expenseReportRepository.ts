@@ -1,4 +1,14 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import {
+    and,
+    asc,
+    desc,
+    eq,
+    inArray,
+    isNull,
+    lt,
+    notExists,
+    or,
+} from "drizzle-orm";
 
 import { db } from "../../db/client.js";
 import {
@@ -19,20 +29,31 @@ import {
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
-import type { TransitionExpenseReportStageRequest } from "../dto/expenseReportDto.js";
+import type {
+    ApprovalQueueLineItemResponse,
+    TransitionExpenseReportStageRequest,
+} from "../dto/expenseReportDto.js";
 
 export const expenseReportCreatedReason = "report_created";
 export const expenseReportSubmittedReason = "report_submitted";
 export const transitionDeniedReasonPrefix = "transition_denied:";
 export const unclearedFlagTransitionDenialReason =
     "Expense Report has uncleared over-threshold line-item flags.";
+export const unreviewedLineItemTransitionDenialReason =
+    "Expense Report has reviewable sources that have not been reviewed.";
 
 type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
+type ReviewableExpenseSourceType = "line_item" | "mileage";
 type SubmissionSourceFingerprint = string;
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+type ReviewExpenseReportLineItemResult =
+    | { kind: "reviewed"; lineItem: ApprovalQueueLineItemResponse }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
 
@@ -63,8 +84,48 @@ export type SubmissionSources = {
     }>;
 };
 
+type ApprovalQueueLineItemRow = {
+    id: string;
+    sourceType: "line_item" | "mileage";
+    expenseReportId: string;
+    employee: string;
+    merchant: string;
+    amount: string | null;
+    glCode: string | null;
+    mileageDistance?: string;
+    currentStage: string;
+    flaggedLineItem: boolean;
+    reviewAction: "approve" | "reject" | null;
+    submissionId: string;
+    codedAt: Date;
+    codingResultId: string;
+};
+
+type ApprovalQueueMileageEntryRow = {
+    id: string;
+    sourceType: "mileage";
+    expenseReportId: string;
+    employee: string;
+    route: string;
+    distance: string;
+    mileageDate: string;
+    amount: string | null;
+    glCode: string | null;
+    currentStage: string;
+    flaggedLineItem: boolean;
+    reviewAction: "approve" | "reject" | null;
+    submissionId: string;
+    codedAt: Date;
+    codingResultId: string;
+};
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type ModifyDraftSourceResult =
+    | { kind: "modified" }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
 
@@ -82,6 +143,31 @@ export type DraftExpenseContent = {
     lineItems: (typeof lineItem.$inferSelect)[];
     receipts: (typeof receiptMetadata.$inferSelect)[];
     mileageEntries: (typeof mileageEntry.$inferSelect)[];
+};
+
+export type EmployeeSubmissionDetailContent = {
+    report: ExpenseReport;
+    rejectionReason: string | null;
+    lineItems: Array<
+        typeof lineItem.$inferSelect & {
+            reviewAction: "approve" | "reject" | null;
+        }
+    >;
+    mileageEntries: Array<
+        typeof mileageEntry.$inferSelect & {
+            reviewAction: "approve" | "reject" | null;
+        }
+    >;
+};
+
+export type EmployeeSubmissionSummary = ExpenseReport & {
+    isSentBack: boolean;
+};
+
+export type ExpenseReportOwnerCursor = {
+    updatedAt: Date;
+    createdAt: Date;
+    id: string;
 };
 
 type ExpenseReportTransaction = Parameters<
@@ -131,13 +217,105 @@ export async function findExpenseReportById(
 }
 
 /**
+ * Reads latest-submission line items that can appear in the manager Approval Queue.
+ */
+export async function findApprovalQueueLineItems(
+    tenantId: string,
+): Promise<ApprovalQueueLineItemResponse[]> {
+    const rows = await db
+        .select({
+            id: glCodingResult.sourceId,
+            sourceType: glCodingResult.sourceType,
+            expenseReportId: glCodingResult.expenseReportId,
+            employee: expenseReport.owner,
+            merchant: lineItem.merchant,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+            codedAt: glCodingResult.codedAt,
+            codingResultId: glCodingResult.id,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            lineItem,
+            and(
+                eq(lineItem.tenantId, glCodingResult.tenantId),
+                eq(lineItem.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.sourceType, "line_item"),
+                inArray(expenseReport.currentStage, [
+                    "Submitted",
+                    "Manager Approval",
+                    "AP Review",
+                ]),
+            ),
+        )
+        .orderBy(
+            asc(expenseReport.dueDate),
+            desc(glCodingResult.codedAt),
+            desc(glCodingResult.id),
+        );
+
+    const lineItemRows = rows as ApprovalQueueLineItemRow[];
+    const mileageRows = await findApprovalQueueMileageEntries(tenantId);
+
+    return toLatestApprovalQueueLineItems(lineItemRows, mileageRows);
+}
+
+/**
  * Reads the most recently updated Drafted Expense Report owned by an employee.
  */
 export async function findCurrentDraftExpenseReport(
     tenantId: string,
     ownerId: string,
 ): Promise<ExpenseReport | undefined> {
-    const reports = await db
+    const sentBackAuditRows = db
+        .select({ id: auditEntry.id })
+        .from(auditEntry)
+        .where(
+            and(
+                eq(auditEntry.tenantId, expenseReport.tenantId),
+                eq(auditEntry.expenseReportId, expenseReport.id),
+                eq(auditEntry.action, "transition_sent_back"),
+            ),
+        );
+    const workingDrafts = await db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+                eq(expenseReport.currentStage, "Drafted"),
+                notExists(sentBackAuditRows),
+            ),
+        )
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        )
+        .limit(1);
+
+    if (workingDrafts[0] !== undefined) {
+        return workingDrafts[0];
+    }
+
+    const returnedDrafts = await db
         .select()
         .from(expenseReport)
         .where(
@@ -154,7 +332,185 @@ export async function findCurrentDraftExpenseReport(
         )
         .limit(1);
 
-    return reports[0];
+    return returnedDrafts[0];
+}
+
+/**
+ * Reads every Expense Report owned by one employee within one tenant.
+ */
+export async function findExpenseReportsByOwner(
+    tenantId: string,
+    ownerId: string,
+    pagination: {
+        cursor?: ExpenseReportOwnerCursor;
+        limit: number;
+    } = { limit: 26 },
+): Promise<EmployeeSubmissionSummary[]> {
+    const cursorCondition =
+        pagination.cursor === undefined
+            ? undefined
+            : or(
+                  lt(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      lt(expenseReport.createdAt, pagination.cursor.createdAt),
+                  ),
+                  and(
+                      eq(expenseReport.updatedAt, pagination.cursor.updatedAt),
+                      eq(expenseReport.createdAt, pagination.cursor.createdAt),
+                      lt(expenseReport.id, pagination.cursor.id),
+                  ),
+              );
+
+    const reports = await db
+        .select()
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, tenantId),
+                eq(expenseReport.owner, ownerId),
+                cursorCondition,
+            ),
+        )
+        .orderBy(
+            desc(expenseReport.updatedAt),
+            desc(expenseReport.createdAt),
+            desc(expenseReport.id),
+        )
+        .limit(pagination.limit);
+
+    if (reports.length === 0) {
+        return [];
+    }
+
+    const sentBackRows = await db
+        .select({ expenseReportId: auditEntry.expenseReportId })
+        .from(auditEntry)
+        .where(
+            and(
+                eq(auditEntry.tenantId, tenantId),
+                inArray(
+                    auditEntry.expenseReportId,
+                    reports.map((report) => report.id),
+                ),
+                eq(auditEntry.action, "transition_sent_back"),
+            ),
+        );
+    const sentBackReportIds = new Set(
+        sentBackRows.map((row) => row.expenseReportId),
+    );
+
+    return reports.map((report) => ({
+        ...report,
+        isSentBack:
+            report.currentStage === "Drafted" &&
+            sentBackReportIds.has(report.id),
+    }));
+}
+
+/**
+ * Reads line items and mileage after proving the report belongs to the employee and tenant.
+ */
+export async function findEmployeeSubmissionDetail(
+    tenantId: string,
+    expenseReportId: string,
+    ownerId: string,
+): Promise<EmployeeSubmissionDetailContent | undefined> {
+    const report = await findExpenseReportById(
+        tenantId,
+        expenseReportId,
+        ownerId,
+    );
+    if (report === undefined) {
+        return undefined;
+    }
+
+    const [
+        savedLineItems,
+        mileageEntries,
+        latestSendBackRows,
+        latestReviewRows,
+    ] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+        db
+            .select({ rejectionReason: auditEntry.outcomeReason })
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, expenseReportId),
+                    eq(auditEntry.action, "transition_sent_back"),
+                ),
+            )
+            .orderBy(desc(auditEntry.createdAt), desc(auditEntry.id))
+            .limit(1),
+        db
+            .select({
+                sourceType: glCodingResult.sourceType,
+                sourceId: glCodingResult.sourceId,
+                reviewAction: glCodingResult.lineItemReviewAction,
+            })
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
+    ]);
+    const latestReviewBySource = new Map<string, string | null>();
+    for (const row of latestReviewRows) {
+        const sourceKey = `${row.sourceType}:${row.sourceId}`;
+        if (!latestReviewBySource.has(sourceKey)) {
+            latestReviewBySource.set(sourceKey, row.reviewAction);
+        }
+    }
+
+    return {
+        report,
+        rejectionReason:
+            report.currentStage === "Drafted"
+                ? (latestSendBackRows[0]?.rejectionReason ?? null)
+                : null,
+        lineItems: savedLineItems.map((item) => ({
+            ...item,
+            reviewAction: parseReviewAction(
+                latestReviewBySource.get(`line_item:${item.id}`),
+            ),
+        })),
+        mileageEntries: mileageEntries.map((entry) => ({
+            ...entry,
+            reviewAction: parseReviewAction(
+                latestReviewBySource.get(`mileage:${entry.id}`),
+            ),
+        })),
+    };
+}
+
+function parseReviewAction(
+    value: string | null | undefined,
+): "approve" | "reject" | null {
+    return value === "approve" || value === "reject" ? value : null;
 }
 
 /**
@@ -221,6 +577,73 @@ export async function findDraftExpenseContent(
         receipts,
         mileageEntries,
     };
+}
+
+async function lockOwnedDraft(
+    transaction: ExpenseReportTransaction,
+    request: {
+        tenantId: string;
+        expenseReportId: string;
+        ownerId: string;
+    },
+): Promise<
+    | { kind: "draft" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" }
+> {
+    const reports = await transaction
+        .select({ currentStage: expenseReport.currentStage })
+        .from(expenseReport)
+        .where(
+            and(
+                eq(expenseReport.tenantId, request.tenantId),
+                eq(expenseReport.id, request.expenseReportId),
+                eq(expenseReport.owner, request.ownerId),
+            ),
+        )
+        .limit(1)
+        .for("update");
+    const report = reports[0];
+
+    if (report === undefined) {
+        return { kind: "not_found" };
+    }
+    if (report.currentStage !== "Drafted") {
+        return {
+            kind: "invalid_stage",
+            currentStage: report.currentStage as ExpenseReportStage,
+        };
+    }
+
+    return { kind: "draft" };
+}
+
+async function touchDraftAndAudit(
+    transaction: ExpenseReportTransaction,
+    request: {
+        tenantId: string;
+        expenseReportId: string;
+        actorId: string;
+    },
+    action: string,
+): Promise<void> {
+    await transaction
+        .update(expenseReport)
+        .set({ updatedAt: new Date() })
+        .where(
+            and(
+                eq(expenseReport.tenantId, request.tenantId),
+                eq(expenseReport.id, request.expenseReportId),
+            ),
+        );
+    await appendAuditEntry(transaction, {
+        tenantId: request.tenantId,
+        expenseReportId: request.expenseReportId,
+        actorId: request.actorId,
+        action,
+        stageBeforeAction: "Drafted",
+        stageAfterProposedAction: "Drafted",
+    });
 }
 
 /**
@@ -299,6 +722,227 @@ export async function insertMileageEntry(request: {
 }
 
 /**
+ * Updates one saved line item in an employee-owned Drafted Expense Report.
+ */
+export async function updateDraftLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+    merchant: string;
+    expenseDate: string;
+    category: string;
+    amount: string;
+    currency: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const updatedRows = await transaction
+            .update(lineItem)
+            .set({
+                merchant: request.merchant,
+                expenseDate: request.expenseDate,
+                category: request.category,
+                amount: request.amount,
+                currency: request.currency,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            )
+            .returning({ id: lineItem.id });
+        if (updatedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await transaction
+            .update(receiptMetadata)
+            .set({
+                merchant: request.merchant,
+                receiptDate: request.expenseDate,
+                amount: request.amount,
+            })
+            .where(
+                and(
+                    eq(receiptMetadata.tenantId, request.tenantId),
+                    eq(
+                        receiptMetadata.expenseReportId,
+                        request.expenseReportId,
+                    ),
+                    eq(receiptMetadata.lineItemId, request.sourceId),
+                ),
+            );
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_line_item_updated",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Deletes one saved line item and its receipt metadata from an employee-owned draft.
+ */
+export async function deleteDraftLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const sourceRows = await transaction
+            .select({ id: lineItem.id })
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            )
+            .limit(1);
+        if (sourceRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await transaction
+            .delete(receiptMetadata)
+            .where(
+                and(
+                    eq(receiptMetadata.tenantId, request.tenantId),
+                    eq(
+                        receiptMetadata.expenseReportId,
+                        request.expenseReportId,
+                    ),
+                    eq(receiptMetadata.lineItemId, request.sourceId),
+                ),
+            );
+        await transaction
+            .delete(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, request.tenantId),
+                    eq(lineItem.expenseReportId, request.expenseReportId),
+                    eq(lineItem.id, request.sourceId),
+                ),
+            );
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_line_item_deleted",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Updates one mileage entry in an employee-owned Drafted Expense Report.
+ */
+export async function updateDraftMileageEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+    route: string;
+    distance: string;
+    mileageDate: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const updatedRows = await transaction
+            .update(mileageEntry)
+            .set({
+                route: request.route,
+                distance: request.distance,
+                mileageDate: request.mileageDate,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, request.tenantId),
+                    eq(mileageEntry.expenseReportId, request.expenseReportId),
+                    eq(mileageEntry.id, request.sourceId),
+                ),
+            )
+            .returning({ id: mileageEntry.id });
+        if (updatedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_mileage_entry_updated",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
+ * Deletes one mileage entry from an employee-owned Drafted Expense Report.
+ */
+export async function deleteDraftMileageEntry(request: {
+    tenantId: string;
+    expenseReportId: string;
+    ownerId: string;
+    actorId: string;
+    sourceId: string;
+}): Promise<ModifyDraftSourceResult> {
+    return db.transaction(async (transaction) => {
+        const draftCheck = await lockOwnedDraft(transaction, request);
+        if (draftCheck.kind !== "draft") {
+            return draftCheck;
+        }
+
+        const deletedRows = await transaction
+            .delete(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, request.tenantId),
+                    eq(mileageEntry.expenseReportId, request.expenseReportId),
+                    eq(mileageEntry.id, request.sourceId),
+                ),
+            )
+            .returning({ id: mileageEntry.id });
+        if (deletedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await touchDraftAndAudit(
+            transaction,
+            request,
+            "draft_mileage_entry_deleted",
+        );
+
+        return { kind: "modified" };
+    });
+}
+
+/**
  * Adds validated line items and receipt references to an employee-owned draft.
  */
 export async function insertDraftExpenseContent(request: {
@@ -363,13 +1007,18 @@ export async function insertDraftExpenseContent(request: {
 
         const receiptValues = request.receipts.map((receipt) => {
             const sourceLineItem = request.lineItems[receipt.lineItemIndex];
-            if (sourceLineItem === undefined) {
+            const insertedLineItem = insertedLineItems[receipt.lineItemIndex];
+            if (
+                sourceLineItem === undefined ||
+                insertedLineItem === undefined
+            ) {
                 throw new Error("Receipt line item reference is invalid.");
             }
 
             return {
                 tenantId: request.tenantId,
                 expenseReportId: request.expenseReportId,
+                lineItemId: insertedLineItem.id,
                 merchant: sourceLineItem.merchant,
                 receiptDate: sourceLineItem.expenseDate,
                 amount: sourceLineItem.amount.toFixed(2),
@@ -449,32 +1098,11 @@ export async function insertDraftExpenseReport(
                 ...newReport,
                 currentStage: "Drafted",
             })
-            .onConflictDoNothing({
-                target: [expenseReport.tenantId, expenseReport.owner],
-                where: sql`${expenseReport.currentStage} = 'Drafted'`,
-            })
             .returning();
         const insertedReport = insertedReports[0];
 
         if (insertedReport === undefined) {
-            const existingReports = await transaction
-                .select()
-                .from(expenseReport)
-                .where(
-                    and(
-                        eq(expenseReport.tenantId, tenantId),
-                        eq(expenseReport.owner, newReport.owner),
-                        eq(expenseReport.currentStage, "Drafted"),
-                    ),
-                )
-                .orderBy(
-                    desc(expenseReport.updatedAt),
-                    desc(expenseReport.createdAt),
-                    desc(expenseReport.id),
-                )
-                .limit(1);
-
-            return existingReports[0];
+            throw new Error("Unable to create Drafted Expense Report.");
         }
 
         await appendAuditEntry(transaction, {
@@ -854,7 +1482,10 @@ export async function clearExpenseReportFlags(request: {
                 and(
                     eq(glCodingResult.tenantId, request.tenantId),
                     eq(glCodingResult.expenseReportId, request.expenseReportId),
-                    eq(glCodingResult.sourceType, "line_item"),
+                    inArray(glCodingResult.sourceType, [
+                        "line_item",
+                        "mileage",
+                    ]),
                     eq(glCodingResult.flaggedLineItem, true),
                     inArray(glCodingResult.sourceId, request.sourceIds),
                     eq(glCodingResult.submissionId, latestSubmissionId),
@@ -873,6 +1504,160 @@ export async function clearExpenseReportFlags(request: {
         });
 
         return { kind: "cleared", clearedFlagCount: clearedRows.length };
+    });
+}
+
+/**
+ * Records a manager review decision for one reviewable source in Manager Approval.
+ */
+export async function reviewExpenseReportLineItem(request: {
+    tenantId: string;
+    expenseReportId: string;
+    sourceId: string;
+    sourceType?: ReviewableExpenseSourceType;
+    actorId: string;
+    action: "approve" | "reject";
+    reason?: string;
+}): Promise<ReviewExpenseReportLineItemResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage !== "Manager Approval") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        const latestSubmissionId = await readLatestSubmissionId(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+
+        if (latestSubmissionId === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (request.sourceType === "mileage") {
+            const mileageRows =
+                await readApprovalQueueMileageEntriesInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.expenseReportId,
+                    latestSubmissionId,
+                );
+            if (
+                mileageRows.find((row) => row.id === request.sourceId) ===
+                undefined
+            ) {
+                return { kind: "not_found" };
+            }
+        } else {
+            const existingLineItem =
+                await readApprovalQueueLineItemInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.expenseReportId,
+                    request.sourceId,
+                    latestSubmissionId,
+                );
+            if (existingLineItem === undefined) {
+                return { kind: "not_found" };
+            }
+        }
+
+        const reviewedAt = new Date();
+        const reviewedRows = await transaction
+            .update(glCodingResult)
+            .set({
+                lineItemReviewAction: request.action,
+                lineItemReviewReason: request.reason ?? null,
+                lineItemReviewedBy: request.actorId,
+                lineItemReviewedAt: reviewedAt,
+            })
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, request.tenantId),
+                    eq(glCodingResult.expenseReportId, request.expenseReportId),
+                    eq(
+                        glCodingResult.sourceType,
+                        request.sourceType ?? "line_item",
+                    ),
+                    eq(glCodingResult.sourceId, request.sourceId),
+                    eq(glCodingResult.submissionId, latestSubmissionId),
+                ),
+            )
+            .returning({ id: glCodingResult.id });
+
+        if (reviewedRows.length === 0) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.expenseReportId,
+            actorId: request.actorId,
+            action: buildReviewAuditAction(
+                request.sourceType ?? "line_item",
+                request.action,
+            ),
+            stageBeforeAction: report.currentStage,
+            stageAfterProposedAction: report.currentStage,
+            outcomeReason: request.reason ?? null,
+        });
+
+        const mileageEntries =
+            await readApprovalQueueMileageEntriesInTransaction(
+                transaction,
+                request.tenantId,
+                request.expenseReportId,
+                latestSubmissionId,
+            );
+        const lineItemRow =
+            request.sourceType === "mileage"
+                ? toReviewedMileageQueueRow(mileageEntries, request.sourceId)
+                : await readApprovalQueueLineItemInTransaction(
+                      transaction,
+                      request.tenantId,
+                      request.expenseReportId,
+                      request.sourceId,
+                      latestSubmissionId,
+                  );
+
+        if (lineItemRow === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const openFlagCount = await countOpenExpenseReportFlagsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
+        const unreviewedLineItemCount =
+            await countUnreviewedLineItemsInTransaction(
+                transaction,
+                request.tenantId,
+                request.expenseReportId,
+            );
+        return {
+            kind: "reviewed",
+            lineItem: toApprovalQueueLineItemResponse(
+                lineItemRow,
+                openFlagCount,
+                unreviewedLineItemCount,
+                mileageEntries,
+            ),
+        };
     });
 }
 
@@ -923,6 +1708,26 @@ export async function transitionExpenseReportStage(
                     request,
                     currentStage,
                     unclearedFlagTransitionDenialReason,
+                );
+
+                return false;
+            }
+        }
+
+        if (isManagerApprovalLineItemReviewGate(request)) {
+            const unreviewedLineItemCount =
+                await countUnreviewedLineItemsInTransaction(
+                    transaction,
+                    request.tenantId,
+                    request.id,
+                );
+
+            if (unreviewedLineItemCount > 0) {
+                await writeDeniedTransitionLog(
+                    transaction,
+                    request,
+                    currentStage,
+                    unreviewedLineItemTransitionDenialReason,
                 );
 
                 return false;
@@ -1130,12 +1935,422 @@ async function countOpenExpenseReportFlagsInTransaction(
                 eq(glCodingResult.tenantId, tenantId),
                 eq(glCodingResult.expenseReportId, expenseReportId),
                 eq(glCodingResult.submissionId, latestSubmissionId),
-                eq(glCodingResult.sourceType, "line_item"),
+                inArray(glCodingResult.sourceType, ["line_item", "mileage"]),
                 eq(glCodingResult.flaggedLineItem, true),
             ),
         );
 
     return rows.length;
+}
+
+function buildReviewAuditAction(
+    sourceType: ReviewableExpenseSourceType,
+    action: "approve" | "reject",
+): string {
+    if (sourceType === "mileage") {
+        return action === "approve" ? "mileage_approved" : "mileage_rejected";
+    }
+
+    return action === "approve" ? "line_item_approved" : "line_item_rejected";
+}
+
+async function countUnreviewedLineItemsInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<number> {
+    const latestSubmissionId = await readLatestSubmissionId(
+        transaction,
+        tenantId,
+        expenseReportId,
+    );
+
+    if (latestSubmissionId === undefined) {
+        return 0;
+    }
+
+    const rows = await transaction
+        .select({ id: glCodingResult.id })
+        .from(glCodingResult)
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.submissionId, latestSubmissionId),
+                inArray(glCodingResult.sourceType, ["line_item", "mileage"]),
+                isNull(glCodingResult.lineItemReviewAction),
+            ),
+        );
+
+    return rows.length;
+}
+
+async function readApprovalQueueLineItemInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+    sourceId: string,
+    submissionId: string,
+): Promise<ApprovalQueueLineItemRow | undefined> {
+    const rows = await transaction
+        .select({
+            id: glCodingResult.sourceId,
+            sourceType: glCodingResult.sourceType,
+            expenseReportId: glCodingResult.expenseReportId,
+            employee: expenseReport.owner,
+            merchant: lineItem.merchant,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+            codedAt: glCodingResult.codedAt,
+            codingResultId: glCodingResult.id,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            lineItem,
+            and(
+                eq(lineItem.tenantId, glCodingResult.tenantId),
+                eq(lineItem.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.sourceType, "line_item"),
+                eq(glCodingResult.sourceId, sourceId),
+                eq(glCodingResult.submissionId, submissionId),
+            ),
+        )
+        .limit(1);
+
+    return rows[0] as ApprovalQueueLineItemRow | undefined;
+}
+
+function readLatestSubmissionByReport(
+    rows: Array<ApprovalQueueLineItemRow | ApprovalQueueMileageEntryRow>,
+): Map<string, string> {
+    const latestSubmissionByReport = new Map<string, string>();
+    const latestRowsByReport = new Map<
+        string,
+        ApprovalQueueLineItemRow | ApprovalQueueMileageEntryRow
+    >();
+    for (const row of rows) {
+        const current = latestRowsByReport.get(row.expenseReportId);
+        if (
+            current === undefined ||
+            row.codedAt > current.codedAt ||
+            (row.codedAt.getTime() === current.codedAt.getTime() &&
+                row.codingResultId > current.codingResultId)
+        ) {
+            latestRowsByReport.set(row.expenseReportId, row);
+        }
+    }
+
+    for (const row of latestRowsByReport.values()) {
+        latestSubmissionByReport.set(row.expenseReportId, row.submissionId);
+    }
+
+    return latestSubmissionByReport;
+}
+
+async function findApprovalQueueMileageEntries(
+    tenantId: string,
+): Promise<ApprovalQueueMileageEntryRow[]> {
+    const rows = await db
+        .select({
+            id: glCodingResult.sourceId,
+            sourceType: glCodingResult.sourceType,
+            expenseReportId: glCodingResult.expenseReportId,
+            employee: expenseReport.owner,
+            route: mileageEntry.route,
+            distance: mileageEntry.distance,
+            mileageDate: mileageEntry.mileageDate,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+            codedAt: glCodingResult.codedAt,
+            codingResultId: glCodingResult.id,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            mileageEntry,
+            and(
+                eq(mileageEntry.tenantId, glCodingResult.tenantId),
+                eq(mileageEntry.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.sourceType, "mileage"),
+                inArray(expenseReport.currentStage, [
+                    "Submitted",
+                    "Manager Approval",
+                    "AP Review",
+                ]),
+            ),
+        )
+        .orderBy(asc(mileageEntry.mileageDate), asc(glCodingResult.id));
+
+    return rows as ApprovalQueueMileageEntryRow[];
+}
+
+async function readApprovalQueueMileageEntriesInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+    submissionId: string,
+): Promise<ApprovalQueueMileageEntryRow[]> {
+    const rows = await transaction
+        .select({
+            id: glCodingResult.sourceId,
+            sourceType: glCodingResult.sourceType,
+            expenseReportId: glCodingResult.expenseReportId,
+            employee: expenseReport.owner,
+            route: mileageEntry.route,
+            distance: mileageEntry.distance,
+            mileageDate: mileageEntry.mileageDate,
+            amount: glCodingResult.amount,
+            glCode: glCodingResult.glAccountCode,
+            currentStage: expenseReport.currentStage,
+            flaggedLineItem: glCodingResult.flaggedLineItem,
+            reviewAction: glCodingResult.lineItemReviewAction,
+            submissionId: glCodingResult.submissionId,
+            codedAt: glCodingResult.codedAt,
+            codingResultId: glCodingResult.id,
+        })
+        .from(glCodingResult)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, glCodingResult.tenantId),
+                eq(expenseReport.id, glCodingResult.expenseReportId),
+            ),
+        )
+        .innerJoin(
+            mileageEntry,
+            and(
+                eq(mileageEntry.tenantId, glCodingResult.tenantId),
+                eq(mileageEntry.id, glCodingResult.sourceId),
+            ),
+        )
+        .where(
+            and(
+                eq(glCodingResult.tenantId, tenantId),
+                eq(glCodingResult.expenseReportId, expenseReportId),
+                eq(glCodingResult.sourceType, "mileage"),
+                eq(glCodingResult.submissionId, submissionId),
+            ),
+        )
+        .orderBy(asc(mileageEntry.mileageDate), asc(glCodingResult.id));
+
+    return rows as ApprovalQueueMileageEntryRow[];
+}
+
+function toLatestApprovalQueueLineItems(
+    rows: ApprovalQueueLineItemRow[],
+    mileageRows: ApprovalQueueMileageEntryRow[],
+): ApprovalQueueLineItemResponse[] {
+    const latestSubmissionByReport = readLatestSubmissionByReport([
+        ...rows,
+        ...mileageRows,
+    ]);
+    const mileageEntriesByReport = groupApprovalQueueMileageEntries(
+        mileageRows.filter(
+            (row) =>
+                latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId,
+        ),
+    );
+
+    const openFlagCounts = new Map<string, number>();
+    const unreviewedLineItemCounts = new Map<string, number>();
+    for (const row of [...rows, ...mileageRows]) {
+        if (
+            latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId &&
+            row.flaggedLineItem
+        ) {
+            openFlagCounts.set(
+                row.expenseReportId,
+                (openFlagCounts.get(row.expenseReportId) ?? 0) + 1,
+            );
+        }
+
+        if (
+            latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId &&
+            row.reviewAction === null
+        ) {
+            unreviewedLineItemCounts.set(
+                row.expenseReportId,
+                (unreviewedLineItemCounts.get(row.expenseReportId) ?? 0) + 1,
+            );
+        }
+    }
+
+    const latestLineItemRows = rows.filter(
+        (row) =>
+            latestSubmissionByReport.get(row.expenseReportId) ===
+            row.submissionId,
+    );
+    const reportsWithLineItems = new Set(
+        latestLineItemRows.map((row) => row.expenseReportId),
+    );
+    const mileageOnlyRows = mileageRows.filter(
+        (row) =>
+            latestSubmissionByReport.get(row.expenseReportId) ===
+                row.submissionId &&
+            !reportsWithLineItems.has(row.expenseReportId),
+    );
+
+    return [
+        ...latestLineItemRows.map((row) =>
+            toApprovalQueueLineItemResponse(
+                row,
+                openFlagCounts.get(row.expenseReportId) ?? 0,
+                unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
+                mileageEntriesByReport.get(row.expenseReportId) ?? [],
+            ),
+        ),
+        ...mileageOnlyRows.map((row) =>
+            toApprovalQueueLineItemResponse(
+                toMileageOnlyApprovalQueueLineItemRow(row),
+                openFlagCounts.get(row.expenseReportId) ?? 0,
+                unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
+                [],
+            ),
+        ),
+    ].filter(
+        (row, index, allRows) =>
+            allRows.findIndex(
+                (candidate) =>
+                    candidate.expenseReportId === row.expenseReportId &&
+                    candidate.id === row.id,
+            ) === index,
+    );
+}
+
+function toMileageOnlyApprovalQueueLineItemRow(
+    row: ApprovalQueueMileageEntryRow,
+): ApprovalQueueLineItemRow {
+    return {
+        id: row.id,
+        sourceType: "mileage",
+        expenseReportId: row.expenseReportId,
+        employee: row.employee,
+        merchant: row.route,
+        amount: row.amount,
+        glCode: row.glCode,
+        mileageDistance: row.distance,
+        currentStage: row.currentStage,
+        flaggedLineItem: row.flaggedLineItem,
+        reviewAction: row.reviewAction,
+        submissionId: row.submissionId,
+        codedAt: row.codedAt,
+        codingResultId: row.codingResultId,
+    };
+}
+
+function toReviewedMileageQueueRow(
+    mileageEntries: ApprovalQueueMileageEntryRow[],
+    sourceId: string,
+): ApprovalQueueLineItemRow | undefined {
+    const mileageRow = mileageEntries.find((row) => row.id === sourceId);
+    if (mileageRow === undefined) {
+        return undefined;
+    }
+
+    return toMileageOnlyApprovalQueueLineItemRow(mileageRow);
+}
+
+function toApprovalQueueLineItemResponse(
+    row: ApprovalQueueLineItemRow,
+    openFlagCount: number,
+    unreviewedLineItemCount: number,
+    mileageEntries: ApprovalQueueMileageEntryRow[] = [],
+): ApprovalQueueLineItemResponse {
+    return {
+        id: row.id,
+        sourceType: row.sourceType,
+        expenseReportId: row.expenseReportId,
+        employee: row.employee,
+        merchant: row.merchant,
+        amount: Number(row.amount ?? 0),
+        glCode: row.glCode ?? "Unmapped",
+        currentStage: row.currentStage as ExpenseReportStage,
+        flaggedLineItem: row.flaggedLineItem,
+        reviewAction: row.reviewAction,
+        canAdvance:
+            row.currentStage === "Manager Approval" &&
+            openFlagCount === 0 &&
+            unreviewedLineItemCount === 0,
+        reportTotalMileage:
+            row.sourceType === "mileage"
+                ? Number(row.mileageDistance ?? 0)
+                : mileageEntries.reduce(
+                      (total, entry) => total + Number(entry.distance),
+                      0,
+                  ),
+        mileageEntries: mileageEntries.map(toApprovalQueueMileageEntryResponse),
+    };
+}
+
+function groupApprovalQueueMileageEntries(
+    mileageRows: ApprovalQueueMileageEntryRow[],
+): Map<string, ApprovalQueueMileageEntryRow[]> {
+    const mileageEntriesByReport = new Map<
+        string,
+        ApprovalQueueMileageEntryRow[]
+    >();
+
+    for (const row of mileageRows) {
+        const reportMileage = mileageEntriesByReport.get(row.expenseReportId);
+        if (reportMileage === undefined) {
+            mileageEntriesByReport.set(row.expenseReportId, [row]);
+        } else {
+            reportMileage.push(row);
+        }
+    }
+
+    return mileageEntriesByReport;
+}
+
+function toApprovalQueueMileageEntryResponse(
+    row: ApprovalQueueMileageEntryRow,
+) {
+    return {
+        id: row.id,
+        expenseReportId: row.expenseReportId,
+        route: row.route,
+        distance: Number(row.distance),
+        mileageDate: row.mileageDate,
+        amount: Number(row.amount ?? 0),
+        glCode: row.glCode ?? "Unmapped",
+        flaggedLineItem: row.flaggedLineItem,
+        reviewAction: row.reviewAction,
+    };
 }
 
 async function readLatestSubmissionId(
@@ -1164,6 +2379,15 @@ function isManagerApprovalFlagGate(
     return (
         request.fromStage === "Manager Approval" &&
         request.toStage === "AP Review"
+    );
+}
+
+function isManagerApprovalLineItemReviewGate(
+    request: TransitionExpenseReportStageRequest,
+): boolean {
+    return (
+        request.fromStage === "Manager Approval" &&
+        (request.toStage === "AP Review" || request.toStage === "Drafted")
     );
 }
 
