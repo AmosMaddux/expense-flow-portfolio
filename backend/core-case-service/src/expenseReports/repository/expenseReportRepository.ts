@@ -2061,7 +2061,7 @@ function isManagerApprovalLineItemReviewGate(
 ): boolean {
     return (
         request.fromStage === "Manager Approval" &&
-        (request.toStage === "AP Review" || request.toStage === "Drafted")
+        request.toStage === "AP Review"
     );
 }
 

@@ -1030,9 +1030,7 @@ describe("CaseQueueScreen", () => {
             within(zenithRow).getByRole("button", { name: "Review" }),
         );
 
-        const checkbox = screen.getByLabelText(
-            "Mark Zenith Air as deductible",
-        ) as HTMLInputElement;
+        const checkbox = screen.getByLabelText("Mark Zenith Air as deductible");
         expect(checkbox.disabled).toBe(false);
         expect(checkbox.checked).toBe(false);
 
@@ -1084,7 +1082,7 @@ describe("CaseQueueScreen", () => {
 
         const checkbox = screen.getByLabelText(
             "Mark Airport to regional office as deductible",
-        ) as HTMLInputElement;
+        );
         expect(checkbox.disabled).toBe(false);
         expect(checkbox.checked).toBe(false);
 
@@ -1099,10 +1097,8 @@ describe("CaseQueueScreen", () => {
             JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
         ).toEqual({ deductible: true });
         expect(
-            (
-                screen.getByLabelText(
-                    "Mark Airport to regional office as deductible",
-                ) as HTMLInputElement
+            screen.getByLabelText(
+                "Mark Airport to regional office as deductible",
             ).checked,
         ).toBe(true);
     });
@@ -1122,7 +1118,7 @@ describe("CaseQueueScreen", () => {
 
         const checkbox = screen.getByLabelText(
             "Mark Northstar Hotels as deductible",
-        ) as HTMLInputElement;
+        );
         expect(checkbox.disabled).toBe(true);
     });
     test("does not expose report send-back after a report reaches AP Review", async () => {
