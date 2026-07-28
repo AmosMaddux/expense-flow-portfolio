@@ -8,7 +8,6 @@ import {
     lt,
     notExists,
     or,
-    sql,
 } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
@@ -1099,32 +1098,11 @@ export async function insertDraftExpenseReport(
                 ...newReport,
                 currentStage: "Drafted",
             })
-            .onConflictDoNothing({
-                target: [expenseReport.tenantId, expenseReport.owner],
-                where: sql`${expenseReport.currentStage} = 'Drafted'`,
-            })
             .returning();
         const insertedReport = insertedReports[0];
 
         if (insertedReport === undefined) {
-            const existingReports = await transaction
-                .select()
-                .from(expenseReport)
-                .where(
-                    and(
-                        eq(expenseReport.tenantId, tenantId),
-                        eq(expenseReport.owner, newReport.owner),
-                        eq(expenseReport.currentStage, "Drafted"),
-                    ),
-                )
-                .orderBy(
-                    desc(expenseReport.updatedAt),
-                    desc(expenseReport.createdAt),
-                    desc(expenseReport.id),
-                )
-                .limit(1);
-
-            return existingReports[0];
+            throw new Error("Unable to create Drafted Expense Report.");
         }
 
         await appendAuditEntry(transaction, {
