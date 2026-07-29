@@ -4961,6 +4961,198 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("lists tenant-scoped All Transactions for Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000160";
+        const otherTenantId = "40000000-0000-4000-8000-000000000161";
+        const owner = "50000000-0000-4000-8000-000000000160";
+        const financeAdminId = "51000000-0000-4000-8000-000000000160";
+
+        await db.insert(expenseReport).values([
+            {
+                id: "60000000-0000-4000-8000-000000000160",
+                tenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "AP Review",
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000161",
+                tenantId: otherTenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "AP Review",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000160",
+                tenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000160",
+                merchant: "Cedar Bistro",
+                amount: "64.20",
+                currency: "USD",
+                category: "Meals",
+                expenseDate: "2026-07-20",
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000161",
+                tenantId: otherTenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000161",
+                merchant: "Cedar Bistro",
+                amount: "64.20",
+                currency: "USD",
+                category: "Meals",
+                expenseDate: "2026-07-20",
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp(
+            "/v1/transactions?category=Meals&status=AP%20Review&startDate=2026-07-20&endDate=2026-07-20",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            items?: Array<{
+                id?: string;
+                expenseReportId?: string;
+                date?: string;
+                merchant?: string;
+                category?: string;
+                amount?: string;
+                currency?: string;
+                status?: string;
+                deductible?: boolean | null;
+            }>;
+            nextCursor?: string | null;
+        };
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("ratelimit-limit")).toBe("2");
+        expect(body.items).toHaveLength(1);
+        expect(body.items?.[0]).toEqual({
+            id: "30000000-0000-4000-8000-000000000160",
+            expenseReportId: "60000000-0000-4000-8000-000000000160",
+            date: "2026-07-20T00:00:00.000Z",
+            merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
+            status: "AP Review",
+            deductible: null,
+        });
+        expect(
+            body.items?.some(
+                (transaction) =>
+                    transaction.id === "30000000-0000-4000-8000-000000000161",
+            ),
+        ).toBe(false);
+        expect(body.nextCursor).toBeNull();
+    });
+
+    void test("rejects malformed All Transactions filters", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000162";
+        const financeAdminId = "51000000-0000-4000-8000-000000000162";
+
+        const response = await requestApp(
+            "/v1/transactions?status=Archived&startDate=2026-07-21&endDate=2026-07-20",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("rejects invalid All Transactions cursors", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000164";
+        const financeAdminId = "51000000-0000-4000-8000-000000000164";
+
+        const response = await requestApp(
+            "/v1/transactions?cursor=not-a-cursor",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("rejects All Transactions limits above the server maximum", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000165";
+        const financeAdminId = "51000000-0000-4000-8000-000000000165";
+
+        const response = await requestApp("/v1/transactions?limit=101", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("returns 403 for All Transactions with non-Finance Admin roles", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000163";
+        const managerId = "51000000-0000-4000-8000-000000000163";
+
+        const response = await requestApp("/v1/transactions", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({ status: 403 });
+    });
+
+    void test("returns 401 for All Transactions without a token", async () => {
+        const response = await requestApp("/v1/transactions");
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
+        });
+    });
+
     void test("returns 401 when a refresh token is used as a bearer token", async () => {
         const response = await requestApp(
             "/v1/expense-reports/not-a-report-id",

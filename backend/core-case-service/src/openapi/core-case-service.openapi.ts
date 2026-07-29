@@ -11,8 +11,9 @@ import {
     AddDraftExpenseContentOutboundResponseSchema,
     ApprovalQueueLineItemListOutboundResponseSchema,
     ApprovalQueueLineItemOutboundResponseSchema,
-    CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
+    AllTransactionPageSchema,
+    CaseQueueStageRollupListSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
@@ -22,6 +23,7 @@ import {
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
     MySubmissionPageSchema,
+    ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
@@ -174,6 +176,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
         AuditEntryListOutboundResponseSchema,
+    );
+    const readAllTransactionsRequest = registry.register(
+        "ReadAllTransactionsRequest",
+        ReadAllTransactionsQuerySchema,
+    );
+    const allTransactionPage = registry.register(
+        "AllTransactionPage",
+        AllTransactionPageSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -544,6 +554,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed rollup request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("Authenticated user is not permitted."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/transactions",
+        summary: "Get All Transactions",
+        description:
+            "Loads tenant-scoped line items across Expense Reports for Finance Admin review.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readAllTransactionsRequest,
+        },
+        responses: {
+            200: {
+                description: "All Transactions rows found.",
+                content: {
+                    "application/json": {
+                        schema: allTransactionPage,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed transaction list request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse("Authenticated user is not permitted."),
             500: problemJsonResponse("Unexpected server error."),

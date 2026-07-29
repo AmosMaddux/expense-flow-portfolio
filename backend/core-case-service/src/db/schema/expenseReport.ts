@@ -270,6 +270,17 @@ export const lineItem = pgTable(
             table.tenantId,
             table.expenseReportId,
         ),
+        index("line_item_tenant_expense_date_id_idx").on(
+            table.tenantId,
+            table.expenseDate.desc(),
+            table.id.asc(),
+        ),
+        index("line_item_tenant_category_expense_date_id_idx").on(
+            table.tenantId,
+            table.category,
+            table.expenseDate.desc(),
+            table.id.asc(),
+        ),
         // Receipt metadata uses this composite key to enforce tenant ownership.
         uniqueIndex("line_item_tenant_id_unique_idx").on(
             table.tenantId,

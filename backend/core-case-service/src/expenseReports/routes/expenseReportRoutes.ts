@@ -3,6 +3,7 @@ import { Router, raw } from "express";
 import {
     deleteDraftLineItemEntry,
     deleteDraftMileageEntryRecord,
+    getAllTransactions,
     getCaseQueueLineItems,
     getCaseQueueStageRollups,
     getCurrentDraftExpenseReport,
@@ -29,6 +30,7 @@ export const expenseReportRouter = Router();
 
 expenseReportRouter.get("/case-queue/line-items", getCaseQueueLineItems);
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
+expenseReportRouter.get("/transactions", getAllTransactions);
 expenseReportRouter.get("/expense-reports/my-submissions", getMySubmissions);
 expenseReportRouter.get(
     "/expense-reports/:id/submission-detail",

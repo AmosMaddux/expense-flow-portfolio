@@ -271,6 +271,70 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
+const ReadAllTransactionsFilterSchema = z.object({
+    category: z.string().trim().min(1).optional(),
+    status: z.enum(approvedWorkflowStages).optional(),
+    startDate: z.iso.date().optional(),
+    endDate: z.iso.date().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z
+        .string()
+        .trim()
+        .min(1)
+        .refine(isValidAllTransactionsCursor)
+        .optional(),
+});
+
+function isValidTransactionDateRange(request: {
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+}): boolean {
+    return (
+        request.startDate === undefined ||
+        request.endDate === undefined ||
+        request.startDate <= request.endDate
+    );
+}
+
+function isValidAllTransactionsCursor(cursor: string): boolean {
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        return (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "expenseDate" in parsed &&
+            "id" in parsed &&
+            typeof parsed.expenseDate === "string" &&
+            z.iso.date().safeParse(parsed.expenseDate).success &&
+            z.uuid().safeParse(parsed.id).success
+        );
+    } catch {
+        return false;
+    }
+}
+
+export const ReadAllTransactionsInboundRequestSchema =
+    ReadAllTransactionsFilterSchema.extend({
+        tenantId: z.uuid(),
+    })
+        .strict()
+        .refine(isValidTransactionDateRange, {
+            message: "startDate must be on or before endDate.",
+            path: ["startDate"],
+        });
+
+export const ReadAllTransactionsQuerySchema =
+    ReadAllTransactionsFilterSchema.strict().refine(
+        isValidTransactionDateRange,
+        {
+            message: "startDate must be on or before endDate.",
+            path: ["startDate"],
+        },
+    );
+
 export const ReadMySubmissionsInboundRequestSchema = z
     .object({
         tenantId: z.uuid(),
@@ -371,6 +435,25 @@ export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
 );
 
+export const AllTransactionSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    date: z.string().datetime({ offset: true }),
+    merchant: z.string().min(1),
+    category: z.string().min(1),
+    amount: z.string().regex(/^-?\d+\.\d{2}$/),
+    currency: z.string().min(3).max(3),
+    status: z.enum(approvedWorkflowStages),
+    deductible: z.boolean().nullable(),
+});
+
+export const AllTransactionListSchema = z.array(AllTransactionSchema);
+
+export const AllTransactionPageSchema = z.object({
+    items: AllTransactionListSchema,
+    nextCursor: z.string().nullable(),
+});
+
 export const MySubmissionSchema = z.object({
     id: z.uuid(),
     dueDate: z.iso.date(),
@@ -447,6 +530,7 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
 export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(
     ApprovalQueueLineItemOutboundResponseSchema,
 );
+
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
 export const AuditEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -497,6 +581,11 @@ export const readCaseQueueStageRollupsRequestSchema =
 export const readCaseQueueStageRollupsQuerySchema =
     ReadCaseQueueStageRollupsQuerySchema;
 
+export const readAllTransactionsRequestSchema =
+    ReadAllTransactionsInboundRequestSchema;
+
+export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
@@ -504,7 +593,17 @@ export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
 
+export const allTransactionSchema = AllTransactionSchema;
+
+export const allTransactionListSchema = AllTransactionListSchema;
+
+export const allTransactionPageSchema = AllTransactionPageSchema;
+
 export const mySubmissionListSchema = MySubmissionListSchema;
+
+export const mySubmissionPageSchema = MySubmissionPageSchema;
+
+export const mySubmissionDetailSchema = MySubmissionDetailSchema;
 
 export const approvalQueueLineItemResponseSchema =
     ApprovalQueueLineItemOutboundResponseSchema;
@@ -597,11 +696,27 @@ export type ReadCaseQueueStageRollupsQuery = z.infer<
     typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
+export type ReadAllTransactionsParams = z.input<
+    typeof ReadAllTransactionsInboundRequestSchema
+>;
+
+export type ParsedReadAllTransactionsParams = z.infer<
+    typeof ReadAllTransactionsInboundRequestSchema
+>;
+
+export type ReadAllTransactionsQuery = z.infer<
+    typeof ReadAllTransactionsQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type AllTransaction = z.infer<typeof AllTransactionSchema>;
+
+export type AllTransactionPage = z.infer<typeof AllTransactionPageSchema>;
 
 export type ReadMySubmissionsParams = z.infer<
     typeof ReadMySubmissionsInboundRequestSchema

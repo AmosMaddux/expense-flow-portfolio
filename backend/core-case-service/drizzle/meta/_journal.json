@@ -183,6 +183,13 @@
             "when": 1785254026815,
             "tag": "0025_bumpy_shinobi_shaw",
             "breakpoints": true
+        },
+        {
+            "idx": 26,
+            "version": "7",
+            "when": 1785254026816,
+            "tag": "0026_all_transactions_pagination_idx",
+            "breakpoints": true
         }
     ]
 }
