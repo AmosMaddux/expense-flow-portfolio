@@ -4065,6 +4065,479 @@ void describe("Expense Report routes", () => {
         );
     });
 
+    void test("updates source deductibility during AP Review and records an audit entry", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000274";
+        const owner = "50000000-0000-4000-8000-000000000274";
+        const managerId = "52000000-0000-4000-8000-000000000274";
+        const reportId = "60000000-0000-4000-8000-000000000274";
+        const lineItemId = "30000000-0000-4000-8000-000000000274";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Hotel",
+            expenseDate: "2026-07-20",
+            amount: "725.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000274",
+            submissionId: "90000000-0000-4000-8000-000000000274",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${lineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const body = (await response.json()) as { deductible?: boolean };
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(body.deductible).toBe(true);
+        expect(codingRows[0]?.deductible).toBe(true);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                actorId: managerId,
+                action: "source_deductibility_updated",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "AP Review",
+                denialReason: null,
+                outcomeReason: `manual_deductibility_updated:source_type=line_item;source_id=${lineItemId};deductible=true`,
+            }),
+        );
+
+        const clearResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${lineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: false }),
+            },
+        );
+        const clearBody = (await clearResponse.json()) as {
+            deductible?: boolean;
+        };
+        const clearedCodingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const clearedAuditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(clearResponse.status).toBe(200);
+        expect(clearBody.deductible).toBe(false);
+        expect(clearedCodingRows[0]?.deductible).toBe(false);
+        expect(clearedAuditRows).toContainEqual(
+            expect.objectContaining({
+                actorId: managerId,
+                action: "source_deductibility_updated",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "AP Review",
+                denialReason: null,
+                outcomeReason: `manual_deductibility_updated:source_type=line_item;source_id=${lineItemId};deductible=false`,
+            }),
+        );
+    });
+
+    void test("does not persist deductibility when the source row is missing", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000478";
+        const owner = "50000000-0000-4000-8000-000000000478";
+        const managerId = "52000000-0000-4000-8000-000000000478";
+        const reportId = "60000000-0000-4000-8000-000000000478";
+        const missingLineItemId = "30000000-0000-4000-8000-000000000478";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000478",
+            submissionId: "90000000-0000-4000-8000-000000000478",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: missingLineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: false,
+            deductible: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${missingLineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(codingRows[0]?.deductible).toBe(false);
+        expect(auditRows).toHaveLength(0);
+    });
+
+    void test("updates mileage deductibility in a mixed AP Review report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000474";
+        const owner = "50000000-0000-4000-8000-000000000474";
+        const managerId = "52000000-0000-4000-8000-000000000474";
+        const reportId = "60000000-0000-4000-8000-000000000474";
+        const lineItemId = "30000000-0000-4000-8000-000000000474";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000474";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Hotel",
+            expenseDate: "2026-07-20",
+            amount: "725.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Office to synthetic site",
+            distance: "18.50",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                id: "91000000-0000-4000-8000-000000000474",
+                submissionId: "90000000-0000-4000-8000-000000000474",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                flaggedLineItem: false,
+            },
+            {
+                id: "92000000-0000-4000-8000-000000000474",
+                submissionId: "90000000-0000-4000-8000-000000000474",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6250",
+                glAccountName: "Mileage Expense",
+                flaggedLineItem: false,
+            },
+        ]);
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const body = (await response.json()) as {
+            id?: string;
+            mileageEntries?: Array<{ id: string; deductible: boolean }>;
+        };
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(body.id).toBe(lineItemId);
+        expect(body.mileageEntries).toContainEqual(
+            expect.objectContaining({ id: mileageEntryId, deductible: true }),
+        );
+        expect(
+            codingRows.find((row) => row.sourceId === mileageEntryId)
+                ?.deductible,
+        ).toBe(true);
+        expect(
+            codingRows.find((row) => row.sourceId === lineItemId)?.deductible,
+        ).toBe(false);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "source_deductibility_updated",
+                outcomeReason: `manual_deductibility_updated:source_type=mileage;source_id=${mileageEntryId};deductible=true`,
+            }),
+        );
+    });
+
+    void test("updates mileage deductibility in a mileage-only AP Review report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000475";
+        const owner = "50000000-0000-4000-8000-000000000475";
+        const managerId = "52000000-0000-4000-8000-000000000475";
+        const reportId = "60000000-0000-4000-8000-000000000475";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000475";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Office to synthetic site",
+            distance: "18.50",
+            mileageDate: "2026-07-21",
+        });
+        await db.insert(glCodingResult).values({
+            id: "92000000-0000-4000-8000-000000000475",
+            submissionId: "90000000-0000-4000-8000-000000000475",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "mileage",
+            sourceId: mileageEntryId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6250",
+            glAccountName: "Mileage Expense",
+            flaggedLineItem: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/mileage/${mileageEntryId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const body = (await response.json()) as {
+            id?: string;
+            sourceType?: string;
+            deductible?: boolean;
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+            id: mileageEntryId,
+            sourceType: "mileage",
+            deductible: true,
+        });
+    });
+
+    void test("does not update source deductibility across tenants", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000476";
+        const otherTenantId = "40000000-0000-4000-8000-000000000477";
+        const owner = "50000000-0000-4000-8000-000000000476";
+        const otherManagerId = "52000000-0000-4000-8000-000000000477";
+        const reportId = "60000000-0000-4000-8000-000000000476";
+        const lineItemId = "30000000-0000-4000-8000-000000000476";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "AP Review",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Hotel",
+            expenseDate: "2026-07-20",
+            amount: "725.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000476",
+            submissionId: "90000000-0000-4000-8000-000000000476",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${lineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        otherManagerId,
+                        ["Department Manager"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(eq(auditEntry.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(codingRows[0]?.deductible).toBe(false);
+        expect(auditRows).toHaveLength(0);
+    });
+    void test("rejects source deductibility updates outside AP Review", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000275";
+        const owner = "50000000-0000-4000-8000-000000000275";
+        const managerId = "52000000-0000-4000-8000-000000000275";
+        const reportId = "60000000-0000-4000-8000-000000000275";
+        const lineItemId = "30000000-0000-4000-8000-000000000275";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-19",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Hotel",
+            expenseDate: "2026-07-20",
+            amount: "725.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        await db.insert(glCodingResult).values({
+            id: "91000000-0000-4000-8000-000000000275",
+            submissionId: "90000000-0000-4000-8000-000000000275",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            flaggedLineItem: false,
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/sources/line_item/${lineItemId}/deductibility`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ deductible: true }),
+            },
+        );
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+        const codingRows = await db
+            .select()
+            .from(glCodingResult)
+            .where(eq(glCodingResult.expenseReportId, reportId));
+
+        expect(response.status).toBe(409);
+        expect(body).toMatchObject({ title: "Conflict", status: 409 });
+        expect(codingRows[0]?.deductible).toBe(false);
+    });
     void test("records Employee flag-clear denials as audit-only events", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000183";
         const owner = "50000000-0000-4000-8000-000000000183";
@@ -4436,11 +4909,11 @@ void describe("Expense Report routes", () => {
         });
     });
     void test("does not transition an Expense Report from another tenant", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000154";
-        const otherTenantId = "40000000-0000-4000-8000-000000000155";
-        const owner = "50000000-0000-4000-8000-000000000154";
-        const managerId = "51000000-0000-4000-8000-000000000154";
-        const reportId = "60000000-0000-4000-8000-000000000154";
+        const tenantId = "40000000-0000-4000-8000-000000000374";
+        const otherTenantId = "40000000-0000-4000-8000-000000000375";
+        const owner = "50000000-0000-4000-8000-000000000374";
+        const managerId = "51000000-0000-4000-8000-000000000374";
+        const reportId = "60000000-0000-4000-8000-000000000374";
 
         await db.insert(expenseReport).values({
             id: reportId,

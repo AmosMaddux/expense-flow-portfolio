@@ -35,6 +35,7 @@ import {
     reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
+    updateExpenseReportSourceDeductibility as updateExpenseReportSourceDeductibilityInStore,
     updateDraftLineItem as updateDraftLineItemInStore,
     updateDraftMileageEntry as updateDraftMileageEntryInStore,
 } from "../repository/expenseReportRepository.js";
@@ -63,6 +64,7 @@ import {
     type ReviewExpenseReportLineItemRequest,
     type ReviewExpenseReportSourceParams,
     type TransitionExpenseReportWorkflowRequest,
+    type UpdateExpenseReportSourceDeductibilityRequest,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
@@ -722,6 +724,47 @@ export async function reviewExpenseReportSource(
     return result.lineItem;
 }
 
+/**
+ * Applies a manual AP Review deductibility decision to one Expense Report source.
+ */
+export async function updateExpenseReportSourceDeductibility(
+    request: UpdateExpenseReportSourceDeductibilityRequest &
+        ReviewExpenseReportSourceParams & {
+            tenantId: string;
+            actorId: string;
+            roles: RoleName[];
+        },
+): Promise<ApprovalQueueLineItemResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    const result = await updateExpenseReportSourceDeductibilityInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        sourceId: request.sourceId,
+        sourceType: request.sourceType,
+        actorId: request.actorId,
+        deductible: request.deductible,
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Expense Report review source not found.");
+    }
+
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Deductibility can only be updated during AP Review; Expense Report is in ${result.currentStage}.`,
+        );
+    }
+
+    return result.lineItem;
+}
 /**
  * Applies role, sequence, and flag guards before moving an Expense Report stage.
  */

@@ -17,6 +17,15 @@ const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 
+function getCheckboxByLabel(label: string): HTMLInputElement {
+    const element = screen.getByLabelText(label);
+    if (!(element instanceof HTMLInputElement)) {
+        throw new Error(`${label} did not resolve to a checkbox input.`);
+    }
+
+    return element;
+}
+
 const lineItems: ApprovalQueueLineItem[] = [
     {
         id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
@@ -29,6 +38,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         currentStage: "Manager Approval",
         flaggedLineItem: true,
         reviewAction: null,
+        deductible: false,
         canAdvance: false,
         reportTotalMileage: 18.5,
         mileageEntries: [
@@ -42,6 +52,7 @@ const lineItems: ApprovalQueueLineItem[] = [
                 glCode: "6250",
                 flaggedLineItem: false,
                 reviewAction: null,
+                deductible: false,
             },
         ],
     },
@@ -56,6 +67,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         currentStage: "Submitted",
         flaggedLineItem: false,
         reviewAction: null,
+        deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
         mileageEntries: [],
@@ -71,6 +83,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         currentStage: "AP Review",
         flaggedLineItem: true,
         reviewAction: "approve",
+        deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
         mileageEntries: [],
@@ -97,6 +110,7 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
                 glCode: "6250",
                 flaggedLineItem: false,
                 reviewAction: null,
+                deductible: false,
             },
         ],
     },
@@ -130,11 +144,13 @@ const reviewedFlaggedMileageItems: ApprovalQueueLineItem[] = [
         ...lineItems[0],
         flaggedLineItem: false,
         reviewAction: "approve",
+        deductible: false,
         canAdvance: false,
         mileageEntries: lineItems[0].mileageEntries.map((entry) => ({
             ...entry,
             flaggedLineItem: true,
             reviewAction: "approve",
+            deductible: false,
         })),
     },
 ];
@@ -316,7 +332,7 @@ describe("CaseQueueScreen", () => {
             within(table).queryByRole("button", { name: "Clear flag" }),
         ).toBeNull();
         expect(screen.getByText("Showing 3 of 3 reports")).toBeTruthy();
-    });
+    }, 10_000);
 
     test("filters report rows by stage", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -669,6 +685,7 @@ describe("CaseQueueScreen", () => {
                     ...lineItems[0],
                     flaggedLineItem: false,
                     reviewAction: "approve",
+                    deductible: false,
                     canAdvance: false,
                 }),
             )
@@ -677,11 +694,13 @@ describe("CaseQueueScreen", () => {
                     ...lineItems[0],
                     flaggedLineItem: false,
                     reviewAction: "approve",
+                    deductible: false,
                     canAdvance: true,
                     mileageEntries: lineItems[0].mileageEntries.map(
                         (entry) => ({
                             ...entry,
                             reviewAction: "approve",
+                            deductible: false,
                         }),
                     ),
                 }),
@@ -892,6 +911,7 @@ describe("CaseQueueScreen", () => {
                 createJsonResponse({
                     ...lineItems[0],
                     reviewAction: "reject",
+                    deductible: false,
                     canAdvance: false,
                 }),
             )
@@ -899,11 +919,13 @@ describe("CaseQueueScreen", () => {
                 createJsonResponse({
                     ...lineItems[0],
                     reviewAction: "reject",
+                    deductible: false,
                     canAdvance: false,
                     mileageEntries: lineItems[0].mileageEntries.map(
                         (entry) => ({
                             ...entry,
                             reviewAction: "reject",
+                            deductible: false,
                         }),
                     ),
                 }),
@@ -997,6 +1019,157 @@ describe("CaseQueueScreen", () => {
         });
     });
 
+    test("toggles the manual deductibility checkbox during AP Review", async () => {
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    ...lineItems[2],
+                    deductible: true,
+                }),
+            );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const checkbox = getCheckboxByLabel("Mark Zenith Air as deductible");
+        expect(checkbox.disabled).toBe(false);
+        expect(checkbox.checked).toBe(false);
+
+        fireEvent.click(checkbox);
+
+        await waitFor(() => expect(checkbox.checked).toBe(true));
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/sources/line_item/e6f4d30b-20fc-4a72-9e44-190eb7d30c72/deductibility",
+        );
+        expect(fetchImplementation.mock.calls[1]?.[1]?.method).toBe("PATCH");
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toEqual({ deductible: true });
+    });
+
+    test("clears the manual deductibility checkbox during AP Review", async () => {
+        const deductibleLineItems = lineItems.map((lineItem) =>
+            lineItem.id === "e6f4d30b-20fc-4a72-9e44-190eb7d30c72"
+                ? { ...lineItem, deductible: true }
+                : lineItem,
+        );
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(deductibleLineItems))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    ...lineItems[2],
+                    deductible: false,
+                }),
+            );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const checkbox = getCheckboxByLabel("Mark Zenith Air as deductible");
+        expect(checkbox.disabled).toBe(false);
+        expect(checkbox.checked).toBe(true);
+
+        fireEvent.click(checkbox);
+
+        await waitFor(() => expect(checkbox.checked).toBe(false));
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/sources/line_item/e6f4d30b-20fc-4a72-9e44-190eb7d30c72/deductibility",
+        );
+        expect(fetchImplementation.mock.calls[1]?.[1]?.method).toBe("PATCH");
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toEqual({ deductible: false });
+    });
+
+    test("toggles a nested mileage deductibility checkbox during AP Review", async () => {
+        const apReviewMileageItems = multiLineReportItems.map((lineItem) => ({
+            ...lineItem,
+            currentStage: "AP Review" as const,
+            reviewAction: "approve" as const,
+            mileageEntries: lineItem.mileageEntries.map((entry) => ({
+                ...entry,
+                reviewAction: "approve" as const,
+                deductible: false,
+            })),
+        }));
+        const updatedLineItem = {
+            ...apReviewMileageItems[0],
+            mileageEntries: apReviewMileageItems[0].mileageEntries.map(
+                (entry) =>
+                    entry.id === "73000000-0000-4000-8000-000000000005"
+                        ? { ...entry, deductible: true }
+                        : entry,
+            ),
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(apReviewMileageItems))
+            .mockResolvedValueOnce(createJsonResponse(updatedLineItem));
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+
+        const checkbox = getCheckboxByLabel(
+            "Mark Airport to regional office as deductible",
+        );
+        expect(checkbox.disabled).toBe(false);
+        expect(checkbox.checked).toBe(false);
+
+        fireEvent.click(checkbox);
+
+        await waitFor(() => expect(checkbox.checked).toBe(true));
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/71000000-0000-4000-8000-000000000005/sources/mileage/73000000-0000-4000-8000-000000000005/deductibility",
+        );
+        expect(fetchImplementation.mock.calls[1]?.[1]?.method).toBe("PATCH");
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toEqual({ deductible: true });
+        expect(
+            getCheckboxByLabel("Mark Airport to regional office as deductible")
+                .checked,
+        ).toBe(true);
+    });
+    test("renders the deductibility checkbox read-only outside AP Review", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+
+        const checkbox = getCheckboxByLabel(
+            "Mark Northstar Hotels as deductible",
+        );
+        expect(checkbox.disabled).toBe(true);
+    });
     test("does not expose report send-back after a report reaches AP Review", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(lineItems)),

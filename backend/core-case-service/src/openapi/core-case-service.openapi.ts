@@ -33,6 +33,7 @@ import {
     ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
@@ -136,6 +137,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const reviewExpenseReportSourceParams = registry.register(
         "ReviewExpenseReportSourceParams",
         ReviewExpenseReportSourceParamsSchema,
+    );
+    const updateExpenseReportSourceDeductibilityRequest = registry.register(
+        "UpdateExpenseReportSourceDeductibilityRequest",
+        UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
     );
     const approvalQueueLineItemResponse = registry.register(
         "ApprovalQueueLineItemResponse",
@@ -987,6 +992,45 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    registry.registerPath({
+        method: "patch",
+        path: "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/deductibility",
+        summary: "Update Expense Report source deductibility",
+        description:
+            "Records a manual deductibility flag for one latest-submission line item or mileage source during AP Review. No auto-classification is performed.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: reviewExpenseReportSourceParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: updateExpenseReportSourceDeductibilityRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report source deductibility updated.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: approvalQueueLineItemResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed deductibility request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report source not found."),
+            409: problemJsonResponse(
+                "Deductibility can only be updated during AP Review.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
     registry.registerPath({
         method: "post",
         path: "/v1/expense-reports/{id}/flags/clear",

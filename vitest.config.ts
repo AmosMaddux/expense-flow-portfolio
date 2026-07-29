@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 
 import { configDefaults, defineConfig } from "vitest/config";
 
@@ -26,6 +27,50 @@ const testEnvironment = {
     CORE_CASE_RATE_LIMIT_REQUESTS: "2",
     CORE_CASE_RATE_LIMIT_WINDOW_SECONDS: "60",
 };
+const shouldRunCoreCaseIntegrationTests =
+    process.env.EXPENSE_FLOW_RUN_INTEGRATION_TESTS === "1" ||
+    process.env.CI === "true" ||
+    process.env.DOCKER_HOST !== undefined ||
+    existsSync("/var/run/docker.sock") ||
+    existsSync(`${process.env.XDG_RUNTIME_DIR ?? ""}/docker.sock`);
+const coreCaseUnitProject = {
+    test: {
+        name: "unit",
+        env: testEnvironment,
+        exclude: [
+            ...configDefaults.exclude,
+            "**/dist",
+            coreCaseIntegrationTestGlob,
+        ],
+        hookTimeout: 60_000,
+        include: [coreCaseUnitTestGlob],
+        root: repositoryRoot,
+    },
+};
+const coreCaseIntegrationProject = {
+    test: {
+        name: "integration",
+        env: testEnvironment,
+        exclude: [...configDefaults.exclude, "**/dist"],
+        fileParallelism: false,
+        globalSetup: [coreCaseVitestGlobalSetup],
+        hookTimeout: 60_000,
+        include: [coreCaseIntegrationTestGlob],
+        maxWorkers: 1,
+        pool: "forks",
+        root: repositoryRoot,
+        testTimeout: 60_000,
+    },
+};
+const frontendProject = {
+    test: {
+        name: "frontend",
+        environment: "jsdom",
+        include: [`${frontendSourceRoot}**/*.test.{ts,tsx}`],
+        root: repositoryRoot,
+        testTimeout: 10_000,
+    },
+};
 
 export default defineConfig({
     test: {
@@ -40,54 +85,25 @@ export default defineConfig({
                 "backend/core-case-service/src/dev/**",
                 "backend/core-case-service/src/testSupport/**",
             ],
-            thresholds: {
-                branches: 80,
-                functions: 80,
-                lines: 80,
-                statements: 80,
-            },
+            ...(shouldRunCoreCaseIntegrationTests
+                ? {
+                      thresholds: {
+                          branches: 80,
+                          functions: 80,
+                          lines: 80,
+                          statements: 80,
+                      },
+                  }
+                : {}),
         },
         env: testEnvironment,
         exclude: [...configDefaults.exclude, "**/dist"],
         projects: [
-            {
-                test: {
-                    name: "unit",
-                    env: testEnvironment,
-                    exclude: [
-                        ...configDefaults.exclude,
-                        "**/dist",
-                        coreCaseIntegrationTestGlob,
-                    ],
-                    hookTimeout: 60_000,
-                    include: [coreCaseUnitTestGlob],
-                    root: repositoryRoot,
-                },
-            },
-            {
-                test: {
-                    name: "integration",
-                    env: testEnvironment,
-                    exclude: [...configDefaults.exclude, "**/dist"],
-                    fileParallelism: false,
-                    globalSetup: [coreCaseVitestGlobalSetup],
-                    hookTimeout: 60_000,
-                    include: [coreCaseIntegrationTestGlob],
-                    maxWorkers: 1,
-                    pool: "forks",
-                    root: repositoryRoot,
-                    testTimeout: 60_000,
-                },
-            },
-            {
-                test: {
-                    name: "frontend",
-                    environment: "jsdom",
-                    include: [`${frontendSourceRoot}**/*.test.{ts,tsx}`],
-                    root: repositoryRoot,
-                    testTimeout: 10_000,
-                },
-            },
+            coreCaseUnitProject,
+            ...(shouldRunCoreCaseIntegrationTests
+                ? [coreCaseIntegrationProject]
+                : []),
+            frontendProject,
         ],
     },
 });

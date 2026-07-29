@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { expenseReport } from "../schema/index.js";
@@ -9,9 +11,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
-const tenantOneId = "10000000-0000-4000-8000-000000000100";
-const tenantTwoId = "99900000-0000-4000-8000-000000000999";
-let syntheticReportSequence = 0;
+const tenantOneId = randomUUID();
+const tenantTwoId = randomUUID();
 let tenantTwoSubmittedReportIds: string[] = [];
 
 type SyntheticExpenseReportValues = typeof expenseReport.$inferInsert & {
@@ -25,13 +26,11 @@ function buildExpenseReportValues(
     dueDate: string,
 ): SyntheticExpenseReportValues[] {
     return Array.from({ length: reportCount }, () => {
-        syntheticReportSequence += 1;
-
         return {
-            id: `30000000-0000-4000-8000-${String(syntheticReportSequence).padStart(12, "0")}`,
+            id: randomUUID(),
             currentStage,
             dueDate,
-            owner: `20000000-0000-4000-8000-${String(syntheticReportSequence).padStart(12, "0")}`,
+            owner: randomUUID(),
             tenantId,
         };
     });
