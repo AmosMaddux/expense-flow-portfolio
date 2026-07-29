@@ -131,7 +131,7 @@ void describe("Expense Report stage-transition outbox dispatch", () => {
         expect(dispatch).not.toHaveBeenCalled();
     });
 
-    void test("returns the committed transition when immediate dispatch fails", async () => {
+    void test("invalidates the cache and returns the committed transition when immediate dispatch fails", async () => {
         const dispatch = vi
             .fn()
             .mockRejectedValue(new Error("synthetic outbox dispatch failure"));
@@ -158,7 +158,14 @@ void describe("Expense Report stage-transition outbox dispatch", () => {
         );
 
         expect(result.currentStage).toBe("Manager Approval");
+        expect(
+            invalidateCachedCaseQueueStageRollupsMock,
+        ).toHaveBeenCalledExactlyOnceWith(tenantId);
         expect(dispatch).toHaveBeenCalledOnce();
+        expect(
+            invalidateCachedCaseQueueStageRollupsMock.mock
+                .invocationCallOrder[0],
+        ).toBeLessThan(dispatch.mock.invocationCallOrder[0] ?? 0);
     });
 });
 
