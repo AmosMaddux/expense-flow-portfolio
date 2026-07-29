@@ -17,6 +17,15 @@ const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 
+function getCheckboxByLabel(label: string): HTMLInputElement {
+    const element = screen.getByLabelText(label);
+    if (!(element instanceof HTMLInputElement)) {
+        throw new Error(`${label} did not resolve to a checkbox input.`);
+    }
+
+    return element;
+}
+
 const lineItems: ApprovalQueueLineItem[] = [
     {
         id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
@@ -1030,7 +1039,7 @@ describe("CaseQueueScreen", () => {
             within(zenithRow).getByRole("button", { name: "Review" }),
         );
 
-        const checkbox = screen.getByLabelText("Mark Zenith Air as deductible");
+        const checkbox = getCheckboxByLabel("Mark Zenith Air as deductible");
         expect(checkbox.disabled).toBe(false);
         expect(checkbox.checked).toBe(false);
 
@@ -1071,7 +1080,7 @@ describe("CaseQueueScreen", () => {
             within(zenithRow).getByRole("button", { name: "Review" }),
         );
 
-        const checkbox = screen.getByLabelText("Mark Zenith Air as deductible");
+        const checkbox = getCheckboxByLabel("Mark Zenith Air as deductible");
         expect(checkbox.disabled).toBe(false);
         expect(checkbox.checked).toBe(true);
 
@@ -1121,7 +1130,7 @@ describe("CaseQueueScreen", () => {
             within(reportRow).getByRole("button", { name: "Review" }),
         );
 
-        const checkbox = screen.getByLabelText(
+        const checkbox = getCheckboxByLabel(
             "Mark Airport to regional office as deductible",
         );
         expect(checkbox.disabled).toBe(false);
@@ -1138,9 +1147,8 @@ describe("CaseQueueScreen", () => {
             JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
         ).toEqual({ deductible: true });
         expect(
-            screen.getByLabelText(
-                "Mark Airport to regional office as deductible",
-            ).checked,
+            getCheckboxByLabel("Mark Airport to regional office as deductible")
+                .checked,
         ).toBe(true);
     });
     test("renders the deductibility checkbox read-only outside AP Review", async () => {
@@ -1157,7 +1165,7 @@ describe("CaseQueueScreen", () => {
             within(northstarRow).getByRole("button", { name: "Review" }),
         );
 
-        const checkbox = screen.getByLabelText(
+        const checkbox = getCheckboxByLabel(
             "Mark Northstar Hotels as deductible",
         );
         expect(checkbox.disabled).toBe(true);
