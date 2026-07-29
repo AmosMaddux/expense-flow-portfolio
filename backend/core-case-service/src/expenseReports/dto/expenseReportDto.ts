@@ -414,6 +414,14 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     updatedAt: z.date(),
 });
 
+export const SubmitExpenseReportOperationResultSchema = z.object({
+    correlationId: z.uuid(),
+    report: ExpenseReportOutboundResponseSchema.extend({
+        createdAt: z.coerce.date(),
+        updatedAt: z.coerce.date(),
+    }),
+});
+
 export const MileageEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),

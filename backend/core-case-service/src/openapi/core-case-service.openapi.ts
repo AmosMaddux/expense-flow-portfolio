@@ -668,10 +668,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     description:
                         "Required tenant-scoped key used to replay completed Expense Report submissions.",
                 }),
-                "x-correlation-id": z.uuid().optional().openapi({
-                    description:
-                        "End-to-end request correlation identifier. The service generates one when omitted.",
-                }),
             }),
             body: {
                 required: true,
@@ -837,6 +833,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Idempotency-Key": z.string().max(128).openapi({
                     description:
                         "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                }),
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
                 }),
             }),
             body: {

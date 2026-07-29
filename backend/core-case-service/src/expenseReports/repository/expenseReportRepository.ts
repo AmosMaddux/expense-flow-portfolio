@@ -36,6 +36,7 @@ import type {
     ApprovalQueueLineItemResponse,
     TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
+import { isExpenseReportWorkflowEdge } from "../domain/expenseReportWorkflow.js";
 
 export const expenseReportCreatedReason = "report_created";
 export const expenseReportSubmittedReason = "report_submitted";
@@ -52,6 +53,7 @@ type SubmissionSourceFingerprint = string;
 type StageTransitionEventContext = {
     correlationId: string;
     eventId: string;
+    idempotencyKey?: string;
     occurredAt: Date;
 };
 
@@ -64,16 +66,6 @@ type ReviewExpenseReportLineItemResult =
     | { kind: "reviewed"; lineItem: ApprovalQueueLineItemResponse }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
-
-const validTransitionEdges = new Set<string>([
-    "Drafted->Submitted",
-    "Submitted->Manager Approval",
-    "Manager Approval->AP Review",
-    "AP Review->Paid",
-    "Paid->Reconciled",
-    "Manager Approval->Drafted",
-    "AP Review->Drafted",
-]);
 
 export type SubmissionSources = {
     report: ExpenseReport;
@@ -1172,6 +1164,40 @@ export async function readDraftSubmissionSources(
 }
 
 /**
+ * Recovers a committed submission when Redis result persistence failed after the database transaction.
+ */
+export async function findCommittedSubmissionByIdempotencyKey(
+    tenantId: string,
+    expenseReportId: string,
+    idempotencyKey: string,
+): Promise<{ correlationId: string; report: ExpenseReport } | undefined> {
+    const outboxRows = await db
+        .select({ correlationId: stageTransitionOutbox.correlationId })
+        .from(stageTransitionOutbox)
+        .where(
+            and(
+                eq(stageTransitionOutbox.tenantId, tenantId),
+                eq(stageTransitionOutbox.expenseReportId, expenseReportId),
+                eq(stageTransitionOutbox.idempotencyKey, idempotencyKey),
+                eq(stageTransitionOutbox.fromStage, "Drafted"),
+                eq(stageTransitionOutbox.toStage, "Submitted"),
+            ),
+        )
+        .limit(1);
+    const outboxRow = outboxRows[0];
+    if (outboxRow === undefined) {
+        return undefined;
+    }
+
+    const report = await findExpenseReportById(tenantId, expenseReportId);
+    if (report?.currentStage !== "Submitted") {
+        return undefined;
+    }
+
+    return { correlationId: outboxRow.correlationId, report };
+}
+
+/**
  * Appends GL-coding results and advances a Drafted report to Submitted.
  */
 export async function submitDraftExpenseReport(
@@ -1925,6 +1951,7 @@ async function writeSuccessfulStageTransitionAndOutbox(
         expenseReportId: request.id,
         tenantId: request.tenantId,
         correlationId: request.correlationId,
+        idempotencyKey: request.idempotencyKey,
         fromStage: request.fromStage,
         toStage: request.toStage,
         occurredAt: request.occurredAt,
@@ -2445,7 +2472,7 @@ function isSendBackTransition(
 function isValidTransitionEdge(
     request: TransitionExpenseReportStageRequest,
 ): boolean {
-    return validTransitionEdges.has(`${request.fromStage}->${request.toStage}`);
+    return isExpenseReportWorkflowEdge(request.fromStage, request.toStage);
 }
 
 function buildTransitionDenialReason(

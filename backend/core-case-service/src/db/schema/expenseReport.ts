@@ -258,6 +258,7 @@ export const stageTransitionOutbox = pgTable(
         expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
         correlationId: uuid("correlation_id").notNull(),
+        idempotencyKey: text("idempotency_key"),
         fromStage: text("from_stage").notNull(),
         toStage: text("to_stage").notNull(),
         occurredAt: timestamp("occurred_at", { withTimezone: true })
@@ -301,6 +302,11 @@ export const stageTransitionOutbox = pgTable(
         }),
         uniqueIndex("stage_transition_outbox_transition_unique_idx").on(
             table.stageTransitionId,
+        ),
+        index("stage_transition_outbox_submission_idempotency_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.idempotencyKey,
         ),
         index("stage_transition_outbox_dispatch_idx").on(
             table.publishedAt,

@@ -39,6 +39,7 @@ export {
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
     StageTransitionCorrelationHeaderSchema,
+    SubmitExpenseReportOperationResultSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportStageInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,

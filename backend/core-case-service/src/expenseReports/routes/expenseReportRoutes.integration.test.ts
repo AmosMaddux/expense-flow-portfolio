@@ -1837,6 +1837,7 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000132";
         const owner = "50000000-0000-4000-8000-000000000132";
         const correlationId = "70000000-0000-4000-8000-000000000132";
+        const replayCorrelationId = "70000000-0000-4000-8000-000000000133";
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
@@ -1911,7 +1912,7 @@ void describe("Expense Report routes", () => {
                     authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-132",
-                    "x-correlation-id": correlationId,
+                    "x-correlation-id": replayCorrelationId,
                 },
                 body: JSON.stringify({}),
             },
@@ -1926,6 +1927,9 @@ void describe("Expense Report routes", () => {
         expect(response.status).toBe(201);
         expect(replayResponse.status).toBe(201);
         expect(response.headers.get("x-correlation-id")).toBe(correlationId);
+        expect(replayResponse.headers.get("x-correlation-id")).toBe(
+            correlationId,
+        );
         expect(body.currentStage).toBe("Submitted");
         expect(replayBody.currentStage).toBe("Submitted");
         expect(glCodingClientMock).toHaveBeenCalledOnce();
@@ -1946,6 +1950,7 @@ void describe("Expense Report routes", () => {
         expect(outboxRows).toHaveLength(1);
         expect(outboxRows[0]).toMatchObject({
             attemptCount: 1,
+            idempotencyKey: "expense-submit-132",
             publishedAt: null,
             deadLetteredAt: null,
         });
@@ -1979,6 +1984,113 @@ void describe("Expense Report routes", () => {
                 reason: "report_submitted",
             }),
         );
+    });
+
+    void test("recovers a committed submission when saving its idempotency result fails", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000232";
+        const owner = "50000000-0000-4000-8000-000000000232";
+        const correlationId = "70000000-0000-4000-8000-000000000232";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-create-232",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        });
+        const created = (await createResponse.json()) as { id?: string };
+        if (created.id === undefined) {
+            throw new Error("Expected created Expense Report id");
+        }
+
+        const sourceId = "30000000-0000-4000-8000-000000000232";
+        await db.insert(lineItem).values({
+            id: sourceId,
+            tenantId,
+            expenseReportId: created.id,
+            merchant: "Synthetic Transit",
+            expenseDate: "2026-07-24",
+            amount: "18.50",
+            currency: "USD",
+            category: "Travel",
+        });
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "18.50",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+        idempotencyStoreMock.saveResult.mockRejectedValueOnce(
+            new Error("synthetic idempotency result storage failure"),
+        );
+
+        const firstResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-232",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-232",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000233",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const replayBody = (await replayResponse.json()) as {
+            currentStage?: string;
+        };
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, created.id));
+
+        expect(firstResponse.status).toBe(500);
+        expect(replayResponse.status).toBe(201);
+        expect(replayResponse.headers.get("x-correlation-id")).toBe(
+            correlationId,
+        );
+        expect(replayBody.currentStage).toBe("Submitted");
+        expect(glCodingClientMock).toHaveBeenCalledOnce();
+        expect(stageTransitionPublishMock).toHaveBeenCalledOnce();
+        expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]).toMatchObject({
+            correlationId,
+            idempotencyKey: "expense-submit-232",
+            fromStage: "Drafted",
+            toStage: "Submitted",
+        });
+        expect(outboxRows[0]?.publishedAt).toBeInstanceOf(Date);
     });
 
     void test("rejects an empty Drafted Expense Report", async () => {
@@ -2147,6 +2259,7 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(404);
         expect(glCodingClientMock).not.toHaveBeenCalled();
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
         expect(reportRows[0]?.currentStage).toBe("Drafted");
         expect(auditRows).toHaveLength(1);
     });
@@ -2189,6 +2302,7 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(409);
         expect(glCodingClientMock).not.toHaveBeenCalled();
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
         const auditRows = await db
             .select()
             .from(auditEntry)
@@ -2439,6 +2553,7 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(403);
         expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
         expect(reportRows[0]?.currentStage).toBe("Submitted");
         expect(auditRows).toContainEqual(
             expect.objectContaining({
@@ -2458,6 +2573,46 @@ void describe("Expense Report routes", () => {
                 reason: "transition_denied: Authenticated role is not permitted to transition Expense Reports.",
             }),
         );
+    });
+
+    void test("does not publish an event for an invalid workflow edge", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000234";
+        const owner = "50000000-0000-4000-8000-000000000234";
+        const managerId = "51000000-0000-4000-8000-000000000234";
+        const reportId = "60000000-0000-4000-8000-000000000234";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-15",
+            currentStage: "Submitted",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "AP Review",
+                    reason: "synthetic invalid edge attempt",
+                }),
+            },
+        );
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(409);
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
+        expect(outboxRows).toHaveLength(0);
     });
 
     void test("allows Department Manager and Finance Admin workflow transitions", async () => {
@@ -2812,6 +2967,7 @@ void describe("Expense Report routes", () => {
 
             expect(response.status).toBe(403);
             expect(body).toMatchObject({ title: "Forbidden", status: 403 });
+            expect(stageTransitionPublishMock).not.toHaveBeenCalled();
             expect(reportRows[0]?.currentStage).toBe(fromStage);
             expect(auditRows).toContainEqual(
                 expect.objectContaining({
@@ -2915,6 +3071,7 @@ void describe("Expense Report routes", () => {
                 reason: "transition_denied: Expense Report has uncleared over-threshold line-item flags.",
             }),
         );
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
 
         const clearResponse = await requestApp(
             `/v1/expense-reports/${reportId}/flags/clear`,
@@ -2957,6 +3114,7 @@ void describe("Expense Report routes", () => {
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
         const reviewResponse = await requestApp(
             `/v1/expense-reports/${reportId}/line-items/${lineItemId}/review`,
             {
@@ -4571,6 +4729,7 @@ void describe("Expense Report routes", () => {
             .where(eq(stageTransition.expenseReportId, reportId));
 
         expect(response.status).toBe(404);
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
         expect(reportRows[0]).toMatchObject({
             tenantId,
             currentStage: "Submitted",

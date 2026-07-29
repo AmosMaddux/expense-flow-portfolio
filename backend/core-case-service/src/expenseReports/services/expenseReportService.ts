@@ -22,6 +22,7 @@ import {
     deleteDraftMileageEntry as deleteDraftMileageEntryInStore,
     findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
+    findCommittedSubmissionByIdempotencyKey,
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
     findExpenseReportById,
@@ -73,6 +74,11 @@ import {
 
 export type StageTransitionEventDependencies = {
     stageTransitionOutboxDispatcher: StageTransitionOutboxDispatcher;
+};
+
+export type SubmitExpenseReportResult = {
+    correlationId: string;
+    report: ExpenseReportResponse;
 };
 
 /**
@@ -510,14 +516,28 @@ export async function submitExpenseReport(
         actorId: string;
         roles: RoleName[];
         correlationId: string;
+        idempotencyKey: string;
     },
     dependencies?: StageTransitionEventDependencies,
-): Promise<ExpenseReportResponse> {
+): Promise<SubmitExpenseReportResult> {
     const sources = await readDraftSubmissionSources(
         request.tenantId,
         request.id,
     );
     if (sources === undefined) {
+        const committedSubmission =
+            await findCommittedSubmissionByIdempotencyKey(
+                request.tenantId,
+                request.id,
+                request.idempotencyKey,
+            );
+        if (committedSubmission !== undefined) {
+            return {
+                correlationId: committedSubmission.correlationId,
+                report: toExpenseReportResponse(committedSubmission.report),
+            };
+        }
+
         const existing = await findExpenseReportById(
             request.tenantId,
             request.id,
@@ -600,6 +620,7 @@ export async function submitExpenseReport(
             {
                 correlationId: request.correlationId,
                 eventId: outboxEventId,
+                idempotencyKey: request.idempotencyKey,
                 occurredAt: new Date(),
             },
         );
@@ -618,7 +639,10 @@ export async function submitExpenseReport(
         await invalidateCachedCaseQueueStageRollups(request.tenantId);
         await dispatchOutboxEvent(outboxEventId, dependencies);
 
-        return toExpenseReportResponse(report);
+        return {
+            correlationId: request.correlationId,
+            report: toExpenseReportResponse(report),
+        };
     } catch (error: unknown) {
         if (error instanceof GlCodingServiceError) {
             throw new BadGatewayError(error.message);

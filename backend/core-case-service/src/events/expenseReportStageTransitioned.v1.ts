@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { approvedWorkflowStages } from "../db/schema/index.js";
+import { isExpenseReportWorkflowEdge } from "../expenseReports/domain/expenseReportWorkflow.js";
 
 export const EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE =
     "com.expenseflow.expense-report.stage-transitioned.v1" as const;
@@ -17,10 +18,13 @@ export const ExpenseReportStageTransitionedDataV1Schema = z
         correlationId: z.uuid(),
     })
     .strict()
-    .refine((data) => data.fromStage !== data.toStage, {
-        message: "A stage transition must change the Expense Report stage.",
-        path: ["toStage"],
-    });
+    .refine(
+        (data) => isExpenseReportWorkflowEdge(data.fromStage, data.toStage),
+        {
+            message: "Stage transition must use an allowed workflow edge.",
+            path: ["toStage"],
+        },
+    );
 
 export const ExpenseReportStageTransitionedCloudEventV1Schema = z
     .object({

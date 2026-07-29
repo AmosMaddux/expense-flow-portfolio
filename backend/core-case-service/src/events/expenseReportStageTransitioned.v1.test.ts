@@ -59,4 +59,18 @@ void describe("ExpenseReportStageTransitionedCloudEventV1Schema", () => {
 
         expect(result.success).toBe(false);
     });
+
+    void test("rejects a structurally valid but impossible workflow edge", () => {
+        const result =
+            ExpenseReportStageTransitionedCloudEventV1Schema.safeParse({
+                ...syntheticStageTransitionEvent,
+                data: {
+                    ...syntheticStageTransitionEvent.data,
+                    fromStage: "Paid",
+                    toStage: "Submitted",
+                },
+            });
+
+        expect(result.success).toBe(false);
+    });
 });

@@ -2434,6 +2434,12 @@
                     "primaryKey": false,
                     "notNull": true
                 },
+                "idempotency_key": {
+                    "name": "idempotency_key",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
                 "from_stage": {
                     "name": "from_stage",
                     "type": "text",
@@ -2504,6 +2510,33 @@
                         }
                     ],
                     "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "stage_transition_outbox_submission_idempotency_idx": {
+                    "name": "stage_transition_outbox_submission_idempotency_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "idempotency_key",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
                     "concurrently": false,
                     "method": "btree",
                     "with": {}

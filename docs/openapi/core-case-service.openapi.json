@@ -2903,17 +2903,6 @@
                         "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
                         "in": "header"
-                    },
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
-                        },
-                        "required": false,
-                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
-                        "name": "x-correlation-id",
-                        "in": "header"
                     }
                 ],
                 "requestBody": {
@@ -3406,6 +3395,17 @@
                         "required": true,
                         "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
                         "in": "header"
                     }
                 ],

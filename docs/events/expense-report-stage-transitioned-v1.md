@@ -56,7 +56,15 @@ extension attribute for routing and observability. It must equal
 | `data.correlationId` | UUID                         | yes      | End-to-end operation correlation identifier |
 
 Valid stages are `Drafted`, `Submitted`, `Manager Approval`, `AP Review`, `Paid`,
-and `Reconciled`. The from and to stages must differ.
+and `Reconciled`. Events are valid only for these workflow edges:
+
+- `Drafted` → `Submitted`
+- `Submitted` → `Manager Approval`
+- `Manager Approval` → `AP Review`
+- `AP Review` → `Paid`
+- `Paid` → `Reconciled`
+- `Manager Approval` → `Drafted`
+- `AP Review` → `Drafted`
 
 ## Synthetic example
 

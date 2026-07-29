@@ -905,6 +905,7 @@ void describe("stageTransitionOutbox schema", () => {
                 "expense_report_id",
                 "tenant_id",
                 "correlation_id",
+                "idempotency_key",
                 "attempt_count",
                 "next_attempt_at",
                 "locked_until",
@@ -916,6 +917,7 @@ void describe("stageTransitionOutbox schema", () => {
         expect(indexNames).toEqual(
             expect.arrayContaining([
                 "stage_transition_outbox_transition_unique_idx",
+                "stage_transition_outbox_submission_idempotency_idx",
                 "stage_transition_outbox_dispatch_idx",
             ]),
         );

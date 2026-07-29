@@ -26,6 +26,7 @@ import {
     ReviewExpenseReportSourceParamsSchema,
     StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
+    SubmitExpenseReportOperationResultSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
@@ -547,7 +548,6 @@ export async function postExpenseReportSubmission(
             req.body,
         );
         const correlationId = parseOrCreateCorrelationId(req);
-        res.set("X-Correlation-Id", correlationId);
         if (
             auth.roles.includes("Employee") &&
             !hasInternalExpenseReportRole(auth)
@@ -558,6 +558,7 @@ export async function postExpenseReportSubmission(
                 ownerId: auth.userId,
             });
         }
+        const idempotencyKey = parseIdempotencyKey(req);
         const submitReport = async () =>
             submitExpenseReport({
                 id: parsedParams.id,
@@ -565,8 +566,8 @@ export async function postExpenseReportSubmission(
                 actorId: auth.userId,
                 roles: auth.roles,
                 correlationId,
+                idempotencyKey,
             });
-        const idempotencyKey = parseIdempotencyKey(req);
         const requestHash = createIdempotencyRequestHash({
             id: parsedParams.id,
             ...parsedRequest,
@@ -579,7 +580,11 @@ export async function postExpenseReportSubmission(
             tenantId: auth.tenantId,
         });
 
-        res.status(result.statusCode).json(result.body);
+        const submission = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
+        res.set("X-Correlation-Id", submission.correlationId);
+        res.status(result.statusCode).json(submission.report);
     } catch (error: unknown) {
         if (
             error instanceof Error &&
