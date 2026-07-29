@@ -541,7 +541,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
             [lineItemId, secondFlaggedLineItemId, unflaggedLineItemId].map(
                 (sourceId) =>
                     requestApp(
-                        `/v1/expense-reports/${reportId}/line-items/${sourceId}/review`,
+                        `/v1/expense-reports/${reportId}/sources/line_item/${sourceId}/review`,
                         {
                             method: "POST",
                             headers: {

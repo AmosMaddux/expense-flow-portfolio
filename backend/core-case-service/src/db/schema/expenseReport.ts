@@ -462,6 +462,7 @@ export const glCodingResult = pgTable(
         flaggedLineItem: boolean("flagged_line_item").notNull().default(false),
         flagCode: text("flag_code"),
         flagMessage: text("flag_message"),
+        deductible: boolean("deductible").notNull().default(false),
         lineItemReviewAction: text("line_item_review_action"),
         lineItemReviewReason: text("line_item_review_reason"),
         lineItemReviewedBy: uuid("line_item_reviewed_by"),

@@ -715,7 +715,7 @@ void describe("expenseReportRepository", () => {
     });
 
     void test("reads current GL coding as coded_at then id descending", async () => {
-        const tenantId = "00000000-0000-4000-8000-000000000192";
+        const tenantId = randomUUID();
         const report = await insertDraftExpenseReport(
             tenantId,
             buildNewExpenseReport(tenantId),
@@ -725,11 +725,14 @@ void describe("expenseReportRepository", () => {
             throw new Error("Expected Expense Report to be created");
         }
 
-        const sourceId = "30000000-0000-4000-8000-000000000192";
+        const sourceId = randomUUID();
+        const codingResultIdPrefix = randomUUID().slice(0, 8);
+        const olderCodingResultId = `${codingResultIdPrefix}-0000-4000-8000-000000000001`;
+        const newerCodingResultId = `${codingResultIdPrefix}-0000-4000-8000-000000000002`;
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000192",
-                submissionId: "90000000-0000-4000-8000-000000000192",
+                id: olderCodingResultId,
+                submissionId: randomUUID(),
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
@@ -742,8 +745,8 @@ void describe("expenseReportRepository", () => {
                 codedAt: new Date("2026-07-18T10:00:00.000Z"),
             },
             {
-                id: "91000000-0000-4000-8000-000000000193",
-                submissionId: "90000000-0000-4000-8000-000000000193",
+                id: newerCodingResultId,
+                submissionId: randomUUID(),
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
@@ -1002,8 +1005,8 @@ void describe("expenseReportRepository", () => {
     });
 
     void test("counts only latest-submission flags as active Manager Approval blockers", async () => {
-        const tenantId = "00000000-0000-4000-8000-000000000203";
-        const actorId = "20000000-0000-4000-8000-000000000203";
+        const tenantId = randomUUID();
+        const actorId = randomUUID();
         const report = await insertDraftExpenseReport(
             tenantId,
             buildNewExpenseReport(tenantId),
@@ -1017,14 +1020,17 @@ void describe("expenseReportRepository", () => {
             .update(expenseReport)
             .set({ currentStage: "Manager Approval" })
             .where(eq(expenseReport.id, report.id));
+        const sourceId = randomUUID();
+        const olderSubmissionId = randomUUID();
+        const latestSubmissionId = randomUUID();
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000203",
-                submissionId: "90000000-0000-4000-8000-000000000203",
+                id: randomUUID(),
+                submissionId: olderSubmissionId,
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
-                sourceId: "30000000-0000-4000-8000-000000000203",
+                sourceId,
                 category: "Travel",
                 mappingStatus: "mapped",
                 glAccountCode: "6000",
@@ -1036,12 +1042,12 @@ void describe("expenseReportRepository", () => {
                 codedAt: new Date("2026-07-18T10:00:00.000Z"),
             },
             {
-                id: "91000000-0000-4000-8000-000000000204",
-                submissionId: "90000000-0000-4000-8000-000000000204",
+                id: randomUUID(),
+                submissionId: latestSubmissionId,
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
-                sourceId: "30000000-0000-4000-8000-000000000203",
+                sourceId,
                 category: "Travel",
                 mappingStatus: "mapped",
                 glAccountCode: "6000",
@@ -1179,9 +1185,10 @@ void describe("expenseReportRepository", () => {
             flagCode: "line_item_over_threshold",
             flagMessage:
                 "Line item amount is above the MVP manual review threshold.",
-            lineItemReviewAction: "approve",
+            lineItemReviewAction: "reject",
+            lineItemReviewReason: "receipt detail required",
             lineItemReviewedBy: actorId,
-            lineItemReviewedAt: new Date("2026-07-22T10:00:00.000Z"),
+            lineItemReviewedAt: new Date("2026-07-20T12:00:00.000Z"),
         });
 
         const didTransition = await transitionExpenseReportStage({

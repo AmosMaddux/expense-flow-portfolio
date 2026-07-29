@@ -1,5 +1,10 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { ZodError } from "zod";
+import {
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+} from "../../errors/problem-json.js";
 
 const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
@@ -7,6 +12,7 @@ const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
 const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
+const updateExpenseReportSourceDeductibilityMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../repository/expenseReportRepository.js", () => ({
     buildSubmissionSourceFingerprint: vi.fn(),
@@ -25,6 +31,8 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
     transitionExpenseReportStage: transitionExpenseReportStageMock,
+    updateExpenseReportSourceDeductibility:
+        updateExpenseReportSourceDeductibilityMock,
 }));
 
 vi.mock("./caseQueueService.js", () => ({
@@ -34,6 +42,7 @@ vi.mock("./caseQueueService.js", () => ({
 
 import {
     addMileageEntry,
+    updateExpenseReportSourceDeductibility,
     readCurrentDraftExpenseReport,
     readExpenseReportAuditEntries,
     transitionExpenseReportWorkflow,
@@ -48,6 +57,7 @@ beforeEach(() => {
     insertMileageEntryMock.mockReset();
     transitionExpenseReportStageMock.mockReset();
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
+    updateExpenseReportSourceDeductibilityMock.mockReset();
 });
 
 void describe("Expense Report stage-transition outbox dispatch", () => {
@@ -309,5 +319,131 @@ void describe("Expense Report service audit responses", () => {
                 tenantId,
             }),
         ).rejects.toBeInstanceOf(ZodError);
+    });
+});
+
+void describe("Expense Report source deductibility service", () => {
+    const tenantId = "40000000-0000-4000-8000-000000000902";
+    const actorId = "50000000-0000-4000-8000-000000000902";
+    const expenseReportId = "60000000-0000-4000-8000-000000000902";
+    const sourceId = "70000000-0000-4000-8000-000000000902";
+
+    void test("updates deductibility for an internal AP Review source", async () => {
+        findExpenseReportByIdMock.mockResolvedValue({ id: expenseReportId });
+        updateExpenseReportSourceDeductibilityMock.mockResolvedValue({
+            kind: "updated",
+            lineItem: {
+                id: sourceId,
+                sourceType: "line_item",
+                expenseReportId,
+                employee: actorId,
+                merchant: "Synthetic Hotel",
+                amount: 42,
+                glCode: "6000",
+                currentStage: "AP Review",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                deductible: true,
+                canAdvance: false,
+                reportTotalMileage: 0,
+                mileageEntries: [],
+            },
+        });
+
+        const result = await updateExpenseReportSourceDeductibility({
+            id: expenseReportId,
+            sourceType: "line_item",
+            sourceId,
+            tenantId,
+            actorId,
+            roles: ["Department Manager"],
+            deductible: true,
+        });
+
+        expect(result.deductible).toBe(true);
+        expect(updateExpenseReportSourceDeductibilityMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId,
+                sourceId,
+                sourceType: "line_item",
+                actorId,
+                deductible: true,
+            }),
+        );
+    });
+
+    void test("rejects deductibility updates for roles outside workflow review", async () => {
+        findExpenseReportByIdMock.mockResolvedValue({ id: expenseReportId });
+
+        await expect(
+            updateExpenseReportSourceDeductibility({
+                id: expenseReportId,
+                sourceType: "line_item",
+                sourceId,
+                tenantId,
+                actorId,
+                roles: ["Employee"],
+                deductible: true,
+            }),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+        expect(
+            updateExpenseReportSourceDeductibilityMock,
+        ).not.toHaveBeenCalled();
+    });
+
+    void test("maps missing reports and sources to not found", async () => {
+        findExpenseReportByIdMock.mockResolvedValueOnce(undefined);
+
+        await expect(
+            updateExpenseReportSourceDeductibility({
+                id: expenseReportId,
+                sourceType: "line_item",
+                sourceId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                deductible: true,
+            }),
+        ).rejects.toBeInstanceOf(NotFoundError);
+
+        findExpenseReportByIdMock.mockResolvedValueOnce({
+            id: expenseReportId,
+        });
+        updateExpenseReportSourceDeductibilityMock.mockResolvedValueOnce({
+            kind: "not_found",
+        });
+
+        await expect(
+            updateExpenseReportSourceDeductibility({
+                id: expenseReportId,
+                sourceType: "line_item",
+                sourceId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                deductible: true,
+            }),
+        ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    void test("maps non-AP Review store results to conflict", async () => {
+        findExpenseReportByIdMock.mockResolvedValue({ id: expenseReportId });
+        updateExpenseReportSourceDeductibilityMock.mockResolvedValue({
+            kind: "invalid_stage",
+            currentStage: "Manager Approval",
+        });
+
+        await expect(
+            updateExpenseReportSourceDeductibility({
+                id: expenseReportId,
+                sourceType: "line_item",
+                sourceId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                deductible: true,
+            }),
+        ).rejects.toBeInstanceOf(ConflictError);
     });
 });

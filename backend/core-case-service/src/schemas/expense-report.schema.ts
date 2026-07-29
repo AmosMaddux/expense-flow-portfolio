@@ -43,6 +43,7 @@ export {
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportStageInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
     approvalQueueLineItemListResponseSchema,
     approvalQueueLineItemResponseSchema,
@@ -69,6 +70,7 @@ export {
     submitExpenseReportRequestSchema,
     transitionExpenseReportStageRequestSchema,
     transitionExpenseReportWorkflowRequestSchema,
+    updateExpenseReportSourceDeductibilityRequestSchema,
     type ApprovalQueueLineItemResponse,
     type AuditEntryResponse,
     type AddDraftExpenseContentRequest,
@@ -105,5 +107,6 @@ export {
     type SubmitExpenseReportRequest,
     type TransitionExpenseReportStageRequest,
     type TransitionExpenseReportWorkflowRequest,
+    type UpdateExpenseReportSourceDeductibilityRequest,
     type UpdateDraftLineItemRequest,
 } from "../expenseReports/dto/expenseReportDto.js";
