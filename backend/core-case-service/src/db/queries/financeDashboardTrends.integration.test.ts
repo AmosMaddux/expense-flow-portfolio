@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
+import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -122,6 +123,27 @@ void describe("readFinanceDashboardTrend", () => {
         ]);
     });
 
+    void test("buckets report creation days in UTC regardless of database session timezone", async () => {
+        await db.transaction(async (transaction) => {
+            await transaction.execute(
+                sql`set local time zone 'America/Los_Angeles'`,
+            );
+
+            const trend = await readFinanceDashboardTrend(transaction, {
+                tenantId: tenantOneId,
+                fromDate: "2026-07-03",
+                toDate: "2026-07-03",
+            });
+
+            expect(trend).toEqual([
+                {
+                    periodStart: "2026-07-03",
+                    reportCount: 1,
+                    spendByCurrency: [],
+                },
+            ]);
+        });
+    });
     void test("generates zero-count days inside the requested range", async () => {
         const trend = await readFinanceDashboardTrend(db, {
             tenantId: tenantOneId,

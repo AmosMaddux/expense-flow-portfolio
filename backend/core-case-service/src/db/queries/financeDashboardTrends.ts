@@ -26,12 +26,16 @@ type FinanceDashboardTrendDatabase = {
 };
 
 /**
- * Reads tenant-scoped report creation volume and line-item spend grouped by day.
+ * Reads tenant-scoped report creation volume and line-item spend grouped by UTC day.
  */
 export async function readFinanceDashboardTrend(
     db: FinanceDashboardTrendDatabase,
     params: ReadFinanceDashboardTrendParams,
 ): Promise<FinanceDashboardTrendPoint[]> {
+    const utcCreatedDate = sql`(${expenseReport.createdAt} at time zone 'UTC')::date`;
+    const utcFromTimestamp = sql`cast(${params.fromDate} as date)::timestamp at time zone 'UTC'`;
+    const utcToTimestamp = sql`(cast(${params.toDate} as date) + interval '1 day')::timestamp at time zone 'UTC'`;
+
     const result = await db.execute(sql`
         with days(period_start) as (
             select generate_series(
@@ -42,17 +46,17 @@ export async function readFinanceDashboardTrend(
         ),
         report_counts as (
             select
-                cast(${expenseReport.createdAt} as date) as period_start,
+                ${utcCreatedDate} as period_start,
                 count(${expenseReport.id})::int as report_count
             from ${expenseReport}
             where ${expenseReport.tenantId} = ${params.tenantId}
-                and ${expenseReport.createdAt} >= cast(${params.fromDate} as date)
-                and ${expenseReport.createdAt} < cast(${params.toDate} as date) + interval '1 day'
-            group by cast(${expenseReport.createdAt} as date)
+                and ${expenseReport.createdAt} >= ${utcFromTimestamp}
+                and ${expenseReport.createdAt} < ${utcToTimestamp}
+            group by ${utcCreatedDate}
         ),
         spend_totals as (
             select
-                cast(${expenseReport.createdAt} as date) as period_start,
+                ${utcCreatedDate} as period_start,
                 ${lineItem.currency} as currency,
                 sum(${lineItem.amount})::numeric(12, 2)::text as spend_amount
             from ${expenseReport}
@@ -60,9 +64,9 @@ export async function readFinanceDashboardTrend(
                 on ${lineItem.tenantId} = ${expenseReport.tenantId}
                 and ${lineItem.expenseReportId} = ${expenseReport.id}
             where ${expenseReport.tenantId} = ${params.tenantId}
-                and ${expenseReport.createdAt} >= cast(${params.fromDate} as date)
-                and ${expenseReport.createdAt} < cast(${params.toDate} as date) + interval '1 day'
-            group by cast(${expenseReport.createdAt} as date), ${lineItem.currency}
+                and ${expenseReport.createdAt} >= ${utcFromTimestamp}
+                and ${expenseReport.createdAt} < ${utcToTimestamp}
+            group by ${utcCreatedDate}, ${lineItem.currency}
         )
         select
             days.period_start as "periodStart",
