@@ -4,6 +4,15 @@ The Core Case Service publishes this event after an Expense Report successfully
 changes workflow stage. Publishers and consumers must validate the complete
 CloudEvent with `ExpenseReportStageTransitionedCloudEventV1Schema`.
 
+## SNS transport
+
+The publisher sends the serialized CloudEvent as the SNS message body to the
+topic configured by `STAGE_TRANSITION_SNS_TOPIC_ARN`. The SNS message attributes
+`correlationId` and `eventType` mirror the corresponding CloudEvent values so
+subscriptions can filter or trace messages without parsing the body. An inbound
+`X-Correlation-Id` UUID is reused; when the header is omitted, the Core Case
+Service generates one and returns it in the response header.
+
 ## Version identity
 
 - CloudEvents specification: `1.0`

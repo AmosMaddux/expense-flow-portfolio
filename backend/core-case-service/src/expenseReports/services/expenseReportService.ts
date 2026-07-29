@@ -66,6 +66,14 @@ import {
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
+import {
+    getDefaultStageTransitionEventPublisher,
+    type StageTransitionEventPublisher,
+} from "../../events/stageTransitionEventPublisher.js";
+
+export type StageTransitionEventDependencies = {
+    stageTransitionEventPublisher: StageTransitionEventPublisher;
+};
 
 /**
  * Creates a Drafted Expense Report and returns the public API response shape.
@@ -495,12 +503,16 @@ export async function uploadReceiptFile(
 /**
  * Submits a Drafted Expense Report after appending GL-coding results.
  */
-export async function submitExpenseReport(request: {
-    id: string;
-    tenantId: string;
-    actorId: string;
-    roles: RoleName[];
-}): Promise<ExpenseReportResponse> {
+export async function submitExpenseReport(
+    request: {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+        correlationId: string;
+    },
+    dependencies?: StageTransitionEventDependencies,
+): Promise<ExpenseReportResponse> {
     const sources = await readDraftSubmissionSources(
         request.tenantId,
         request.id,
@@ -596,6 +608,17 @@ export async function submitExpenseReport(request: {
                 "Only Drafted Expense Reports can be submitted.",
             );
         }
+
+        const stageTransitionEventPublisher =
+            dependencies?.stageTransitionEventPublisher ??
+            getDefaultStageTransitionEventPublisher();
+        await stageTransitionEventPublisher.publish({
+            caseId: request.id,
+            tenantId: request.tenantId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            correlationId: request.correlationId,
+        });
 
         await invalidateCachedCaseQueueStageRollups(request.tenantId);
 
@@ -731,7 +754,9 @@ export async function transitionExpenseReportWorkflow(
         tenantId: string;
         actorId: string;
         roles: RoleName[];
+        correlationId: string;
     },
+    dependencies?: StageTransitionEventDependencies,
 ): Promise<ExpenseReportResponse> {
     const report = await findExpenseReportById(request.tenantId, request.id);
     if (report === undefined) {
@@ -764,6 +789,17 @@ export async function transitionExpenseReportWorkflow(
             `Expense Report cannot transition from ${report.currentStage} to ${request.toStage}.`,
         );
     }
+
+    const stageTransitionEventPublisher =
+        dependencies?.stageTransitionEventPublisher ??
+        getDefaultStageTransitionEventPublisher();
+    await stageTransitionEventPublisher.publish({
+        caseId: request.id,
+        tenantId: request.tenantId,
+        fromStage: report.currentStage as ExpenseReportStage,
+        toStage: request.toStage,
+        correlationId: request.correlationId,
+    });
 
     await invalidateCachedCaseQueueStageRollups(request.tenantId);
 

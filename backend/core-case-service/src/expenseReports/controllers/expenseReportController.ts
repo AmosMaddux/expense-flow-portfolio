@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { NextFunction, Request, Response } from "express";
 
 import type { RoleName } from "../../db/schema/index.js";
@@ -22,6 +24,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
@@ -543,6 +546,8 @@ export async function postExpenseReportSubmission(
         const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
             req.body,
         );
+        const correlationId = parseOrCreateCorrelationId(req);
+        res.set("X-Correlation-Id", correlationId);
         if (
             auth.roles.includes("Employee") &&
             !hasInternalExpenseReportRole(auth)
@@ -559,6 +564,7 @@ export async function postExpenseReportSubmission(
                 tenantId: auth.tenantId,
                 actorId: auth.userId,
                 roles: auth.roles,
+                correlationId,
             });
         const idempotencyKey = parseIdempotencyKey(req);
         const requestHash = createIdempotencyRequestHash({
@@ -602,6 +608,8 @@ export async function postExpenseReportTransition(
         });
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
+        const correlationId = parseOrCreateCorrelationId(req);
+        res.set("X-Correlation-Id", correlationId);
         const report = await transitionExpenseReportWorkflow({
             id: parsedParams.id,
             tenantId: auth.tenantId,
@@ -609,6 +617,7 @@ export async function postExpenseReportTransition(
             roles: auth.roles,
             toStage: parsedRequest.toStage,
             reason: parsedRequest.reason,
+            correlationId,
         });
 
         res.status(200).json(report);
@@ -932,4 +941,12 @@ function parseIdempotencyKey(req: Request): string {
     return IdempotentSubmissionHeaderSchema.parse({
         idempotencyKey: req.get("idempotency-key"),
     }).idempotencyKey;
+}
+
+function parseOrCreateCorrelationId(req: Request): string {
+    return (
+        StageTransitionCorrelationHeaderSchema.parse({
+            correlationId: req.get("x-correlation-id"),
+        }).correlationId ?? randomUUID()
+    );
 }

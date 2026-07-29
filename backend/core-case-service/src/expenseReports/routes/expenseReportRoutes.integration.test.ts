@@ -109,6 +109,9 @@ const receiptStorageMock = vi.hoisted(() => ({
         objectKey: "synthetic/receipt-object",
     }),
 }));
+const stageTransitionPublishMock = vi.hoisted(() =>
+    vi.fn().mockResolvedValue(undefined),
+);
 
 vi.mock("../../cache/redisClient.js", () => ({
     getRedisClient: () => Promise.resolve(redisClientMock),
@@ -119,6 +122,11 @@ vi.mock("../../glCoding/glCodingClient.js", () => ({
 }));
 vi.mock("../../receipts/receiptStorage.js", () => ({
     getDefaultReceiptStorage: () => receiptStorageMock,
+}));
+vi.mock("../../events/stageTransitionEventPublisher.js", () => ({
+    getDefaultStageTransitionEventPublisher: () => ({
+        publish: stageTransitionPublishMock,
+    }),
 }));
 
 import { db } from "../../db/client.js";
@@ -209,6 +217,7 @@ void describe("Expense Report routes", () => {
         redisClientMock.incr.mockClear();
         receiptStorageMock.put.mockClear();
         receiptStorageMock.verify.mockClear();
+        stageTransitionPublishMock.mockClear();
         glCodingClientMock.mockResolvedValue({
             coded_items: [],
             flags: [],
@@ -1828,6 +1837,7 @@ void describe("Expense Report routes", () => {
     void test("allows an Employee to submit their own Drafted report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000132";
         const owner = "50000000-0000-4000-8000-000000000132";
+        const correlationId = "70000000-0000-4000-8000-000000000132";
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
@@ -1881,6 +1891,7 @@ void describe("Expense Report routes", () => {
                     authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-132",
+                    "x-correlation-id": correlationId,
                 },
                 body: JSON.stringify({}),
             },
@@ -1889,8 +1900,17 @@ void describe("Expense Report routes", () => {
         const body = (await response.json()) as { currentStage?: string };
 
         expect(response.status).toBe(201);
+        expect(response.headers.get("x-correlation-id")).toBe(correlationId);
         expect(body.currentStage).toBe("Submitted");
         expect(glCodingClientMock).toHaveBeenCalledOnce();
+        expect(stageTransitionPublishMock).toHaveBeenCalledOnce();
+        expect(stageTransitionPublishMock).toHaveBeenCalledWith({
+            caseId: created.id,
+            tenantId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            correlationId,
+        });
         const auditRows = await db
             .select()
             .from(auditEntry)
@@ -2405,6 +2425,8 @@ void describe("Expense Report routes", () => {
         const managerId = "51000000-0000-4000-8000-000000000151";
         const financeAdminId = "52000000-0000-4000-8000-000000000151";
         const reportId = "60000000-0000-4000-8000-000000000151";
+        const managerCorrelationId = "70000000-0000-4000-8000-000000000151";
+        const financeCorrelationId = "70000000-0000-4000-8000-000000000152";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -2423,6 +2445,7 @@ void describe("Expense Report routes", () => {
                         "Department Manager",
                     ]),
                     "content-type": "application/json",
+                    "x-correlation-id": managerCorrelationId,
                 },
                 body: JSON.stringify({
                     toStage: "Manager Approval",
@@ -2441,6 +2464,7 @@ void describe("Expense Report routes", () => {
                         ["Finance Admin"],
                     ),
                     "content-type": "application/json",
+                    "x-correlation-id": financeCorrelationId,
                 },
                 body: JSON.stringify({
                     toStage: "AP Review",
@@ -2453,8 +2477,26 @@ void describe("Expense Report routes", () => {
         };
 
         expect(managerResponse.status).toBe(200);
+        expect(managerResponse.headers.get("x-correlation-id")).toBe(
+            managerCorrelationId,
+        );
         expect(financeResponse.status).toBe(200);
         expect(financeBody.currentStage).toBe("AP Review");
+        expect(stageTransitionPublishMock).toHaveBeenCalledTimes(2);
+        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(1, {
+            caseId: reportId,
+            tenantId,
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+            correlationId: managerCorrelationId,
+        });
+        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(2, {
+            caseId: reportId,
+            tenantId,
+            fromStage: "Manager Approval",
+            toStage: "AP Review",
+            correlationId: financeCorrelationId,
+        });
     });
 
     void test.each([

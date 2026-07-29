@@ -6,3 +6,11 @@ export {
     type ExpenseReportStageTransitionedCloudEventV1,
     type ExpenseReportStageTransitionedDataV1,
 } from "./expenseReportStageTransitioned.v1.js";
+export {
+    buildStageTransitionCloudEvent,
+    createSnsStageTransitionEventPublisher,
+    getDefaultStageTransitionEventPublisher,
+    resetDefaultStageTransitionEventPublisherForTests,
+    type PublishStageTransitionRequest,
+    type StageTransitionEventPublisher,
+} from "./stageTransitionEventPublisher.js";

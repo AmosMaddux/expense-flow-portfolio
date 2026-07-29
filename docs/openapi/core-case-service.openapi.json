@@ -2903,6 +2903,17 @@
                         "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
                         "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
                     }
                 ],
                 "requestBody": {
@@ -3423,6 +3434,13 @@
                             },
                             "X-RateLimit-Cost": {
                                 "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
                             }
                         },
                         "content": {
@@ -3497,7 +3515,7 @@
                         }
                     },
                     "502": {
-                        "description": "GL-coding service request failed.",
+                        "description": "GL-coding or stage-transition event publishing failed.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -3527,6 +3545,17 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
                     }
                 ],
                 "requestBody": {
@@ -3554,6 +3583,13 @@
                             },
                             "X-RateLimit-Cost": {
                                 "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
                             }
                         },
                         "content": {
@@ -3619,6 +3655,16 @@
                     },
                     "500": {
                         "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Stage-transition event publishing failed.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

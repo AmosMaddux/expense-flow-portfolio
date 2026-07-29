@@ -5,6 +5,8 @@ const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
+const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
+const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../repository/expenseReportRepository.js", () => ({
     buildSubmissionSourceFingerprint: vi.fn(),
@@ -22,13 +24,19 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     readDraftSubmissionSources: vi.fn(),
     reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
-    transitionExpenseReportStage: vi.fn(),
+    transitionExpenseReportStage: transitionExpenseReportStageMock,
+}));
+
+vi.mock("./caseQueueService.js", () => ({
+    invalidateCachedCaseQueueStageRollups:
+        invalidateCachedCaseQueueStageRollupsMock,
 }));
 
 import {
     addMileageEntry,
     readCurrentDraftExpenseReport,
     readExpenseReportAuditEntries,
+    transitionExpenseReportWorkflow,
 } from "./expenseReportService.js";
 
 const originalMileageRate = process.env.MILEAGE_REIMBURSEMENT_RATE;
@@ -36,7 +44,88 @@ const originalMileageRate = process.env.MILEAGE_REIMBURSEMENT_RATE;
 beforeEach(() => {
     process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
     findCurrentDraftExpenseReportMock.mockReset();
+    findExpenseReportByIdMock.mockReset();
     insertMileageEntryMock.mockReset();
+    transitionExpenseReportStageMock.mockReset();
+    invalidateCachedCaseQueueStageRollupsMock.mockReset();
+});
+
+void describe("Expense Report stage-transition event publishing", () => {
+    const tenantId = "40000000-0000-4000-8000-000000000801";
+    const actorId = "50000000-0000-4000-8000-000000000801";
+    const expenseReportId = "60000000-0000-4000-8000-000000000801";
+    const correlationId = "70000000-0000-4000-8000-000000000801";
+    const submittedReport = {
+        id: expenseReportId,
+        tenantId,
+        owner: actorId,
+        dueDate: "2026-07-31",
+        priority: "Normal",
+        currentStage: "Submitted",
+        onHold: false,
+        holdReason: null,
+        createdAt: new Date("2026-07-20T12:00:00.000Z"),
+        updatedAt: new Date("2026-07-20T12:00:00.000Z"),
+    };
+
+    void test("publishes exactly once after a successful transition", async () => {
+        const publish = vi.fn().mockResolvedValue(undefined);
+        findExpenseReportByIdMock
+            .mockResolvedValueOnce(submittedReport)
+            .mockResolvedValueOnce({
+                ...submittedReport,
+                currentStage: "Manager Approval",
+            });
+        transitionExpenseReportStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        await transitionExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                toStage: "Manager Approval",
+                reason: "Synthetic manager review started.",
+                correlationId,
+            },
+            { stageTransitionEventPublisher: { publish } },
+        );
+
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(publish).toHaveBeenCalledWith({
+            caseId: expenseReportId,
+            tenantId,
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+            correlationId,
+        });
+    });
+
+    void test("does not publish when the transition is denied", async () => {
+        const publish = vi.fn().mockResolvedValue(undefined);
+        findExpenseReportByIdMock.mockResolvedValue(submittedReport);
+        transitionExpenseReportStageMock.mockResolvedValue(false);
+
+        await expect(
+            transitionExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Department Manager"],
+                    toStage: "Manager Approval",
+                    reason: "Synthetic manager review started.",
+                    correlationId,
+                },
+                { stageTransitionEventPublisher: { publish } },
+            ),
+        ).rejects.toThrow(
+            "Expense Report cannot transition from Submitted to Manager Approval.",
+        );
+
+        expect(publish).not.toHaveBeenCalled();
+    });
 });
 
 afterAll(() => {

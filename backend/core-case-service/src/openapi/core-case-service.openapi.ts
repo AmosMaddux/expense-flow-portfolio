@@ -668,6 +668,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     description:
                         "Required tenant-scoped key used to replay completed Expense Report submissions.",
                 }),
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
             }),
             body: {
                 required: true,
@@ -847,7 +851,17 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             201: {
                 description: "Expense Report submitted.",
-                headers: rateLimitHeaders,
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by the published stage-transition event.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,
@@ -862,7 +876,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Only Drafted Expense Reports can be submitted.",
             ),
             429: rateLimitExceededResponse.ref,
-            502: problemJsonResponse("GL-coding service request failed."),
+            502: problemJsonResponse(
+                "GL-coding or stage-transition event publishing failed.",
+            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -876,6 +892,12 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         security: [{ bearerAuth: [] }],
         request: {
             params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
+            }),
             body: {
                 required: true,
                 content: {
@@ -888,7 +910,17 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             200: {
                 description: "Expense Report transitioned.",
-                headers: rateLimitHeaders,
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by the published stage-transition event.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,
@@ -903,6 +935,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Expense Report cannot transition from its current stage or has uncleared flags.",
             ),
             429: rateLimitExceededResponse.ref,
+            502: problemJsonResponse(
+                "Stage-transition event publishing failed.",
+            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
