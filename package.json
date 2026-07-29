@@ -14,6 +14,12 @@
         "build": "tsc --build && npm --workspace frontend/app run build",
         "dev:auth:seed": "npm --workspace backend/core-case-service run dev:auth:seed",
         "dev:auth:code": "npm --workspace backend/core-case-service run dev:auth:code --",
+        "e2e:reset": "npm --workspace backend/core-case-service run e2e:reset",
+        "e2e:auth:code": "npm --workspace backend/core-case-service run e2e:auth:code --",
+        "e2e:verify": "npm --workspace backend/core-case-service run e2e:verify",
+        "test:e2e": "docker compose up -d --wait postgres redis gl-coding && npm run e2e:reset && playwright test",
+        "test:e2e:headed": "docker compose up -d --wait postgres redis gl-coding && npm run e2e:reset && playwright test --headed",
+        "test:e2e:debug": "docker compose up -d --wait postgres redis gl-coding && npm run e2e:reset && playwright test --debug",
         "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
     },
@@ -33,6 +39,7 @@
     ],
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@playwright/test": "^1.62.0",
         "@vitest/coverage-v8": "^4.1.10",
         "drizzle-orm": "^0.45.2",
         "eslint": "^10.5.0",
