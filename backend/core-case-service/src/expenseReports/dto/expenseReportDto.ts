@@ -228,6 +228,12 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     })
     .strict();
 
+export const StageTransitionCorrelationHeaderSchema = z
+    .object({
+        correlationId: z.uuid().optional(),
+    })
+    .strict();
+
 export const ClearExpenseReportFlagsInboundRequestSchema = z
     .object({
         sourceIds: z.array(z.uuid()).min(1),
@@ -386,6 +392,9 @@ export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     fromStage: z.enum(approvedWorkflowStages),
     toStage: z.enum(approvedWorkflowStages),
     reason: z.string().trim().min(1),
+    correlationId: z.uuid().optional(),
+    eventId: z.uuid().optional(),
+    occurredAt: z.date().optional(),
 });
 
 export const IdempotentSubmissionHeaderSchema = z.object({
@@ -409,6 +418,14 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     holdReason: z.string().nullable(),
     createdAt: z.date(),
     updatedAt: z.date(),
+});
+
+export const SubmitExpenseReportOperationResultSchema = z.object({
+    correlationId: z.uuid(),
+    report: ExpenseReportOutboundResponseSchema.extend({
+        createdAt: z.coerce.date(),
+        updatedAt: z.coerce.date(),
+    }),
 });
 
 export const MileageEntryOutboundResponseSchema = z.object({
@@ -677,6 +694,10 @@ export type SubmitExpenseReportRequest = z.infer<
 
 export type TransitionExpenseReportWorkflowRequest = z.infer<
     typeof TransitionExpenseReportWorkflowInboundRequestSchema
+>;
+
+export type StageTransitionCorrelationHeader = z.infer<
+    typeof StageTransitionCorrelationHeaderSchema
 >;
 
 export type ClearExpenseReportFlagsRequest = z.infer<

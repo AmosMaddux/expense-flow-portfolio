@@ -1,5 +1,5 @@
 {
-    "id": "7c747c88-6115-4aa5-8d22-5b87065fe827",
+    "id": "138eb35d-996f-421c-b850-68237ce373f4",
     "prevId": "0011bf40-978b-4ac6-b2a8-d67636309492",
     "version": "7",
     "dialect": "postgresql",
@@ -1639,13 +1639,6 @@
                     "primaryKey": false,
                     "notNull": true,
                     "default": "now()"
-                },
-                "deductible": {
-                    "name": "deductible",
-                    "type": "boolean",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": false
                 }
             },
             "indexes": {
@@ -1940,27 +1933,6 @@
                     "method": "btree",
                     "with": {}
                 },
-                "line_item_tenant_id_unique_idx": {
-                    "name": "line_item_tenant_id_unique_idx",
-                    "columns": [
-                        {
-                            "expression": "tenant_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        },
-                        {
-                            "expression": "id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        }
-                    ],
-                    "isUnique": true,
-                    "concurrently": false,
-                    "method": "btree",
-                    "with": {}
-                },
                 "line_item_tenant_expense_date_id_idx": {
                     "name": "line_item_tenant_expense_date_id_idx",
                     "columns": [
@@ -2017,6 +1989,27 @@
                         }
                     ],
                     "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "line_item_tenant_id_unique_idx": {
+                    "name": "line_item_tenant_id_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
                     "concurrently": false,
                     "method": "btree",
                     "with": {}
@@ -2402,6 +2395,229 @@
                 "stage_transition_valid_edge_check": {
                     "name": "stage_transition_valid_edge_check",
                     "value": "(\n                (\"stage_transition\".\"from_stage\" = 'Drafted' and \"stage_transition\".\"to_stage\" = 'Drafted' and \"stage_transition\".\"reason\" = 'report_created')\n                or (\"stage_transition\".\"from_stage\" = 'Drafted' and \"stage_transition\".\"to_stage\" = 'Submitted')\n                or (\"stage_transition\".\"from_stage\" = 'Submitted' and \"stage_transition\".\"to_stage\" = 'Manager Approval')\n                or (\"stage_transition\".\"from_stage\" = 'Manager Approval' and \"stage_transition\".\"to_stage\" = 'AP Review')\n                or (\"stage_transition\".\"from_stage\" = 'AP Review' and \"stage_transition\".\"to_stage\" = 'Paid')\n                or (\"stage_transition\".\"from_stage\" = 'Paid' and \"stage_transition\".\"to_stage\" = 'Reconciled')\n                or (\"stage_transition\".\"from_stage\" = 'Manager Approval' and \"stage_transition\".\"to_stage\" = 'Drafted')\n                or (\"stage_transition\".\"from_stage\" = 'AP Review' and \"stage_transition\".\"to_stage\" = 'Drafted')\n                or (\"stage_transition\".\"from_stage\" = \"stage_transition\".\"to_stage\" and \"stage_transition\".\"reason\" like 'transition_denied:%')\n            )"
+                }
+            },
+            "isRLSEnabled": false
+        },
+        "public.stage_transition_outbox": {
+            "name": "stage_transition_outbox",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "stage_transition_id": {
+                    "name": "stage_transition_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "expense_report_id": {
+                    "name": "expense_report_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "correlation_id": {
+                    "name": "correlation_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "idempotency_key": {
+                    "name": "idempotency_key",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "from_stage": {
+                    "name": "from_stage",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "to_stage": {
+                    "name": "to_stage",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "occurred_at": {
+                    "name": "occurred_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "attempt_count": {
+                    "name": "attempt_count",
+                    "type": "integer",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": 0
+                },
+                "next_attempt_at": {
+                    "name": "next_attempt_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                },
+                "locked_until": {
+                    "name": "locked_until",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "lock_id": {
+                    "name": "lock_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "published_at": {
+                    "name": "published_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": false
+                },
+                "dead_lettered_at": {
+                    "name": "dead_lettered_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": false
+                }
+            },
+            "indexes": {
+                "stage_transition_outbox_transition_unique_idx": {
+                    "name": "stage_transition_outbox_transition_unique_idx",
+                    "columns": [
+                        {
+                            "expression": "stage_transition_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": true,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "stage_transition_outbox_submission_idempotency_idx": {
+                    "name": "stage_transition_outbox_submission_idempotency_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "expense_report_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "idempotency_key",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "stage_transition_outbox_dispatch_idx": {
+                    "name": "stage_transition_outbox_dispatch_idx",
+                    "columns": [
+                        {
+                            "expression": "published_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "dead_lettered_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "next_attempt_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "locked_until",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {
+                "stage_transition_outbox_stage_transition_id_stage_transition_id_fk": {
+                    "name": "stage_transition_outbox_stage_transition_id_stage_transition_id_fk",
+                    "tableFrom": "stage_transition_outbox",
+                    "tableTo": "stage_transition",
+                    "columnsFrom": ["stage_transition_id"],
+                    "columnsTo": ["id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                },
+                "stage_transition_outbox_expense_report_tenant_fk": {
+                    "name": "stage_transition_outbox_expense_report_tenant_fk",
+                    "tableFrom": "stage_transition_outbox",
+                    "tableTo": "expense_report",
+                    "columnsFrom": ["tenant_id", "expense_report_id"],
+                    "columnsTo": ["tenant_id", "id"],
+                    "onDelete": "no action",
+                    "onUpdate": "no action"
+                }
+            },
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "stage_transition_outbox_from_stage_check": {
+                    "name": "stage_transition_outbox_from_stage_check",
+                    "value": "\"stage_transition_outbox\".\"from_stage\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "stage_transition_outbox_to_stage_check": {
+                    "name": "stage_transition_outbox_to_stage_check",
+                    "value": "\"stage_transition_outbox\".\"to_stage\" in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')"
+                },
+                "stage_transition_outbox_changed_stage_check": {
+                    "name": "stage_transition_outbox_changed_stage_check",
+                    "value": "\"stage_transition_outbox\".\"from_stage\" <> \"stage_transition_outbox\".\"to_stage\""
+                },
+                "stage_transition_outbox_attempt_count_check": {
+                    "name": "stage_transition_outbox_attempt_count_check",
+                    "value": "\"stage_transition_outbox\".\"attempt_count\" >= 0"
+                },
+                "stage_transition_outbox_lock_check": {
+                    "name": "stage_transition_outbox_lock_check",
+                    "value": "(\"stage_transition_outbox\".\"lock_id\" is null and \"stage_transition_outbox\".\"locked_until\" is null) or (\"stage_transition_outbox\".\"lock_id\" is not null and \"stage_transition_outbox\".\"locked_until\" is not null)"
                 }
             },
             "isRLSEnabled": false

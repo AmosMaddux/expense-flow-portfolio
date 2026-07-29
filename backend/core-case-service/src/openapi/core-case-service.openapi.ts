@@ -839,6 +839,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     description:
                         "Required tenant-scoped key used to replay completed Expense Report submissions.",
                 }),
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
             }),
             body: {
                 required: true,
@@ -852,7 +856,17 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             201: {
                 description: "Expense Report submitted.",
-                headers: rateLimitHeaders,
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by the published stage-transition event.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,
@@ -881,6 +895,12 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         security: [{ bearerAuth: [] }],
         request: {
             params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
+            }),
             body: {
                 required: true,
                 content: {
@@ -893,7 +913,17 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         responses: {
             200: {
                 description: "Expense Report transitioned.",
-                headers: rateLimitHeaders,
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by the published stage-transition event.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
                 content: {
                     "application/json": {
                         schema: expenseReportResponse,

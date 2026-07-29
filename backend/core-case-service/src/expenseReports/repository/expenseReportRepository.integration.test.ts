@@ -14,6 +14,7 @@ import {
     lineItem,
     mileageEntry,
     stageTransition,
+    stageTransitionOutbox,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
@@ -792,6 +793,9 @@ void describe("expenseReportRepository", () => {
             throw new Error("Expected Expense Report to be created");
         }
 
+        const correlationId = "50000000-0000-4000-8000-000000000196";
+        const eventId = "40000000-0000-4000-8000-000000000196";
+        const occurredAt = new Date("2026-07-29T18:00:00.000Z");
         const didTransition = await transitionExpenseReportStage({
             tenantId: targetTenantId,
             id: report.id,
@@ -799,6 +803,9 @@ void describe("expenseReportRepository", () => {
             fromStage: "Drafted",
             toStage: "Submitted",
             reason: "employee_submitted",
+            correlationId,
+            eventId,
+            occurredAt,
         });
         const transitionedReport = await findExpenseReportById(
             targetTenantId,
@@ -812,6 +819,10 @@ void describe("expenseReportRepository", () => {
             .select()
             .from(stageTransition)
             .where(eq(stageTransition.expenseReportId, report.id));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, report.id));
 
         expect(didTransition).toBe(true);
         expect(transitionedReport?.currentStage).toBe("Submitted");
@@ -834,6 +845,18 @@ void describe("expenseReportRepository", () => {
                 fromStage: "Drafted",
                 toStage: "Submitted",
                 reason: "employee_submitted",
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                id: eventId,
+                tenantId: targetTenantId,
+                expenseReportId: report.id,
+                correlationId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                occurredAt,
+                publishedAt: null,
             }),
         );
     });

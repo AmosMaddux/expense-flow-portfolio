@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
     and,
     asc,
@@ -26,6 +28,7 @@ import {
     type NewGlCodingResult,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
@@ -33,6 +36,7 @@ import type {
     ApprovalQueueLineItemResponse,
     TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
+import { isExpenseReportWorkflowEdge } from "../domain/expenseReportWorkflow.js";
 
 export const expenseReportCreatedReason = "report_created";
 export const expenseReportSubmittedReason = "report_submitted";
@@ -46,6 +50,12 @@ type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
 type ReviewableExpenseSourceType = "line_item" | "mileage";
 type SubmissionSourceFingerprint = string;
+type StageTransitionEventContext = {
+    correlationId: string;
+    eventId: string;
+    idempotencyKey?: string;
+    occurredAt: Date;
+};
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -61,16 +71,6 @@ type UpdateExpenseReportSourceDeductibilityResult =
     | { kind: "updated"; lineItem: ApprovalQueueLineItemResponse }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
-
-const validTransitionEdges = new Set<string>([
-    "Drafted->Submitted",
-    "Submitted->Manager Approval",
-    "Manager Approval->AP Review",
-    "AP Review->Paid",
-    "Paid->Reconciled",
-    "Manager Approval->Drafted",
-    "AP Review->Drafted",
-]);
 
 export type SubmissionSources = {
     report: ExpenseReport;
@@ -1172,6 +1172,40 @@ export async function readDraftSubmissionSources(
 }
 
 /**
+ * Recovers a committed submission when Redis result persistence failed after the database transaction.
+ */
+export async function findCommittedSubmissionByIdempotencyKey(
+    tenantId: string,
+    expenseReportId: string,
+    idempotencyKey: string,
+): Promise<{ correlationId: string; report: ExpenseReport } | undefined> {
+    const outboxRows = await db
+        .select({ correlationId: stageTransitionOutbox.correlationId })
+        .from(stageTransitionOutbox)
+        .where(
+            and(
+                eq(stageTransitionOutbox.tenantId, tenantId),
+                eq(stageTransitionOutbox.expenseReportId, expenseReportId),
+                eq(stageTransitionOutbox.idempotencyKey, idempotencyKey),
+                eq(stageTransitionOutbox.fromStage, "Drafted"),
+                eq(stageTransitionOutbox.toStage, "Submitted"),
+            ),
+        )
+        .limit(1);
+    const outboxRow = outboxRows[0];
+    if (outboxRow === undefined) {
+        return undefined;
+    }
+
+    const report = await findExpenseReportById(tenantId, expenseReportId);
+    if (report?.currentStage !== "Submitted") {
+        return undefined;
+    }
+
+    return { correlationId: outboxRow.correlationId, report };
+}
+
+/**
  * Appends GL-coding results and advances a Drafted report to Submitted.
  */
 export async function submitDraftExpenseReport(
@@ -1182,6 +1216,11 @@ export async function submitDraftExpenseReport(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
     expectedSourceFingerprint: SubmissionSourceFingerprint,
+    eventContext: StageTransitionEventContext = {
+        correlationId: randomUUID(),
+        eventId: randomUUID(),
+        occurredAt: new Date(),
+    },
 ): Promise<ExpenseReport | undefined> {
     return db.transaction(async (transaction) => {
         const reports = await transaction
@@ -1295,13 +1334,14 @@ export async function submitDraftExpenseReport(
             "Drafted",
             "transition_approved",
         );
-        await transaction.insert(stageTransition).values({
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId,
-            expenseReportId,
+            id: expenseReportId,
             actor: actorId,
             fromStage: "Drafted",
             toStage: "Submitted",
             reason: expenseReportSubmittedReason,
+            ...eventContext,
         });
 
         return updatedReport;
@@ -1930,13 +1970,11 @@ export async function transitionExpenseReportStage(
             undefined,
             isSendBackTransition(request) ? request.reason : undefined,
         );
-        await transaction.insert(stageTransition).values({
-            expenseReportId: request.id,
-            tenantId: request.tenantId,
-            fromStage: request.fromStage,
-            toStage: request.toStage,
-            actor: request.actor,
-            reason: request.reason,
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            ...request,
+            correlationId: request.correlationId ?? randomUUID(),
+            eventId: request.eventId ?? randomUUID(),
+            occurredAt: request.occurredAt ?? new Date(),
         });
 
         return true;
@@ -2048,6 +2086,36 @@ async function writeDeniedTransitionLog(
         toStage: stageBeforeAction,
         actor: request.actor,
         reason: `${transitionDeniedReasonPrefix} ${denialReason}`,
+    });
+}
+
+async function writeSuccessfulStageTransitionAndOutbox(
+    transaction: TransactionContext,
+    request: TransitionExpenseReportStageRequest & StageTransitionEventContext,
+): Promise<void> {
+    const transitionId = randomUUID();
+
+    await transaction.insert(stageTransition).values({
+        id: transitionId,
+        expenseReportId: request.id,
+        tenantId: request.tenantId,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        actor: request.actor,
+        reason: request.reason,
+        occurredAt: request.occurredAt,
+    });
+    await transaction.insert(stageTransitionOutbox).values({
+        id: request.eventId,
+        stageTransitionId: transitionId,
+        expenseReportId: request.id,
+        tenantId: request.tenantId,
+        correlationId: request.correlationId,
+        idempotencyKey: request.idempotencyKey,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        occurredAt: request.occurredAt,
+        nextAttemptAt: request.occurredAt,
     });
 }
 
@@ -2628,7 +2696,7 @@ function isSendBackTransition(
 function isValidTransitionEdge(
     request: TransitionExpenseReportStageRequest,
 ): boolean {
-    return validTransitionEdges.has(`${request.fromStage}->${request.toStage}`);
+    return isExpenseReportWorkflowEdge(request.fromStage, request.toStage);
 }
 
 function buildTransitionDenialReason(

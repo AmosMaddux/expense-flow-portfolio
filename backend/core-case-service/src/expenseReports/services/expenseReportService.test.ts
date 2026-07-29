@@ -10,6 +10,8 @@ const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
+const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
+const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 const updateExpenseReportSourceDeductibilityMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../repository/expenseReportRepository.js", () => ({
@@ -28,9 +30,14 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     readDraftSubmissionSources: vi.fn(),
     reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
-    transitionExpenseReportStage: vi.fn(),
+    transitionExpenseReportStage: transitionExpenseReportStageMock,
     updateExpenseReportSourceDeductibility:
         updateExpenseReportSourceDeductibilityMock,
+}));
+
+vi.mock("./caseQueueService.js", () => ({
+    invalidateCachedCaseQueueStageRollups:
+        invalidateCachedCaseQueueStageRollupsMock,
 }));
 
 import {
@@ -38,6 +45,7 @@ import {
     updateExpenseReportSourceDeductibility,
     readCurrentDraftExpenseReport,
     readExpenseReportAuditEntries,
+    transitionExpenseReportWorkflow,
 } from "./expenseReportService.js";
 
 const originalMileageRate = process.env.MILEAGE_REIMBURSEMENT_RATE;
@@ -45,9 +53,130 @@ const originalMileageRate = process.env.MILEAGE_REIMBURSEMENT_RATE;
 beforeEach(() => {
     process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
     findCurrentDraftExpenseReportMock.mockReset();
-    insertMileageEntryMock.mockReset();
     findExpenseReportByIdMock.mockReset();
+    insertMileageEntryMock.mockReset();
+    transitionExpenseReportStageMock.mockReset();
+    invalidateCachedCaseQueueStageRollupsMock.mockReset();
     updateExpenseReportSourceDeductibilityMock.mockReset();
+});
+
+void describe("Expense Report stage-transition outbox dispatch", () => {
+    const tenantId = "40000000-0000-4000-8000-000000000801";
+    const actorId = "50000000-0000-4000-8000-000000000801";
+    const expenseReportId = "60000000-0000-4000-8000-000000000801";
+    const correlationId = "70000000-0000-4000-8000-000000000801";
+    const submittedReport = {
+        id: expenseReportId,
+        tenantId,
+        owner: actorId,
+        dueDate: "2026-07-31",
+        priority: "Normal",
+        currentStage: "Submitted",
+        onHold: false,
+        holdReason: null,
+        createdAt: new Date("2026-07-20T12:00:00.000Z"),
+        updatedAt: new Date("2026-07-20T12:00:00.000Z"),
+    };
+
+    void test("dispatches exactly once after a successful transition", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        findExpenseReportByIdMock
+            .mockResolvedValueOnce(submittedReport)
+            .mockResolvedValueOnce({
+                ...submittedReport,
+                currentStage: "Manager Approval",
+            });
+        transitionExpenseReportStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        await transitionExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                toStage: "Manager Approval",
+                reason: "Synthetic manager review started.",
+                correlationId,
+            },
+            { stageTransitionOutboxDispatcher: { dispatch } },
+        );
+
+        expect(dispatch).toHaveBeenCalledTimes(1);
+        expect(dispatch).toHaveBeenCalledWith(expect.any(String));
+        const dispatchedEventId: unknown = dispatch.mock.calls[0]?.[0];
+        const transitionRequest: unknown =
+            transitionExpenseReportStageMock.mock.calls[0]?.[0];
+        expect(transitionRequest).toMatchObject({
+            correlationId,
+            eventId: dispatchedEventId,
+        });
+        expect(
+            (transitionRequest as { occurredAt?: unknown }).occurredAt,
+        ).toBeInstanceOf(Date);
+    });
+
+    void test("does not dispatch when the transition is denied", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        findExpenseReportByIdMock.mockResolvedValue(submittedReport);
+        transitionExpenseReportStageMock.mockResolvedValue(false);
+
+        await expect(
+            transitionExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Department Manager"],
+                    toStage: "Manager Approval",
+                    reason: "Synthetic manager review started.",
+                    correlationId,
+                },
+                { stageTransitionOutboxDispatcher: { dispatch } },
+            ),
+        ).rejects.toThrow(
+            "Expense Report cannot transition from Submitted to Manager Approval.",
+        );
+
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    void test("invalidates the cache and returns the committed transition when immediate dispatch fails", async () => {
+        const dispatch = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic outbox dispatch failure"));
+        findExpenseReportByIdMock
+            .mockResolvedValueOnce(submittedReport)
+            .mockResolvedValueOnce({
+                ...submittedReport,
+                currentStage: "Manager Approval",
+            });
+        transitionExpenseReportStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        const result = await transitionExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                toStage: "Manager Approval",
+                reason: "Synthetic manager review started.",
+                correlationId,
+            },
+            { stageTransitionOutboxDispatcher: { dispatch } },
+        );
+
+        expect(result.currentStage).toBe("Manager Approval");
+        expect(
+            invalidateCachedCaseQueueStageRollupsMock,
+        ).toHaveBeenCalledExactlyOnceWith(tenantId);
+        expect(dispatch).toHaveBeenCalledOnce();
+        expect(
+            invalidateCachedCaseQueueStageRollupsMock.mock
+                .invocationCallOrder[0],
+        ).toBeLessThan(dispatch.mock.invocationCallOrder[0] ?? 0);
+    });
 });
 
 afterAll(() => {

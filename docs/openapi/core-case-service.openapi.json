@@ -3422,6 +3422,17 @@
                         "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
                         "name": "Idempotency-Key",
                         "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
                     }
                 ],
                 "requestBody": {
@@ -3449,6 +3460,13 @@
                             },
                             "X-RateLimit-Cost": {
                                 "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
                             }
                         },
                         "content": {
@@ -3553,6 +3571,17 @@
                         "required": true,
                         "name": "id",
                         "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
                     }
                 ],
                 "requestBody": {
@@ -3580,6 +3609,13 @@
                             },
                             "X-RateLimit-Cost": {
                                 "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
                             }
                         },
                         "content": {
