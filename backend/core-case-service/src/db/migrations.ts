@@ -1,8 +1,9 @@
 import { fileURLToPath } from "node:url";
 
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
+
+import { applyDrizzleMigrations } from "./drizzleMigrationRunner.js";
 
 const coreCaseServiceDrizzleUrl = new URL("../../drizzle/", import.meta.url);
 const coreCaseServiceDrizzlePath = fileURLToPath(coreCaseServiceDrizzleUrl);
@@ -23,7 +24,7 @@ export async function applyPendingCoreCaseMigrations(
     const db = drizzle(pool);
 
     try {
-        await migrate(db, {
+        await applyDrizzleMigrations(db, {
             migrationsFolder: coreCaseServiceDrizzlePath,
         });
     } finally {

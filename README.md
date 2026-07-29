@@ -102,8 +102,21 @@ uv run backend/python/main.py
 To run the fastapi service use:
 
 ```sh
-uv run uvicorn backend.python.main:app
+uv run --env-file .env uvicorn backend.python.main:app --port 8001
 ```
+
+The local Docker Compose stack starts this service automatically on port `8001`
+and seeds the baseline GL mappings for the tenant configured by
+`VITE_TENANT_ID`. Start the shared local dependencies before the Core Case
+Service:
+
+```sh
+docker compose up -d
+npm start
+```
+
+The mapping initializer waits for the Core Case migrations and is idempotent, so
+these commands are safe to run again after switching branches.
 
 Run tests with:
 

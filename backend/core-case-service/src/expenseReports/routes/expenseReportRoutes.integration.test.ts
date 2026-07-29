@@ -227,6 +227,399 @@ void describe("Expense Report routes", () => {
         app = (await import("../../app.js")).app;
     });
 
+    void test("lists only the employee's reports with stable bounded pages", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000810";
+        const ownerId = "50000000-0000-4000-8000-000000000810";
+        const otherOwnerId = "50000000-0000-4000-8000-000000000811";
+        const reports = [
+            {
+                id: "60000000-0000-4000-8000-000000000810",
+                updatedAt: new Date("2026-07-23T12:00:00.000Z"),
+                createdAt: new Date("2026-07-20T12:00:00.000Z"),
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000811",
+                updatedAt: new Date("2026-07-22T12:00:00.000Z"),
+                createdAt: new Date("2026-07-19T12:00:00.000Z"),
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000812",
+                updatedAt: new Date("2026-07-21T12:00:00.000Z"),
+                createdAt: new Date("2026-07-18T12:00:00.000Z"),
+            },
+        ];
+        await db.insert(expenseReport).values([
+            ...reports.map((report) => ({
+                ...report,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Submitted",
+            })),
+            {
+                id: "60000000-0000-4000-8000-000000000813",
+                tenantId,
+                owner: otherOwnerId,
+                dueDate: "2026-08-01",
+                currentStage: "Submitted",
+            },
+        ]);
+
+        const firstResponse = await requestApp(
+            "/v1/expense-reports/my-submissions?pageSize=2",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const firstPage = (await firstResponse.json()) as {
+            items?: Array<{ id?: string; tenantId?: string; owner?: string }>;
+            nextCursor?: string | null;
+        };
+
+        expect(firstResponse.status).toBe(200);
+        expect(firstPage.items?.map((report) => report.id)).toEqual([
+            reports[0]?.id,
+            reports[1]?.id,
+        ]);
+        expect(firstPage.items?.[0]).not.toHaveProperty("tenantId");
+        expect(firstPage.items?.[0]).not.toHaveProperty("owner");
+        expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+        const secondResponse = await requestApp(
+            `/v1/expense-reports/my-submissions?pageSize=2&cursor=${firstPage.nextCursor}`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const secondPage = (await secondResponse.json()) as {
+            items?: Array<{ id?: string }>;
+            nextCursor?: string | null;
+        };
+
+        expect(secondResponse.status).toBe(200);
+        expect(secondPage.items?.map((report) => report.id)).toEqual([
+            reports[2]?.id,
+        ]);
+        expect(secondPage.nextCursor).toBeNull();
+    });
+
+    void test("serializes line items from an employee-owned submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000820";
+        const ownerId = "50000000-0000-4000-8000-000000000820";
+        const reportId = "60000000-0000-4000-8000-000000000820";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Submitted",
+        });
+        await db.insert(lineItem).values({
+            id: "70000000-0000-4000-8000-000000000820",
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-18",
+            category: "Travel",
+            amount: "84.25",
+            currency: "USD",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            id?: string;
+            lineItems?: Array<{
+                merchant?: string;
+                amount?: number;
+                currency?: string;
+            }>;
+        };
+
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({
+            id: reportId,
+            lineItems: [
+                {
+                    merchant: "Synthetic Rail",
+                    amount: 84.25,
+                    currency: "USD",
+                },
+            ],
+        });
+    });
+
+    void test("returns the latest send-back reason to the report owner", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000821";
+        const ownerId = "50000000-0000-4000-8000-000000000821";
+        const managerId = "51000000-0000-4000-8000-000000000821";
+        const reportId = "60000000-0000-4000-8000-000000000821";
+        const lineItemId = "70000000-0000-4000-8000-000000000821";
+        const mileageEntryId = "71000000-0000-4000-8000-000000000821";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Drafted",
+        });
+        await db.insert(auditEntry).values({
+            tenantId,
+            expenseReportId: reportId,
+            actorId: managerId,
+            action: "transition_sent_back",
+            stageBeforeAction: "Manager Approval",
+            stageAfterProposedAction: "Drafted",
+            outcomeReason: "Receipt does not match the submitted amount.",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Cafe",
+            expenseDate: "2026-07-18",
+            category: "Meals",
+            amount: "24.50",
+            currency: "USD",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Synthetic Office to Client Site",
+            distance: "12.00",
+            mileageDate: "2026-07-19",
+        });
+        await db.insert(glCodingResult).values([
+            {
+                submissionId: "90000000-0000-4000-8000-000000000821",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Meals",
+                mappingStatus: "mapped",
+                lineItemReviewAction: "reject",
+                lineItemReviewReason: "Receipt amount does not match.",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-27T12:00:00.000Z"),
+            },
+            {
+                submissionId: "90000000-0000-4000-8000-000000000821",
+                tenantId,
+                expenseReportId: reportId,
+                sourceType: "mileage",
+                sourceId: mileageEntryId,
+                category: "Mileage",
+                mappingStatus: "mapped",
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: managerId,
+                lineItemReviewedAt: new Date("2026-07-27T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            id: reportId,
+            rejectionReason: "Receipt does not match the submitted amount.",
+            lineItems: [{ id: lineItemId, reviewAction: "reject" }],
+            mileageEntries: [{ id: mileageEntryId, reviewAction: "approve" }],
+        });
+
+        const listResponse = await requestApp(
+            "/v1/expense-reports/my-submissions",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(listResponse.status).toBe(200);
+        await expect(listResponse.json()).resolves.toMatchObject({
+            items: [{ id: reportId, isSentBack: true }],
+        });
+    });
+
+    void test("sends a report back when the employee already has another draft", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000695";
+        const ownerId = "50000000-0000-4000-8000-000000000695";
+        const managerId = "51000000-0000-4000-8000-000000000695";
+        const activeDraftId = "60000000-0000-4000-8000-000000000695";
+        const reportId = "61000000-0000-4000-8000-000000000695";
+        await db.insert(expenseReport).values([
+            {
+                id: activeDraftId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Drafted",
+            },
+            {
+                id: reportId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-08-01",
+                currentStage: "Manager Approval",
+            },
+        ]);
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Drafted",
+                    reason: "Receipt correction required.",
+                }),
+            },
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+            id: reportId,
+            currentStage: "Drafted",
+        });
+
+        const draftedReports = await db
+            .select({
+                id: expenseReport.id,
+                currentStage: expenseReport.currentStage,
+            })
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.owner, ownerId),
+                    eq(expenseReport.currentStage, "Drafted"),
+                ),
+            );
+
+        expect(draftedReports).toEqual(
+            expect.arrayContaining([
+                { id: activeDraftId, currentStage: "Drafted" },
+                { id: reportId, currentStage: "Drafted" },
+            ]),
+        );
+
+        const currentDraftResponse = await requestApp(
+            "/v1/expense-reports/drafts/current",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(currentDraftResponse.status).toBe(200);
+        await expect(currentDraftResponse.json()).resolves.toMatchObject({
+            id: activeDraftId,
+            currentStage: "Drafted",
+        });
+    });
+
+    void test("returns 404 for another employee or tenant submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000830";
+        const otherTenantId = "40000000-0000-4000-8000-000000000831";
+        const ownerId = "50000000-0000-4000-8000-000000000830";
+        const otherOwnerId = "50000000-0000-4000-8000-000000000831";
+        const reportId = "60000000-0000-4000-8000-000000000830";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-08-01",
+            currentStage: "Submitted",
+        });
+
+        const otherOwnerResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherOwnerId),
+                },
+            },
+        );
+        const otherTenantResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/submission-detail`,
+            {
+                headers: {
+                    authorization: authorizationHeader(otherTenantId, ownerId),
+                },
+            },
+        );
+
+        expect(otherOwnerResponse.status).toBe(404);
+        expect(otherTenantResponse.status).toBe(404);
+    });
+
+    void test("returns 403 for internal roles reading employee submission detail", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000840";
+        const internalUserId = "50000000-0000-4000-8000-000000000840";
+        const response = await requestApp(
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000840/submission-detail",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        internalUserId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+
+        expect(response.status).toBe(403);
+        await expect(response.json()).resolves.toMatchObject({
+            title: "Forbidden",
+            status: 403,
+        });
+    });
+
+    void test("returns 400 for a malformed submission detail identifier", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000850";
+        const ownerId = "50000000-0000-4000-8000-000000000850";
+        const response = await requestApp(
+            "/v1/expense-reports/not-a-uuid/submission-detail",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, ownerId),
+                },
+            },
+        );
+
+        expect(response.status).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+            title: "Bad Request",
+            status: 400,
+        });
+    });
+
     void test("creates then reads an Expense Report end to end", async () => {
         const tenantId = "70000000-0000-4000-8000-000000000100";
         const owner = "71000000-0000-4000-8000-000000000001";
@@ -829,6 +1222,7 @@ void describe("Expense Report routes", () => {
         expect(lineItemRows).toHaveLength(1);
         expect(lineItemRows[0]?.expenseDate).toBe("2026-07-23");
         expect(receiptRows).toHaveLength(1);
+        expect(receiptRows[0]?.lineItemId).toBe(lineItemRows[0]?.id);
         expect(attachmentRows).toHaveLength(1);
 
         await db
@@ -861,6 +1255,153 @@ void describe("Expense Report routes", () => {
             }),
         ]);
         expect(savedContent.mileageEntries).toEqual([]);
+    });
+
+    void test("lets an employee update and delete entries in a selected draft", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000144";
+        const owner = "50000000-0000-4000-8000-000000000144";
+        const otherOwner = "51000000-0000-4000-8000-000000000144";
+        const reportId = "60000000-0000-4000-8000-000000000144";
+        const lineItemId = "70000000-0000-4000-8000-000000000144";
+        const mileageEntryId = "71000000-0000-4000-8000-000000000144";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-25",
+            currentStage: "Drafted",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Cafe",
+            expenseDate: "2026-07-20",
+            category: "Meals",
+            amount: "12.00",
+            currency: "USD",
+        });
+        await db.insert(mileageEntry).values({
+            id: mileageEntryId,
+            tenantId,
+            expenseReportId: reportId,
+            route: "Synthetic Office to Site A",
+            distance: "10.00",
+            mileageDate: "2026-07-20",
+        });
+
+        const deniedUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherOwner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    merchant: "Synthetic Updated Cafe",
+                    expenseDate: "2026-07-21",
+                    category: "Meals",
+                    amount: 18.5,
+                    currency: "USD",
+                }),
+            },
+        );
+        expect(deniedUpdate.status).toBe(404);
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const lineUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    merchant: "Synthetic Updated Cafe",
+                    expenseDate: "2026-07-21",
+                    category: "Meals",
+                    amount: 18.5,
+                    currency: "USD",
+                }),
+            },
+        );
+        expect(lineUpdate.status).toBe(200);
+        await expect(lineUpdate.json()).resolves.toMatchObject({
+            lineItems: [
+                {
+                    id: lineItemId,
+                    merchant: "Synthetic Updated Cafe",
+                    amount: 18.5,
+                },
+            ],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const mileageUpdate = await requestApp(
+            `/v1/expense-reports/${reportId}/mileage-entries/${mileageEntryId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    route: "Synthetic Office to Site B",
+                    distance: 14.25,
+                    mileageDate: "2026-07-21",
+                }),
+            },
+        );
+        expect(mileageUpdate.status).toBe(200);
+        await expect(mileageUpdate.json()).resolves.toMatchObject({
+            mileageEntries: [
+                {
+                    id: mileageEntryId,
+                    route: "Synthetic Office to Site B",
+                    distance: 14.25,
+                },
+            ],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const lineDelete = await requestApp(
+            `/v1/expense-reports/${reportId}/line-items/${lineItemId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        expect(lineDelete.status).toBe(200);
+        await expect(lineDelete.json()).resolves.toMatchObject({
+            lineItems: [],
+        });
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const mileageDelete = await requestApp(
+            `/v1/expense-reports/${reportId}/mileage-entries/${mileageEntryId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                },
+            },
+        );
+        expect(mileageDelete.status).toBe(200);
+        await expect(mileageDelete.json()).resolves.toMatchObject({
+            mileageEntries: [],
+        });
     });
 
     void test("rejects future mileage dates from API clients", async () => {
@@ -1100,7 +1641,7 @@ void describe("Expense Report routes", () => {
         expect(rows).toHaveLength(0);
     });
 
-    void test("reuses one active draft for the same employee", async () => {
+    void test("creates distinct drafts for the same employee", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000148";
         const owner = "50000000-0000-4000-8000-000000000148";
         const create = (idempotencyKey: string) =>
@@ -1134,8 +1675,8 @@ void describe("Expense Report routes", () => {
 
         expect(firstResponse.status).toBe(201);
         expect(secondResponse.status).toBe(201);
-        expect(secondBody.id).toBe(firstBody.id);
-        expect(rows).toHaveLength(1);
+        expect(secondBody.id).not.toBe(firstBody.id);
+        expect(rows).toHaveLength(2);
     });
 
     void test("isolates employee draft content, mileage, and receipt uploads by owner and tenant", async () => {
@@ -2373,11 +2914,11 @@ void describe("Expense Report routes", () => {
     });
 
     void test("blocks Manager Approval send-back until all line items are reviewed", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000193";
-        const owner = "50000000-0000-4000-8000-000000000193";
-        const managerId = "51000000-0000-4000-8000-000000000193";
-        const reportId = "60000000-0000-4000-8000-000000000193";
-        const lineItemId = "30000000-0000-4000-8000-000000000193";
+        const tenantId = "40000000-0000-4000-8000-000000000693";
+        const owner = "50000000-0000-4000-8000-000000000693";
+        const managerId = "51000000-0000-4000-8000-000000000693";
+        const reportId = "60000000-0000-4000-8000-000000000693";
+        const lineItemId = "30000000-0000-4000-8000-000000000693";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -2397,8 +2938,8 @@ void describe("Expense Report routes", () => {
             category: "Travel",
         });
         await db.insert(glCodingResult).values({
-            id: "91000000-0000-4000-8000-000000000193",
-            submissionId: "90000000-0000-4000-8000-000000000193",
+            id: "91000000-0000-4000-8000-000000000693",
+            submissionId: "90000000-0000-4000-8000-000000000693",
             tenantId,
             expenseReportId: reportId,
             sourceType: "line_item",
@@ -2447,12 +2988,12 @@ void describe("Expense Report routes", () => {
     });
 
     void test("reviews a Manager Approval line item and exposes the updated queue row", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000191";
-        const owner = "50000000-0000-4000-8000-000000000191";
-        const managerId = "51000000-0000-4000-8000-000000000191";
-        const reportId = "60000000-0000-4000-8000-000000000191";
-        const lineItemId = "30000000-0000-4000-8000-000000000191";
-        const mileageEntryId = "32000000-0000-4000-8000-000000000191";
+        const tenantId = "40000000-0000-4000-8000-000000000691";
+        const owner = "50000000-0000-4000-8000-000000000691";
+        const managerId = "51000000-0000-4000-8000-000000000691";
+        const reportId = "60000000-0000-4000-8000-000000000691";
+        const lineItemId = "30000000-0000-4000-8000-000000000691";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000691";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -2481,8 +3022,8 @@ void describe("Expense Report routes", () => {
         });
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000191",
-                submissionId: "90000000-0000-4000-8000-000000000191",
+                id: "91000000-0000-4000-8000-000000000691",
+                submissionId: "90000000-0000-4000-8000-000000000691",
                 tenantId,
                 expenseReportId: reportId,
                 sourceType: "line_item",
@@ -2499,8 +3040,8 @@ void describe("Expense Report routes", () => {
                     "Line item amount is above the MVP manual review threshold.",
             },
             {
-                id: "92000000-0000-4000-8000-000000000191",
-                submissionId: "90000000-0000-4000-8000-000000000191",
+                id: "92000000-0000-4000-8000-000000000691",
+                submissionId: "90000000-0000-4000-8000-000000000691",
                 tenantId,
                 expenseReportId: reportId,
                 sourceType: "mileage",
@@ -2596,12 +3137,12 @@ void describe("Expense Report routes", () => {
     });
 
     void test("reviews and clears flags for a Manager Approval mileage source", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000194";
-        const owner = "50000000-0000-4000-8000-000000000194";
-        const managerId = "51000000-0000-4000-8000-000000000194";
-        const reportId = "60000000-0000-4000-8000-000000000194";
-        const lineItemId = "30000000-0000-4000-8000-000000000194";
-        const mileageEntryId = "32000000-0000-4000-8000-000000000194";
+        const tenantId = "40000000-0000-4000-8000-000000000694";
+        const owner = "50000000-0000-4000-8000-000000000694";
+        const managerId = "51000000-0000-4000-8000-000000000694";
+        const reportId = "60000000-0000-4000-8000-000000000694";
+        const lineItemId = "30000000-0000-4000-8000-000000000694";
+        const mileageEntryId = "32000000-0000-4000-8000-000000000694";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -2630,8 +3171,8 @@ void describe("Expense Report routes", () => {
         });
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000194",
-                submissionId: "90000000-0000-4000-8000-000000000194",
+                id: "91000000-0000-4000-8000-000000000694",
+                submissionId: "90000000-0000-4000-8000-000000000694",
                 tenantId,
                 expenseReportId: reportId,
                 sourceType: "line_item",
@@ -2648,8 +3189,8 @@ void describe("Expense Report routes", () => {
                 lineItemReviewedAt: new Date("2026-07-22T12:00:00.000Z"),
             },
             {
-                id: "92000000-0000-4000-8000-000000000194",
-                submissionId: "90000000-0000-4000-8000-000000000194",
+                id: "92000000-0000-4000-8000-000000000694",
+                submissionId: "90000000-0000-4000-8000-000000000694",
                 tenantId,
                 expenseReportId: reportId,
                 sourceType: "mileage",
@@ -2880,13 +3421,13 @@ void describe("Expense Report routes", () => {
     });
 
     void test("excludes Drafted reports from manager queue line items", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000192";
-        const owner = "50000000-0000-4000-8000-000000000192";
-        const managerId = "51000000-0000-4000-8000-000000000192";
-        const draftedReportId = "60000000-0000-4000-8000-000000000192";
-        const draftedLineItemId = "30000000-0000-4000-8000-000000000192";
-        const reviewReportId = "61000000-0000-4000-8000-000000000192";
-        const reviewLineItemId = "31000000-0000-4000-8000-000000000192";
+        const tenantId = "40000000-0000-4000-8000-000000000692";
+        const owner = "50000000-0000-4000-8000-000000000692";
+        const managerId = "51000000-0000-4000-8000-000000000692";
+        const draftedReportId = "60000000-0000-4000-8000-000000000692";
+        const draftedLineItemId = "30000000-0000-4000-8000-000000000692";
+        const reviewReportId = "61000000-0000-4000-8000-000000000692";
+        const reviewLineItemId = "31000000-0000-4000-8000-000000000692";
 
         await db.insert(expenseReport).values([
             {
@@ -2928,8 +3469,8 @@ void describe("Expense Report routes", () => {
         ]);
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000192",
-                submissionId: "90000000-0000-4000-8000-000000000192",
+                id: "91000000-0000-4000-8000-000000000692",
+                submissionId: "90000000-0000-4000-8000-000000000692",
                 tenantId,
                 expenseReportId: draftedReportId,
                 sourceType: "line_item",
@@ -2943,8 +3484,8 @@ void describe("Expense Report routes", () => {
                 flaggedLineItem: true,
             },
             {
-                id: "92000000-0000-4000-8000-000000000192",
-                submissionId: "90000000-0000-4000-8000-000000000192",
+                id: "92000000-0000-4000-8000-000000000692",
+                submissionId: "90000000-0000-4000-8000-000000000692",
                 tenantId,
                 expenseReportId: reviewReportId,
                 sourceType: "line_item",
@@ -4890,6 +5431,198 @@ void describe("Expense Report routes", () => {
             title: "Forbidden",
             status: 403,
             detail: "Case Queue access is limited to internal roles.",
+        });
+    });
+
+    void test("lists tenant-scoped All Transactions for Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000160";
+        const otherTenantId = "40000000-0000-4000-8000-000000000161";
+        const owner = "50000000-0000-4000-8000-000000000160";
+        const financeAdminId = "51000000-0000-4000-8000-000000000160";
+
+        await db.insert(expenseReport).values([
+            {
+                id: "60000000-0000-4000-8000-000000000160",
+                tenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "AP Review",
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000161",
+                tenantId: otherTenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "AP Review",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000160",
+                tenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000160",
+                merchant: "Cedar Bistro",
+                amount: "64.20",
+                currency: "USD",
+                category: "Meals",
+                expenseDate: "2026-07-20",
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000161",
+                tenantId: otherTenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000161",
+                merchant: "Cedar Bistro",
+                amount: "64.20",
+                currency: "USD",
+                category: "Meals",
+                expenseDate: "2026-07-20",
+                createdAt: new Date("2026-08-20T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp(
+            "/v1/transactions?category=Meals&status=AP%20Review&startDate=2026-07-20&endDate=2026-07-20",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            items?: Array<{
+                id?: string;
+                expenseReportId?: string;
+                date?: string;
+                merchant?: string;
+                category?: string;
+                amount?: string;
+                currency?: string;
+                status?: string;
+                deductible?: boolean | null;
+            }>;
+            nextCursor?: string | null;
+        };
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("ratelimit-limit")).toBe("2");
+        expect(body.items).toHaveLength(1);
+        expect(body.items?.[0]).toEqual({
+            id: "30000000-0000-4000-8000-000000000160",
+            expenseReportId: "60000000-0000-4000-8000-000000000160",
+            date: "2026-07-20T00:00:00.000Z",
+            merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
+            status: "AP Review",
+            deductible: null,
+        });
+        expect(
+            body.items?.some(
+                (transaction) =>
+                    transaction.id === "30000000-0000-4000-8000-000000000161",
+            ),
+        ).toBe(false);
+        expect(body.nextCursor).toBeNull();
+    });
+
+    void test("rejects malformed All Transactions filters", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000162";
+        const financeAdminId = "51000000-0000-4000-8000-000000000162";
+
+        const response = await requestApp(
+            "/v1/transactions?status=Archived&startDate=2026-07-21&endDate=2026-07-20",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("rejects invalid All Transactions cursors", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000164";
+        const financeAdminId = "51000000-0000-4000-8000-000000000164";
+
+        const response = await requestApp(
+            "/v1/transactions?cursor=not-a-cursor",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("rejects All Transactions limits above the server maximum", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000165";
+        const financeAdminId = "51000000-0000-4000-8000-000000000165";
+
+        const response = await requestApp("/v1/transactions?limit=101", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({ status: 400 });
+    });
+
+    void test("returns 403 for All Transactions with non-Finance Admin roles", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000163";
+        const managerId = "51000000-0000-4000-8000-000000000163";
+
+        const response = await requestApp("/v1/transactions", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = (await response.json()) as { status?: number };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({ status: 403 });
+    });
+
+    void test("returns 401 for All Transactions without a token", async () => {
+        const response = await requestApp("/v1/transactions");
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Unauthorized",
+            status: 401,
         });
     });
 

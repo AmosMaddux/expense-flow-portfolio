@@ -11,24 +11,33 @@ import {
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
+    DraftExpenseSourceParamsSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    ReadAllTransactionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
+    UpdateDraftLineItemInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
 import {
     createIdempotencyRequestHash,
     runIdempotentSubmission,
 } from "../../idempotency/idempotencyService.js";
+import { readTenantAllTransactions } from "../services/allTransactionsService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
+import {
+    readMySubmissionDetail,
+    readMySubmissions,
+} from "../services/mySubmissionsService.js";
 import {
     logExpenseReportAuditError,
     logExpenseReportAuditSuccess,
@@ -38,6 +47,8 @@ import {
     clearExpenseReportFlags,
     addMileageEntry,
     createDraftExpenseReport,
+    deleteDraftLineItem,
+    deleteDraftMileageEntry,
     readApprovalQueueLineItems,
     readCurrentDraftExpenseReport,
     readDraftExpenseContent,
@@ -49,12 +60,67 @@ import {
     submitExpenseReport,
     transitionExpenseReportWorkflow,
     updateExpenseReportSourceDeductibility,
+    updateDraftLineItem,
+    updateDraftMileageEntry,
     uploadReceiptFile,
 } from "../services/expenseReportService.js";
 import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRepository.js";
 
 const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
+
+/**
+ * Handles reads for the signed-in employee's own submission list.
+ */
+export async function getMySubmissions(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedQuery = ReadMySubmissionsQuerySchema.parse({
+            cursor: req.query.cursor,
+            pageSize: req.query.pageSize,
+        });
+        const submissions = await readMySubmissions({
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            ...parsedQuery,
+        });
+
+        res.status(200).json(submissions);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles detail reads for one signed-in employee submission.
+ */
+export async function getMySubmissionDetail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const detail = await readMySubmissionDetail({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+        });
+
+        res.status(200).json(detail);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 
 /**
  * Handles reads for the employee's current Drafted Expense Report.
@@ -96,6 +162,126 @@ export async function getDraftExpenseContent(
             id: parsedParams.id,
             tenantId: auth.tenantId,
             ownerId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles updates to one saved line item in an employee-owned draft.
+ */
+export async function patchDraftLineItem(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest = UpdateDraftLineItemInboundRequestSchema.parse(
+            req.body,
+        );
+        const content = await updateDraftLineItem({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles deletion of one saved line item in an employee-owned draft.
+ */
+export async function deleteDraftLineItemEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const content = await deleteDraftLineItem({
+            ...parsedParams,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles updates to one saved mileage entry in an employee-owned draft.
+ */
+export async function patchDraftMileageEntry(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest = CreateMileageEntryInboundRequestSchema.parse(
+            req.body,
+        );
+        const content = await updateDraftMileageEntry({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
+        });
+
+        res.status(200).json(content);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles deletion of one saved mileage entry in an employee-owned draft.
+ */
+export async function deleteDraftMileageEntryRecord(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireEmployeeAccess(auth);
+        const parsedParams = DraftExpenseSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceId: req.params.sourceId,
+        });
+        const content = await deleteDraftMileageEntry({
+            ...parsedParams,
+            tenantId: auth.tenantId,
+            ownerId: auth.userId,
+            actorId: auth.userId,
         });
 
         res.status(200).json(content);
@@ -612,6 +798,36 @@ export async function getCaseQueueStageRollups(
 }
 
 /**
+ * Handles All Transactions reads for Finance Admins in one tenant.
+ */
+export async function getAllTransactions(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceAdminAllTransactionsAccess(auth);
+        const parsedQuery = ReadAllTransactionsQuerySchema.parse({
+            category: req.query.category,
+            status: req.query.status,
+            startDate: req.query.startDate,
+            endDate: req.query.endDate,
+            limit: req.query.limit,
+            cursor: req.query.cursor,
+        });
+        const transactions = await readTenantAllTransactions({
+            ...parsedQuery,
+            tenantId: auth.tenantId,
+        });
+
+        res.status(200).json(transactions);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
  * Handles Audit Trail reads for an Expense Report case.
  */
 export async function getExpenseReportAuditEntries(
@@ -692,6 +908,18 @@ function requireInternalCaseQueueAccess(
     }
 
     throw new ForbiddenError("Case Queue access is limited to internal roles.");
+}
+
+function requireFinanceAdminAllTransactionsAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "All Transactions access is limited to Finance Admins.",
+    );
 }
 
 const internalExpenseReportRoles = new Set<RoleName>([

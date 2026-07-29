@@ -24,9 +24,11 @@ import {
     SignInScreen,
 } from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
-import { LogMileageScreen } from "./mileage/LogMileageScreen";
-import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
+import { LogMileageScreen } from "./mileage/LogMileageScreen";
+import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
+import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
+import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
     getNavigationItemsForRoles,
     navigationItems,
@@ -72,6 +74,10 @@ const protectedRoutes = navigationItems.map((item) =>
                 <FinanceDashboardScreen />
             ) : item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
+            ) : item.path === "/transactions" ? (
+                <AllTransactionsScreen />
+            ) : item.path === "/my-submissions" ? (
+                <MySubmissionsScreen />
             ) : item.path === "/log-mileage" ? (
                 <LogMileageScreen />
             ) : item.path === "/submit-expense" ? (

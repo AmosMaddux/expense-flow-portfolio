@@ -98,6 +98,7 @@ const attachmentMetadataRequiredColumnNames = [
 const receiptMetadataRequiredColumnNames = [
     "expense_report_id",
     "tenant_id",
+    "line_item_id",
     "merchant",
     "receipt_date",
     "amount",
@@ -130,6 +131,10 @@ const auditEntryMigrationSqlUrl = new URL(
 );
 const glReferenceMigrationSqlUrl = new URL(
     "../../../drizzle/0009_gl_reference_seed.sql",
+    import.meta.url,
+);
+const allTransactionsPaginationMigrationSqlUrl = new URL(
+    "../../../drizzle/0026_all_transactions_pagination_idx.sql",
     import.meta.url,
 );
 
@@ -233,7 +238,6 @@ void describe("expenseReport schema", () => {
             "expense_report_tenant_owner_idx",
             "expense_report_tenant_priority_idx",
             "expense_report_tenant_id_unique_idx",
-            "expense_report_one_draft_per_owner_idx",
         ]);
 
         const tenantReportIndex = tableConfig.indexes.find(
@@ -247,14 +251,6 @@ void describe("expenseReport schema", () => {
         if (tenantReportIndex !== undefined) {
             expect(tenantReportIndex.config.unique).toBeTruthy();
         }
-
-        const oneDraftIndex = tableConfig.indexes.find(
-            (indexConfig) =>
-                indexConfig.config.name ===
-                "expense_report_one_draft_per_owner_idx",
-        );
-        expect(oneDraftIndex?.config.unique).toBeTruthy();
-        expect(oneDraftIndex?.config.where).toBeDefined();
     });
 
     void test("generates SQL for the expense_report table, constraints, and indexes", async () => {
@@ -292,7 +288,7 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");
         expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
-        expect(migrationSql).toContain(
+        expect(migrationSql).not.toContain(
             "expense_report_one_draft_per_owner_idx",
         );
     });
@@ -924,7 +920,12 @@ void describe("lineItem schema", () => {
 
         expect(
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-        ).toEqual(["line_item_tenant_expense_report_idx"]);
+        ).toEqual([
+            "line_item_tenant_expense_report_idx",
+            "line_item_tenant_expense_date_id_idx",
+            "line_item_tenant_category_expense_date_id_idx",
+            "line_item_tenant_id_unique_idx",
+        ]);
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -980,6 +981,23 @@ void describe("lineItem schema", () => {
         );
 
         expect(migrationSql).toContain("line_item_tenant_expense_report_idx");
+        expect(migrationSql).toContain("line_item_tenant_expense_date_id_idx");
+        expect(migrationSql).toContain(
+            "line_item_tenant_category_expense_date_id_idx",
+        );
+    });
+
+    void test("creates All Transactions indexes concurrently for production rollout", async () => {
+        const migrationSql = (
+            await readFile(allTransactionsPaginationMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_expense_date_id_idx" on "line_item" using btree ("tenant_id","expense_date" desc,"id" asc)',
+        );
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_category_expense_date_id_idx" on "line_item" using btree ("tenant_id","category","expense_date" desc,"id" asc)',
+        );
     });
 });
 
@@ -1306,13 +1324,32 @@ void describe("receiptMetadata schema", () => {
             receiptMetadataConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
             ),
-        ).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
+        ).toEqual([
+            "receipt_metadata_expense_report_tenant_fk",
+            "receipt_metadata_line_item_tenant_fk",
+        ]);
+        const lineItemForeignKey = receiptMetadataConfig.foreignKeys
+            .find(
+                (foreignKey) =>
+                    foreignKey.getName() ===
+                    "receipt_metadata_line_item_tenant_fk",
+            )
+            ?.reference();
+        expect(
+            lineItemForeignKey?.columns.map((column) => column.name),
+        ).toEqual(["tenant_id", "line_item_id"]);
+        expect(
+            lineItemForeignKey?.foreignColumns.map((column) => column.name),
+        ).toEqual(["tenant_id", "id"]);
 
         expect(
             receiptMetadataConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
             ),
-        ).toEqual(["receipt_metadata_tenant_report_idx"]);
+        ).toEqual([
+            "receipt_metadata_tenant_report_idx",
+            "receipt_metadata_tenant_line_item_idx",
+        ]);
     });
 
     void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
@@ -1350,7 +1387,9 @@ void describe("receiptMetadata schema", () => {
         expect(migrationSql).toContain(
             "receipt_metadata_expense_report_tenant_fk",
         );
+        expect(migrationSql).toContain("receipt_metadata_line_item_tenant_fk");
         expect(migrationSql).toContain("receipt_metadata_tenant_report_idx");
+        expect(migrationSql).toContain("receipt_metadata_tenant_line_item_idx");
     });
 });
 

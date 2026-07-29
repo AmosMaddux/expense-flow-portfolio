@@ -18,6 +18,8 @@ import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
+    deleteDraftLineItem as deleteDraftLineItemInStore,
+    deleteDraftMileageEntry as deleteDraftMileageEntryInStore,
     findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
     findCurrentDraftExpenseReport,
@@ -34,6 +36,8 @@ import {
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
     updateExpenseReportSourceDeductibility as updateExpenseReportSourceDeductibilityInStore,
+    updateDraftLineItem as updateDraftLineItemInStore,
+    updateDraftMileageEntry as updateDraftMileageEntryInStore,
 } from "../repository/expenseReportRepository.js";
 import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
@@ -180,6 +184,7 @@ export async function readDraftExpenseContent(request: {
         })),
         receipts: content.receipts.map((receipt) => ({
             id: receipt.id,
+            lineItemId: receipt.lineItemId,
             filename: readReceiptFilename(receipt.blobReference),
             merchant: receipt.merchant,
             receiptDate: receipt.receiptDate,
@@ -200,6 +205,124 @@ export async function readDraftExpenseContent(request: {
             };
         }),
     });
+}
+
+/**
+ * Updates one saved line item and returns the refreshed employee-owned draft.
+ */
+export async function updateDraftLineItem(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+    merchant: string;
+    expenseDate: string;
+    category: string;
+    amount: number;
+    currency: "USD";
+}): Promise<DraftExpenseContentResponse> {
+    const result = await updateDraftLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+        merchant: request.merchant,
+        expenseDate: request.expenseDate,
+        category: request.category,
+        amount: request.amount.toFixed(2),
+        currency: request.currency,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Deletes one saved line item and returns the refreshed employee-owned draft.
+ */
+export async function deleteDraftLineItem(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await deleteDraftLineItemInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Updates one saved mileage entry and returns the refreshed employee-owned draft.
+ */
+export async function updateDraftMileageEntry(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+    route: string;
+    distance: number;
+    mileageDate: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await updateDraftMileageEntryInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+        route: request.route,
+        distance: request.distance.toFixed(2),
+        mileageDate: request.mileageDate,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+/**
+ * Deletes one saved mileage entry and returns the refreshed employee-owned draft.
+ */
+export async function deleteDraftMileageEntry(request: {
+    id: string;
+    sourceId: string;
+    tenantId: string;
+    ownerId: string;
+    actorId: string;
+}): Promise<DraftExpenseContentResponse> {
+    const result = await deleteDraftMileageEntryInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        ownerId: request.ownerId,
+        actorId: request.actorId,
+        sourceId: request.sourceId,
+    });
+    assertDraftSourceModified(result);
+
+    return readDraftExpenseContent(request);
+}
+
+function assertDraftSourceModified(result: {
+    kind: "modified" | "invalid_stage" | "not_found";
+    currentStage?: ExpenseReportResponse["currentStage"];
+}): asserts result is { kind: "modified" } {
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Draft expense entry not found.");
+    }
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Expense entries can only be changed in Drafted; this report is in ${result.currentStage ?? "another stage"}.`,
+        );
+    }
 }
 
 /**

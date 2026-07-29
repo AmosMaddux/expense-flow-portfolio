@@ -11,8 +11,9 @@ import {
     AddDraftExpenseContentOutboundResponseSchema,
     ApprovalQueueLineItemListOutboundResponseSchema,
     ApprovalQueueLineItemOutboundResponseSchema,
-    CaseQueueStageRollupListSchema,
     AuditEntryListOutboundResponseSchema,
+    AllTransactionPageSchema,
+    CaseQueueStageRollupListSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
@@ -20,7 +21,11 @@ import {
     ExpenseReportOutboundResponseSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
+    MySubmissionDetailSchema,
+    MySubmissionPageSchema,
+    ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
@@ -29,6 +34,7 @@ import {
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
+    UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
     loginRequestSchema,
@@ -52,6 +58,10 @@ const problemJsonSchema = z.object({
 
 const expenseReportIdPathParamsSchema = z.object({
     id: z.uuid(),
+});
+const expenseReportSourcePathParamsSchema = z.object({
+    id: z.uuid(),
+    sourceId: z.uuid(),
 });
 
 /**
@@ -87,6 +97,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const draftExpenseContentResponse = registry.register(
         "DraftExpenseContentResponse",
         DraftExpenseContentOutboundResponseSchema,
+    );
+    const updateDraftLineItemRequest = registry.register(
+        "UpdateDraftLineItemRequest",
+        UpdateDraftLineItemInboundRequestSchema,
     );
     const mileageEntryResponse = registry.register(
         "MileageEntryResponse",
@@ -152,9 +166,29 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
     );
+    const mySubmissionPage = registry.register(
+        "MySubmissionPage",
+        MySubmissionPageSchema,
+    );
+    const readMySubmissionsQuery = registry.register(
+        "ReadMySubmissionsQuery",
+        ReadMySubmissionsQuerySchema,
+    );
+    const mySubmissionDetail = registry.register(
+        "MySubmissionDetail",
+        MySubmissionDetailSchema,
+    );
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
         AuditEntryListOutboundResponseSchema,
+    );
+    const readAllTransactionsRequest = registry.register(
+        "ReadAllTransactionsRequest",
+        ReadAllTransactionsQuerySchema,
+    );
+    const allTransactionPage = registry.register(
+        "AllTransactionPage",
+        AllTransactionPageSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -344,6 +378,141 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    for (const source of [
+        {
+            path: "/v1/expense-reports/{id}/line-items/{sourceId}",
+            label: "line item",
+            updateSchema: updateDraftLineItemRequest,
+        },
+        {
+            path: "/v1/expense-reports/{id}/mileage-entries/{sourceId}",
+            label: "mileage entry",
+            updateSchema: createMileageEntryRequest,
+        },
+    ] as const) {
+        registry.registerPath({
+            method: "patch",
+            path: source.path,
+            summary: `Update a saved draft ${source.label}`,
+            description: `Updates one ${source.label} in the authenticated Employee's own Drafted Expense Report.`,
+            security: [{ bearerAuth: [] }],
+            request: {
+                params: expenseReportSourcePathParamsSchema,
+                body: {
+                    required: true,
+                    content: {
+                        "application/json": {
+                            schema: source.updateSchema,
+                        },
+                    },
+                },
+            },
+            responses: {
+                200: {
+                    description: "Updated draft content.",
+                    headers: rateLimitHeaders,
+                    content: {
+                        "application/json": {
+                            schema: draftExpenseContentResponse,
+                        },
+                    },
+                },
+                400: problemJsonResponse("Malformed draft update."),
+                401: problemJsonResponse("Valid access token required."),
+                403: problemJsonResponse("Employee Portal access required."),
+                404: problemJsonResponse("Draft expense entry not found."),
+                409: problemJsonResponse(
+                    "Expense entries can only be changed while Drafted.",
+                ),
+                429: rateLimitExceededResponse.ref,
+            },
+        });
+        registry.registerPath({
+            method: "delete",
+            path: source.path,
+            summary: `Delete a saved draft ${source.label}`,
+            description: `Deletes one ${source.label} from the authenticated Employee's own Drafted Expense Report.`,
+            security: [{ bearerAuth: [] }],
+            request: {
+                params: expenseReportSourcePathParamsSchema,
+            },
+            responses: {
+                200: {
+                    description: "Updated draft content.",
+                    headers: rateLimitHeaders,
+                    content: {
+                        "application/json": {
+                            schema: draftExpenseContentResponse,
+                        },
+                    },
+                },
+                401: problemJsonResponse("Valid access token required."),
+                403: problemJsonResponse("Employee Portal access required."),
+                404: problemJsonResponse("Draft expense entry not found."),
+                409: problemJsonResponse(
+                    "Expense entries can only be changed while Drafted.",
+                ),
+                429: rateLimitExceededResponse.ref,
+            },
+        });
+    }
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/my-submissions",
+        summary: "Get the employee's Expense Reports",
+        description:
+            "Returns only Expense Reports owned by the authenticated Employee within the authenticated tenant, including workflow position and overdue state.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readMySubmissionsQuery,
+        },
+        responses: {
+            200: {
+                description: "Employee submissions found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionPage,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/submission-detail",
+        summary: "Get an employee submission's line items and mileage",
+        description:
+            "Returns line items and mileage only when the Expense Report belongs to the authenticated Employee within the authenticated tenant.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Employee submission detail found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: mySubmissionDetail,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed Expense Report identifier."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Employee Portal access required."),
+            404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
     registry.registerPath({
         method: "get",
         path: "/v1/case-queue/line-items",
@@ -390,6 +559,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed rollup request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("Authenticated user is not permitted."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/transactions",
+        summary: "Get All Transactions",
+        description:
+            "Loads tenant-scoped line items across Expense Reports for Finance Admin review.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readAllTransactionsRequest,
+        },
+        responses: {
+            200: {
+                description: "All Transactions rows found.",
+                content: {
+                    "application/json": {
+                        schema: allTransactionPage,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed transaction list request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse("Authenticated user is not permitted."),
             500: problemJsonResponse("Unexpected server error."),

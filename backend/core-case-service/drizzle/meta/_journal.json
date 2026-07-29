@@ -173,8 +173,29 @@
         {
             "idx": 24,
             "version": "7",
+            "when": 1785247685712,
+            "tag": "0024_silky_monster_badoon",
+            "breakpoints": true
+        },
+        {
+            "idx": 25,
+            "version": "7",
+            "when": 1785254026815,
+            "tag": "0025_bumpy_shinobi_shaw",
+            "breakpoints": true
+        },
+        {
+            "idx": 26,
+            "version": "7",
+            "when": 1785254026816,
+            "tag": "0026_all_transactions_pagination_idx",
+            "breakpoints": true
+        },
+        {
+            "idx": 27,
+            "version": "7",
             "when": 1785283200000,
-            "tag": "0024_manual_deductibility",
+            "tag": "0027_manual_deductibility",
             "breakpoints": true
         }
     ]

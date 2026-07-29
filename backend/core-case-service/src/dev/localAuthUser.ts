@@ -17,6 +17,12 @@ import {
     role,
     user,
 } from "../db/schema/identityAuth.js";
+import {
+    auditEntry,
+    expenseReport,
+    lineItem,
+    stageTransition,
+} from "../db/schema/expenseReport.js";
 import * as schema from "../db/schema/index.js";
 import {
     getLocalAuthAccount,
@@ -36,6 +42,12 @@ const totpPeriodSeconds = 30;
 const minimumUsefulCodeLifetimeSeconds = 10;
 
 type LocalAuthDatabase = NodePgDatabase<typeof schema>;
+type LocalAuthTransaction = Parameters<
+    Parameters<LocalAuthDatabase["transaction"]>[0]
+>[0];
+
+const overdueSubmissionId = "7a000000-0000-4000-8000-000000000001";
+const overdueSubmissionDueDate = "2026-06-20";
 
 async function seedLocalAuthAccount(
     database: LocalAuthDatabase,
@@ -139,7 +151,149 @@ async function seedLocalAuthAccount(
             userId,
             email: account.email,
         });
+
+        if (account.role === "Employee") {
+            await seedOverdueEmployeeSubmission(
+                transaction,
+                environment.VITE_TENANT_ID,
+                userId,
+            );
+        }
     });
+}
+
+async function seedOverdueEmployeeSubmission(
+    transaction: LocalAuthTransaction,
+    tenantId: string,
+    ownerId: string,
+): Promise<void> {
+    const seededAt = new Date("2026-06-20T12:00:00.000Z");
+
+    await transaction
+        .insert(expenseReport)
+        .values({
+            id: overdueSubmissionId,
+            tenantId,
+            owner: ownerId,
+            dueDate: overdueSubmissionDueDate,
+            priority: "Normal",
+            currentStage: "Manager Approval",
+            createdAt: seededAt,
+            updatedAt: seededAt,
+        })
+        .onConflictDoUpdate({
+            target: expenseReport.id,
+            set: {
+                tenantId,
+                owner: ownerId,
+                dueDate: overdueSubmissionDueDate,
+                priority: "Normal",
+                currentStage: "Manager Approval",
+                onHold: false,
+                holdReason: null,
+                updatedAt: seededAt,
+            },
+        });
+
+    await transaction
+        .insert(auditEntry)
+        .values([
+            {
+                id: "7a000000-0000-4000-8000-000000000002",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actorId: ownerId,
+                action: "report_created",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Drafted",
+                createdAt: seededAt,
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000003",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actorId: ownerId,
+                action: "transition_approved",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Submitted",
+                createdAt: new Date("2026-06-21T12:00:00.000Z"),
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000004",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actorId: ownerId,
+                action: "transition_approved",
+                stageBeforeAction: "Submitted",
+                stageAfterProposedAction: "Manager Approval",
+                createdAt: new Date("2026-06-22T12:00:00.000Z"),
+            },
+        ])
+        .onConflictDoNothing();
+
+    await transaction
+        .insert(stageTransition)
+        .values([
+            {
+                id: "7a000000-0000-4000-8000-000000000005",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actor: ownerId,
+                fromStage: "Drafted",
+                toStage: "Drafted",
+                reason: "report_created",
+                occurredAt: seededAt,
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000006",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actor: ownerId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                reason: "Synthetic local workflow progression.",
+                occurredAt: new Date("2026-06-21T12:00:00.000Z"),
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000007",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                actor: ownerId,
+                fromStage: "Submitted",
+                toStage: "Manager Approval",
+                reason: "Synthetic local workflow progression.",
+                occurredAt: new Date("2026-06-22T12:00:00.000Z"),
+            },
+        ])
+        .onConflictDoNothing();
+
+    await transaction
+        .insert(lineItem)
+        .values({
+            id: "7a000000-0000-4000-8000-000000000008",
+            tenantId,
+            expenseReportId: overdueSubmissionId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-06-18",
+            category: "Travel",
+            amount: "84.25",
+            currency: "USD",
+            createdAt: seededAt,
+            updatedAt: seededAt,
+        })
+        .onConflictDoUpdate({
+            target: lineItem.id,
+            set: {
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-06-18",
+                category: "Travel",
+                amount: "84.25",
+                currency: "USD",
+                updatedAt: seededAt,
+            },
+        });
 }
 
 async function readCurrentLocalTotpCode(

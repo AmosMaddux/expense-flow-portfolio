@@ -25,7 +25,6 @@ const authJwtConfig = loadAuthJwtConfig();
 loadDefaultGlCodingConfig();
 const v1Router = express.Router();
 
-
 /*
 Read each line as: "for any request whose URL starts with path, run this next."
  Multiple .use() calls with the same path prefix just keep appending to that path's chain
@@ -52,6 +51,7 @@ v1Router.use(
 // Any request to /expense-reports/* or /case-queue/* must pass through createAccessTokenMiddleware first
 v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use("/case-queue", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use("/transactions", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use(
     "/expense-reports",
     createTenantRateLimitMiddleware(
@@ -66,8 +66,16 @@ v1Router.use(
         createPostgresTenantRateLimitStore(db),
     ),
 );
+v1Router.use(
+    "/transactions",
+    createTenantRateLimitMiddleware(
+        loadRateLimitConfig(),
+        createPostgresTenantRateLimitStore(db),
+    ),
+);
 v1Router.use("/expense-reports", express.json());
 v1Router.use("/case-queue", express.json());
+v1Router.use("/transactions", express.json());
 v1Router.use("/", expenseReportRouter);
 
 /**
