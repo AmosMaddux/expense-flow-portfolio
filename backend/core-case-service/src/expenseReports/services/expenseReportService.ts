@@ -67,12 +67,12 @@ import {
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
 import {
-    getDefaultStageTransitionEventPublisher,
-    type StageTransitionEventPublisher,
-} from "../../events/stageTransitionEventPublisher.js";
+    dispatchStageTransitionOutboxEvents,
+    type StageTransitionOutboxDispatcher,
+} from "../../events/stageTransitionOutboxDispatcher.js";
 
 export type StageTransitionEventDependencies = {
-    stageTransitionEventPublisher: StageTransitionEventPublisher;
+    stageTransitionOutboxDispatcher: StageTransitionOutboxDispatcher;
 };
 
 /**
@@ -588,6 +588,7 @@ export async function submitExpenseReport(
                 maxBackoffMs: glConfig.GL_CODING_MAX_BACKOFF_MS,
             },
         );
+        const outboxEventId = randomUUID();
         const report = await submitDraftExpenseReport(
             request.tenantId,
             request.id,
@@ -596,6 +597,11 @@ export async function submitExpenseReport(
             glResponse,
             buildSubmissionSourceKeys(sources),
             buildSubmissionSourceFingerprint(sources),
+            {
+                correlationId: request.correlationId,
+                eventId: outboxEventId,
+                occurredAt: new Date(),
+            },
         );
         if (report === undefined) {
             await insertDeniedSubmissionAuditEntry(
@@ -609,18 +615,8 @@ export async function submitExpenseReport(
             );
         }
 
-        const stageTransitionEventPublisher =
-            dependencies?.stageTransitionEventPublisher ??
-            getDefaultStageTransitionEventPublisher();
-        await stageTransitionEventPublisher.publish({
-            caseId: request.id,
-            tenantId: request.tenantId,
-            fromStage: "Drafted",
-            toStage: "Submitted",
-            correlationId: request.correlationId,
-        });
-
         await invalidateCachedCaseQueueStageRollups(request.tenantId);
+        await dispatchOutboxEvent(outboxEventId, dependencies);
 
         return toExpenseReportResponse(report);
     } catch (error: unknown) {
@@ -775,6 +771,7 @@ export async function transitionExpenseReportWorkflow(
         throw new ForbiddenError();
     }
 
+    const outboxEventId = randomUUID();
     const didTransition = await transitionExpenseReportStageInStore({
         tenantId: request.tenantId,
         id: request.id,
@@ -782,6 +779,9 @@ export async function transitionExpenseReportWorkflow(
         fromStage: report.currentStage as ExpenseReportStage,
         toStage: request.toStage,
         reason: request.reason,
+        correlationId: request.correlationId,
+        eventId: outboxEventId,
+        occurredAt: new Date(),
     });
 
     if (!didTransition) {
@@ -790,18 +790,8 @@ export async function transitionExpenseReportWorkflow(
         );
     }
 
-    const stageTransitionEventPublisher =
-        dependencies?.stageTransitionEventPublisher ??
-        getDefaultStageTransitionEventPublisher();
-    await stageTransitionEventPublisher.publish({
-        caseId: request.id,
-        tenantId: request.tenantId,
-        fromStage: report.currentStage as ExpenseReportStage,
-        toStage: request.toStage,
-        correlationId: request.correlationId,
-    });
-
     await invalidateCachedCaseQueueStageRollups(request.tenantId);
+    await dispatchOutboxEvent(outboxEventId, dependencies);
 
     const transitionedReport = await findExpenseReportById(
         request.tenantId,
@@ -812,6 +802,22 @@ export async function transitionExpenseReportWorkflow(
     }
 
     return toExpenseReportResponse(transitionedReport);
+}
+
+async function dispatchOutboxEvent(
+    eventId: string,
+    dependencies?: StageTransitionEventDependencies,
+): Promise<void> {
+    try {
+        if (dependencies === undefined) {
+            await dispatchStageTransitionOutboxEvents(eventId);
+            return;
+        }
+
+        await dependencies.stageTransitionOutboxDispatcher.dispatch(eventId);
+    } catch {
+        // The durable outbox retry loop handles dispatch failures after the state change commits.
+    }
 }
 /**
  * Reads the tenant-scoped audit trail entries for an Expense Report case.

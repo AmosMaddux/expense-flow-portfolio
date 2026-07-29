@@ -26,6 +26,7 @@ import {
     mileageEntry,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
     tenantRateLimitWindow,
     type RoleName,
 } from "../../db/schema/index.js";
@@ -1106,7 +1107,6 @@ void describe("Expense Report routes", () => {
             ],
             flags: [],
         });
-
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
             {
@@ -1432,7 +1432,6 @@ void describe("Expense Report routes", () => {
         if (created.id === undefined) {
             throw new Error("Expected created Expense Report id");
         }
-
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/mileage-entries`,
             {
@@ -1882,6 +1881,9 @@ void describe("Expense Report routes", () => {
             ],
             flags: [],
         });
+        stageTransitionPublishMock.mockRejectedValueOnce(
+            new Error("synthetic SNS failure"),
+        );
 
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
@@ -1898,18 +1900,54 @@ void describe("Expense Report routes", () => {
         );
 
         const body = (await response.json()) as { currentStage?: string };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-132",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const replayBody = (await replayResponse.json()) as {
+            currentStage?: string;
+        };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
 
         expect(response.status).toBe(201);
+        expect(replayResponse.status).toBe(201);
         expect(response.headers.get("x-correlation-id")).toBe(correlationId);
         expect(body.currentStage).toBe("Submitted");
+        expect(replayBody.currentStage).toBe("Submitted");
         expect(glCodingClientMock).toHaveBeenCalledOnce();
         expect(stageTransitionPublishMock).toHaveBeenCalledOnce();
-        expect(stageTransitionPublishMock).toHaveBeenCalledWith({
-            caseId: created.id,
-            tenantId,
-            fromStage: "Drafted",
-            toStage: "Submitted",
-            correlationId,
+        expect(stageTransitionPublishMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                caseId: created.id,
+                tenantId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                correlationId,
+            }),
+        );
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, created.id));
+        expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]).toMatchObject({
+            attemptCount: 1,
+            publishedAt: null,
+            deadLetteredAt: null,
         });
         const auditRows = await db
             .select()
@@ -1959,6 +1997,9 @@ void describe("Expense Report routes", () => {
         if (created.id === undefined) {
             throw new Error("Expected created Expense Report id");
         }
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
 
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
@@ -2483,20 +2524,26 @@ void describe("Expense Report routes", () => {
         expect(financeResponse.status).toBe(200);
         expect(financeBody.currentStage).toBe("AP Review");
         expect(stageTransitionPublishMock).toHaveBeenCalledTimes(2);
-        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(1, {
-            caseId: reportId,
-            tenantId,
-            fromStage: "Submitted",
-            toStage: "Manager Approval",
-            correlationId: managerCorrelationId,
-        });
-        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(2, {
-            caseId: reportId,
-            tenantId,
-            fromStage: "Manager Approval",
-            toStage: "AP Review",
-            correlationId: financeCorrelationId,
-        });
+        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                caseId: reportId,
+                tenantId,
+                fromStage: "Submitted",
+                toStage: "Manager Approval",
+                correlationId: managerCorrelationId,
+            }),
+        );
+        expect(stageTransitionPublishMock).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                caseId: reportId,
+                tenantId,
+                fromStage: "Manager Approval",
+                toStage: "AP Review",
+                correlationId: financeCorrelationId,
+            }),
+        );
     });
 
     void test.each([

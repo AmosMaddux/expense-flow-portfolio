@@ -3515,7 +3515,7 @@
                         }
                     },
                     "502": {
-                        "description": "GL-coding or stage-transition event publishing failed.",
+                        "description": "GL-coding service request failed.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -3655,16 +3655,6 @@
                     },
                     "500": {
                         "description": "Unexpected server error.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Stage-transition event publishing failed.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

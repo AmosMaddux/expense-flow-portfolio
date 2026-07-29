@@ -1,5 +1,6 @@
 import { app } from "./app.js";
 import { applyPendingCoreCaseMigrations } from "./db/migrations.js";
+import { startStageTransitionOutboxDispatcher } from "./events/stageTransitionOutboxDispatcher.js";
 
 export {
     readCaseQueueReportsForStage,
@@ -38,6 +39,7 @@ async function startCoreCaseService(): Promise<void> {
         await applyPendingCoreCaseMigrations();
     }
 
+    startStageTransitionOutboxDispatcher();
     app.listen(PORT, () => {
         console.log(`Server is running locally at http://localhost:${PORT}`);
         console.log(

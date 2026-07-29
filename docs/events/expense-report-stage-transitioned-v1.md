@@ -13,6 +13,13 @@ subscriptions can filter or trace messages without parsing the body. An inbound
 `X-Correlation-Id` UUID is reused; when the header is omitted, the Core Case
 Service generates one and returns it in the response header.
 
+The workflow update and its outbox event are committed in the same PostgreSQL
+transaction. The API response reflects that committed state and does not fail
+when SNS is temporarily unavailable. The dispatcher retries pending events with
+bounded exponential backoff and marks an event dead-lettered after ten failed
+attempts. SNS/SQS delivery remains at-least-once, so consumers must deduplicate
+using the CloudEvent `id`.
+
 ## Version identity
 
 - CloudEvents specification: `1.0`

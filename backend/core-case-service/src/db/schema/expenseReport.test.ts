@@ -20,6 +20,7 @@ import {
     priorityLevels,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -880,6 +881,46 @@ void describe("stageTransition schema", () => {
         expect(migrationSql).toContain("stage_transition_tenant_report_idx");
         expect(migrationSql).toContain(
             "stage_transition_tenant_occurred_at_idx",
+        );
+    });
+});
+
+void describe("stageTransitionOutbox schema", () => {
+    void test("defines durable delivery, retry, and tenant-isolation constraints", () => {
+        const tableConfig = getTableConfig(stageTransitionOutbox);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+        const indexNames = tableConfig.indexes.map(
+            (index) => index.config.name,
+        );
+        const foreignKeyNames = tableConfig.foreignKeys.map((foreignKey) =>
+            foreignKey.getName(),
+        );
+
+        expect(getTableName(stageTransitionOutbox)).toBe(
+            "stage_transition_outbox",
+        );
+        expect(columnNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_id",
+                "expense_report_id",
+                "tenant_id",
+                "correlation_id",
+                "attempt_count",
+                "next_attempt_at",
+                "locked_until",
+                "lock_id",
+                "published_at",
+                "dead_lettered_at",
+            ]),
+        );
+        expect(indexNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_outbox_transition_unique_idx",
+                "stage_transition_outbox_dispatch_idx",
+            ]),
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_outbox_expense_report_tenant_fk",
         );
     });
 });

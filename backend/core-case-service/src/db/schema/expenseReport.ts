@@ -6,6 +6,7 @@ import {
     date,
     foreignKey,
     index,
+    integer,
     jsonb,
     numeric,
     pgTable,
@@ -246,6 +247,76 @@ export const stageTransition = pgTable(
 
 export type StageTransition = InferSelectModel<typeof stageTransition>;
 export type NewStageTransition = InferInsertModel<typeof stageTransition>;
+
+export const stageTransitionOutbox = pgTable(
+    "stage_transition_outbox",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        stageTransitionId: uuid("stage_transition_id")
+            .notNull()
+            .references(() => stageTransition.id),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        correlationId: uuid("correlation_id").notNull(),
+        fromStage: text("from_stage").notNull(),
+        toStage: text("to_stage").notNull(),
+        occurredAt: timestamp("occurred_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        attemptCount: integer("attempt_count").notNull().default(0),
+        nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        lockedUntil: timestamp("locked_until", { withTimezone: true }),
+        lockId: uuid("lock_id"),
+        publishedAt: timestamp("published_at", { withTimezone: true }),
+        deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true }),
+    },
+    (table) => [
+        check(
+            "stage_transition_outbox_from_stage_check",
+            sql`${table.fromStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_outbox_to_stage_check",
+            sql`${table.toStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_outbox_changed_stage_check",
+            sql`${table.fromStage} <> ${table.toStage}`,
+        ),
+        check(
+            "stage_transition_outbox_attempt_count_check",
+            sql`${table.attemptCount} >= 0`,
+        ),
+        check(
+            "stage_transition_outbox_lock_check",
+            sql`(${table.lockId} is null and ${table.lockedUntil} is null) or (${table.lockId} is not null and ${table.lockedUntil} is not null)`,
+        ),
+        foreignKey({
+            name: "stage_transition_outbox_expense_report_tenant_fk",
+            // Tenant-scoped ownership prevents an outbox event from identifying another tenant's report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        uniqueIndex("stage_transition_outbox_transition_unique_idx").on(
+            table.stageTransitionId,
+        ),
+        index("stage_transition_outbox_dispatch_idx").on(
+            table.publishedAt,
+            table.deadLetteredAt,
+            table.nextAttemptAt,
+            table.lockedUntil,
+        ),
+    ],
+);
+
+export type StageTransitionOutbox = InferSelectModel<
+    typeof stageTransitionOutbox
+>;
+export type NewStageTransitionOutbox = InferInsertModel<
+    typeof stageTransitionOutbox
+>;
 
 export const lineItem = pgTable(
     "line_item",

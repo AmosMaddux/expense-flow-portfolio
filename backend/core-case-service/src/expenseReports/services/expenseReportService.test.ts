@@ -50,7 +50,7 @@ beforeEach(() => {
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
 });
 
-void describe("Expense Report stage-transition event publishing", () => {
+void describe("Expense Report stage-transition outbox dispatch", () => {
     const tenantId = "40000000-0000-4000-8000-000000000801";
     const actorId = "50000000-0000-4000-8000-000000000801";
     const expenseReportId = "60000000-0000-4000-8000-000000000801";
@@ -68,8 +68,8 @@ void describe("Expense Report stage-transition event publishing", () => {
         updatedAt: new Date("2026-07-20T12:00:00.000Z"),
     };
 
-    void test("publishes exactly once after a successful transition", async () => {
-        const publish = vi.fn().mockResolvedValue(undefined);
+    void test("dispatches exactly once after a successful transition", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
         findExpenseReportByIdMock
             .mockResolvedValueOnce(submittedReport)
             .mockResolvedValueOnce({
@@ -89,21 +89,25 @@ void describe("Expense Report stage-transition event publishing", () => {
                 reason: "Synthetic manager review started.",
                 correlationId,
             },
-            { stageTransitionEventPublisher: { publish } },
+            { stageTransitionOutboxDispatcher: { dispatch } },
         );
 
-        expect(publish).toHaveBeenCalledTimes(1);
-        expect(publish).toHaveBeenCalledWith({
-            caseId: expenseReportId,
-            tenantId,
-            fromStage: "Submitted",
-            toStage: "Manager Approval",
+        expect(dispatch).toHaveBeenCalledTimes(1);
+        expect(dispatch).toHaveBeenCalledWith(expect.any(String));
+        const dispatchedEventId: unknown = dispatch.mock.calls[0]?.[0];
+        const transitionRequest: unknown =
+            transitionExpenseReportStageMock.mock.calls[0]?.[0];
+        expect(transitionRequest).toMatchObject({
             correlationId,
+            eventId: dispatchedEventId,
         });
+        expect(
+            (transitionRequest as { occurredAt?: unknown }).occurredAt,
+        ).toBeInstanceOf(Date);
     });
 
-    void test("does not publish when the transition is denied", async () => {
-        const publish = vi.fn().mockResolvedValue(undefined);
+    void test("does not dispatch when the transition is denied", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
         findExpenseReportByIdMock.mockResolvedValue(submittedReport);
         transitionExpenseReportStageMock.mockResolvedValue(false);
 
@@ -118,13 +122,43 @@ void describe("Expense Report stage-transition event publishing", () => {
                     reason: "Synthetic manager review started.",
                     correlationId,
                 },
-                { stageTransitionEventPublisher: { publish } },
+                { stageTransitionOutboxDispatcher: { dispatch } },
             ),
         ).rejects.toThrow(
             "Expense Report cannot transition from Submitted to Manager Approval.",
         );
 
-        expect(publish).not.toHaveBeenCalled();
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    void test("returns the committed transition when immediate dispatch fails", async () => {
+        const dispatch = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic outbox dispatch failure"));
+        findExpenseReportByIdMock
+            .mockResolvedValueOnce(submittedReport)
+            .mockResolvedValueOnce({
+                ...submittedReport,
+                currentStage: "Manager Approval",
+            });
+        transitionExpenseReportStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        const result = await transitionExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Department Manager"],
+                toStage: "Manager Approval",
+                reason: "Synthetic manager review started.",
+                correlationId,
+            },
+            { stageTransitionOutboxDispatcher: { dispatch } },
+        );
+
+        expect(result.currentStage).toBe("Manager Approval");
+        expect(dispatch).toHaveBeenCalledOnce();
     });
 });
 

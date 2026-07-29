@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
     and,
     asc,
@@ -26,6 +28,7 @@ import {
     type NewGlCodingResult,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
@@ -46,6 +49,11 @@ type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
 type ReviewableExpenseSourceType = "line_item" | "mileage";
 type SubmissionSourceFingerprint = string;
+type StageTransitionEventContext = {
+    correlationId: string;
+    eventId: string;
+    occurredAt: Date;
+};
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -1174,6 +1182,11 @@ export async function submitDraftExpenseReport(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
     expectedSourceFingerprint: SubmissionSourceFingerprint,
+    eventContext: StageTransitionEventContext = {
+        correlationId: randomUUID(),
+        eventId: randomUUID(),
+        occurredAt: new Date(),
+    },
 ): Promise<ExpenseReport | undefined> {
     return db.transaction(async (transaction) => {
         const reports = await transaction
@@ -1287,13 +1300,14 @@ export async function submitDraftExpenseReport(
             "Drafted",
             "transition_approved",
         );
-        await transaction.insert(stageTransition).values({
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId,
-            expenseReportId,
+            id: expenseReportId,
             actor: actorId,
             fromStage: "Drafted",
             toStage: "Submitted",
             reason: expenseReportSubmittedReason,
+            ...eventContext,
         });
 
         return updatedReport;
@@ -1770,13 +1784,11 @@ export async function transitionExpenseReportStage(
             undefined,
             isSendBackTransition(request) ? request.reason : undefined,
         );
-        await transaction.insert(stageTransition).values({
-            expenseReportId: request.id,
-            tenantId: request.tenantId,
-            fromStage: request.fromStage,
-            toStage: request.toStage,
-            actor: request.actor,
-            reason: request.reason,
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            ...request,
+            correlationId: request.correlationId ?? randomUUID(),
+            eventId: request.eventId ?? randomUUID(),
+            occurredAt: request.occurredAt ?? new Date(),
         });
 
         return true;
@@ -1888,6 +1900,35 @@ async function writeDeniedTransitionLog(
         toStage: stageBeforeAction,
         actor: request.actor,
         reason: `${transitionDeniedReasonPrefix} ${denialReason}`,
+    });
+}
+
+async function writeSuccessfulStageTransitionAndOutbox(
+    transaction: TransactionContext,
+    request: TransitionExpenseReportStageRequest & StageTransitionEventContext,
+): Promise<void> {
+    const transitionId = randomUUID();
+
+    await transaction.insert(stageTransition).values({
+        id: transitionId,
+        expenseReportId: request.id,
+        tenantId: request.tenantId,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        actor: request.actor,
+        reason: request.reason,
+        occurredAt: request.occurredAt,
+    });
+    await transaction.insert(stageTransitionOutbox).values({
+        id: request.eventId,
+        stageTransitionId: transitionId,
+        expenseReportId: request.id,
+        tenantId: request.tenantId,
+        correlationId: request.correlationId,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        occurredAt: request.occurredAt,
+        nextAttemptAt: request.occurredAt,
     });
 }
 

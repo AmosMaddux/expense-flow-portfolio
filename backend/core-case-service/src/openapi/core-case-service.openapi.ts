@@ -876,9 +876,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Only Drafted Expense Reports can be submitted.",
             ),
             429: rateLimitExceededResponse.ref,
-            502: problemJsonResponse(
-                "GL-coding or stage-transition event publishing failed.",
-            ),
+            502: problemJsonResponse("GL-coding service request failed."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
@@ -935,9 +933,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Expense Report cannot transition from its current stage or has uncleared flags.",
             ),
             429: rateLimitExceededResponse.ref,
-            502: problemJsonResponse(
-                "Stage-transition event publishing failed.",
-            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

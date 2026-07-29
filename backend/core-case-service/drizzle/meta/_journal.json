@@ -190,6 +190,13 @@
             "when": 1785254026816,
             "tag": "0026_all_transactions_pagination_idx",
             "breakpoints": true
+        },
+        {
+            "idx": 27,
+            "version": "7",
+            "when": 1785355581827,
+            "tag": "0027_stage_transition_outbox",
+            "breakpoints": true
         }
     ]
 }

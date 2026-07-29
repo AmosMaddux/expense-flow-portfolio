@@ -12,12 +12,16 @@ import {
     EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE,
     EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA,
     ExpenseReportStageTransitionedCloudEventV1Schema,
+    ExpenseReportStageTransitionedDataV1Schema,
     type ExpenseReportStageTransitionedCloudEventV1,
     type ExpenseReportStageTransitionedDataV1,
 } from "./expenseReportStageTransitioned.v1.js";
 
 export type PublishStageTransitionRequest =
-    ExpenseReportStageTransitionedDataV1;
+    ExpenseReportStageTransitionedDataV1 & {
+        eventId?: string;
+        occurredAt?: Date;
+    };
 
 export type StageTransitionEventPublisher = {
     publish(request: PublishStageTransitionRequest): Promise<void>;
@@ -81,8 +85,8 @@ export function createSnsStageTransitionEventPublisher(
         async publish(request) {
             const event = buildStageTransitionCloudEvent(
                 request,
-                now(),
-                createId(),
+                request.occurredAt ?? now(),
+                request.eventId ?? createId(),
             );
 
             try {
@@ -122,17 +126,19 @@ export function buildStageTransitionCloudEvent(
     occurredAt: Date,
     eventId: string,
 ): ExpenseReportStageTransitionedCloudEventV1 {
+    const data = ExpenseReportStageTransitionedDataV1Schema.parse(request);
+
     return ExpenseReportStageTransitionedCloudEventV1Schema.parse({
         specversion: "1.0",
         type: EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE,
         source: "urn:expenseflow:core-case-service",
         id: eventId,
         time: occurredAt.toISOString(),
-        subject: `expense-reports/${request.caseId}`,
+        subject: `expense-reports/${data.caseId}`,
         datacontenttype: "application/json",
         dataschema: EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA,
-        correlationid: request.correlationId,
-        data: request,
+        correlationid: data.correlationId,
+        data,
     });
 }
 
