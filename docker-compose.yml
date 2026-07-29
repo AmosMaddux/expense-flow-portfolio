@@ -5,6 +5,15 @@ services:
             POSTGRES_DB: expenseflow_core_case
             POSTGRES_USER: expenseflow
             POSTGRES_PASSWORD: expenseflow_local_dev_only
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "pg_isready -U expenseflow -d expenseflow_core_case",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 12
         ports:
             - "55432:5432"
 
@@ -80,6 +89,11 @@ services:
 
     redis:
         image: redis:7-alpine
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
         ports:
             - "56379:6379"
 
