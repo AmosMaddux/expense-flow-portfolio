@@ -245,7 +245,7 @@ npm run e2e:auth:code -- employee
 npm run e2e:auth:code -- manager
 ```
 
-Run the happy-path test headlessly:
+Run the Playwright E2E suite headlessly:
 
 ```sh
 npm run test:e2e
@@ -254,7 +254,41 @@ npm run test:e2e
 That command starts PostgreSQL, Redis, and the FastAPI GL-coding service with
 Docker Compose, waits for their health checks, resets and seeds E2E data, then
 lets Playwright start the Express API and Vite frontend through configured
-health-checked web servers. Stop local containers after a run with:
+health-checked web servers. The suite includes the employee-to-manager
+happy-path test plus axe scans for the Finance Dashboard, Approval Queue, and
+Log Mileage screens.
+
+Run only the axe accessibility scans:
+
+```sh
+npx playwright test tests/e2e/accessibility.spec.mjs
+```
+
+Run only the existing approval happy path:
+
+```sh
+npx playwright test tests/e2e/expense-report-approval.spec.mjs
+```
+
+Run the Lighthouse gate for the protected main operator screen:
+
+```sh
+npm run lighthouse
+```
+
+The Lighthouse command starts the required Docker services, resets the
+deterministic E2E tenant, builds the frontend for production, starts the Express
+API, serves `frontend/app/dist` through a local production-like preview/proxy,
+and audits `/finance-dashboard` with Lighthouse CI. It performs three desktop
+runs and fails if Performance or Accessibility is below `0.90`.
+
+Run the complete local UI quality gate used by CI:
+
+```sh
+npm run test:ui-gate
+```
+
+Stop local containers after a run with:
 
 ```sh
 docker compose down --volumes --remove-orphans
@@ -268,8 +302,15 @@ npm run test:e2e:debug
 ```
 
 Playwright writes its HTML report to `playwright-report/`. Failure traces,
-screenshots, and videos are retained under `test-results/`; both directories are
-ignored locally and uploaded by CI only when the E2E job fails.
+screenshots, videos, and axe JSON attachments are retained under
+`test-results/`. Lighthouse HTML and JSON reports are written under
+`test-results/lighthouse/`, with temporary LHCI working files under
+`.lighthouseci/`. These generated paths are ignored locally and uploaded by CI
+only when the UI quality gate fails.
+
+CI runs the same `npm run test:ui-gate` command on pull requests and pushes to
+`development` and `main`. The required GitHub check should be the
+`UI quality gate` job in the `ExpenseFlow E2E` workflow.
 
 ## PostgreSQL setup
 

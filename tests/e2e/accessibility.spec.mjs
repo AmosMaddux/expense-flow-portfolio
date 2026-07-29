@@ -36,7 +36,16 @@ test.describe("ExpenseFlow accessibility gates", () => {
             page.getByRole("heading", { name: "Case Queue" }),
         ).toBeVisible();
         await expect(page.getByLabel("Approval Queue filters")).toBeVisible();
-        await expect(page.getByLabel("Approval Queue reports")).toBeVisible();
+        await expect(
+            page.getByRole("region", { name: "Approval Queue reports" }),
+        ).toBeVisible();
+        await expect(
+            page.getByRole("table", { name: "Approval Queue reports" }).or(
+                page.getByRole("region", {
+                    name: "No reports waiting for review",
+                }),
+            ),
+        ).toBeVisible();
 
         await expectNoCriticalAxeViolations(page, testInfo, "Approval Queue");
     });
