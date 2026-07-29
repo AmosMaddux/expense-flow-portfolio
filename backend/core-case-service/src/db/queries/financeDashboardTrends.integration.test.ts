@@ -189,6 +189,7 @@ function buildLineItem(
         amount,
         category: "Travel",
         currency,
+        expenseDate: "2026-07-01",
         expenseReportId,
         merchant: "Synthetic Merchant",
         tenantId,

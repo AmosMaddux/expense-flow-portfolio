@@ -20,6 +20,7 @@ import {
     priorityLevels,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -98,6 +99,7 @@ const attachmentMetadataRequiredColumnNames = [
 const receiptMetadataRequiredColumnNames = [
     "expense_report_id",
     "tenant_id",
+    "line_item_id",
     "merchant",
     "receipt_date",
     "amount",
@@ -130,6 +132,10 @@ const auditEntryMigrationSqlUrl = new URL(
 );
 const glReferenceMigrationSqlUrl = new URL(
     "../../../drizzle/0009_gl_reference_seed.sql",
+    import.meta.url,
+);
+const allTransactionsPaginationMigrationSqlUrl = new URL(
+    "../../../drizzle/0026_all_transactions_pagination_idx.sql",
     import.meta.url,
 );
 
@@ -283,6 +289,9 @@ void describe("expenseReport schema", () => {
         expect(migrationSql).toContain("expense_report_tenant_owner_idx");
         expect(migrationSql).toContain("expense_report_tenant_priority_idx");
         expect(migrationSql).toContain("expense_report_tenant_id_unique_idx");
+        expect(migrationSql).not.toContain(
+            "expense_report_one_draft_per_owner_idx",
+        );
     });
 });
 
@@ -876,6 +885,48 @@ void describe("stageTransition schema", () => {
     });
 });
 
+void describe("stageTransitionOutbox schema", () => {
+    void test("defines durable delivery, retry, and tenant-isolation constraints", () => {
+        const tableConfig = getTableConfig(stageTransitionOutbox);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+        const indexNames = tableConfig.indexes.map(
+            (index) => index.config.name,
+        );
+        const foreignKeyNames = tableConfig.foreignKeys.map((foreignKey) =>
+            foreignKey.getName(),
+        );
+
+        expect(getTableName(stageTransitionOutbox)).toBe(
+            "stage_transition_outbox",
+        );
+        expect(columnNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_id",
+                "expense_report_id",
+                "tenant_id",
+                "correlation_id",
+                "idempotency_key",
+                "attempt_count",
+                "next_attempt_at",
+                "locked_until",
+                "lock_id",
+                "published_at",
+                "dead_lettered_at",
+            ]),
+        );
+        expect(indexNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_outbox_transition_unique_idx",
+                "stage_transition_outbox_submission_idempotency_idx",
+                "stage_transition_outbox_dispatch_idx",
+            ]),
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_outbox_expense_report_tenant_fk",
+        );
+    });
+});
+
 void describe("lineItem schema", () => {
     void test("defines the line_item table with normalized transaction columns", () => {
         const tableConfig = getTableConfig(lineItem);
@@ -893,9 +944,13 @@ void describe("lineItem schema", () => {
         const expenseReportId = tableConfig.columns.find(
             (column) => column.name === "expense_report_id",
         );
+        const expenseDate = tableConfig.columns.find(
+            (column) => column.name === "expense_date",
+        );
 
         expect(tenantId).toBeDefined();
         expect(expenseReportId).toBeDefined();
+        expect(expenseDate?.default).toBeUndefined();
 
         if (tenantId !== undefined && expenseReportId !== undefined) {
             expect(tenantId.notNull).toBeTruthy();
@@ -908,7 +963,12 @@ void describe("lineItem schema", () => {
 
         expect(
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
-        ).toEqual(["line_item_tenant_expense_report_idx"]);
+        ).toEqual([
+            "line_item_tenant_expense_report_idx",
+            "line_item_tenant_expense_date_id_idx",
+            "line_item_tenant_category_expense_date_id_idx",
+            "line_item_tenant_id_unique_idx",
+        ]);
     });
 
     void test("locks line items to expense reports within the same tenant", () => {
@@ -964,6 +1024,23 @@ void describe("lineItem schema", () => {
         );
 
         expect(migrationSql).toContain("line_item_tenant_expense_report_idx");
+        expect(migrationSql).toContain("line_item_tenant_expense_date_id_idx");
+        expect(migrationSql).toContain(
+            "line_item_tenant_category_expense_date_id_idx",
+        );
+    });
+
+    void test("creates All Transactions indexes concurrently for production rollout", async () => {
+        const migrationSql = (
+            await readFile(allTransactionsPaginationMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_expense_date_id_idx" on "line_item" using btree ("tenant_id","expense_date" desc,"id" asc)',
+        );
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "line_item_tenant_category_expense_date_id_idx" on "line_item" using btree ("tenant_id","category","expense_date" desc,"id" asc)',
+        );
     });
 });
 
@@ -1183,12 +1260,13 @@ void describe("glCodingResult schema", () => {
         ]);
     });
 
-    void test("keeps source type and mapping status checks explicit", () => {
+    void test("keeps source type, mapping status, and line-item review checks explicit", () => {
         const tableConfig = getTableConfig(glCodingResult);
 
         expect(
             tableConfig.checks.map((constraint) => constraint.name).sort(),
         ).toEqual([
+            "gl_coding_result_line_item_review_check",
             "gl_coding_result_mapping_status_check",
             "gl_coding_result_source_type_check",
         ]);
@@ -1218,6 +1296,27 @@ void describe("glCodingResult schema", () => {
 
         expect(migrationSql).toContain("gl_coding_result_source_type_check");
         expect(migrationSql).toContain("gl_coding_result_mapping_status_check");
+        expect(migrationSql).toContain(
+            "gl_coding_result_line_item_review_check",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" is null and "gl_coding_result"."line_item_review_reason" is null and "gl_coding_result"."line_item_reviewed_by" is null and "gl_coding_result"."line_item_reviewed_at" is null',
+        );
+        expect(migrationSql).toContain(
+            "\"gl_coding_result\".\"source_type\" in ('line_item', 'mileage')",
+        );
+        expect(migrationSql).toContain(
+            "\"gl_coding_result\".\"line_item_review_action\" in ('approve', 'reject')",
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_by" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_reviewed_at" is not null',
+        );
+        expect(migrationSql).toContain(
+            '"gl_coding_result"."line_item_review_action" <> \'reject\' or nullif(btrim("gl_coding_result"."line_item_review_reason"), \'\') is not null',
+        );
         expect(migrationSql).toContain(
             'foreign key ("tenant_id","expense_report_id") references "public"."expense_report"("tenant_id","id")',
         );
@@ -1268,13 +1367,32 @@ void describe("receiptMetadata schema", () => {
             receiptMetadataConfig.foreignKeys.map((foreignKey) =>
                 foreignKey.getName(),
             ),
-        ).toEqual(["receipt_metadata_expense_report_tenant_fk"]);
+        ).toEqual([
+            "receipt_metadata_expense_report_tenant_fk",
+            "receipt_metadata_line_item_tenant_fk",
+        ]);
+        const lineItemForeignKey = receiptMetadataConfig.foreignKeys
+            .find(
+                (foreignKey) =>
+                    foreignKey.getName() ===
+                    "receipt_metadata_line_item_tenant_fk",
+            )
+            ?.reference();
+        expect(
+            lineItemForeignKey?.columns.map((column) => column.name),
+        ).toEqual(["tenant_id", "line_item_id"]);
+        expect(
+            lineItemForeignKey?.foreignColumns.map((column) => column.name),
+        ).toEqual(["tenant_id", "id"]);
 
         expect(
             receiptMetadataConfig.indexes.map(
                 (indexConfig) => indexConfig.config.name,
             ),
-        ).toEqual(["receipt_metadata_tenant_report_idx"]);
+        ).toEqual([
+            "receipt_metadata_tenant_report_idx",
+            "receipt_metadata_tenant_line_item_idx",
+        ]);
     });
 
     void test("generates SQL for the receipt_metadata table, constraints, and indexes", async () => {
@@ -1312,7 +1430,9 @@ void describe("receiptMetadata schema", () => {
         expect(migrationSql).toContain(
             "receipt_metadata_expense_report_tenant_fk",
         );
+        expect(migrationSql).toContain("receipt_metadata_line_item_tenant_fk");
         expect(migrationSql).toContain("receipt_metadata_tenant_report_idx");
+        expect(migrationSql).toContain("receipt_metadata_tenant_line_item_idx");
     });
 });
 

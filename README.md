@@ -102,8 +102,40 @@ uv run backend/python/main.py
 To run the fastapi service use:
 
 ```sh
-uv run uvicorn backend.python.main:app
+uv run --env-file .env uvicorn backend.python.main:app --port 8001
 ```
+
+The local Docker Compose stack starts this service automatically on port `8001`
+and seeds the baseline GL mappings for the tenant configured by
+`VITE_TENANT_ID`. Start the shared local dependencies before the Core Case
+Service:
+
+```sh
+docker compose up -d
+npm start
+```
+
+The mapping initializer waits for the Core Case migrations and is idempotent, so
+these commands are safe to run again after switching branches.
+
+### Inspect local stage-transition events
+
+The Compose stack also starts LocalStack with an SNS topic named
+`expenseflow-stage-transitions-local` and a raw-delivery SQS subscription. Copy
+the stage-transition settings from `.env.example` into `.env`, restart the Core
+Case Service, and perform a successful Expense Report transition in the UI.
+
+Read the queued CloudEvent from another terminal:
+
+```sh
+npm run dev:events:receive
+```
+
+The command long-polls for up to ten seconds and prints the CloudEvent body plus
+its `correlationId` and `eventType` SNS message attributes. Receiving a message
+temporarily hides it but does not delete it, so it can appear again after the
+SQS visibility timeout. Use the UI to perform another successful transition
+when you want a fresh event.
 
 Run tests with:
 

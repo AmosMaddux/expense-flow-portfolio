@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
     approvedWorkflowStages,
+    lineItemReviewActions,
     priorityLevels,
 } from "../../db/schema/index.js";
 
@@ -22,6 +23,204 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+const mileageEntryRequestShape = {
+    route: z.string().trim().min(3).max(500),
+    distance: z
+        .number()
+        .positive("Distance must be greater than zero.")
+        .max(999999.99)
+        .multipleOf(0.01),
+    mileageDate: z.iso.date(),
+};
+
+/**
+ * Builds mileage request validation against a testable current-date clock.
+ */
+export function createMileageEntryInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return z
+        .object(mileageEntryRequestShape)
+        .strict()
+        .superRefine((request, context) => {
+            const currentUtcDate = now().toISOString().slice(0, 10);
+            if (request.mileageDate > currentUtcDate) {
+                context.addIssue({
+                    code: "custom",
+                    message: "Mileage date cannot be in the future.",
+                    path: ["mileageDate"],
+                });
+            }
+        });
+}
+
+export const CreateMileageEntryInboundRequestSchema =
+    createMileageEntryInboundRequestSchema();
+
+export const expenseCategories = ["Travel", "Meals", "Lodging"] as const;
+export const receiptContentTypes = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+] as const;
+
+const DraftLineItemInboundSchema = z
+    .object({
+        merchant: z.string().trim().min(1).max(240),
+        expenseDate: z.iso.date(),
+        category: z.enum(expenseCategories),
+        amount: z.number().positive().max(9_999_999_999.99).multipleOf(0.01),
+        currency: z.literal("USD"),
+    })
+    .strict();
+
+/**
+ * Builds saved line-item update validation against a testable current-date clock.
+ */
+export function createUpdateDraftLineItemInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return DraftLineItemInboundSchema.superRefine((request, context) => {
+        const currentUtcDate = now().toISOString().slice(0, 10);
+        if (request.expenseDate > currentUtcDate) {
+            context.addIssue({
+                code: "custom",
+                message: "Expense date cannot be in the future.",
+                path: ["expenseDate"],
+            });
+        }
+    });
+}
+
+export const UpdateDraftLineItemInboundRequestSchema =
+    createUpdateDraftLineItemInboundRequestSchema();
+
+export const DraftExpenseSourceParamsSchema = z
+    .object({
+        id: z.uuid(),
+        sourceId: z.uuid(),
+    })
+    .strict();
+
+const DraftReceiptInboundSchema = z
+    .object({
+        lineItemIndex: z.number().int().nonnegative(),
+        uploadId: z.uuid(),
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.enum(receiptContentTypes),
+        sizeBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 1024 * 1024),
+    })
+    .strict();
+
+/**
+ * Builds draft-content validation against a testable current-date clock.
+ */
+export function createAddDraftExpenseContentInboundRequestSchema(
+    now: () => Date = () => new Date(),
+) {
+    return z
+        .object({
+            lineItems: z.array(DraftLineItemInboundSchema).min(1).max(50),
+            receipts: z.array(DraftReceiptInboundSchema).max(50),
+        })
+        .strict()
+        .superRefine((request, context) => {
+            const currentUtcDate = now().toISOString().slice(0, 10);
+            for (const [index, item] of request.lineItems.entries()) {
+                if (item.expenseDate > currentUtcDate) {
+                    context.addIssue({
+                        code: "custom",
+                        message: "Expense date cannot be in the future.",
+                        path: ["lineItems", index, "expenseDate"],
+                    });
+                }
+            }
+            for (const [index, receipt] of request.receipts.entries()) {
+                if (receipt.lineItemIndex >= request.lineItems.length) {
+                    context.addIssue({
+                        code: "custom",
+                        message:
+                            "Receipt must reference a submitted line item.",
+                        path: ["receipts", index, "lineItemIndex"],
+                    });
+                }
+            }
+        });
+}
+
+export const AddDraftExpenseContentInboundRequestSchema =
+    createAddDraftExpenseContentInboundRequestSchema();
+
+export const ReceiptUploadParamsSchema = z
+    .object({
+        id: z.uuid(),
+        uploadId: z.uuid(),
+    })
+    .strict();
+
+export const ReceiptUploadMetadataInboundRequestSchema = z
+    .object({
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.enum(receiptContentTypes),
+        sizeBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 1024 * 1024),
+    })
+    .strict();
+
+export const ReceiptUploadOutboundResponseSchema = z.object({
+    uploadId: z.uuid(),
+    filename: z.string(),
+    contentType: z.enum(receiptContentTypes),
+    sizeBytes: z.number().int().positive(),
+});
+
+export const AddDraftExpenseContentOutboundResponseSchema = z.object({
+    expenseReportId: z.uuid(),
+    lineItemIds: z.array(z.uuid()),
+    receiptIds: z.array(z.uuid()),
+});
+
+export const DraftExpenseContentOutboundResponseSchema = z.object({
+    expenseReportId: z.uuid(),
+    lineItems: z.array(
+        z.object({
+            id: z.uuid(),
+            merchant: z.string(),
+            expenseDate: z.iso.date(),
+            category: z.enum(expenseCategories),
+            amount: z.number().nonnegative(),
+            currency: z.literal("USD"),
+        }),
+    ),
+    receipts: z.array(
+        z.object({
+            id: z.uuid(),
+            lineItemId: z.uuid().nullable(),
+            filename: z.string().nullable(),
+            merchant: z.string(),
+            receiptDate: z.iso.date(),
+            amount: z.number().nonnegative(),
+        }),
+    ),
+    mileageEntries: z.array(
+        z.object({
+            id: z.uuid(),
+            route: z.string(),
+            distance: z.number().positive(),
+            mileageDate: z.iso.date(),
+            reimbursementAmount: z.number().nonnegative(),
+        }),
+    ),
+});
+
 export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
 
 export const TransitionExpenseReportWorkflowInboundRequestSchema = z
@@ -31,10 +230,49 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     })
     .strict();
 
+export const StageTransitionCorrelationHeaderSchema = z
+    .object({
+        correlationId: z.uuid().optional(),
+    })
+    .strict();
+
 export const ClearExpenseReportFlagsInboundRequestSchema = z
     .object({
         sourceIds: z.array(z.uuid()).min(1),
         reason: z.string().trim().min(1),
+    })
+    .strict();
+
+export const ReviewExpenseReportLineItemInboundRequestSchema = z
+    .object({
+        action: z.enum(lineItemReviewActions),
+        reason: z.string().trim().min(1).optional(),
+    })
+    .strict()
+    .superRefine((request, context) => {
+        if (request.action === "reject" && request.reason === undefined) {
+            context.addIssue({
+                code: "custom",
+                message: "Line-item rejection requires a reason.",
+                path: ["reason"],
+            });
+        }
+    });
+
+export const ReviewExpenseReportLineItemParamsSchema = z.object({
+    id: z.uuid(),
+    sourceId: z.uuid(),
+});
+
+export const ReviewExpenseReportSourceParamsSchema = z.object({
+    id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
+    sourceId: z.uuid(),
+});
+
+export const UpdateExpenseReportSourceDeductibilityInboundRequestSchema = z
+    .object({
+        deductible: z.boolean(),
     })
     .strict();
 
@@ -69,22 +307,18 @@ export const ReadFinanceDashboardTrendInboundRequestSchema =
 export const ReadFinanceDashboardTrendQuerySchema =
     financeDashboardTrendDateRangeSchema;
 
-export const TransitionExpenseReportStageInboundRequestSchema = z.object({
-    tenantId: z.uuid(),
-    id: z.uuid(),
-    actor: z.uuid(),
-    fromStage: z.enum(approvedWorkflowStages),
-    toStage: z.enum(approvedWorkflowStages),
-    reason: z.string().trim().min(1),
-});
-
-export const IdempotentSubmissionHeaderSchema = z.object({
-    idempotencyKey: z
+const ReadAllTransactionsFilterSchema = z.object({
+    category: z.string().trim().min(1).optional(),
+    status: z.enum(approvedWorkflowStages).optional(),
+    startDate: z.iso.date().optional(),
+    endDate: z.iso.date().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z
         .string()
         .trim()
         .min(1)
-        .max(128)
-        .regex(/^[A-Za-z0-9._:-]+$/),
+        .refine(isValidAllTransactionsCursor)
+        .optional(),
 });
 
 function isWithinFinanceDashboardTrendRange(request: {
@@ -98,6 +332,115 @@ function isWithinFinanceDashboardTrendRange(request: {
     return dayCount <= financeDashboardTrendMaxDays;
 }
 
+function isValidTransactionDateRange(request: {
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+}): boolean {
+    return (
+        request.startDate === undefined ||
+        request.endDate === undefined ||
+        request.startDate <= request.endDate
+    );
+}
+
+function isValidAllTransactionsCursor(cursor: string): boolean {
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        return (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "expenseDate" in parsed &&
+            "id" in parsed &&
+            typeof parsed.expenseDate === "string" &&
+            z.iso.date().safeParse(parsed.expenseDate).success &&
+            z.uuid().safeParse(parsed.id).success
+        );
+    } catch {
+        return false;
+    }
+}
+
+export const ReadAllTransactionsInboundRequestSchema =
+    ReadAllTransactionsFilterSchema.extend({
+        tenantId: z.uuid(),
+    })
+        .strict()
+        .refine(isValidTransactionDateRange, {
+            message: "startDate must be on or before endDate.",
+            path: ["startDate"],
+        });
+
+export const ReadAllTransactionsQuerySchema =
+    ReadAllTransactionsFilterSchema.strict().refine(
+        isValidTransactionDateRange,
+        {
+            message: "startDate must be on or before endDate.",
+            path: ["startDate"],
+        },
+    );
+
+export const ReadMySubmissionsInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+        ownerId: z.uuid(),
+        cursor: z.string().max(512).optional(),
+        pageSize: z.number().int().min(1).max(50),
+    })
+    .strict();
+
+export const ReadMySubmissionsQuerySchema = z
+    .object({
+        cursor: z
+            .string()
+            .trim()
+            .min(1)
+            .max(512)
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
+        pageSize: z.coerce.number().int().min(1).max(50).default(25),
+    })
+    .strict();
+
+export const MySubmissionsCursorSchema = z
+    .object({
+        updatedAt: z.iso.datetime({ offset: true }),
+        createdAt: z.iso.datetime({ offset: true }),
+        id: z.uuid(),
+    })
+    .strict();
+
+export const ReadMySubmissionDetailInboundRequestSchema = z
+    .object({
+        id: z.uuid(),
+        tenantId: z.uuid(),
+        ownerId: z.uuid(),
+    })
+    .strict();
+
+export const TransitionExpenseReportStageInboundRequestSchema = z.object({
+    tenantId: z.uuid(),
+    id: z.uuid(),
+    actor: z.uuid(),
+    fromStage: z.enum(approvedWorkflowStages),
+    toStage: z.enum(approvedWorkflowStages),
+    reason: z.string().trim().min(1),
+    correlationId: z.uuid().optional(),
+    eventId: z.uuid().optional(),
+    occurredAt: z.date().optional(),
+});
+
+export const IdempotentSubmissionHeaderSchema = z.object({
+    idempotencyKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9._:-]+$/),
+});
+
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
 export const ExpenseReportOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -110,6 +453,34 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     holdReason: z.string().nullable(),
     createdAt: z.date(),
     updatedAt: z.date(),
+});
+
+export const SubmitExpenseReportOperationResultSchema = z.object({
+    correlationId: z.uuid(),
+    report: ExpenseReportOutboundResponseSchema.extend({
+        createdAt: z.coerce.date(),
+        updatedAt: z.coerce.date(),
+    }),
+});
+
+export const MileageEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string(),
+    distance: z.number().positive(),
+    mileageDate: z.iso.date(),
+    reimbursement: z.object({
+        ratePerMile: z.number().positive(),
+        amount: z.number().nonnegative(),
+        currency: z.literal("USD"),
+    }),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+});
+
+export const MileageConfigOutboundResponseSchema = z.object({
+    ratePerMile: z.number().positive(),
+    currency: z.literal("USD"),
 });
 
 export const CaseQueueStageRollupSchema = z.object({
@@ -135,6 +506,104 @@ export const FinanceDashboardTrendPointSchema = z.object({
 
 export const FinanceDashboardTrendPointListSchema = z.array(
     FinanceDashboardTrendPointSchema,
+);
+
+export const AllTransactionSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    date: z.string().datetime({ offset: true }),
+    merchant: z.string().min(1),
+    category: z.string().min(1),
+    amount: z.string().regex(/^-?\d+\.\d{2}$/),
+    currency: z.string().min(3).max(3),
+    status: z.enum(approvedWorkflowStages),
+    deductible: z.boolean().nullable(),
+});
+
+export const AllTransactionListSchema = z.array(AllTransactionSchema);
+
+export const AllTransactionPageSchema = z.object({
+    items: AllTransactionListSchema,
+    nextCursor: z.string().nullable(),
+});
+
+export const MySubmissionSchema = z.object({
+    id: z.uuid(),
+    dueDate: z.iso.date(),
+    currentStage: z.enum(approvedWorkflowStages),
+    isSentBack: z.boolean(),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+});
+
+export const MySubmissionListSchema = z.array(MySubmissionSchema);
+
+export const MySubmissionPageSchema = z.object({
+    items: MySubmissionListSchema,
+    nextCursor: z.string().nullable(),
+});
+
+export const MySubmissionDetailSchema = z.object({
+    id: z.uuid(),
+    currentStage: z.enum(approvedWorkflowStages),
+    rejectionReason: z.string().nullable(),
+    lineItems: z.array(
+        z.object({
+            id: z.uuid(),
+            merchant: z.string(),
+            expenseDate: z.iso.date(),
+            category: z.string(),
+            amount: z.number().nonnegative(),
+            currency: z.string(),
+            reviewAction: z.enum(lineItemReviewActions).nullable(),
+        }),
+    ),
+    mileageEntries: z.array(
+        z.object({
+            id: z.uuid(),
+            route: z.string(),
+            distance: z.number().positive(),
+            mileageDate: z.iso.date(),
+            reimbursementAmount: z.number().nonnegative(),
+            currency: z.literal("USD"),
+            reviewAction: z.enum(lineItemReviewActions).nullable(),
+        }),
+    ),
+});
+export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    expenseReportId: z.uuid(),
+    route: z.string().min(1),
+    distance: z.coerce.number().positive(),
+    mileageDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
+    deductible: z.boolean(),
+});
+
+export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    sourceType: z.enum(["line_item", "mileage"]),
+    expenseReportId: z.uuid(),
+    employee: z.uuid(),
+    merchant: z.string().min(1),
+    amount: z.coerce.number().nonnegative(),
+    glCode: z.string().min(1),
+    currentStage: z.enum(approvedWorkflowStages),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
+    deductible: z.boolean(),
+    canAdvance: z.boolean(),
+    reportTotalMileage: z.coerce.number().nonnegative(),
+    mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
+});
+
+export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(
+    ApprovalQueueLineItemOutboundResponseSchema,
 );
 
 // Audit responses intentionally expose structured facts, never raw request bodies or payment data.
@@ -170,6 +639,18 @@ export const transitionExpenseReportWorkflowRequestSchema =
 export const clearExpenseReportFlagsRequestSchema =
     ClearExpenseReportFlagsInboundRequestSchema;
 
+export const reviewExpenseReportLineItemRequestSchema =
+    ReviewExpenseReportLineItemInboundRequestSchema;
+
+export const reviewExpenseReportLineItemParamsSchema =
+    ReviewExpenseReportLineItemParamsSchema;
+
+export const reviewExpenseReportSourceParamsSchema =
+    ReviewExpenseReportSourceParamsSchema;
+
+export const updateExpenseReportSourceDeductibilityRequestSchema =
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema;
+
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export const readCaseQueueStageRollupsRequestSchema =
@@ -183,6 +664,11 @@ export const readFinanceDashboardTrendRequestSchema =
 
 export const readFinanceDashboardTrendQuerySchema =
     ReadFinanceDashboardTrendQuerySchema;
+
+export const readAllTransactionsRequestSchema =
+    ReadAllTransactionsInboundRequestSchema;
+
+export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
 
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
@@ -200,6 +686,24 @@ export const financeDashboardTrendPointSchema =
 export const financeDashboardTrendPointListSchema =
     FinanceDashboardTrendPointListSchema;
 
+export const allTransactionSchema = AllTransactionSchema;
+
+export const allTransactionListSchema = AllTransactionListSchema;
+
+export const allTransactionPageSchema = AllTransactionPageSchema;
+
+export const mySubmissionListSchema = MySubmissionListSchema;
+
+export const mySubmissionPageSchema = MySubmissionPageSchema;
+
+export const mySubmissionDetailSchema = MySubmissionDetailSchema;
+
+export const approvalQueueLineItemResponseSchema =
+    ApprovalQueueLineItemOutboundResponseSchema;
+
+export const approvalQueueLineItemListResponseSchema =
+    ApprovalQueueLineItemListOutboundResponseSchema;
+
 export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
@@ -213,6 +717,42 @@ export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
 >;
 
+export type CreateMileageEntryRequest = z.infer<
+    typeof CreateMileageEntryInboundRequestSchema
+>;
+
+export type AddDraftExpenseContentRequest = z.infer<
+    typeof AddDraftExpenseContentInboundRequestSchema
+>;
+
+export type UpdateDraftLineItemRequest = z.infer<
+    typeof UpdateDraftLineItemInboundRequestSchema
+>;
+
+export type AddDraftExpenseContentResponse = z.infer<
+    typeof AddDraftExpenseContentOutboundResponseSchema
+>;
+
+export type ReceiptUploadMetadataRequest = z.infer<
+    typeof ReceiptUploadMetadataInboundRequestSchema
+>;
+
+export type ReceiptUploadResponse = z.infer<
+    typeof ReceiptUploadOutboundResponseSchema
+>;
+
+export type DraftExpenseContentResponse = z.infer<
+    typeof DraftExpenseContentOutboundResponseSchema
+>;
+
+export type MileageEntryResponse = z.infer<
+    typeof MileageEntryOutboundResponseSchema
+>;
+
+export type MileageConfigResponse = z.infer<
+    typeof MileageConfigOutboundResponseSchema
+>;
+
 export type SubmitExpenseReportRequest = z.infer<
     typeof SubmitExpenseReportInboundRequestSchema
 >;
@@ -221,8 +761,28 @@ export type TransitionExpenseReportWorkflowRequest = z.infer<
     typeof TransitionExpenseReportWorkflowInboundRequestSchema
 >;
 
+export type StageTransitionCorrelationHeader = z.infer<
+    typeof StageTransitionCorrelationHeaderSchema
+>;
+
 export type ClearExpenseReportFlagsRequest = z.infer<
     typeof ClearExpenseReportFlagsInboundRequestSchema
+>;
+
+export type ReviewExpenseReportLineItemRequest = z.infer<
+    typeof ReviewExpenseReportLineItemInboundRequestSchema
+>;
+
+export type ReviewExpenseReportLineItemParams = z.infer<
+    typeof ReviewExpenseReportLineItemParamsSchema
+>;
+
+export type ReviewExpenseReportSourceParams = z.infer<
+    typeof ReviewExpenseReportSourceParamsSchema
+>;
+
+export type UpdateExpenseReportSourceDeductibilityRequest = z.infer<
+    typeof UpdateExpenseReportSourceDeductibilityInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<
@@ -245,6 +805,18 @@ export type ReadFinanceDashboardTrendQuery = z.infer<
     typeof ReadFinanceDashboardTrendQuerySchema
 >;
 
+export type ReadAllTransactionsParams = z.input<
+    typeof ReadAllTransactionsInboundRequestSchema
+>;
+
+export type ParsedReadAllTransactionsParams = z.infer<
+    typeof ReadAllTransactionsInboundRequestSchema
+>;
+
+export type ReadAllTransactionsQuery = z.infer<
+    typeof ReadAllTransactionsQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
@@ -257,6 +829,32 @@ export type FinanceDashboardTrendSpendBucket = z.infer<
 
 export type FinanceDashboardTrendPoint = z.infer<
     typeof FinanceDashboardTrendPointSchema
+>;
+
+export type AllTransaction = z.infer<typeof AllTransactionSchema>;
+
+export type AllTransactionPage = z.infer<typeof AllTransactionPageSchema>;
+
+export type ReadMySubmissionsParams = z.infer<
+    typeof ReadMySubmissionsInboundRequestSchema
+>;
+
+export type ReadMySubmissionsQuery = z.infer<
+    typeof ReadMySubmissionsQuerySchema
+>;
+
+export type MySubmission = z.infer<typeof MySubmissionSchema>;
+
+export type MySubmissionPage = z.infer<typeof MySubmissionPageSchema>;
+
+export type ReadMySubmissionDetailParams = z.infer<
+    typeof ReadMySubmissionDetailInboundRequestSchema
+>;
+
+export type MySubmissionDetail = z.infer<typeof MySubmissionDetailSchema>;
+
+export type ApprovalQueueLineItemResponse = z.infer<
+    typeof ApprovalQueueLineItemOutboundResponseSchema
 >;
 
 export type IdempotentSubmissionHeader = z.infer<

@@ -14,6 +14,7 @@ import {
     lineItem,
     mileageEntry,
     stageTransition,
+    stageTransitionOutbox,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 
@@ -34,7 +35,10 @@ import {
     clearExpenseReportFlags,
     countOpenExpenseReportFlags,
     findAuditEntriesByExpenseReportId,
+    findEmployeeSubmissionDetail,
     findExpenseReportById,
+    findExpenseReportsByOwner,
+    insertDraftExpenseContent,
     insertDraftExpenseReport,
     submitDraftExpenseReport,
     transitionExpenseReportStage,
@@ -302,6 +306,79 @@ void describe("expenseReportRepository", () => {
         expect(foundReport).toBeUndefined();
     });
 
+    void test("lists only reports matching both tenant and employee owner", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000289";
+        const otherTenantId = "00000000-0000-4000-8000-000000000299";
+        const targetOwnerId = "20000000-0000-4000-8000-000000000289";
+        const otherOwnerId = "20000000-0000-4000-8000-000000000299";
+        const targetReport = await insertDraftExpenseReport(
+            targetTenantId,
+            buildNewExpenseReport(targetTenantId, targetOwnerId),
+            targetOwnerId,
+        );
+        await insertDraftExpenseReport(
+            targetTenantId,
+            buildNewExpenseReport(targetTenantId, otherOwnerId),
+            otherOwnerId,
+        );
+        await insertDraftExpenseReport(
+            otherTenantId,
+            buildNewExpenseReport(otherTenantId, targetOwnerId),
+            targetOwnerId,
+        );
+
+        const reports = await findExpenseReportsByOwner(
+            targetTenantId,
+            targetOwnerId,
+        );
+
+        expect(reports.map((report) => report.id)).toEqual([targetReport?.id]);
+        expect(reports).toHaveLength(1);
+    });
+
+    void test("reads submission detail only for the owning employee and tenant", async () => {
+        const targetTenantId = "00000000-0000-4000-8000-000000000288";
+        const targetOwnerId = "20000000-0000-4000-8000-000000000288";
+        const otherOwnerId = "20000000-0000-4000-8000-000000000298";
+        const report = await insertDraftExpenseReport(
+            targetTenantId,
+            buildNewExpenseReport(targetTenantId, targetOwnerId),
+            targetOwnerId,
+        );
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+        await db.insert(lineItem).values({
+            tenantId: targetTenantId,
+            expenseReportId: report.id,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-18",
+            amount: "84.25",
+            currency: "USD",
+            category: "Travel",
+        });
+
+        const ownedDetail = await findEmployeeSubmissionDetail(
+            targetTenantId,
+            report.id,
+            targetOwnerId,
+        );
+        const otherEmployeeDetail = await findEmployeeSubmissionDetail(
+            targetTenantId,
+            report.id,
+            otherOwnerId,
+        );
+        const otherTenantDetail = await findEmployeeSubmissionDetail(
+            "00000000-0000-4000-8000-000000000298",
+            report.id,
+            targetOwnerId,
+        );
+
+        expect(ownedDetail?.lineItems).toHaveLength(1);
+        expect(otherEmployeeDetail).toBeUndefined();
+        expect(otherTenantDetail).toBeUndefined();
+    });
+
     void test("submits a Drafted report with appended GL coding history", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000190";
         const ownerId = "20000000-0000-4000-8000-000000000190";
@@ -324,6 +401,7 @@ void describe("expenseReportRepository", () => {
                 tenantId,
                 expenseReportId: report.id,
                 merchant: "Synthetic Air",
+                expenseDate: "2026-07-20",
                 amount: "501.00",
                 currency: "USD",
                 category: "Travel",
@@ -503,8 +581,141 @@ void describe("expenseReportRepository", () => {
         );
     });
 
+    void test("locks the report before reading sources so a concurrent content insert cannot escape GL coding", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000290";
+        const ownerId = "20000000-0000-4000-8000-000000000290";
+        const actorId = "20000000-0000-4000-8000-000000000291";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, ownerId),
+            ownerId,
+        );
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+        const sourceId = "30000000-0000-4000-8000-000000000290";
+        await db.insert(lineItem).values({
+            id: sourceId,
+            tenantId,
+            expenseReportId: report.id,
+            merchant: "Synthetic Air",
+            expenseDate: "2026-07-20",
+            amount: "125.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        const expectedSourceKeys = buildSubmissionSourceKeys({
+            lineItems: [{ id: sourceId }],
+            mileageEntries: [],
+        });
+        const expectedFingerprint = buildSubmissionSourceFingerprint({
+            lineItems: [
+                {
+                    id: sourceId,
+                    merchant: "Synthetic Air",
+                    amount: "125.00",
+                    currency: "USD",
+                    category: "Travel",
+                },
+            ],
+            mileageEntries: [],
+        });
+        const pool = new Pool({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        try {
+            // The trigger holds the submit transaction after its row lock is acquired,
+            // making the competing write deterministic without changing production code.
+            await pool.query(`
+                CREATE OR REPLACE FUNCTION hold_synthetic_submission_290()
+                RETURNS trigger AS $$
+                BEGIN
+                    IF NEW.id = '${report.id}'::uuid THEN
+                        PERFORM pg_sleep(0.5);
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+            `);
+            await pool.query(`
+                CREATE TRIGGER hold_synthetic_submission_290_trigger
+                BEFORE UPDATE ON expense_report
+                FOR EACH ROW EXECUTE FUNCTION hold_synthetic_submission_290()
+            `);
+
+            const submissionPromise = submitDraftExpenseReport(
+                tenantId,
+                report.id,
+                actorId,
+                "90000000-0000-4000-8000-000000000290",
+                {
+                    coded_items: [
+                        {
+                            source_id: sourceId,
+                            source_type: "line_item",
+                            category: "Travel",
+                            mapping_status: "mapped",
+                            gl_account: {
+                                account_code: "6000",
+                                account_name: "Travel Expense",
+                            },
+                            amount: "125.00",
+                            currency: "USD",
+                            flagged_line_item: false,
+                        },
+                    ],
+                    flags: [],
+                },
+                expectedSourceKeys,
+                expectedFingerprint,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            const contentPromise = insertDraftExpenseContent({
+                tenantId,
+                expenseReportId: report.id,
+                ownerId,
+                actorId: ownerId,
+                lineItems: [
+                    {
+                        merchant: "Synthetic Hotel",
+                        expenseDate: "2026-07-21",
+                        category: "Travel",
+                        amount: 250,
+                        currency: "USD",
+                    },
+                ],
+                receipts: [],
+            });
+
+            const [submitted, contentResult] = await Promise.all([
+                submissionPromise,
+                contentPromise,
+            ]);
+            const savedLineItems = await db
+                .select()
+                .from(lineItem)
+                .where(eq(lineItem.expenseReportId, report.id));
+
+            expect(submitted?.currentStage).toBe("Submitted");
+            expect(contentResult).toMatchObject({
+                kind: "invalid_stage",
+                currentStage: "Submitted",
+            });
+            expect(savedLineItems).toHaveLength(1);
+        } finally {
+            await pool.query(
+                "DROP TRIGGER IF EXISTS hold_synthetic_submission_290_trigger ON expense_report",
+            );
+            await pool.query(
+                "DROP FUNCTION IF EXISTS hold_synthetic_submission_290()",
+            );
+            await pool.end();
+        }
+    });
+
     void test("reads current GL coding as coded_at then id descending", async () => {
-        const tenantId = "00000000-0000-4000-8000-000000000192";
+        const tenantId = randomUUID();
         const report = await insertDraftExpenseReport(
             tenantId,
             buildNewExpenseReport(tenantId),
@@ -514,11 +725,14 @@ void describe("expenseReportRepository", () => {
             throw new Error("Expected Expense Report to be created");
         }
 
-        const sourceId = "30000000-0000-4000-8000-000000000192";
+        const sourceId = randomUUID();
+        const codingResultIdPrefix = randomUUID().slice(0, 8);
+        const olderCodingResultId = `${codingResultIdPrefix}-0000-4000-8000-000000000001`;
+        const newerCodingResultId = `${codingResultIdPrefix}-0000-4000-8000-000000000002`;
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000192",
-                submissionId: "90000000-0000-4000-8000-000000000192",
+                id: olderCodingResultId,
+                submissionId: randomUUID(),
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
@@ -531,8 +745,8 @@ void describe("expenseReportRepository", () => {
                 codedAt: new Date("2026-07-18T10:00:00.000Z"),
             },
             {
-                id: "91000000-0000-4000-8000-000000000193",
-                submissionId: "90000000-0000-4000-8000-000000000193",
+                id: newerCodingResultId,
+                submissionId: randomUUID(),
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
@@ -579,6 +793,9 @@ void describe("expenseReportRepository", () => {
             throw new Error("Expected Expense Report to be created");
         }
 
+        const correlationId = "50000000-0000-4000-8000-000000000196";
+        const eventId = "40000000-0000-4000-8000-000000000196";
+        const occurredAt = new Date("2026-07-29T18:00:00.000Z");
         const didTransition = await transitionExpenseReportStage({
             tenantId: targetTenantId,
             id: report.id,
@@ -586,6 +803,9 @@ void describe("expenseReportRepository", () => {
             fromStage: "Drafted",
             toStage: "Submitted",
             reason: "employee_submitted",
+            correlationId,
+            eventId,
+            occurredAt,
         });
         const transitionedReport = await findExpenseReportById(
             targetTenantId,
@@ -599,6 +819,10 @@ void describe("expenseReportRepository", () => {
             .select()
             .from(stageTransition)
             .where(eq(stageTransition.expenseReportId, report.id));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, report.id));
 
         expect(didTransition).toBe(true);
         expect(transitionedReport?.currentStage).toBe("Submitted");
@@ -621,6 +845,18 @@ void describe("expenseReportRepository", () => {
                 fromStage: "Drafted",
                 toStage: "Submitted",
                 reason: "employee_submitted",
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                id: eventId,
+                tenantId: targetTenantId,
+                expenseReportId: report.id,
+                correlationId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                occurredAt,
+                publishedAt: null,
             }),
         );
     });
@@ -769,8 +1005,8 @@ void describe("expenseReportRepository", () => {
     });
 
     void test("counts only latest-submission flags as active Manager Approval blockers", async () => {
-        const tenantId = "00000000-0000-4000-8000-000000000203";
-        const actorId = "20000000-0000-4000-8000-000000000203";
+        const tenantId = randomUUID();
+        const actorId = randomUUID();
         const report = await insertDraftExpenseReport(
             tenantId,
             buildNewExpenseReport(tenantId),
@@ -784,14 +1020,17 @@ void describe("expenseReportRepository", () => {
             .update(expenseReport)
             .set({ currentStage: "Manager Approval" })
             .where(eq(expenseReport.id, report.id));
+        const sourceId = randomUUID();
+        const olderSubmissionId = randomUUID();
+        const latestSubmissionId = randomUUID();
         await db.insert(glCodingResult).values([
             {
-                id: "91000000-0000-4000-8000-000000000203",
-                submissionId: "90000000-0000-4000-8000-000000000203",
+                id: randomUUID(),
+                submissionId: olderSubmissionId,
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
-                sourceId: "30000000-0000-4000-8000-000000000203",
+                sourceId,
                 category: "Travel",
                 mappingStatus: "mapped",
                 glAccountCode: "6000",
@@ -803,17 +1042,20 @@ void describe("expenseReportRepository", () => {
                 codedAt: new Date("2026-07-18T10:00:00.000Z"),
             },
             {
-                id: "91000000-0000-4000-8000-000000000204",
-                submissionId: "90000000-0000-4000-8000-000000000204",
+                id: randomUUID(),
+                submissionId: latestSubmissionId,
                 tenantId,
                 expenseReportId: report.id,
                 sourceType: "line_item",
-                sourceId: "30000000-0000-4000-8000-000000000203",
+                sourceId,
                 category: "Travel",
                 mappingStatus: "mapped",
                 glAccountCode: "6000",
                 glAccountName: "Travel Expense",
                 flaggedLineItem: false,
+                lineItemReviewAction: "approve",
+                lineItemReviewedBy: actorId,
+                lineItemReviewedAt: new Date("2026-07-18T10:06:00.000Z"),
                 codedAt: new Date("2026-07-18T10:05:00.000Z"),
             },
         ]);
@@ -923,6 +1165,7 @@ void describe("expenseReportRepository", () => {
             tenantId,
             expenseReportId: report.id,
             merchant: "Synthetic Rail",
+            expenseDate: "2026-07-20",
             amount: "650.00",
             currency: "USD",
             category: "Travel",
@@ -942,6 +1185,10 @@ void describe("expenseReportRepository", () => {
             flagCode: "line_item_over_threshold",
             flagMessage:
                 "Line item amount is above the MVP manual review threshold.",
+            lineItemReviewAction: "reject",
+            lineItemReviewReason: "receipt detail required",
+            lineItemReviewedBy: actorId,
+            lineItemReviewedAt: new Date("2026-07-20T12:00:00.000Z"),
         });
 
         const didTransition = await transitionExpenseReportStage({
@@ -1132,7 +1379,7 @@ void describe("expenseReportRepository", () => {
     ] as const)(
         "rejects a GL-coding response with %s",
         async (_scenario, glCodingResponse) => {
-            const tenantId = "00000000-0000-4000-8000-000000000193";
+            const tenantId = randomUUID();
             const sourceId = randomUUID();
             const preparedResponse = JSON.parse(
                 JSON.stringify(glCodingResponse).replaceAll(
@@ -1154,6 +1401,7 @@ void describe("expenseReportRepository", () => {
                 tenantId,
                 expenseReportId: report.id,
                 merchant: "Synthetic Air",
+                expenseDate: "2026-07-20",
                 amount: "501.00",
                 currency: "USD",
                 category: "Travel",

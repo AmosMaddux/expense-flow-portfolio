@@ -43,6 +43,16 @@ vi.mock("../../db/client.js", () => {
     };
 });
 
+const stageTransitionPublishMock = vi.hoisted(() =>
+    vi.fn().mockResolvedValue(undefined),
+);
+
+vi.mock("../../events/stageTransitionEventPublisher.js", () => ({
+    getDefaultStageTransitionEventPublisher: () => ({
+        publish: stageTransitionPublishMock,
+    }),
+}));
+
 const idempotencyRecords = vi.hoisted(
     () => new Map<string, { requestHash: string; result: IdempotencyResult }>(),
 );
@@ -186,6 +196,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
     beforeEach(() => {
         idempotencyRecords.clear();
         Object.values(idempotencyStoreMock).forEach((mock) => mock.mockClear());
+        stageTransitionPublishMock.mockClear();
     });
 
     void test("submits through FastAPI coding, rejects cross-tenant access, and blocks flagged advancement until review", async () => {
@@ -202,6 +213,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
                 tenantId,
                 expenseReportId: reportId,
                 merchant: "Synthetic Travel Vendor",
+                expenseDate: "2026-07-20",
                 amount: "501.00",
                 currency: "USD",
                 category: "Travel",
@@ -211,6 +223,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
                 tenantId,
                 expenseReportId: reportId,
                 merchant: "Synthetic Meals Vendor",
+                expenseDate: "2026-07-20",
                 amount: "750.00",
                 currency: "USD",
                 category: "Meals",
@@ -220,6 +233,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
                 tenantId,
                 expenseReportId: reportId,
                 merchant: "Synthetic Supply Vendor",
+                expenseDate: "2026-07-20",
                 amount: "42.00",
                 currency: "USD",
                 category: "Office Supplies",
@@ -523,9 +537,33 @@ void describe("Expense Report submission across Core Case and GL-coding services
         expect(secondClearResponse.status).toBe(200);
         expect(secondClearBody.clearedFlagCount).toBe(1);
 
+        const reviewResponses = await Promise.all(
+            [lineItemId, secondFlaggedLineItemId, unflaggedLineItemId].map(
+                (sourceId) =>
+                    requestApp(
+                        `/v1/expense-reports/${reportId}/sources/line_item/${sourceId}/review`,
+                        {
+                            method: "POST",
+                            headers: {
+                                authorization: authorizationHeader(
+                                    tenantId,
+                                    financeAdminId,
+                                    ["Finance Admin"],
+                                ),
+                                "content-type": "application/json",
+                            },
+                            body: JSON.stringify({ action: "approve" }),
+                        },
+                    ),
+            ),
+        );
+        expect(reviewResponses.map((response) => response.status)).toEqual([
+            200, 200, 200,
+        ]);
+
         const apReviewResponse = await transitionReport(
             "AP Review",
-            "flag reviewed and coding ready",
+            "flags and line items reviewed",
         );
         const apReviewBody = (await apReviewResponse.json()) as {
             currentStage?: string;

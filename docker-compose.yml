@@ -8,10 +8,101 @@ services:
         ports:
             - "55432:5432"
 
+    gl-coding:
+        image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+        working_dir: /workspace
+        command:
+            [
+                "uv",
+                "run",
+                "--no-dev",
+                "uvicorn",
+                "backend.python.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8001",
+            ]
+        depends_on:
+            postgres:
+                condition: service_started
+        environment:
+            AUTH_JWT_CLOCK_SKEW_SECONDS: ${AUTH_JWT_CLOCK_SKEW_SECONDS:-10}
+            AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
+            AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
+            AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
+            DATABASE_URL: postgres://expenseflow:expenseflow_local_dev_only@postgres:5432/expenseflow_core_case
+            MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
+            UV_CACHE_DIR: /tmp/uv-cache
+            UV_LINK_MODE: copy
+            UV_PROJECT_ENVIRONMENT: /tmp/expenseflow-venv
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "8001:8001"
+        volumes:
+            - .:/workspace:ro
+            - gl-coding-cache:/tmp/uv-cache
+            - gl-coding-venv:/tmp/expenseflow-venv
+
+    gl-mapping-init:
+        image: postgres:17-alpine
+        depends_on:
+            postgres:
+                condition: service_started
+        environment:
+            PGDATABASE: expenseflow_core_case
+            PGHOST: postgres
+            PGPASSWORD: expenseflow_local_dev_only
+            PGUSER: expenseflow
+            VITE_TENANT_ID: ${VITE_TENANT_ID:-8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb}
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                until psql -tAc
+                "SELECT to_regclass('public.gl_mapping') IS NOT NULL"
+                | grep -q t;
+                do sleep 2; done;
+                psql
+                --set=tenant_id="$$VITE_TENANT_ID"
+                --file=/local-dev/seed-gl-mappings.sql
+        volumes:
+            - ./scripts/seed-local-gl-mappings.sql:/local-dev/seed-gl-mappings.sql:ro
+
     redis:
         image: redis:7-alpine
         ports:
             - "56379:6379"
+
+    minio:
+        image: minio/minio:latest
+        command: ["server", "/data"]
+        environment:
+            MINIO_ROOT_USER: expenseflow-local
+            MINIO_ROOT_PASSWORD: expenseflow-local-dev-only
+        ports:
+            - "59000:9000"
+
+    minio-init:
+        image: minio/mc:latest
+        depends_on:
+            - minio
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                until mc alias set local http://minio:9000
+                expenseflow-local expenseflow-local-dev-only;
+                do sleep 1; done;
+                mc mb --ignore-existing local/expenseflow-receipts-local;
 
     dynamodb:
         image: amazon/dynamodb-local:latest
@@ -44,3 +135,22 @@ services:
                 --table-name expenseflow-idempotency-local
                 --time-to-live-specification Enabled=true,AttributeName=ttl
                 || true
+
+    localstack:
+        image: localstack/localstack:4.8
+        environment:
+            AWS_DEFAULT_REGION: us-east-1
+            SERVICES: sns,sqs
+        healthcheck:
+            test: ["CMD", "awslocal", "sns", "list-topics"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "4566:4566"
+        volumes:
+            - ./scripts/init-local-stage-transition-events.sh:/etc/localstack/init/ready.d/init-stage-transition-events.sh:ro
+
+volumes:
+    gl-coding-cache:
+    gl-coding-venv:

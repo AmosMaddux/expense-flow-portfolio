@@ -55,8 +55,8 @@ export class RateLimitExceededError extends Error {
  * Represents a request that conflicts with another in-flight operation.
  */
 export class ConflictError extends Error {
-    public constructor(message: string) {
-        super(message);
+    public constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
         this.name = "ConflictError";
     }
 }
@@ -65,8 +65,8 @@ export class ConflictError extends Error {
  * Represents a downstream service failure needed to complete a request.
  */
 export class BadGatewayError extends Error {
-    public constructor(message: string) {
-        super(message);
+    public constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
         this.name = "BadGatewayError";
     }
 }
@@ -213,6 +213,21 @@ function toProblemJson(error: unknown, instance: string): ProblemJsonBody {
             title: "Bad Request",
             status: 400,
             detail: "Malformed JSON body could not be parsed.",
+            instance,
+        };
+    }
+
+    if (
+        error &&
+        typeof error === "object" &&
+        "type" in error &&
+        error.type === "entity.too.large"
+    ) {
+        return {
+            type: "about:blank",
+            title: "Payload Too Large",
+            status: 413,
+            detail: "Receipt files must be 10 MB or smaller.",
             instance,
         };
     }

@@ -347,8 +347,38 @@ async def test_gl_coding_endpoint_rejects_employee_role() -> None:
 
     assert response.status_code == 403
     assert response.json() == {
-        "detail": "AP Review GL coding requires Finance Admin or Department Manager."
+        "detail": "GL coding requires an internal reviewer or Expense Report submission permission."
     }
+
+
+@pytest.mark.anyio
+async def test_gl_coding_endpoint_accepts_scoped_employee_submission() -> None:
+    async def employee_submission_context() -> AuthenticatedRequestContext:
+        return AuthenticatedRequestContext(
+            tenant_id=TENANT_ID,
+            role="Employee",
+            roles=["Employee"],
+            service_permissions=["expense-report:submit"],
+        )
+
+    repository = FakeGlAccountMappingRepository(SEEDED_GL_ACCOUNTS)
+    app.dependency_overrides[require_request_context] = employee_submission_context
+    app.dependency_overrides[get_gl_account_mapping_repository] = lambda: repository
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/gl-coding/line-items", json=gl_coding_payload()
+            )
+    finally:
+        app.dependency_overrides.pop(require_request_context, None)
+        app.dependency_overrides.pop(get_gl_account_mapping_repository, None)
+
+    assert response.status_code == 200
+    assert repository.requests == [
+        (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
+    ]
 
 
 @pytest.mark.anyio

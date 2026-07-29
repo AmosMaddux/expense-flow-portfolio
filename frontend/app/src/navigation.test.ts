@@ -15,7 +15,6 @@ const financeAdminNavigationLabels = [
 
 const departmentManagerNavigationLabels = [
     "Expense Reports",
-    "All Transactions",
     "Approval Queue",
     "Receipts",
     "Policy Reference",

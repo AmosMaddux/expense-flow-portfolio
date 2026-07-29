@@ -1,5 +1,6 @@
 import { app } from "./app.js";
 import { applyPendingCoreCaseMigrations } from "./db/migrations.js";
+import { startStageTransitionOutboxDispatcher } from "./events/stageTransitionOutboxDispatcher.js";
 
 export {
     readCaseQueueReportsForStage,
@@ -8,10 +9,22 @@ export {
     type ReadCaseQueueReportsForStageParams,
 } from "./db/queries/caseQueueRollups.js";
 export {
+    readAllTransactions,
+    type ExpenseReportStage as AllTransactionsExpenseReportStage,
+} from "./db/queries/allTransactions.js";
+export {
     readCachedCaseQueueStageRollups,
     transitionExpenseReportStage,
     type CaseQueueServiceDependencies,
 } from "./expenseReports/services/caseQueueService.js";
+export {
+    EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA,
+    EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE,
+    ExpenseReportStageTransitionedCloudEventV1Schema,
+    ExpenseReportStageTransitionedDataV1Schema,
+    type ExpenseReportStageTransitionedCloudEventV1,
+    type ExpenseReportStageTransitionedDataV1,
+} from "./events/index.js";
 export {
     type CaseQueueStageRollup,
     type ReadCaseQueueStageRollupsParams,
@@ -26,6 +39,7 @@ async function startCoreCaseService(): Promise<void> {
         await applyPendingCoreCaseMigrations();
     }
 
+    startStageTransitionOutboxDispatcher();
     app.listen(PORT, () => {
         console.log(`Server is running locally at http://localhost:${PORT}`);
         console.log(
