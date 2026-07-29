@@ -21,6 +21,7 @@
         "test:e2e:headed": "docker compose up -d --wait postgres redis gl-coding && docker compose run --rm postgres-e2e-marker && npm run e2e:reset && playwright test --headed",
         "test:e2e:debug": "docker compose up -d --wait postgres redis gl-coding && docker compose run --rm postgres-e2e-marker && npm run e2e:reset && playwright test --debug",
         "dev:events:receive": "sh scripts/receive-local-stage-transition-event.sh",
+        "test:ui-gate": "npm run test:e2e && npm run lighthouse",
         "lighthouse": "node scripts/run-lighthouse-ci.mjs",
         "lighthouse:ci": "npm run lighthouse",
         "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
