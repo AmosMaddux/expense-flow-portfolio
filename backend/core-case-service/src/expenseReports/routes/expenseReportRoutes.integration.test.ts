@@ -2094,14 +2094,14 @@ void describe("Expense Report routes", () => {
     });
 
     void test("rejects an empty Drafted Expense Report", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000144";
-        const owner = "50000000-0000-4000-8000-000000000144";
+        const tenantId = "40000000-0000-4000-8000-000000000745";
+        const owner = "50000000-0000-4000-8000-000000000745";
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
-                "idempotency-key": "expense-create-144",
+                "idempotency-key": "expense-create-745",
             },
             body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
         });
@@ -2120,7 +2120,7 @@ void describe("Expense Report routes", () => {
                 headers: {
                     authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-144",
+                    "idempotency-key": "expense-submit-745",
                 },
                 body: JSON.stringify({}),
             },
