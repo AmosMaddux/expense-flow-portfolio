@@ -173,6 +173,40 @@ async function closeServer(server: Server): Promise<void> {
     });
 }
 
+function buildDashboardTrendReport(
+    id: string,
+    tenantId: string,
+    owner: string,
+    createdAt: string,
+) {
+    return {
+        id,
+        createdAt: new Date(createdAt),
+        currentStage: "Submitted",
+        dueDate: "2026-08-01",
+        owner,
+        tenantId,
+    };
+}
+
+function buildDashboardTrendLineItem(
+    id: string,
+    tenantId: string,
+    expenseReportId: string,
+    amount: string,
+    currency: string,
+) {
+    return {
+        id,
+        amount,
+        category: "Travel",
+        currency,
+        expenseDate: "2026-07-01",
+        expenseReportId,
+        merchant: "Synthetic Merchant",
+        tenantId,
+    };
+}
 function authorizationHeader(
     tenantId: string,
     userId: string,
@@ -5633,6 +5667,230 @@ void describe("Expense Report routes", () => {
         });
     });
 
+    void test("returns Finance Dashboard trends for the authenticated tenant", async () => {
+        const tenantA = "40000000-0000-4000-8000-000000000220";
+        const tenantB = "40000000-0000-4000-8000-000000000221";
+        const owner = "50000000-0000-4000-8000-000000000220";
+        await db
+            .insert(expenseReport)
+            .values([
+                buildDashboardTrendReport(
+                    "30000000-0000-4000-8000-000000000220",
+                    tenantA,
+                    owner,
+                    "2026-07-01T00:00:00.000Z",
+                ),
+                buildDashboardTrendReport(
+                    "30000000-0000-4000-8000-000000000221",
+                    tenantA,
+                    owner,
+                    "2026-07-02T11:15:00.000Z",
+                ),
+                buildDashboardTrendReport(
+                    "30000000-0000-4000-8000-000000000222",
+                    tenantA,
+                    owner,
+                    "2026-07-03T23:59:59.000Z",
+                ),
+                buildDashboardTrendReport(
+                    "30000000-0000-4000-8000-000000000223",
+                    tenantB,
+                    owner,
+                    "2026-07-02T12:00:00.000Z",
+                ),
+            ]);
+        await db
+            .insert(lineItem)
+            .values([
+                buildDashboardTrendLineItem(
+                    "31000000-0000-4000-8000-000000000220",
+                    tenantA,
+                    "30000000-0000-4000-8000-000000000220",
+                    "100.00",
+                    "USD",
+                ),
+                buildDashboardTrendLineItem(
+                    "31000000-0000-4000-8000-000000000221",
+                    tenantA,
+                    "30000000-0000-4000-8000-000000000220",
+                    "40.00",
+                    "USD",
+                ),
+                buildDashboardTrendLineItem(
+                    "31000000-0000-4000-8000-000000000222",
+                    tenantA,
+                    "30000000-0000-4000-8000-000000000221",
+                    "65.00",
+                    "EUR",
+                ),
+                buildDashboardTrendLineItem(
+                    "31000000-0000-4000-8000-000000000223",
+                    tenantB,
+                    "30000000-0000-4000-8000-000000000223",
+                    "999.00",
+                    "USD",
+                ),
+            ]);
+
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-07-04",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantA, owner, [
+                        "Finance Admin",
+                    ]),
+                },
+            },
+        );
+        const body = (await response.json()) as unknown;
+
+        expect(response.status).toBe(200);
+        expect(body).toEqual([
+            {
+                periodStart: "2026-07-01",
+                reportCount: 1,
+                spendByCurrency: [{ currency: "USD", spendAmount: "140.00" }],
+            },
+            {
+                periodStart: "2026-07-02",
+                reportCount: 1,
+                spendByCurrency: [{ currency: "EUR", spendAmount: "65.00" }],
+            },
+            {
+                periodStart: "2026-07-03",
+                reportCount: 1,
+                spendByCurrency: [],
+            },
+            {
+                periodStart: "2026-07-04",
+                reportCount: 0,
+                spendByCurrency: [],
+            },
+        ]);
+    });
+
+    void test("returns 401 for Finance Dashboard trends without a token", async () => {
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-07-04",
+        );
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(401);
+        expect(body).toMatchObject({
+            status: 401,
+            title: "Unauthorized",
+        });
+    });
+
+    void test("returns 403 for Finance Dashboard trends with an external role", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000224";
+        const employeeId = "50000000-0000-4000-8000-000000000224";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-07-04",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, employeeId, [
+                        "Employee",
+                    ]),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            detail?: string;
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({
+            detail: "Finance Dashboard access is limited to Finance Admins.",
+            status: 403,
+            title: "Forbidden",
+        });
+    });
+
+    void test("returns 403 for Finance Dashboard trends with a Department Manager role", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000226";
+        const managerId = "50000000-0000-4000-8000-000000000226";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-07-04",
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, managerId, [
+                        "Department Manager",
+                    ]),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            detail?: string;
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(403);
+        expect(body).toMatchObject({
+            detail: "Finance Dashboard access is limited to Finance Admins.",
+            status: 403,
+            title: "Forbidden",
+        });
+    });
+    void test("returns 400 for Finance Dashboard trends with an invalid date range", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000225";
+        const financeAdminId = "50000000-0000-4000-8000-000000000225";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-04&toDate=2026-07-01",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            status: 400,
+            title: "Bad Request",
+        });
+    });
+
+    void test("returns 400 for Finance Dashboard trends with an over-limit date range", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000227";
+        const financeAdminId = "50000000-0000-4000-8000-000000000227";
+        const response = await requestApp(
+            "/v1/finance-dashboard/trends?fromDate=2026-07-01&toDate=2026-08-01",
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const body = (await response.json()) as {
+            status?: number;
+            title?: string;
+        };
+
+        expect(response.status).toBe(400);
+        expect(body).toMatchObject({
+            status: 400,
+            title: "Bad Request",
+        });
+    });
     void test("returns 401 for Case Queue rollups without a token", async () => {
         const response = await requestApp(
             "/v1/case-queue/rollups?tenantId=40000000-0000-4000-8000-000000000108&asOfDate=2026-07-20",

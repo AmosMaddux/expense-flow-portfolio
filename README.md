@@ -197,6 +197,90 @@ npm run build
 
 The frontend production bundle is generated at `frontend/app/dist`.
 
+## Playwright E2E
+
+The ExpenseFlow happy-path browser test drives the real login, Employee
+submission, Department Manager approval, and persisted queue state through the
+React UI. Use only the synthetic E2E tenant and accounts documented here.
+
+Prerequisites:
+
+- Node.js 24 or newer and npm.
+- Python 3.13 and `uv`.
+- Docker with Compose support.
+- A local `.env` file with synthetic development values. Start from
+  `.env.example`, then generate local JWT keys:
+
+    ```sh
+    cp .env.example .env
+    ./scripts/generate-dev-jwt-keys.sh
+    ```
+
+Install dependencies and the Chromium browser:
+
+```sh
+npm ci
+uv sync
+npx playwright install chromium
+```
+
+On Linux machines that need browser system packages, use:
+
+```sh
+npx playwright install --with-deps chromium
+```
+
+Reset and verify the deterministic E2E data without running the browser:
+
+```sh
+docker compose up -d --wait postgres
+docker compose run --rm postgres-e2e-marker
+npm run e2e:reset
+npm run e2e:verify
+```
+
+The reset applies pending Core Case migrations, verifies the connection is the
+dedicated synthetic E2E database, clears the hard-coded E2E tenant, and seeds:
+
+- Employee: `employee.e2e@example.test`
+- Department Manager: `manager.e2e@example.test`
+- Default synthetic password: `expenseflow-e2e-local-only`
+
+Override the password for a local run with `EXPENSEFLOW_E2E_PASSWORD`; do not use
+real credentials. MFA codes are generated from the seeded local enrollment by the
+test helper and can also be read with:
+
+```sh
+npm run e2e:auth:code -- employee
+npm run e2e:auth:code -- manager
+```
+
+Run the happy-path test headlessly:
+
+```sh
+npm run test:e2e
+```
+
+That command starts PostgreSQL, Redis, and the FastAPI GL-coding service with
+Docker Compose, waits for their health checks, resets and seeds E2E data, then
+lets Playwright start the Express API and Vite frontend through configured
+health-checked web servers. Stop local containers after a run with:
+
+```sh
+docker compose down --volumes --remove-orphans
+```
+
+Run headed or with Playwright debug mode:
+
+```sh
+npm run test:e2e:headed
+npm run test:e2e:debug
+```
+
+Playwright writes its HTML report to `playwright-report/`. Failure traces,
+screenshots, and videos are retained under `test-results/`; both directories are
+ignored locally and uploaded by CI only when the E2E job fails.
+
 ## PostgreSQL setup
 
 Migrations are located in [backend/core-case-service/drizzle](backend/core-case-service/drizzle). They can be applied with `drizzle-kit migrate`

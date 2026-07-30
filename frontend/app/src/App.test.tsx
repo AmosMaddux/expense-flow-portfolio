@@ -275,7 +275,7 @@ describe("authentication UI", () => {
 describe("role landing selection", () => {
     test.each([
         ["Finance Admin", "Finance Dashboard"],
-        ["Department Manager", "Finance Dashboard"],
+        ["Department Manager", "Expense Reports"],
         ["Employee", "Employee Portal"],
         ["Admin", "Administration"],
     ] satisfies Array<[Role, string]>)(
@@ -302,7 +302,7 @@ describe("AppShell", () => {
             name: "Approval Queue",
         });
 
-        expect(within(sidebar).getByText("Finance Dashboard")).not.toBeNull();
+        expect(within(sidebar).queryByText("Finance Dashboard")).toBeNull();
         expect(within(sidebar).getByText("GL Mapping")).not.toBeNull();
         expect(within(sidebar).queryByText("Team & Users")).toBeNull();
         expect(approvalQueueLink.getAttribute("href")).toBe("/approval-queue");

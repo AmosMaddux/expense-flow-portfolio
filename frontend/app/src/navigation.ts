@@ -22,7 +22,7 @@ export const navigationItems = [
     {
         label: "Finance Dashboard",
         path: "/finance-dashboard",
-        allowedRoles: internalRoles,
+        allowedRoles: financeAdminOnlyRoles,
     },
     {
         label: "Expense Reports",

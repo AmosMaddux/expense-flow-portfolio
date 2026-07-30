@@ -873,7 +873,19 @@ function ApprovalQueueLineItemTable({
                             </thead>
                             <tbody>
                                 {visibleRows.map((row) => (
-                                    <tr key={row.id}>
+                                    <tr
+                                        aria-label={[
+                                            `Expense Report ${row.original.expenseReportId}`,
+                                            getEmployeeDisplayName(
+                                                row.original.employee,
+                                            ),
+                                            row.original.currentStage,
+                                            formatCurrency(
+                                                row.original.totalAmount,
+                                            ),
+                                        ].join(" ")}
+                                        key={row.id}
+                                    >
                                         {row.getVisibleCells().map((cell) => (
                                             <td key={cell.id}>
                                                 {flexRender(
