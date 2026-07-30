@@ -148,8 +148,7 @@ function toAllTransactionWithCursor(
         priority: toPriority(row.priority),
         dueDate: toIsoDate(row.dueDate),
         onHold: typeof row.onHold === "boolean" ? row.onHold : false,
-        isOverdue:
-            typeof row.isOverdue === "boolean" ? row.isOverdue : false,
+        isOverdue: typeof row.isOverdue === "boolean" ? row.isOverdue : false,
         glCode: typeof row.glCode === "string" ? row.glCode : null,
         flaggedLineItem:
             typeof row.flaggedLineItem === "boolean"

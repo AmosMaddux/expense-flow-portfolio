@@ -939,6 +939,171 @@
                     "updatedAt"
                 ]
             },
+            "ExpenseReportReviewDetailResponse": {
+                "type": "object",
+                "properties": {
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "owner": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["Low", "Normal", "High", "Urgent"]
+                    },
+                    "dueDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "onHold": {
+                        "type": "boolean"
+                    },
+                    "isOverdue": {
+                        "type": "boolean"
+                    },
+                    "lineItems": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "date",
+                                "amount",
+                                "currency",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction",
+                                "deductible",
+                                "merchant",
+                                "category"
+                            ]
+                        }
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                },
+                                "route": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "distance": {
+                                    "type": "string",
+                                    "pattern": "^\\d+\\.\\d{2}$"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "date",
+                                "amount",
+                                "currency",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction",
+                                "deductible",
+                                "route",
+                                "distance"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "expenseReportId",
+                    "owner",
+                    "priority",
+                    "dueDate",
+                    "status",
+                    "onHold",
+                    "isOverdue",
+                    "lineItems",
+                    "mileageEntries"
+                ]
+            },
             "LoginErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -3314,6 +3479,97 @@
                     },
                     "409": {
                         "description": "Mileage can only be added while the Expense Report is Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/review-detail": {
+            "get": {
+                "summary": "Get complete Expense Report review detail",
+                "description": "Loads all line-item and mileage sources for a Finance Admin report-detail surface independent of All Transactions filters or pagination.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Expense Report review detail found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportReviewDetailResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Finance Admin access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

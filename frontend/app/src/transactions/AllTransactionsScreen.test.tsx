@@ -15,6 +15,7 @@ import {
     createAllTransactionsQueryString,
     type AllTransaction,
     type AllTransactionPage,
+    type ExpenseReportReviewDetail,
 } from "./AllTransactionsScreen";
 import allTransactionsPageContract from "./__fixtures__/allTransactionsPage.contract.json";
 
@@ -72,11 +73,58 @@ function createProblemResponse(detail: string): Response {
     );
 }
 
+function readRequestInput(input: RequestInfo | URL): string {
+    if (typeof input === "string") {
+        return input;
+    }
+
+    if (input instanceof URL) {
+        return input.href;
+    }
+
+    if (input instanceof Request) {
+        return input.url;
+    }
+
+    return "";
+}
+
 function createTransactionPage(
     items: AllTransaction[],
     nextCursor: string | null = null,
 ): AllTransactionPage {
     return { items, nextCursor };
+}
+
+function createReportDetail(
+    transaction: AllTransaction,
+    overrides: Partial<ExpenseReportReviewDetail> = {},
+): ExpenseReportReviewDetail {
+    return {
+        expenseReportId: transaction.expenseReportId,
+        owner: transaction.owner,
+        priority: transaction.priority,
+        dueDate: transaction.dueDate,
+        status: transaction.status,
+        onHold: transaction.onHold,
+        isOverdue: transaction.isOverdue,
+        lineItems: [
+            {
+                id: transaction.id,
+                merchant: transaction.merchant,
+                category: transaction.category,
+                date: transaction.date.slice(0, 10),
+                amount: transaction.amount,
+                currency: transaction.currency,
+                glCode: transaction.glCode,
+                flaggedLineItem: transaction.flaggedLineItem,
+                reviewAction: transaction.reviewAction,
+                deductible: null,
+            },
+        ],
+        mileageEntries: [],
+        ...overrides,
+    };
 }
 
 function createNoRetryQueryClient(): QueryClient {
@@ -267,9 +315,12 @@ describe("AllTransactionsScreen", () => {
                 isOverdue: true,
             },
         ];
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
+        const reportDetail = createReportDetail(transactions[0]);
+        const fetchImplementation = vi.fn<typeof fetch>((input) =>
             Promise.resolve(
-                createJsonResponse(createTransactionPage(transactions)),
+                readRequestInput(input).includes("/review-detail")
+                    ? createJsonResponse(reportDetail)
+                    : createJsonResponse(createTransactionPage(transactions)),
             ),
         );
 
@@ -286,7 +337,7 @@ describe("AllTransactionsScreen", () => {
             name: /Expense Report 60000000/i,
         });
         expect(
-            within(dialog).getByRole("list", {
+            await within(dialog).findByRole("list", {
                 name: "Expense Report stage progress",
             }),
         ).toBeTruthy();
@@ -311,10 +362,93 @@ describe("AllTransactionsScreen", () => {
                 name: /Summit Air \$512\.09 - 6220 Over \$500 Rejected/i,
             }),
         ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenLastCalledWith(
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000178/review-detail",
+            expect.objectContaining({}),
+        );
 
         fireEvent.click(within(dialog).getByRole("button", { name: "Exit" }));
 
         expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    test("loads report detail from all report sources instead of visible transaction rows", async () => {
+        const visibleTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000188",
+            expenseReportId: "60000000-0000-4000-8000-000000000188",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                createJsonResponse(createTransactionPage([visibleTransaction])),
+            )
+            .mockResolvedValueOnce(
+                createJsonResponse(
+                    createReportDetail(visibleTransaction, {
+                        lineItems: [
+                            {
+                                id: visibleTransaction.id,
+                                merchant: "Summit Air",
+                                category: "Travel",
+                                date: "2026-07-20",
+                                amount: "512.09",
+                                currency: "USD",
+                                glCode: "6220",
+                                flaggedLineItem: true,
+                                reviewAction: "approve",
+                                deductible: null,
+                            },
+                            {
+                                id: "30000000-0000-4000-8000-000000000189",
+                                merchant: "Cedar Bistro",
+                                category: "Meals",
+                                date: "2026-07-19",
+                                amount: "48.33",
+                                currency: "USD",
+                                glCode: "6250",
+                                flaggedLineItem: false,
+                                reviewAction: null,
+                                deductible: null,
+                            },
+                        ],
+                    }),
+                ),
+            );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const visibleRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(visibleRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = await screen.findByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+
+        expect(
+            await within(dialog).findByRole("row", {
+                name: /Summit Air \$512\.09 - 6220 Over \$500 Approved/i,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Cedar Bistro \$48\.33 - 6250 Clear Not reviewed/i,
+            }),
+        ).toBeTruthy();
+        expect(screen.getByText("Showing 1 line items")).toBeTruthy();
     });
 
     test("keeps current rows when already-applied filters are applied again", async () => {

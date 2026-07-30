@@ -485,6 +485,39 @@ export const AllTransactionPageSchema = z.object({
     nextCursor: z.string().nullable(),
 });
 
+const ExpenseReportReviewDetailSourceSchema = z.object({
+    id: z.uuid(),
+    date: z.iso.date(),
+    amount: z.string().regex(/^-?\d+\.\d{2}$/),
+    currency: z.string().min(3).max(3),
+    glCode: z.string().nullable(),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
+    deductible: z.boolean().nullable(),
+});
+
+export const ExpenseReportReviewDetailSchema = z.object({
+    expenseReportId: z.uuid(),
+    owner: z.uuid(),
+    priority: z.enum(priorityLevels),
+    dueDate: z.iso.date(),
+    status: z.enum(approvedWorkflowStages),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    lineItems: z.array(
+        ExpenseReportReviewDetailSourceSchema.extend({
+            merchant: z.string().min(1),
+            category: z.string().min(1),
+        }),
+    ),
+    mileageEntries: z.array(
+        ExpenseReportReviewDetailSourceSchema.extend({
+            route: z.string().min(1),
+            distance: z.string().regex(/^\d+\.\d{2}$/),
+        }),
+    ),
+});
+
 export const MySubmissionSchema = z.object({
     id: z.uuid(),
     dueDate: z.iso.date(),
@@ -611,6 +644,8 @@ export const updateExpenseReportSourceDeductibilityRequestSchema =
 
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
+export const expenseReportReviewDetailSchema = ExpenseReportReviewDetailSchema;
+
 export const readCaseQueueStageRollupsRequestSchema =
     ReadCaseQueueStageRollupsInboundRequestSchema;
 
@@ -730,6 +765,10 @@ export type UpdateExpenseReportSourceDeductibilityRequest = z.infer<
 
 export type ExpenseReportResponse = z.infer<
     typeof ExpenseReportOutboundResponseSchema
+>;
+
+export type ExpenseReportReviewDetail = z.infer<
+    typeof ExpenseReportReviewDetailSchema
 >;
 
 export type ReadCaseQueueStageRollupsParams = z.infer<

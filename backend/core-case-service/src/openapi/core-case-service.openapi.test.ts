@@ -17,6 +17,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const reviewDetailPath =
+            document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const expenseReportSubmitPath =
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
@@ -36,6 +38,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(caseQueueLineItemsPath?.get).toBeDefined();
         expect(expenseReportsPath?.post).toBeDefined();
         expect(expenseReportByIdPath?.get).toBeDefined();
+        expect(reviewDetailPath?.get).toBeDefined();
         expect(expenseReportSubmitPath?.post).toBeDefined();
         expect(flagClearPath?.post).toBeDefined();
         expect(lineItemReviewPath?.post).toBeDefined();
@@ -156,6 +159,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const reviewDetailPath =
+            document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const expenseReportSubmitPath =
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
@@ -192,6 +197,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportByIdPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(reviewDetailPath?.get?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(expenseReportSubmitPath?.post?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
@@ -217,6 +225,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportsPath?.post?.responses?.[403]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[403]).toBeDefined();
+        expect(reviewDetailPath?.get?.responses?.[401]).toBeDefined();
+        expect(reviewDetailPath?.get?.responses?.[403]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[403]).toBeDefined();
         expect(flagClearPath?.post?.responses?.[401]).toBeDefined();
@@ -232,6 +242,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
     void test("documents the GET id path parameter as a required UUID", () => {
         const expenseReportByIdPath =
             document.paths?.["/v1/expense-reports/{id}"];
+        const reviewDetailPath =
+            document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
         const flagClearPath =
@@ -245,6 +257,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
                 "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review"
             ];
         const parameter = expenseReportByIdPath?.get?.parameters?.[0];
+        const reviewDetailParameter = reviewDetailPath?.get?.parameters?.[0];
         const auditParameter = auditEntriesPath?.get?.parameters?.[0];
         const flagClearParameter = flagClearPath?.post?.parameters?.[0];
         const lineItemReviewParameters = lineItemReviewPath?.post?.parameters;
@@ -260,6 +273,15 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             },
         });
         expect(auditParameter).toMatchObject({
+            in: "path",
+            name: "id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
+        expect(reviewDetailParameter).toMatchObject({
             in: "path",
             name: "id",
             required: true,

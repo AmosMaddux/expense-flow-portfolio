@@ -1,3 +1,5 @@
+import { env } from "node:process";
+
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
@@ -5,6 +7,7 @@ export default defineConfig({
     schema: "./src/db/schema/index.ts",
     out: "./drizzle",
     dbCredentials: {
-        url: process.env.DATABASE_URL ?? "",
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+        url: env.DATABASE_URL ?? "",
     },
 });

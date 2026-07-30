@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { z } from "zod";
 
 import {
@@ -41,8 +42,44 @@ const allTransactionPageSchema = z.object({
     nextCursor: z.string().nullable(),
 });
 
+const expenseReportReviewDetailSourceSchema = z.object({
+    id: z.string().uuid(),
+    date: z.iso.date(),
+    amount: z.string().regex(/^-?\d+\.\d{2}$/),
+    currency: z.string().min(3).max(3),
+    glCode: z.string().nullable(),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(["approve", "reject"]).nullable(),
+    deductible: z.boolean().nullable(),
+});
+
+const expenseReportReviewDetailSchema = z.object({
+    expenseReportId: z.string().uuid(),
+    owner: z.string().uuid(),
+    priority: z.enum(["Low", "Normal", "High", "Urgent"]),
+    dueDate: z.iso.date(),
+    status: z.enum(EXPENSE_REPORT_STAGES),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    lineItems: z.array(
+        expenseReportReviewDetailSourceSchema.extend({
+            merchant: z.string().min(1),
+            category: z.string().min(1),
+        }),
+    ),
+    mileageEntries: z.array(
+        expenseReportReviewDetailSourceSchema.extend({
+            route: z.string().min(1),
+            distance: z.string().regex(/^\d+\.\d{2}$/),
+        }),
+    ),
+});
+
 export type AllTransaction = z.infer<typeof allTransactionSchema>;
 export type AllTransactionPage = z.infer<typeof allTransactionPageSchema>;
+export type ExpenseReportReviewDetail = z.infer<
+    typeof expenseReportReviewDetailSchema
+>;
 type LoadedTransactionPage = {
     cursor: string | null;
     page: AllTransactionPage;
@@ -85,6 +122,23 @@ export function useAllTransactions(
 }
 
 /**
+ * Fetches the complete tenant-scoped report detail independent of list filters.
+ */
+export function useExpenseReportReviewDetail(expenseReportId: string | null) {
+    return useExpenseFlowQuery<ExpenseReportReviewDetail>({
+        enabled: expenseReportId !== null,
+        input:
+            expenseReportId === null
+                ? "/v1/expense-reports/00000000-0000-4000-8000-000000000000/review-detail"
+                : `/v1/expense-reports/${expenseReportId}/review-detail`,
+        keyParts: ["expense-report-review-detail", expenseReportId],
+        parseResponse: async (response) =>
+            expenseReportReviewDetailSchema.parse(await response.json()),
+        staleTime: 30_000,
+    });
+}
+
+/**
  * Renders the Finance Admin All Transactions read-model screen.
  */
 export function AllTransactionsScreen(): JSX.Element {
@@ -112,17 +166,8 @@ export function AllTransactionsScreen(): JSX.Element {
             ).sort((left, right) => left.localeCompare(right)),
         [transactions],
     );
-    const selectedReportTransactions = useMemo(
-        () =>
-            selectedExpenseReportId === null
-                ? []
-                : transactions.filter(
-                      (transaction) =>
-                          transaction.expenseReportId ===
-                          selectedExpenseReportId,
-                  ),
-        [selectedExpenseReportId, transactions],
-    );
+    const selectedReportQuery =
+        useExpenseReportReviewDetail(selectedExpenseReportId);
 
     const appendPage = (
         page: AllTransactionPage,
@@ -269,10 +314,11 @@ export function AllTransactionsScreen(): JSX.Element {
                                 </Button>
                             </div>
                         ) : null}
-                        {selectedReportTransactions.length > 0 ? (
+                        {selectedExpenseReportId !== null ? (
                             <TransactionReviewDialog
                                 onClose={() => setSelectedExpenseReportId(null)}
-                                transactions={selectedReportTransactions}
+                                query={selectedReportQuery}
+                                reportId={selectedExpenseReportId}
                             />
                         ) : null}
                     </>
@@ -492,16 +538,14 @@ function AllTransactionsTable({
 
 function TransactionReviewDialog({
     onClose,
-    transactions,
+    query,
+    reportId,
 }: {
     onClose: () => void;
-    transactions: AllTransaction[];
+    query: UseQueryResult<ExpenseReportReviewDetail, Error>;
+    reportId: string;
 }): JSX.Element | null {
-    const report = transactions[0];
-
-    if (report === undefined) {
-        return null;
-    }
+    const report = query.data;
 
     return (
         <div className="case-queue-dialog__backdrop">
@@ -517,109 +561,131 @@ function TransactionReviewDialog({
                             Report Detail
                         </p>
                         <h3 id="all-transactions-review-dialog-heading">
-                            Expense Report{" "}
-                            {formatReportId(report.expenseReportId)}
+                            Expense Report {formatReportId(reportId)}
                         </h3>
                     </div>
                 </header>
-                <div className="all-transactions-detail">
-                    <StageStepper
-                        className="all-transactions-detail__stepper"
-                        currentStage={report.status}
-                        onHold={report.onHold}
+                {query.isPending ? (
+                    <LoadingSkeleton label="Loading Report Detail" rows={4} />
+                ) : query.isError ? (
+                    <ErrorState
+                        isRetrying={query.isFetching}
+                        message={getReportDetailErrorMessage(query.error)}
+                        onRetry={() => {
+                            void query.refetch();
+                        }}
+                        title="Unable to load report detail"
                     />
-                    <aside
-                        aria-label="Expense Report case summary"
-                        className="all-transactions-detail__panel"
-                    >
-                        <dl>
-                            <div>
-                                <dt>Owner</dt>
-                                <dd>{formatReportOwner(report.owner)}</dd>
-                            </div>
-                            <div>
-                                <dt>Priority</dt>
-                                <dd>
-                                    <Badge
-                                        tone={getPriorityTone(
-                                            report.priority,
-                                        )}
-                                    >
-                                        {report.priority}
-                                    </Badge>
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>Due date</dt>
-                                <dd>
-                                    <time dateTime={report.dueDate}>
-                                        {formatDate(report.dueDate)}
-                                    </time>
-                                    <OverdueBadge
-                                        isOverdue={report.isOverdue}
-                                    />
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>on_hold</dt>
-                                <dd>
-                                    <Badge
-                                        tone={
-                                            report.onHold
-                                                ? "warning"
-                                                : "success"
-                                        }
-                                    >
-                                        {report.onHold ? "On hold" : "Active"}
-                                    </Badge>
-                                </dd>
-                            </div>
-                        </dl>
-                    </aside>
-                </div>
-                <div className="case-queue-dialog__table-wrap">
-                    <table aria-label="Expense Report review line items">
-                        <thead>
-                            <tr>
-                                <th scope="col">Merchant</th>
-                                <th scope="col">Amount</th>
-                                <th scope="col">Mileage</th>
-                                <th scope="col">GL Code</th>
-                                <th scope="col">Flag</th>
-                                <th scope="col">Review Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {transactions.map((transaction) => (
-                                <tr key={transaction.id}>
-                                    <th scope="row">{transaction.merchant}</th>
-                                    <td>
-                                        {formatCurrency(
-                                            transaction.amount,
-                                            transaction.currency,
-                                        )}
-                                    </td>
-                                    <td>-</td>
-                                    <td>{transaction.glCode ?? "Unmapped"}</td>
-                                    <td>
-                                        {transaction.flaggedLineItem ? (
-                                            <Badge tone="warning">
-                                                Over $500
+                ) : report === undefined ? null : (
+                    <>
+                        <div className="all-transactions-detail">
+                            <StageStepper
+                                className="all-transactions-detail__stepper"
+                                currentStage={report.status}
+                                onHold={report.onHold}
+                            />
+                            <aside
+                                aria-label="Expense Report case summary"
+                                className="all-transactions-detail__panel"
+                            >
+                                <dl>
+                                    <div>
+                                        <dt>Owner</dt>
+                                        <dd>
+                                            {formatReportOwner(report.owner)}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>Priority</dt>
+                                        <dd>
+                                            <Badge
+                                                tone={getPriorityTone(
+                                                    report.priority,
+                                                )}
+                                            >
+                                                {report.priority}
                                             </Badge>
-                                        ) : (
-                                            <Badge tone="success">Clear</Badge>
-                                        )}
-                                    </td>
-                                    <td>
-                                        {formatReviewAction(
-                                            transaction.reviewAction,
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>Due date</dt>
+                                        <dd>
+                                            <time dateTime={report.dueDate}>
+                                                {formatDate(report.dueDate)}
+                                            </time>
+                                            <OverdueBadge
+                                                isOverdue={report.isOverdue}
+                                            />
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>on_hold</dt>
+                                        <dd>
+                                            <Badge
+                                                tone={
+                                                    report.onHold
+                                                        ? "warning"
+                                                        : "success"
+                                                }
+                                            >
+                                                {report.onHold
+                                                    ? "On hold"
+                                                    : "Active"}
+                                            </Badge>
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </aside>
+                        </div>
+                        <div className="case-queue-dialog__table-wrap">
+                            <table aria-label="Expense Report review line items">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Merchant</th>
+                                        <th scope="col">Amount</th>
+                                        <th scope="col">Mileage</th>
+                                        <th scope="col">GL Code</th>
+                                        <th scope="col">Flag</th>
+                                        <th scope="col">Review Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {buildReportDetailRows(report).map((row) => (
+                                        <tr key={row.id}>
+                                            <th scope="row">{row.merchant}</th>
+                                            <td>
+                                                {formatCurrency(
+                                                    row.amount,
+                                                    row.currency,
+                                                )}
+                                            </td>
+                                            <td>{row.mileage}</td>
+                                            <td>
+                                                {row.glCode ?? "Unmapped"}
+                                            </td>
+                                            <td>
+                                                {row.flaggedLineItem ? (
+                                                    <Badge tone="warning">
+                                                        Over $500
+                                                    </Badge>
+                                                ) : (
+                                                    <Badge tone="success">
+                                                        Clear
+                                                    </Badge>
+                                                )}
+                                            </td>
+                                            <td>
+                                                {formatReviewAction(
+                                                    row.reviewAction,
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
                 <footer className="case-queue-dialog__footer">
                     <span />
                     <Button
@@ -660,8 +726,46 @@ function formatReportOwner(owner: string): string {
     return owner.slice(0, 8).toUpperCase();
 }
 
+type ReportDetailRow = {
+    id: string;
+    merchant: string;
+    amount: string;
+    currency: string;
+    mileage: string;
+    glCode: string | null;
+    flaggedLineItem: boolean;
+    reviewAction: "approve" | "reject" | null;
+};
+
+function buildReportDetailRows(
+    report: ExpenseReportReviewDetail,
+): ReportDetailRow[] {
+    return [
+        ...report.lineItems.map((lineItem) => ({
+            id: lineItem.id,
+            merchant: lineItem.merchant,
+            amount: lineItem.amount,
+            currency: lineItem.currency,
+            mileage: "-",
+            glCode: lineItem.glCode,
+            flaggedLineItem: lineItem.flaggedLineItem,
+            reviewAction: lineItem.reviewAction,
+        })),
+        ...report.mileageEntries.map((entry) => ({
+            id: entry.id,
+            merchant: entry.route,
+            amount: entry.amount,
+            currency: entry.currency,
+            mileage: `${entry.distance} mi`,
+            glCode: entry.glCode,
+            flaggedLineItem: entry.flaggedLineItem,
+            reviewAction: entry.reviewAction,
+        })),
+    ];
+}
+
 function getPriorityTone(
-    priority: AllTransaction["priority"],
+    priority: ExpenseReportReviewDetail["priority"],
 ): "neutral" | "info" | "warning" | "danger" {
     if (priority === "Urgent") {
         return "danger";
@@ -679,7 +783,7 @@ function getPriorityTone(
 }
 
 function formatReviewAction(
-    reviewAction: AllTransaction["reviewAction"],
+    reviewAction: ReportDetailRow["reviewAction"],
 ): string {
     if (reviewAction === "approve") {
         return "Approved";
@@ -698,4 +802,12 @@ function getAllTransactionsErrorMessage(error: Error | null): string {
     }
 
     return "The transaction list could not be loaded. Please retry.";
+}
+
+function getReportDetailErrorMessage(error: Error | null): string {
+    if (error instanceof QueryRequestError) {
+        return error.message;
+    }
+
+    return "The report detail could not be loaded. Please retry.";
 }
