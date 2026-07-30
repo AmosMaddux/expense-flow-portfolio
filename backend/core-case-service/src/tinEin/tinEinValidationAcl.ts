@@ -21,6 +21,10 @@ export const EinValidationResultSchema = z.discriminatedUnion("status", [
         isValid: z.literal(true),
         normalizedLegalName: z.string().min(1).optional(),
         serviceReferenceId: z.string().min(1).optional(),
+        taxpayerStanding: z
+            .enum(["active", "inactive", "suspended"])
+            .optional(),
+        taxpayerStandingAsOfDate: z.iso.date().optional(),
     }),
     z.object({
         status: z.literal("invalid"),
@@ -127,6 +131,15 @@ function toEinValidationResult(
             ...(response.serviceReferenceId === undefined
                 ? {}
                 : { serviceReferenceId: response.serviceReferenceId }),
+            ...(response.taxpayerStanding === undefined
+                ? {}
+                : { taxpayerStanding: response.taxpayerStanding }),
+            ...(response.taxpayerStandingAsOfDate === undefined
+                ? {}
+                : {
+                      taxpayerStandingAsOfDate:
+                          response.taxpayerStandingAsOfDate,
+                  }),
         });
     }
 

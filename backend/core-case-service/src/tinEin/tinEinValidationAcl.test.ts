@@ -11,6 +11,7 @@ import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
 const config: TinEinValidationConfig = {
     TIN_EIN_VALIDATION_WSDL_URL: "https://tin-ein.example.test/validation?wsdl",
     TIN_EIN_VALIDATION_OPERATION_NAME: "ValidateSyntheticTinEin",
+    TIN_EIN_VALIDATION_STATUS_OPERATION_NAME: "GetSyntheticTaxpayerStatus",
     TIN_EIN_VALIDATION_TIMEOUT_MS: 100,
     TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE: 50,
     TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS: 1000,
@@ -35,7 +36,19 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
                 },
             ]),
         );
+        const getSyntheticTaxpayerStatusAsync = vi.fn(() =>
+            Promise.resolve([
+                {
+                    GetSyntheticTaxpayerStatusResponse: {
+                        Standing: "ACTIVE",
+                        AsOfDate: "07302026",
+                    },
+                },
+            ]),
+        );
         soapClient.ValidateSyntheticTinEinAsync = validateSyntheticTinEinAsync;
+        soapClient.GetSyntheticTaxpayerStatusAsync =
+            getSyntheticTaxpayerStatusAsync;
         const acl = createEinValidationAcl({
             tinEinValidationClient: createSoapTinEinValidationClient(config, {
                 soapModule: {
@@ -49,12 +62,23 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
             isValid: true,
             normalizedLegalName: "Synthetic Expense Vendor LLC",
             serviceReferenceId: "synthetic-reference-101",
+            taxpayerStanding: "active",
+            taxpayerStandingAsOfDate: "2026-07-30",
         });
         expect(validateSyntheticTinEinAsync).toHaveBeenCalledWith(
             {
-                IdentifierType: "EIN",
-                Identifier: "123456789",
+                TIN: "123456789",
+                TINType: "EIN",
                 LegalName: "Synthetic Expense Vendor LLC",
+            },
+            {
+                timeout: 100,
+            },
+        );
+        expect(getSyntheticTaxpayerStatusAsync).toHaveBeenCalledWith(
+            {
+                TIN: "123456789",
+                TINType: "EIN",
             },
             {
                 timeout: 100,
