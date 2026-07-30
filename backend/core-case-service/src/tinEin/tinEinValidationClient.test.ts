@@ -40,6 +40,20 @@ void describe("SOAP TIN/EIN validation client", () => {
         ).toThrow();
     });
 
+    void test("rejects legal names with XML-hostile control characters", () => {
+        for (const legalName of [
+            "Synthetic\nVendor LLC",
+            "Synthetic\u0000Vendor LLC",
+        ]) {
+            expect(() =>
+                TinEinValidationRequestSchema.parse({
+                    ...request,
+                    legalName,
+                }),
+            ).toThrow();
+        }
+    });
+
     void test("creates a SOAP invoker from the shared WSDL and maps the response", async () => {
         const validationServiceInvoker = vi.fn().mockResolvedValue({
             IsValid: "true",
@@ -101,7 +115,7 @@ void describe("SOAP TIN/EIN validation client", () => {
         });
     });
 
-    void test("uses the node-soap adapter with WSDL and operation timeouts", async () => {
+    void test("uses the node-soap adapter with a wrapped WSDL response and operation timeouts", async () => {
         const soapClient: Record<string, unknown> = {};
         const validateSyntheticTinEinAsync = vi.fn(function (
             this: Record<string, unknown>,
@@ -110,9 +124,11 @@ void describe("SOAP TIN/EIN validation client", () => {
 
             return Promise.resolve([
                 {
-                    IsValid: "true",
-                    NormalizedLegalName: "Synthetic Expense Vendor LLC",
-                    ServiceReferenceId: "synthetic-reference-004",
+                    ValidateSyntheticTinEinResult: {
+                        IsValid: "true",
+                        NormalizedLegalName: "Synthetic Expense Vendor LLC",
+                        ServiceReferenceId: "synthetic-reference-004",
+                    },
                 },
             ]);
         });

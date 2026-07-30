@@ -34,11 +34,19 @@ type SoapOperationOptions = {
 
 const nodeRequire = createRequire(import.meta.url);
 const OpossumCircuitBreaker = nodeRequire("opossum") as OpossumModule;
+const legalNameSchema = z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !containsControlCharacter(value), {
+        message: "Legal name cannot include control characters.",
+    });
 
 export const TinEinValidationRequestSchema = z.object({
     identifierType: z.enum(["TIN", "EIN"]),
     identifier: z.string().regex(/^\d{9}$/),
-    legalName: z.string().trim().min(1).max(200),
+    legalName: legalNameSchema,
 });
 
 export const TinEinValidationResponseSchema = z.object({
@@ -58,7 +66,7 @@ const soapValidationPayloadSchema: z.ZodType<ValidationServicePayload> =
     z.object({
         IdentifierType: z.enum(["TIN", "EIN"]),
         Identifier: z.string().regex(/^\d{9}$/),
-        LegalName: z.string().trim().min(1).max(200),
+        LegalName: legalNameSchema,
     });
 
 export type TinEinValidationRequest = z.infer<
@@ -202,12 +210,7 @@ async function createNodeSoapInvoker(
                 operationOptions,
             );
 
-            if (Array.isArray(response)) {
-                const firstResponse: unknown = response[0];
-                return firstResponse;
-            }
-
-            return response;
+            return unwrapSoapOperationResponse(response, operationName);
         } catch (error: unknown) {
             throw new TinEinValidationServiceError(
                 "The TIN/EIN validation service could not be reached.",
@@ -215,6 +218,44 @@ async function createNodeSoapInvoker(
             );
         }
     };
+}
+
+function containsControlCharacter(value: string): boolean {
+    for (const character of value) {
+        const codePoint = character.codePointAt(0);
+        if (
+            codePoint !== undefined &&
+            (codePoint <= 0x1f || codePoint === 0x7f)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function unwrapSoapOperationResponse(
+    response: unknown,
+    operationName: string,
+): unknown {
+    const responseBody: unknown = Array.isArray(response)
+        ? response[0]
+        : response;
+    if (!isRecord(responseBody)) {
+        return responseBody;
+    }
+
+    for (const wrapperKey of [
+        `${operationName}Result`,
+        `${operationName}Response`,
+    ]) {
+        const wrappedResponse = responseBody[wrapperKey];
+        if (isRecord(wrappedResponse)) {
+            return wrappedResponse;
+        }
+    }
+
+    return responseBody;
 }
 
 function readSoapMethod(
