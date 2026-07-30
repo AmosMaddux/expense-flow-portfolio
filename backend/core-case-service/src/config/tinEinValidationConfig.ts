@@ -14,6 +14,9 @@ const tinEinValidationEnvironmentSchema = z
             .string()
             .min(1)
             .default("GetTaxpayerStatus"),
+        TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: z.coerce
+            .boolean()
+            .default(false),
         TIN_EIN_VALIDATION_USERNAME: z.string().min(1).optional(),
         TIN_EIN_VALIDATION_PASSWORD: z.string().min(1).optional(),
         TIN_EIN_VALIDATION_TIMEOUT_MS: z.coerce

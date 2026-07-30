@@ -12,6 +12,7 @@ const config: TinEinValidationConfig = {
     TIN_EIN_VALIDATION_WSDL_URL: "https://tin-ein.example.test/validation?wsdl",
     TIN_EIN_VALIDATION_OPERATION_NAME: "ValidateSyntheticTinEin",
     TIN_EIN_VALIDATION_STATUS_OPERATION_NAME: "GetSyntheticTaxpayerStatus",
+    TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: true,
     TIN_EIN_VALIDATION_TIMEOUT_MS: 100,
     TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE: 50,
     TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS: 1000,
@@ -100,6 +101,7 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
                     },
                 ]),
             ),
+            GetSyntheticTaxpayerStatusAsync: vi.fn(),
         };
         const acl = createEinValidationAcl({
             tinEinValidationClient: createSoapTinEinValidationClient(config, {

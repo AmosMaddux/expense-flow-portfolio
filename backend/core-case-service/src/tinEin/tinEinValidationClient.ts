@@ -122,6 +122,7 @@ type ValidationServiceTransportOptions = WsdlClientOptions & {
     endpointUrl?: string;
     username?: string;
     password?: string;
+    statusEnrichmentEnabled: boolean;
     statusOperationName: string;
 };
 
@@ -175,6 +176,8 @@ export function createSoapTinEinValidationClient(
                     ...(config.TIN_EIN_VALIDATION_PASSWORD === undefined
                         ? {}
                         : { password: config.TIN_EIN_VALIDATION_PASSWORD }),
+                    statusEnrichmentEnabled:
+                        config.TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED,
                     statusOperationName:
                         config.TIN_EIN_VALIDATION_STATUS_OPERATION_NAME,
                 },
@@ -201,17 +204,12 @@ export function createSoapTinEinValidationClient(
             });
             const validation = toTinEinValidationResponse(rawSoapResponse);
             if (validation.isValid && invoker.getTaxpayerStatus !== undefined) {
-                const statusResponse = await invoker.getTaxpayerStatus(
-                    {
-                        TIN: soapPayload.TIN,
-                        TINType: soapPayload.TINType,
-                    },
-                    {
-                        timeout: config.TIN_EIN_VALIDATION_TIMEOUT_MS,
-                    },
+                return addTaxpayerStatusIfAvailable(
+                    validation,
+                    invoker,
+                    soapPayload,
+                    config.TIN_EIN_VALIDATION_TIMEOUT_MS,
                 );
-
-                return addTaxpayerStatus(validation, statusResponse);
             }
 
             return validation;
@@ -263,10 +261,9 @@ async function createNodeSoapInvoker(
     });
     configureSoapClient(soapClient, soap, options);
     const verifyMethod = readSoapMethod(soapClient, `${operationName}Async`);
-    const statusMethod = readOptionalSoapMethod(
-        soapClient,
-        `${options.statusOperationName}Async`,
-    );
+    const statusMethod = options.statusEnrichmentEnabled
+        ? readSoapMethod(soapClient, `${options.statusOperationName}Async`)
+        : undefined;
 
     return {
         verifyTaxpayer: async (payload, operationOptions) =>
@@ -403,28 +400,6 @@ function readSoapMethod(
     };
 }
 
-function readOptionalSoapMethod(
-    soapClient: Record<string, unknown>,
-    methodName: string,
-): ValidationServiceInvoker["verifyTaxpayer"] | undefined {
-    const method = soapClient[methodName];
-    if (typeof method !== "function") {
-        return undefined;
-    }
-
-    return (
-        payload: ValidationServicePayload,
-        operationOptions?: SoapOperationOptions,
-    ): Promise<unknown> => {
-        const response: unknown = Reflect.apply(method, soapClient, [
-            payload,
-            operationOptions,
-        ]);
-
-        return Promise.resolve(response);
-    };
-}
-
 function toTinEinValidationResponse(
     rawSoapResponse: unknown,
 ): TinEinValidationResponse {
@@ -434,7 +409,7 @@ function toTinEinValidationResponse(
         );
     }
 
-    const tivsMatchCode = readOptionalString(rawSoapResponse, ["MatchCode"]);
+    const tivsMatchCode = readOptionalMatchCode(rawSoapResponse, ["MatchCode"]);
     if (tivsMatchCode !== undefined) {
         return toTivsValidationResponse(rawSoapResponse, tivsMatchCode);
     }
@@ -510,6 +485,33 @@ function toTivsValidationResponse(
     });
 }
 
+async function addTaxpayerStatusIfAvailable(
+    validation: TinEinValidationResponse,
+    invoker: ValidationServiceInvoker,
+    soapPayload: ValidationServicePayload,
+    timeout: number,
+): Promise<TinEinValidationResponse> {
+    if (invoker.getTaxpayerStatus === undefined) {
+        return validation;
+    }
+
+    try {
+        const statusResponse = await invoker.getTaxpayerStatus(
+            {
+                TIN: soapPayload.TIN,
+                TINType: soapPayload.TINType,
+            },
+            {
+                timeout,
+            },
+        );
+
+        return addTaxpayerStatus(validation, statusResponse);
+    } catch {
+        return validation;
+    }
+}
+
 function addTaxpayerStatus(
     validation: TinEinValidationResponse,
     rawStatusResponse: unknown,
@@ -575,6 +577,26 @@ function toTivsIdentifierType(
     identifierType: TinEinValidationRequest["identifierType"],
 ): "EIN" | "SSN" {
     return identifierType === "EIN" ? "EIN" : "SSN";
+}
+
+function readOptionalMatchCode(
+    record: Record<string, unknown>,
+    keys: string[],
+): string | undefined {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === "number" && Number.isInteger(value)) {
+            return value.toString();
+        }
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (/^\d+$/.test(trimmed)) {
+                return trimmed;
+            }
+        }
+    }
+
+    return undefined;
 }
 
 function readOptionalBoolean(

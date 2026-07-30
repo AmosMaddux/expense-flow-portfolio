@@ -12,6 +12,7 @@ const config: TinEinValidationConfig = {
     TIN_EIN_VALIDATION_ENDPOINT_URL: "https://tin-ein.example.test/tivs",
     TIN_EIN_VALIDATION_OPERATION_NAME: "VerifyTaxpayer",
     TIN_EIN_VALIDATION_STATUS_OPERATION_NAME: "GetTaxpayerStatus",
+    TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: true,
     TIN_EIN_VALIDATION_USERNAME: "synthetic-user",
     TIN_EIN_VALIDATION_PASSWORD: "synthetic-password",
     TIN_EIN_VALIDATION_TIMEOUT_MS: 100,
@@ -102,6 +103,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                 endpointUrl: "https://tin-ein.example.test/tivs",
                 username: "synthetic-user",
                 password: "synthetic-password",
+                statusEnrichmentEnabled: true,
                 statusOperationName: "GetTaxpayerStatus",
             },
         );
@@ -176,6 +178,101 @@ void describe("SOAP TIN/EIN validation client", () => {
                 },
             );
         }
+    });
+    void test("normalizes numeric TIVS match codes", async () => {
+        const client = createSoapTinEinValidationClient(config, {
+            createValidationServiceInvoker: () =>
+                Promise.resolve({
+                    verifyTaxpayer: vi.fn().mockResolvedValue({
+                        MatchCode: 0,
+                        VerifiedName: "Synthetic Expense Vendor LLC",
+                        TINType: "EIN",
+                    }),
+                }),
+        });
+
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
+        });
+    });
+
+    void test("does not require taxpayer status operation when enrichment is disabled", async () => {
+        const soapClient = {
+            setEndpoint: vi.fn(),
+            setSecurity: vi.fn(),
+            VerifyTaxpayerAsync: vi.fn(() =>
+                Promise.resolve([
+                    {
+                        VerifyTaxpayerResponse: {
+                            MatchCode: "0",
+                            VerifiedName: "Synthetic Expense Vendor LLC",
+                            TINType: "EIN",
+                        },
+                    },
+                ]),
+            ),
+        };
+        const client = createSoapTinEinValidationClient(
+            {
+                ...config,
+                TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: false,
+            },
+            {
+                soapModule: {
+                    createClientAsync: vi.fn(() => Promise.resolve(soapClient)),
+                    WSSecurity: vi.fn(),
+                },
+            },
+        );
+
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
+        });
+    });
+
+    void test("fails fast when configured taxpayer status enrichment is not exposed by the WSDL", async () => {
+        const soapClient = {
+            setEndpoint: vi.fn(),
+            setSecurity: vi.fn(),
+            VerifyTaxpayerAsync: vi.fn(),
+        };
+        const client = createSoapTinEinValidationClient(config, {
+            soapModule: {
+                createClientAsync: vi.fn(() => Promise.resolve(soapClient)),
+                WSSecurity: vi.fn(),
+            },
+        });
+
+        await expect(client.validateTinEin(request)).rejects.toMatchObject({
+            name: "TinEinValidationServiceError",
+            message:
+                "The TIN/EIN validation WSDL does not expose GetTaxpayerStatusAsync.",
+        });
+    });
+
+    void test("preserves confirmed validation when taxpayer status enrichment fails", async () => {
+        const client = createSoapTinEinValidationClient(config, {
+            createValidationServiceInvoker: () =>
+                Promise.resolve({
+                    verifyTaxpayer: vi.fn().mockResolvedValue({
+                        MatchCode: "0",
+                        VerifiedName: "Synthetic Expense Vendor LLC",
+                        TINType: "EIN",
+                    }),
+                    getTaxpayerStatus: vi
+                        .fn()
+                        .mockRejectedValue(
+                            new Error("synthetic status outage"),
+                        ),
+                }),
+        });
+
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
+        });
     });
 
     void test("uses the node-soap adapter with endpoint override and UsernameToken security", async () => {
@@ -358,7 +455,7 @@ void describe("SOAP TIN/EIN validation client", () => {
         });
     });
 
-    void test("rejects invalid taxpayer status dates", async () => {
+    void test("preserves confirmed validation when taxpayer status date is malformed", async () => {
         const client = createSoapTinEinValidationClient(config, {
             createValidationServiceInvoker: () =>
                 Promise.resolve({
@@ -374,10 +471,9 @@ void describe("SOAP TIN/EIN validation client", () => {
                 }),
         });
 
-        await expect(client.validateTinEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message:
-                "The TIN/EIN validation service returned an invalid status date.",
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
         });
     });
 
