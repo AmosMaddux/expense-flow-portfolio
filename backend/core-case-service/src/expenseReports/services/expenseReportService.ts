@@ -26,6 +26,7 @@ import {
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
     findExpenseReportById,
+    findExpenseReportReviewDetail,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
     insertMileageEntry,
@@ -45,6 +46,7 @@ import {
     AddDraftExpenseContentOutboundResponseSchema,
     AuditEntryOutboundResponseSchema,
     DraftExpenseContentOutboundResponseSchema,
+    ExpenseReportReviewDetailSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -57,6 +59,7 @@ import {
     type CreateMileageEntryRequest,
     type DraftExpenseContentResponse,
     type ExpenseReportResponse,
+    type ExpenseReportReviewDetail,
     type GetExpenseReportRequest,
     type MileageConfigResponse,
     type MileageEntryResponse,
@@ -133,6 +136,31 @@ export async function readExpenseReport(
     }
 
     return toExpenseReportResponse(report);
+}
+
+/**
+ * Reads all sources for a Finance Admin report-detail surface.
+ */
+export async function readExpenseReportReviewDetail(request: {
+    id: string;
+    tenantId: string;
+    now?: () => Date;
+}): Promise<ExpenseReportReviewDetail> {
+    const detail = await findExpenseReportReviewDetail(
+        request.tenantId,
+        request.id,
+    );
+
+    if (detail === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    const today = (request.now?.() ?? new Date()).toISOString().slice(0, 10);
+
+    return ExpenseReportReviewDetailSchema.parse({
+        ...detail,
+        isOverdue: detail.status !== "Reconciled" && detail.dueDate < today,
+    });
 }
 
 /**

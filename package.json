@@ -24,7 +24,7 @@
         "test:ui-gate": "npm run test:e2e && npm run lighthouse",
         "lighthouse": "node scripts/run-lighthouse-ci.mjs",
         "lighthouse:ci": "npm run lighthouse",
-        "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
+        "start": "node --env-file=.env scripts/start-local-core-case-service.mjs",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
     },
     "repository": {
