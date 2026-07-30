@@ -32,6 +32,9 @@ type E2eTransaction = Parameters<Parameters<E2eDatabase["transaction"]>[0]>[0];
 const e2eCommandSchema = z.enum(["reset", "code", "verify"]);
 const e2eAccountNameSchema = z.enum(["employee", "manager"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
+const e2eDatabaseName = "expenseflow_core_case";
+const e2eDatabaseMarkerName = "pg_database description";
+const e2eDatabaseMarkerValue = "expenseflow-core-case-deterministic-e2e-v1";
 const e2ePasswordDefault = "expenseflow-e2e-local-only";
 const e2eAccounts = {
     employee: {
@@ -92,7 +95,6 @@ const e2eEnvironmentSchema = z.object({
         message: "E2E data reset can connect only to a loopback database.",
     }),
     EXPENSEFLOW_E2E_PASSWORD: z.string().min(12).default(e2ePasswordDefault),
-    EXPENSEFLOW_E2E_TENANT_ID: z.uuid().default(e2eTenantId),
 });
 
 type E2eAccountName = z.infer<typeof e2eAccountNameSchema>;
@@ -100,23 +102,21 @@ type E2eAccountName = z.infer<typeof e2eAccountNameSchema>;
 async function resetE2eTestData(): Promise<void> {
     const environment = e2eEnvironmentSchema.parse(process.env);
 
-    await applyPendingCoreCaseMigrations(environment.DATABASE_URL);
     const pool = new Pool({ connectionString: environment.DATABASE_URL });
     const database = drizzle(pool, { schema });
 
     try {
+        await assertDedicatedE2eDatabase(database);
+        await applyPendingCoreCaseMigrations(environment.DATABASE_URL);
         await database.transaction(async (transaction) => {
-            await clearE2eTenantData(
-                transaction,
-                environment.EXPENSEFLOW_E2E_TENANT_ID,
-            );
+            await clearE2eTenantData(transaction);
             await seedE2eTenantData(transaction, environment);
         });
 
         process.stdout.write(
             [
                 "Synthetic E2E ExpenseFlow data is ready.",
-                `tenant: ${environment.EXPENSEFLOW_E2E_TENANT_ID}`,
+                `tenant: ${e2eTenantId}`,
                 `employee: ${e2eAccounts.employee.email}`,
                 `manager: ${e2eAccounts.manager.email}`,
                 "roles: Employee, Department Manager",
@@ -138,7 +138,7 @@ async function printE2eTotpCode(accountName: E2eAccountName): Promise<void> {
         await waitForUsefulTotpInterval();
         const code = await readCurrentE2eTotpCode(
             database,
-            environment.EXPENSEFLOW_E2E_TENANT_ID,
+            e2eTenantId,
             accountName,
         );
         process.stdout.write(`${code}\n`);
@@ -157,33 +157,19 @@ async function verifyE2eTestData(): Promise<void> {
             database
                 .select({ id: user.id, email: user.email })
                 .from(user)
-                .where(
-                    eq(user.tenantId, environment.EXPENSEFLOW_E2E_TENANT_ID),
-                ),
+                .where(eq(user.tenantId, e2eTenantId)),
             database
                 .select({ userId: role.userId, name: role.name })
                 .from(role)
-                .where(
-                    eq(role.tenantId, environment.EXPENSEFLOW_E2E_TENANT_ID),
-                ),
+                .where(eq(role.tenantId, e2eTenantId)),
             database
                 .select({ category: glMapping.category })
                 .from(glMapping)
-                .where(
-                    eq(
-                        glMapping.tenantId,
-                        environment.EXPENSEFLOW_E2E_TENANT_ID,
-                    ),
-                ),
+                .where(eq(glMapping.tenantId, e2eTenantId)),
             database
                 .select({ id: expenseReport.id })
                 .from(expenseReport)
-                .where(
-                    eq(
-                        expenseReport.tenantId,
-                        environment.EXPENSEFLOW_E2E_TENANT_ID,
-                    ),
-                ),
+                .where(eq(expenseReport.tenantId, e2eTenantId)),
         ]);
 
         if (
@@ -205,10 +191,7 @@ async function verifyE2eTestData(): Promise<void> {
     }
 }
 
-async function clearE2eTenantData(
-    transaction: E2eTransaction,
-    tenantId: string,
-): Promise<void> {
+async function clearE2eTenantData(transaction: E2eTransaction): Promise<void> {
     await transaction.execute(
         sql`alter table "audit_entry" disable trigger "audit_entry_prevent_mutation_trigger"`,
     );
@@ -219,7 +202,7 @@ async function clearE2eTenantData(
     try {
         for (const tableName of tenantOwnedTablesInDeleteOrder) {
             await transaction.execute(
-                sql`delete from ${sql.identifier(tableName)} where tenant_id = ${tenantId}`,
+                sql`delete from ${sql.identifier(tableName)} where tenant_id = ${e2eTenantId}`,
             );
         }
     } finally {
@@ -236,7 +219,6 @@ async function seedE2eTenantData(
     transaction: E2eTransaction,
     environment: z.infer<typeof e2eEnvironmentSchema>,
 ): Promise<void> {
-    const tenantId = environment.EXPENSEFLOW_E2E_TENANT_ID;
     const passwordHash = await createPasswordHasher(
         loadPasswordHashConfig(),
     ).hashPassword(environment.EXPENSEFLOW_E2E_PASSWORD);
@@ -244,17 +226,17 @@ async function seedE2eTenantData(
     for (const account of Object.values(e2eAccounts)) {
         await transaction.insert(user).values({
             id: account.userId,
-            tenantId,
+            tenantId: e2eTenantId,
             email: account.email,
         });
         await transaction.insert(credential).values({
-            tenantId,
+            tenantId: e2eTenantId,
             userId: account.userId,
             passwordHash,
             passwordHashAlgorithm: "argon2id",
         });
         await transaction.insert(role).values({
-            tenantId,
+            tenantId: e2eTenantId,
             userId: account.userId,
             name: account.role,
         });
@@ -276,7 +258,7 @@ async function seedE2eTenantData(
             },
             createTotpSecretProtector(),
         ).enroll({
-            tenantId,
+            tenantId: e2eTenantId,
             userId: account.userId,
             email: account.email,
         });
@@ -285,16 +267,46 @@ async function seedE2eTenantData(
     for (const mapping of e2eGlMappings) {
         await transaction.insert(glCode).values({
             id: mapping.id,
-            tenantId,
+            tenantId: e2eTenantId,
             accountCode: mapping.accountCode,
             accountName: mapping.accountName,
             description: "Synthetic E2E GL reference data.",
         });
         await transaction.insert(glMapping).values({
-            tenantId,
+            tenantId: e2eTenantId,
             category: mapping.category,
             glCodeId: mapping.id,
         });
+    }
+}
+
+async function assertDedicatedE2eDatabase(
+    database: E2eDatabase,
+): Promise<void> {
+    const identityResult = await database.execute<{
+        databaseName: string;
+        markerValue: string | null;
+    }>(
+        sql`
+            select
+                current_database() as "databaseName",
+                shobj_description(pg_database.oid, 'pg_database') as "markerValue"
+            from pg_database
+            where datname = current_database()
+        `,
+    );
+    const identity = identityResult.rows[0];
+
+    if (
+        identity?.databaseName !== e2eDatabaseName ||
+        identity.markerValue !== e2eDatabaseMarkerValue
+    ) {
+        throw new Error(
+            [
+                "Refusing to reset E2E data because DATABASE_URL is not the dedicated synthetic E2E database.",
+                `Expected database ${e2eDatabaseName} with marker ${e2eDatabaseMarkerName}=${e2eDatabaseMarkerValue}.`,
+            ].join(" "),
+        );
     }
 }
 

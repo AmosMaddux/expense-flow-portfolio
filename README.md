@@ -204,12 +204,14 @@ npx playwright install --with-deps chromium
 Reset and verify the deterministic E2E data without running the browser:
 
 ```sh
+docker compose up -d --wait postgres
+docker compose run --rm postgres-e2e-marker
 npm run e2e:reset
 npm run e2e:verify
 ```
 
-The reset applies pending Core Case migrations, clears the isolated E2E tenant,
-and seeds:
+The reset applies pending Core Case migrations, verifies the connection is the
+dedicated synthetic E2E database, clears the hard-coded E2E tenant, and seeds:
 
 - Employee: `employee.e2e@example.test`
 - Department Manager: `manager.e2e@example.test`

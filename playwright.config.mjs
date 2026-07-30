@@ -2,9 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 const frontendBaseUrl =
     process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5173";
-const e2eTenantId =
-    process.env.EXPENSEFLOW_E2E_TENANT_ID ??
-    "81000000-0000-4000-8000-000000000001";
+const e2eTenantId = "81000000-0000-4000-8000-000000000001";
 
 export default defineConfig({
     testDir: "./tests/e2e",
