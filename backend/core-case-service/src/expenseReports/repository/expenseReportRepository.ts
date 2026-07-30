@@ -34,6 +34,7 @@ import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import type {
     ApprovalQueueLineItemResponse,
+    ExpenseReportReviewDetail,
     TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
 import { isExpenseReportWorkflowEdge } from "../domain/expenseReportWorkflow.js";
@@ -71,6 +72,17 @@ type UpdateExpenseReportSourceDeductibilityResult =
     | { kind: "updated"; lineItem: ApprovalQueueLineItemResponse }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
     | { kind: "not_found" };
+
+type LatestReportGlResult = {
+    sourceType: ReviewableExpenseSourceType;
+    sourceId: string;
+    glCode: string | null;
+    amount: string | null;
+    currency: string | null;
+    flaggedLineItem: boolean;
+    reviewAction: "approve" | "reject" | null;
+    deductible: boolean;
+};
 
 export type SubmissionSources = {
     report: ExpenseReport;
@@ -221,6 +233,123 @@ export async function findExpenseReportById(
     }
 
     return undefined;
+}
+
+/**
+ * Reads full report detail sources inside the authenticated tenant boundary.
+ */
+export async function findExpenseReportReviewDetail(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<ExpenseReportReviewDetail | undefined> {
+    const report = await findExpenseReportById(tenantId, expenseReportId);
+    if (report === undefined) {
+        return undefined;
+    }
+
+    const [savedLineItems, savedMileageEntries, glRows] = await Promise.all([
+        db
+            .select()
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    eq(lineItem.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
+        db
+            .select()
+            .from(mileageEntry)
+            .where(
+                and(
+                    eq(mileageEntry.tenantId, tenantId),
+                    eq(mileageEntry.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+        db
+            .select({
+                sourceType: glCodingResult.sourceType,
+                sourceId: glCodingResult.sourceId,
+                glCode: glCodingResult.glAccountCode,
+                amount: glCodingResult.amount,
+                currency: glCodingResult.currency,
+                flaggedLineItem: glCodingResult.flaggedLineItem,
+                reviewAction: glCodingResult.lineItemReviewAction,
+                deductible: glCodingResult.deductible,
+            })
+            .from(glCodingResult)
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.expenseReportId, expenseReportId),
+                ),
+            )
+            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
+    ]);
+    const latestGlBySource = new Map<string, LatestReportGlResult>();
+    for (const row of glRows) {
+        if (row.sourceType !== "line_item" && row.sourceType !== "mileage") {
+            continue;
+        }
+
+        const sourceKey = `${row.sourceType}:${row.sourceId}`;
+        if (!latestGlBySource.has(sourceKey)) {
+            latestGlBySource.set(sourceKey, {
+                sourceType: row.sourceType,
+                sourceId: row.sourceId,
+                glCode: row.glCode,
+                amount: row.amount,
+                currency: row.currency,
+                flaggedLineItem: row.flaggedLineItem,
+                reviewAction: parseReviewAction(row.reviewAction),
+                deductible: row.deductible,
+            });
+        }
+    }
+
+    return {
+        expenseReportId: report.id,
+        owner: report.owner,
+        priority: report.priority as ExpenseReportReviewDetail["priority"],
+        dueDate: report.dueDate,
+        status: report.currentStage as ExpenseReportReviewDetail["status"],
+        onHold: report.onHold,
+        isOverdue: false,
+        lineItems: savedLineItems.map((item) => {
+            const latestGl = latestGlBySource.get(`line_item:${item.id}`);
+
+            return {
+                id: item.id,
+                merchant: item.merchant,
+                category: item.category,
+                date: item.expenseDate,
+                amount: item.amount,
+                currency: item.currency,
+                glCode: latestGl?.glCode ?? null,
+                flaggedLineItem: latestGl?.flaggedLineItem ?? false,
+                reviewAction: latestGl?.reviewAction ?? null,
+                deductible: latestGl?.deductible ?? null,
+            };
+        }),
+        mileageEntries: savedMileageEntries.map((entry) => {
+            const latestGl = latestGlBySource.get(`mileage:${entry.id}`);
+
+            return {
+                id: entry.id,
+                route: entry.route,
+                distance: entry.distance,
+                date: entry.mileageDate,
+                amount: latestGl?.amount ?? "0.00",
+                currency: latestGl?.currency ?? "USD",
+                glCode: latestGl?.glCode ?? null,
+                flaggedLineItem: latestGl?.flaggedLineItem ?? false,
+                reviewAction: latestGl?.reviewAction ?? null,
+                deductible: latestGl?.deductible ?? null,
+            };
+        }),
+    };
 }
 
 /**

@@ -21,7 +21,7 @@
         "test:e2e:headed": "docker compose up -d --wait postgres redis gl-coding && docker compose run --rm postgres-e2e-marker && npm run e2e:reset && playwright test --headed",
         "test:e2e:debug": "docker compose up -d --wait postgres redis gl-coding && docker compose run --rm postgres-e2e-marker && npm run e2e:reset && playwright test --debug",
         "dev:events:receive": "sh scripts/receive-local-stage-transition-event.sh",
-        "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
+        "start": "node --env-file=.env scripts/start-local-core-case-service.mjs",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
     },
     "repository": {

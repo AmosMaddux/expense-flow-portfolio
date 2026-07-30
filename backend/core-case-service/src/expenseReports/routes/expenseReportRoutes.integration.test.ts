@@ -6010,6 +6010,14 @@ void describe("Expense Report routes", () => {
                 currency?: string;
                 status?: string;
                 deductible?: boolean | null;
+                owner?: string;
+                priority?: string;
+                dueDate?: string;
+                onHold?: boolean;
+                isOverdue?: boolean;
+                glCode?: string | null;
+                flaggedLineItem?: boolean;
+                reviewAction?: string | null;
             }>;
             nextCursor?: string | null;
         };
@@ -6027,6 +6035,14 @@ void describe("Expense Report routes", () => {
             currency: "USD",
             status: "AP Review",
             deductible: null,
+            owner,
+            priority: "Normal",
+            dueDate: "2026-07-20",
+            onHold: false,
+            isOverdue: true,
+            glCode: null,
+            flaggedLineItem: false,
+            reviewAction: null,
         });
         expect(
             body.items?.some(

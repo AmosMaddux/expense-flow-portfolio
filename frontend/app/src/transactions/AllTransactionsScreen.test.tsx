@@ -15,12 +15,23 @@ import {
     createAllTransactionsQueryString,
     type AllTransaction,
     type AllTransactionPage,
+    type ExpenseReportReviewDetail,
 } from "./AllTransactionsScreen";
 import allTransactionsPageContract from "./__fixtures__/allTransactionsPage.contract.json";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
+const defaultReportMetadata = {
+    owner: userId,
+    priority: "Normal",
+    dueDate: "2026-08-01",
+    onHold: false,
+    isOverdue: false,
+} satisfies Pick<
+    AllTransaction,
+    "owner" | "priority" | "dueDate" | "onHold" | "isOverdue"
+>;
 
 function createSession(): AuthSession {
     return {
@@ -62,11 +73,58 @@ function createProblemResponse(detail: string): Response {
     );
 }
 
+function readRequestInput(input: RequestInfo | URL): string {
+    if (typeof input === "string") {
+        return input;
+    }
+
+    if (input instanceof URL) {
+        return input.href;
+    }
+
+    if (input instanceof Request) {
+        return input.url;
+    }
+
+    return "";
+}
+
 function createTransactionPage(
     items: AllTransaction[],
     nextCursor: string | null = null,
 ): AllTransactionPage {
     return { items, nextCursor };
+}
+
+function createReportDetail(
+    transaction: AllTransaction,
+    overrides: Partial<ExpenseReportReviewDetail> = {},
+): ExpenseReportReviewDetail {
+    return {
+        expenseReportId: transaction.expenseReportId,
+        owner: transaction.owner,
+        priority: transaction.priority,
+        dueDate: transaction.dueDate,
+        status: transaction.status,
+        onHold: transaction.onHold,
+        isOverdue: transaction.isOverdue,
+        lineItems: [
+            {
+                id: transaction.id,
+                merchant: transaction.merchant,
+                category: transaction.category,
+                date: transaction.date.slice(0, 10),
+                amount: transaction.amount,
+                currency: transaction.currency,
+                glCode: transaction.glCode,
+                flaggedLineItem: transaction.flaggedLineItem,
+                reviewAction: transaction.reviewAction,
+                deductible: null,
+            },
+        ],
+        mileageEntries: [],
+        ...overrides,
+    };
 }
 
 function createNoRetryQueryClient(): QueryClient {
@@ -128,7 +186,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
             {
                 id: "30000000-0000-4000-8000-000000000171",
@@ -139,7 +200,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: true,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -160,12 +224,12 @@ describe("AllTransactionsScreen", () => {
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 20, 2026 Cedar Bistro Meals \$64\.20 AP Review Not set/i,
+                name: /Jul 20, 2026 CF8EA46A Cedar Bistro Meals \$64\.20 AP Review/i,
             }),
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 18, 2026 Northstar Office Office Supplies \$92\.41 Submitted Yes/i,
+                name: /Jul 18, 2026 CF8EA46A Northstar Office Office Supplies \$92\.41 Submitted/i,
             }),
         ).toBeTruthy();
         expect(screen.getByText("Showing 2 line items")).toBeTruthy();
@@ -182,7 +246,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const updatedTransactions: AllTransaction[] = [
@@ -195,7 +262,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "118.75",
                 currency: "USD",
                 status: "Submitted",
-                deductible: true,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi
@@ -224,6 +294,163 @@ describe("AllTransactionsScreen", () => {
         expect(fetchImplementation).toHaveBeenCalledTimes(2);
     });
 
+    test("opens a report review modal from a row Review button", async () => {
+        const transactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000178",
+                expenseReportId: "60000000-0000-4000-8000-000000000178",
+                date: "2026-07-20T12:00:00.000Z",
+                merchant: "Summit Air",
+                category: "Travel",
+                amount: "512.09",
+                currency: "USD",
+                status: "AP Review",
+                glCode: "6220",
+                flaggedLineItem: true,
+                reviewAction: "reject",
+                owner: userId,
+                priority: "Urgent",
+                dueDate: "2026-07-01",
+                onHold: true,
+                isOverdue: true,
+            },
+        ];
+        const reportDetail = createReportDetail(transactions[0]);
+        const fetchImplementation = vi.fn<typeof fetch>((input) =>
+            Promise.resolve(
+                readRequestInput(input).includes("/review-detail")
+                    ? createJsonResponse(reportDetail)
+                    : createJsonResponse(createTransactionPage(transactions)),
+            ),
+        );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const summitRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(summitRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = screen.getByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+        expect(
+            await within(dialog).findByRole("list", {
+                name: "Expense Report stage progress",
+            }),
+        ).toBeTruthy();
+        const summary = within(dialog).getByRole("complementary", {
+            name: "Expense Report case summary",
+        });
+        expect(
+            within(summary).getByText(userId.slice(0, 8).toUpperCase()),
+        ).toBeTruthy();
+        expect(within(summary).getByText("Urgent")).toBeTruthy();
+        expect(within(summary).getByText("Jul 01, 2026")).toBeTruthy();
+        expect(within(summary).getByText("Overdue")).toBeTruthy();
+        expect(within(summary).getByText("On hold")).toBeTruthy();
+        expect(within(dialog).getByRole("status").textContent).toBe("Paused");
+        expect(
+            within(dialog).getByRole("table", {
+                name: "Expense Report review line items",
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Summit Air \$512\.09 - 6220 Over \$500 Rejected/i,
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenLastCalledWith(
+            "/v1/expense-reports/60000000-0000-4000-8000-000000000178/review-detail",
+            expect.objectContaining({}),
+        );
+
+        fireEvent.click(within(dialog).getByRole("button", { name: "Exit" }));
+
+        expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    test("loads report detail from all report sources instead of visible transaction rows", async () => {
+        const visibleTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000188",
+            expenseReportId: "60000000-0000-4000-8000-000000000188",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                createJsonResponse(createTransactionPage([visibleTransaction])),
+            )
+            .mockResolvedValueOnce(
+                createJsonResponse(
+                    createReportDetail(visibleTransaction, {
+                        lineItems: [
+                            {
+                                id: visibleTransaction.id,
+                                merchant: "Summit Air",
+                                category: "Travel",
+                                date: "2026-07-20",
+                                amount: "512.09",
+                                currency: "USD",
+                                glCode: "6220",
+                                flaggedLineItem: true,
+                                reviewAction: "approve",
+                                deductible: null,
+                            },
+                            {
+                                id: "30000000-0000-4000-8000-000000000189",
+                                merchant: "Cedar Bistro",
+                                category: "Meals",
+                                date: "2026-07-19",
+                                amount: "48.33",
+                                currency: "USD",
+                                glCode: "6250",
+                                flaggedLineItem: false,
+                                reviewAction: null,
+                                deductible: null,
+                            },
+                        ],
+                    }),
+                ),
+            );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const visibleRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(visibleRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = await screen.findByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+
+        expect(
+            await within(dialog).findByRole("row", {
+                name: /Summit Air \$512\.09 - 6220 Over \$500 Approved/i,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Cedar Bistro \$48\.33 - 6250 Clear Not reviewed/i,
+            }),
+        ).toBeTruthy();
+        expect(screen.getByText("Showing 1 line items")).toBeTruthy();
+    });
+
     test("keeps current rows when already-applied filters are applied again", async () => {
         const transactions: AllTransaction[] = [
             {
@@ -235,7 +462,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -266,7 +496,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: null,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -398,12 +631,12 @@ describe("AllTransactionsScreen", () => {
 
         expect(
             await screen.findByRole("row", {
-                name: /Jul 20, 2026 Cedar Bistro Meals \$64\.20 AP Review Not set/i,
+                name: /Jul 20, 2026 CF8EA46A Cedar Bistro Meals \$64\.20 AP Review/i,
             }),
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 18, 2026 Northstar Office Office Supplies \$92\.41 Submitted Yes/i,
+                name: /Jul 18, 2026 CF8EA46A Northstar Office Office Supplies \$92\.41 Submitted/i,
             }),
         ).toBeTruthy();
         expect(fetchImplementation).toHaveBeenCalledWith(
@@ -431,7 +664,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const secondPage: AllTransaction[] = [
@@ -444,7 +680,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: null,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi
