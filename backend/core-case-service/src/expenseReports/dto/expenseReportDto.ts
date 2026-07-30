@@ -228,6 +228,12 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     })
     .strict();
 
+export const StageTransitionCorrelationHeaderSchema = z
+    .object({
+        correlationId: z.uuid().optional(),
+    })
+    .strict();
+
 export const ClearExpenseReportFlagsInboundRequestSchema = z
     .object({
         sourceIds: z.array(z.uuid()).min(1),
@@ -261,6 +267,12 @@ export const ReviewExpenseReportSourceParamsSchema = z.object({
     sourceType: z.enum(["line_item", "mileage"]),
     sourceId: z.uuid(),
 });
+
+export const UpdateExpenseReportSourceDeductibilityInboundRequestSchema = z
+    .object({
+        deductible: z.boolean(),
+    })
+    .strict();
 
 export const ReadCaseQueueStageRollupsInboundRequestSchema = z.object({
     tenantId: z.uuid(),
@@ -380,6 +392,9 @@ export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     fromStage: z.enum(approvedWorkflowStages),
     toStage: z.enum(approvedWorkflowStages),
     reason: z.string().trim().min(1),
+    correlationId: z.uuid().optional(),
+    eventId: z.uuid().optional(),
+    occurredAt: z.date().optional(),
 });
 
 export const IdempotentSubmissionHeaderSchema = z.object({
@@ -403,6 +418,14 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     holdReason: z.string().nullable(),
     createdAt: z.date(),
     updatedAt: z.date(),
+});
+
+export const SubmitExpenseReportOperationResultSchema = z.object({
+    correlationId: z.uuid(),
+    report: ExpenseReportOutboundResponseSchema.extend({
+        createdAt: z.coerce.date(),
+        updatedAt: z.coerce.date(),
+    }),
 });
 
 export const MileageEntryOutboundResponseSchema = z.object({
@@ -509,6 +532,7 @@ export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     glCode: z.string().min(1),
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
+    deductible: z.boolean(),
 });
 
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
@@ -522,6 +546,7 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     currentStage: z.enum(approvedWorkflowStages),
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
+    deductible: z.boolean(),
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
@@ -572,6 +597,9 @@ export const reviewExpenseReportLineItemParamsSchema =
 
 export const reviewExpenseReportSourceParamsSchema =
     ReviewExpenseReportSourceParamsSchema;
+
+export const updateExpenseReportSourceDeductibilityRequestSchema =
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema;
 
 export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
@@ -668,6 +696,10 @@ export type TransitionExpenseReportWorkflowRequest = z.infer<
     typeof TransitionExpenseReportWorkflowInboundRequestSchema
 >;
 
+export type StageTransitionCorrelationHeader = z.infer<
+    typeof StageTransitionCorrelationHeaderSchema
+>;
+
 export type ClearExpenseReportFlagsRequest = z.infer<
     typeof ClearExpenseReportFlagsInboundRequestSchema
 >;
@@ -682,6 +714,10 @@ export type ReviewExpenseReportLineItemParams = z.infer<
 
 export type ReviewExpenseReportSourceParams = z.infer<
     typeof ReviewExpenseReportSourceParamsSchema
+>;
+
+export type UpdateExpenseReportSourceDeductibilityRequest = z.infer<
+    typeof UpdateExpenseReportSourceDeductibilityInboundRequestSchema
 >;
 
 export type ExpenseReportResponse = z.infer<

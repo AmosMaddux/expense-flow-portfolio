@@ -11,6 +11,7 @@ import {
     getExpenseReportAuditEntries,
     getExpenseReportById,
     getMileageConfig,
+    patchExpenseReportSourceDeductibility,
     getMySubmissionDetail,
     getMySubmissions,
     postExpenseReportFlagClear,
@@ -94,6 +95,10 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/sources/:sourceType/:sourceId/review",
     postExpenseReportSourceReview,
+);
+expenseReportRouter.patch(
+    "/expense-reports/:id/sources/:sourceType/:sourceId/deductibility",
+    patchExpenseReportSourceDeductibility,
 );
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",

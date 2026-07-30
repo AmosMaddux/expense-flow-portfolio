@@ -22,6 +22,7 @@ import {
     deleteDraftMileageEntry as deleteDraftMileageEntryInStore,
     findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
+    findCommittedSubmissionByIdempotencyKey,
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
     findExpenseReportById,
@@ -35,6 +36,7 @@ import {
     reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
     submitDraftExpenseReport,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
+    updateExpenseReportSourceDeductibility as updateExpenseReportSourceDeductibilityInStore,
     updateDraftLineItem as updateDraftLineItemInStore,
     updateDraftMileageEntry as updateDraftMileageEntryInStore,
 } from "../repository/expenseReportRepository.js";
@@ -63,9 +65,23 @@ import {
     type ReviewExpenseReportLineItemRequest,
     type ReviewExpenseReportSourceParams,
     type TransitionExpenseReportWorkflowRequest,
+    type UpdateExpenseReportSourceDeductibilityRequest,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultReceiptStorage } from "../../receipts/receiptStorage.js";
 import { calculateMileageReimbursement } from "./mileageReimbursement.js";
+import {
+    dispatchStageTransitionOutboxEvents,
+    type StageTransitionOutboxDispatcher,
+} from "../../events/stageTransitionOutboxDispatcher.js";
+
+export type StageTransitionEventDependencies = {
+    stageTransitionOutboxDispatcher: StageTransitionOutboxDispatcher;
+};
+
+export type SubmitExpenseReportResult = {
+    correlationId: string;
+    report: ExpenseReportResponse;
+};
 
 /**
  * Creates a Drafted Expense Report and returns the public API response shape.
@@ -495,17 +511,35 @@ export async function uploadReceiptFile(
 /**
  * Submits a Drafted Expense Report after appending GL-coding results.
  */
-export async function submitExpenseReport(request: {
-    id: string;
-    tenantId: string;
-    actorId: string;
-    roles: RoleName[];
-}): Promise<ExpenseReportResponse> {
+export async function submitExpenseReport(
+    request: {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+        correlationId: string;
+        idempotencyKey: string;
+    },
+    dependencies?: StageTransitionEventDependencies,
+): Promise<SubmitExpenseReportResult> {
     const sources = await readDraftSubmissionSources(
         request.tenantId,
         request.id,
     );
     if (sources === undefined) {
+        const committedSubmission =
+            await findCommittedSubmissionByIdempotencyKey(
+                request.tenantId,
+                request.id,
+                request.idempotencyKey,
+            );
+        if (committedSubmission !== undefined) {
+            return {
+                correlationId: committedSubmission.correlationId,
+                report: toExpenseReportResponse(committedSubmission.report),
+            };
+        }
+
         const existing = await findExpenseReportById(
             request.tenantId,
             request.id,
@@ -576,6 +610,7 @@ export async function submitExpenseReport(request: {
                 maxBackoffMs: glConfig.GL_CODING_MAX_BACKOFF_MS,
             },
         );
+        const outboxEventId = randomUUID();
         const report = await submitDraftExpenseReport(
             request.tenantId,
             request.id,
@@ -584,6 +619,12 @@ export async function submitExpenseReport(request: {
             glResponse,
             buildSubmissionSourceKeys(sources),
             buildSubmissionSourceFingerprint(sources),
+            {
+                correlationId: request.correlationId,
+                eventId: outboxEventId,
+                idempotencyKey: request.idempotencyKey,
+                occurredAt: new Date(),
+            },
         );
         if (report === undefined) {
             await insertDeniedSubmissionAuditEntry(
@@ -598,8 +639,12 @@ export async function submitExpenseReport(request: {
         }
 
         await invalidateCachedCaseQueueStageRollups(request.tenantId);
+        await dispatchOutboxEvent(outboxEventId, dependencies);
 
-        return toExpenseReportResponse(report);
+        return {
+            correlationId: request.correlationId,
+            report: toExpenseReportResponse(report),
+        };
     } catch (error: unknown) {
         if (error instanceof GlCodingServiceError) {
             throw new BadGatewayError(error.message);
@@ -723,6 +768,47 @@ export async function reviewExpenseReportSource(
 }
 
 /**
+ * Applies a manual AP Review deductibility decision to one Expense Report source.
+ */
+export async function updateExpenseReportSourceDeductibility(
+    request: UpdateExpenseReportSourceDeductibilityRequest &
+        ReviewExpenseReportSourceParams & {
+            tenantId: string;
+            actorId: string;
+            roles: RoleName[];
+        },
+): Promise<ApprovalQueueLineItemResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    const result = await updateExpenseReportSourceDeductibilityInStore({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        sourceId: request.sourceId,
+        sourceType: request.sourceType,
+        actorId: request.actorId,
+        deductible: request.deductible,
+    });
+
+    if (result.kind === "not_found") {
+        throw new NotFoundError("Expense Report review source not found.");
+    }
+
+    if (result.kind === "invalid_stage") {
+        throw new ConflictError(
+            `Deductibility can only be updated during AP Review; Expense Report is in ${result.currentStage}.`,
+        );
+    }
+
+    return result.lineItem;
+}
+/**
  * Applies role, sequence, and flag guards before moving an Expense Report stage.
  */
 export async function transitionExpenseReportWorkflow(
@@ -731,7 +817,9 @@ export async function transitionExpenseReportWorkflow(
         tenantId: string;
         actorId: string;
         roles: RoleName[];
+        correlationId: string;
     },
+    dependencies?: StageTransitionEventDependencies,
 ): Promise<ExpenseReportResponse> {
     const report = await findExpenseReportById(request.tenantId, request.id);
     if (report === undefined) {
@@ -750,6 +838,7 @@ export async function transitionExpenseReportWorkflow(
         throw new ForbiddenError();
     }
 
+    const outboxEventId = randomUUID();
     const didTransition = await transitionExpenseReportStageInStore({
         tenantId: request.tenantId,
         id: request.id,
@@ -757,6 +846,9 @@ export async function transitionExpenseReportWorkflow(
         fromStage: report.currentStage as ExpenseReportStage,
         toStage: request.toStage,
         reason: request.reason,
+        correlationId: request.correlationId,
+        eventId: outboxEventId,
+        occurredAt: new Date(),
     });
 
     if (!didTransition) {
@@ -766,6 +858,7 @@ export async function transitionExpenseReportWorkflow(
     }
 
     await invalidateCachedCaseQueueStageRollups(request.tenantId);
+    await dispatchOutboxEvent(outboxEventId, dependencies);
 
     const transitionedReport = await findExpenseReportById(
         request.tenantId,
@@ -776,6 +869,22 @@ export async function transitionExpenseReportWorkflow(
     }
 
     return toExpenseReportResponse(transitionedReport);
+}
+
+async function dispatchOutboxEvent(
+    eventId: string,
+    dependencies?: StageTransitionEventDependencies,
+): Promise<void> {
+    try {
+        if (dependencies === undefined) {
+            await dispatchStageTransitionOutboxEvents(eventId);
+            return;
+        }
+
+        await dependencies.stageTransitionOutboxDispatcher.dispatch(eventId);
+    } catch {
+        // The durable outbox retry loop handles dispatch failures after the state change commits.
+    }
 }
 /**
  * Reads the tenant-scoped audit trail entries for an Expense Report case.

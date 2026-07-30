@@ -167,6 +167,21 @@ services:
                 --time-to-live-specification Enabled=true,AttributeName=ttl
                 || true
 
+    localstack:
+        image: localstack/localstack:4.8
+        environment:
+            AWS_DEFAULT_REGION: us-east-1
+            SERVICES: sns,sqs
+        healthcheck:
+            test: ["CMD", "awslocal", "sns", "list-topics"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "4566:4566"
+        volumes:
+            - ./scripts/init-local-stage-transition-events.sh:/etc/localstack/init/ready.d/init-stage-transition-events.sh:ro
+
 volumes:
     gl-coding-cache:
     gl-coding-venv:

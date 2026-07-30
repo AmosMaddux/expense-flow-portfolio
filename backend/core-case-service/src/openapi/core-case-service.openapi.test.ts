@@ -131,6 +131,24 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
+    void test("documents correlation only on stage-transition request boundaries", () => {
+        const createParameters =
+            document.paths?.["/v1/expense-reports"]?.post?.parameters ?? [];
+        const submitParameters =
+            document.paths?.["/v1/expense-reports/{id}/submit"]?.post
+                ?.parameters ?? [];
+        const findCorrelationHeader = (
+            parameter: (typeof createParameters)[number],
+        ) => "name" in parameter && parameter.name === "x-correlation-id";
+
+        expect(createParameters.find(findCorrelationHeader)).toBeUndefined();
+        expect(submitParameters.find(findCorrelationHeader)).toMatchObject({
+            in: "header",
+            name: "x-correlation-id",
+            required: false,
+        });
+    });
+
     void test("documents bearer authentication for every Expense Report route", () => {
         const caseQueueRollupsPath = document.paths?.["/v1/case-queue/rollups"];
         const caseQueueLineItemsPath =

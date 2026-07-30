@@ -40,6 +40,7 @@ const approvalQueueMileageEntrySchema = z.object({
     glCode: z.string().min(1),
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
+    deductible: z.boolean(),
 });
 
 const approvalQueueLineItemSchema = z.object({
@@ -53,6 +54,7 @@ const approvalQueueLineItemSchema = z.object({
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
     flaggedLineItem: z.boolean(),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
+    deductible: z.boolean(),
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(approvalQueueMileageEntrySchema),
@@ -83,6 +85,7 @@ type ApprovalQueueReviewRow =
           glCode: string;
           flaggedLineItem: boolean;
           reviewAction: ApprovalQueueLineItem["reviewAction"];
+          deductible: boolean;
           lineItem: ApprovalQueueLineItem;
       }
     | {
@@ -94,6 +97,7 @@ type ApprovalQueueReviewRow =
           glCode: string;
           flaggedLineItem: boolean;
           reviewAction: ApprovalQueueLineItem["reviewAction"];
+          deductible: boolean;
           lineItem: ApprovalQueueLineItem;
       };
 type FlagFilter = "all" | "flagged" | "clear";
@@ -109,6 +113,12 @@ type ClearFlagMutationVariables = {
     lineItem: ApprovalQueueLineItem;
     sourceId: string;
     reason: string;
+};
+type DeductibilityMutationVariables = {
+    lineItem: ApprovalQueueLineItem;
+    sourceId: string;
+    sourceType: "line_item" | "mileage";
+    deductible: boolean;
 };
 type TransitionMutationVariables = {
     expenseReportId: string;
@@ -136,6 +146,11 @@ const clearFlagsRequestSchema = z
     .object({
         sourceIds: z.array(z.uuid()).min(1),
         reason: z.string().trim().min(1),
+    })
+    .strict();
+const updateDeductibilityRequestSchema = z
+    .object({
+        deductible: z.boolean(),
     })
     .strict();
 const transitionExpenseReportRequestSchema = z
@@ -313,6 +328,74 @@ export function CaseQueueScreen(): JSX.Element {
             setActionError(getQueueActionErrorMessage(error));
         },
     });
+    const deductibilityMutation = useMutation({
+        mutationFn: async ({
+            deductible,
+            lineItem,
+            sourceId,
+            sourceType,
+        }: DeductibilityMutationVariables) => {
+            const requestBody = updateDeductibilityRequestSchema.parse({
+                deductible,
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${lineItem.expenseReportId}/sources/${sourceType}/${sourceId}/deductibility`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "PATCH",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return approvalQueueLineItemSchema.parse(await response.json());
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(queryClient, (current = []) =>
+                current.map((lineItem) =>
+                    lineItem.id === variables.lineItem.id &&
+                    variables.sourceId === lineItem.id
+                        ? {
+                              ...lineItem,
+                              deductible: variables.deductible,
+                          }
+                        : lineItem.id === variables.lineItem.id
+                          ? {
+                                ...lineItem,
+                                mileageEntries: lineItem.mileageEntries.map(
+                                    (entry) =>
+                                        entry.id === variables.sourceId
+                                            ? {
+                                                  ...entry,
+                                                  deductible:
+                                                      variables.deductible,
+                                              }
+                                            : entry,
+                                ),
+                            }
+                          : lineItem,
+                ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (updatedLineItem) => {
+            replaceQueueLineItem(queryClient, updatedLineItem);
+        },
+    });
     const transitionMutation = useMutation({
         mutationFn: async ({
             expenseReportId,
@@ -368,6 +451,7 @@ export function CaseQueueScreen(): JSX.Element {
     const isActionPending =
         reviewMutation.isPending ||
         clearFlagMutation.isPending ||
+        deductibilityMutation.isPending ||
         transitionMutation.isPending;
     const canPullSubmittedReportIntoReview =
         session.user?.roles.some(
@@ -489,6 +573,19 @@ export function CaseQueueScreen(): JSX.Element {
                                     sourceType,
                                     action,
                                     ...(reason === undefined ? {} : { reason }),
+                                });
+                            }}
+                            onToggleDeductibility={(
+                                lineItem,
+                                sourceType,
+                                sourceId,
+                                deductible,
+                            ) => {
+                                deductibilityMutation.mutate({
+                                    lineItem,
+                                    sourceId,
+                                    sourceType,
+                                    deductible,
                                 });
                             }}
                             onSendBackReport={(lineItem) => {
@@ -828,6 +925,7 @@ function ApprovalQueueReviewDialog({
     onClose,
     onReviewLineItem,
     onSendBackReport,
+    onToggleDeductibility,
 }: {
     isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
@@ -841,6 +939,12 @@ function ApprovalQueueReviewDialog({
         action: LineItemReviewAction,
     ) => void;
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
+    onToggleDeductibility: (
+        lineItem: ApprovalQueueLineItem,
+        sourceType: "line_item" | "mileage",
+        sourceId: string,
+        deductible: boolean,
+    ) => void;
 }): JSX.Element {
     const reportLineItem = lineItems[0];
     const canSendBackReport =
@@ -916,6 +1020,7 @@ function ApprovalQueueReviewDialog({
                                 <th scope="col">Mileage</th>
                                 <th scope="col">GL Code</th>
                                 <th scope="col">Flag</th>
+                                <th scope="col">Deductible</th>
                                 <th scope="col">Review</th>
                                 <th scope="col">Actions</th>
                             </tr>
@@ -939,6 +1044,26 @@ function ApprovalQueueReviewDialog({
                                         ) : (
                                             <Badge tone="success">Clear</Badge>
                                         )}
+                                    </td>
+                                    <td>
+                                        <input
+                                            aria-label={`Mark ${reviewRow.merchant} as deductible`}
+                                            checked={reviewRow.deductible}
+                                            disabled={
+                                                isActionPending ||
+                                                reportLineItem.currentStage !==
+                                                    "AP Review"
+                                            }
+                                            type="checkbox"
+                                            onChange={(event) =>
+                                                onToggleDeductibility(
+                                                    reviewRow.lineItem,
+                                                    reviewRow.type,
+                                                    reviewRow.id,
+                                                    event.currentTarget.checked,
+                                                )
+                                            }
+                                        />
                                     </td>
                                     <td>
                                         {getReviewActionLabel(
@@ -1077,6 +1202,7 @@ function buildApprovalQueueReviewRows(
         glCode: lineItem.glCode,
         flaggedLineItem: lineItem.flaggedLineItem,
         reviewAction: lineItem.reviewAction,
+        deductible: lineItem.deductible,
         lineItem,
     }));
 
@@ -1096,6 +1222,7 @@ function buildApprovalQueueReviewRows(
                 glCode: mileageEntry.glCode,
                 flaggedLineItem: mileageEntry.flaggedLineItem,
                 reviewAction: mileageEntry.reviewAction,
+                deductible: mileageEntry.deductible,
                 lineItem,
             });
         }
@@ -1280,17 +1407,38 @@ function replaceQueueLineItem(
 ): void {
     setApprovalQueueData(queryClient, (current = []) =>
         recalculateAdvanceEligibility(
-            current.map((lineItem) =>
-                lineItem.id === updatedLineItem.id
-                    ? {
-                          ...updatedLineItem,
-                          mileageEntries:
-                              updatedLineItem.mileageEntries.length > 0
-                                  ? updatedLineItem.mileageEntries
-                                  : lineItem.mileageEntries,
-                      }
-                    : lineItem,
-            ),
+            current.map((lineItem) => {
+                if (lineItem.id === updatedLineItem.id) {
+                    return {
+                        ...updatedLineItem,
+                        mileageEntries:
+                            updatedLineItem.mileageEntries.length > 0
+                                ? updatedLineItem.mileageEntries
+                                : lineItem.mileageEntries,
+                    };
+                }
+
+                if (
+                    lineItem.expenseReportId !== updatedLineItem.expenseReportId
+                ) {
+                    return lineItem;
+                }
+
+                return {
+                    ...lineItem,
+                    mileageEntries: lineItem.mileageEntries.map((entry) =>
+                        entry.id === updatedLineItem.id
+                            ? {
+                                  ...entry,
+                                  flaggedLineItem:
+                                      updatedLineItem.flaggedLineItem,
+                                  reviewAction: updatedLineItem.reviewAction,
+                                  deductible: updatedLineItem.deductible,
+                              }
+                            : entry,
+                    ),
+                };
+            }),
         ),
     );
 }

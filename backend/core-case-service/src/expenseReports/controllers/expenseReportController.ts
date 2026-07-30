@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { NextFunction, Request, Response } from "express";
 
 import type { RoleName } from "../../db/schema/index.js";
@@ -22,8 +24,11 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
+    SubmitExpenseReportOperationResultSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
+    UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
 } from "../../schemas/expense-report.schema.js";
 import { getDefaultIdempotencyStore } from "../../idempotency/defaultIdempotencyStore.js";
@@ -58,6 +63,7 @@ import {
     reviewExpenseReportSource,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
+    updateExpenseReportSourceDeductibility,
     updateDraftLineItem,
     updateDraftMileageEntry,
     uploadReceiptFile,
@@ -543,6 +549,7 @@ export async function postExpenseReportSubmission(
         const parsedRequest = SubmitExpenseReportInboundRequestSchema.parse(
             req.body,
         );
+        const correlationId = parseOrCreateCorrelationId(req);
         if (
             auth.roles.includes("Employee") &&
             !hasInternalExpenseReportRole(auth)
@@ -553,14 +560,16 @@ export async function postExpenseReportSubmission(
                 ownerId: auth.userId,
             });
         }
+        const idempotencyKey = parseIdempotencyKey(req);
         const submitReport = async () =>
             submitExpenseReport({
                 id: parsedParams.id,
                 tenantId: auth.tenantId,
                 actorId: auth.userId,
                 roles: auth.roles,
+                correlationId,
+                idempotencyKey,
             });
-        const idempotencyKey = parseIdempotencyKey(req);
         const requestHash = createIdempotencyRequestHash({
             id: parsedParams.id,
             ...parsedRequest,
@@ -573,7 +582,11 @@ export async function postExpenseReportSubmission(
             tenantId: auth.tenantId,
         });
 
-        res.status(result.statusCode).json(result.body);
+        const submission = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
+        res.set("X-Correlation-Id", submission.correlationId);
+        res.status(result.statusCode).json(submission.report);
     } catch (error: unknown) {
         if (
             error instanceof Error &&
@@ -602,6 +615,8 @@ export async function postExpenseReportTransition(
         });
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
+        const correlationId = parseOrCreateCorrelationId(req);
+        res.set("X-Correlation-Id", correlationId);
         const report = await transitionExpenseReportWorkflow({
             id: parsedParams.id,
             tenantId: auth.tenantId,
@@ -609,6 +624,7 @@ export async function postExpenseReportTransition(
             roles: auth.roles,
             toStage: parsedRequest.toStage,
             reason: parsedRequest.reason,
+            correlationId,
         });
 
         res.status(200).json(report);
@@ -714,6 +730,40 @@ export async function postExpenseReportSourceReview(
     }
 }
 
+/**
+ * Handles manual AP Review deductibility decisions for one Expense Report source.
+ */
+export async function patchExpenseReportSourceDeductibility(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = ReviewExpenseReportSourceParamsSchema.parse({
+            id: req.params.id,
+            sourceType: req.params.sourceType,
+            sourceId: req.params.sourceId,
+        });
+        const parsedRequest =
+            UpdateExpenseReportSourceDeductibilityInboundRequestSchema.parse(
+                req.body,
+            );
+        const lineItem = await updateExpenseReportSourceDeductibility({
+            id: parsedParams.id,
+            sourceType: parsedParams.sourceType,
+            sourceId: parsedParams.sourceId,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            deductible: parsedRequest.deductible,
+        });
+
+        res.status(200).json(lineItem);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
 /**
  * Handles Approval Queue line-item read requests.
  */
@@ -932,4 +982,12 @@ function parseIdempotencyKey(req: Request): string {
     return IdempotentSubmissionHeaderSchema.parse({
         idempotencyKey: req.get("idempotency-key"),
     }).idempotencyKey;
+}
+
+function parseOrCreateCorrelationId(req: Request): string {
+    return (
+        StageTransitionCorrelationHeaderSchema.parse({
+            correlationId: req.get("x-correlation-id"),
+        }).correlationId ?? randomUUID()
+    );
 }

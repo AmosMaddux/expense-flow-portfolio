@@ -43,6 +43,16 @@ vi.mock("../../db/client.js", () => {
     };
 });
 
+const stageTransitionPublishMock = vi.hoisted(() =>
+    vi.fn().mockResolvedValue(undefined),
+);
+
+vi.mock("../../events/stageTransitionEventPublisher.js", () => ({
+    getDefaultStageTransitionEventPublisher: () => ({
+        publish: stageTransitionPublishMock,
+    }),
+}));
+
 const idempotencyRecords = vi.hoisted(
     () => new Map<string, { requestHash: string; result: IdempotencyResult }>(),
 );
@@ -186,6 +196,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
     beforeEach(() => {
         idempotencyRecords.clear();
         Object.values(idempotencyStoreMock).forEach((mock) => mock.mockClear());
+        stageTransitionPublishMock.mockClear();
     });
 
     void test("submits through FastAPI coding, rejects cross-tenant access, and blocks flagged advancement until review", async () => {
@@ -530,7 +541,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
             [lineItemId, secondFlaggedLineItemId, unflaggedLineItemId].map(
                 (sourceId) =>
                     requestApp(
-                        `/v1/expense-reports/${reportId}/line-items/${sourceId}/review`,
+                        `/v1/expense-reports/${reportId}/sources/line_item/${sourceId}/review`,
                         {
                             method: "POST",
                             headers: {
