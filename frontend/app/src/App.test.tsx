@@ -136,6 +136,7 @@ afterEach(() => {
         configurable: true,
         value: originalMatchMedia,
     });
+    document.body.style.overflow = "";
     window.history.replaceState(null, "", "/");
 });
 
@@ -379,6 +380,7 @@ describe("AppShell", () => {
             <AppShell currentPath="/my-submissions" signedInRole="Employee" />,
         );
 
+        document.body.style.overflow = "auto";
         const menuButton = screen.getByRole("button", {
             name: "Open navigation",
         });
@@ -388,6 +390,7 @@ describe("AppShell", () => {
         expect(menuButton.getAttribute("aria-expanded")).toBe("false");
         expect(primaryNavigation.className).toBe("sidebar");
         expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("auto");
         expect(
             screen.queryByRole("button", { name: "Close navigation overlay" }),
         ).toBeNull();
@@ -400,6 +403,7 @@ describe("AppShell", () => {
         expect(closeButton).toBe(document.activeElement);
         expect(primaryNavigation.className).toContain("sidebar--open");
         expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+        expect(document.body.style.overflow).toBe("hidden");
         expect(
             screen.getByRole("button", { name: "Close navigation overlay" }),
         ).not.toBeNull();
@@ -410,9 +414,11 @@ describe("AppShell", () => {
         expect(menuButton.getAttribute("aria-expanded")).toBe("false");
         expect(primaryNavigation.className).toBe("sidebar");
         expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("auto");
     });
 
     test("clears modal navigation state after resizing to desktop", async () => {
+        document.body.style.overflow = "scroll";
         const matchMediaController = installMatchMedia(true);
         const { container } = render(
             <AppShell currentPath="/log-mileage" signedInRole="Employee" />,
@@ -426,6 +432,7 @@ describe("AppShell", () => {
             screen.getByLabelText("Primary navigation").getAttribute("role"),
         ).toBe("dialog");
         expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+        expect(document.body.style.overflow).toBe("hidden");
 
         matchMediaController.setMatches(false);
 
@@ -440,12 +447,14 @@ describe("AppShell", () => {
             screen.queryByRole("button", { name: "Close navigation overlay" }),
         ).toBeNull();
         expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("scroll");
     });
 
     test("supports keyboard dismissal and focus trapping in mobile navigation", async () => {
         installMatchMedia(true);
         render(<AppShell currentPath="/log-mileage" signedInRole="Employee" />);
 
+        document.body.style.overflow = "auto";
         const menuButton = screen.getByRole("button", {
             name: "Open navigation",
         });
@@ -476,6 +485,7 @@ describe("AppShell", () => {
         installMatchMedia(true);
         render(<AppShell signedInRole="Employee" />);
 
+        document.body.style.overflow = "auto";
         const menuButton = screen.getByRole("button", {
             name: "Open navigation",
         });

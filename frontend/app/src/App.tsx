@@ -256,6 +256,19 @@ export function AppShell({
             return undefined;
         }
 
+        const previousBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        return () => {
+            document.body.style.overflow = previousBodyOverflow;
+        };
+    }, [isMobileNavigationOpen]);
+
+    useEffect(() => {
+        if (!isMobileNavigationOpen) {
+            return undefined;
+        }
+
         sidebarCloseButtonRef.current?.focus();
 
         const handleDocumentKeyDown = (
