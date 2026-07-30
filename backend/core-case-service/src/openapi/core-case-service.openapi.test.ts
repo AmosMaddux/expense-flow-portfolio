@@ -493,6 +493,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(sourceParamsSchema)).toContain("line_item");
         expect(JSON.stringify(sourceParamsSchema)).toContain("mileage");
         expect(JSON.stringify(responseSchema)).toContain("canAdvance");
+        expect(JSON.stringify(responseSchema)).toContain("receipts");
+        expect(JSON.stringify(responseSchema)).toContain("lineItemId");
+        expect(JSON.stringify(responseSchema)).not.toContain("blobReference");
     });
 
     void test("documents reusable tenant rate-limit headers and 429 responses", () => {

@@ -585,6 +585,16 @@ export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     deductible: z.boolean(),
 });
 
+export const ApprovalQueueReceiptOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    lineItemId: z.uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
+});
+
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     id: z.uuid(),
     sourceType: z.enum(["line_item", "mileage"]),
@@ -600,6 +610,7 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
+    receipts: z.array(ApprovalQueueReceiptOutboundResponseSchema),
 });
 
 export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(

@@ -21,6 +21,7 @@ import { z } from "zod";
 import { useSession } from "../auth";
 import {
     Badge,
+    Button,
     EmptyState,
     ErrorState,
     EXPENSE_REPORT_STAGES,
@@ -43,6 +44,16 @@ const approvalQueueMileageEntrySchema = z.object({
     deductible: z.boolean(),
 });
 
+const approvalQueueReceiptSchema = z.object({
+    id: z.uuid(),
+    lineItemId: z.uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
+});
+
 const approvalQueueLineItemSchema = z.object({
     id: z.uuid(),
     sourceType: z.enum(["line_item", "mileage"]),
@@ -58,6 +69,7 @@ const approvalQueueLineItemSchema = z.object({
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(approvalQueueMileageEntrySchema),
+    receipts: z.array(approvalQueueReceiptSchema),
 });
 
 export const approvalQueueLineItemListSchema = z.array(
@@ -65,6 +77,7 @@ export const approvalQueueLineItemListSchema = z.array(
 );
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
+type ApprovalQueueReceipt = z.infer<typeof approvalQueueReceiptSchema>;
 
 type ApprovalQueueReportRow = {
     expenseReportId: string;
@@ -947,10 +960,18 @@ function ApprovalQueueReviewDialog({
     ) => void;
 }): JSX.Element {
     const reportLineItem = lineItems[0];
+    const [activeLineItemId, setActiveLineItemId] = useState<string | null>(
+        null,
+    );
+    const [receiptView, setReceiptView] = useState<"grid" | "list">("grid");
     const canSendBackReport =
         reportLineItem.currentStage === "Manager Approval";
     const reviewRows = useMemo(
         () => buildApprovalQueueReviewRows(lineItems),
+        [lineItems],
+    );
+    const receipts = useMemo(
+        () => collectReportReceipts(lineItems),
         [lineItems],
     );
     const areAllReviewRowsReviewed = reviewRows.every(
@@ -961,6 +982,22 @@ function ApprovalQueueReviewDialog({
         0,
     );
     const mileageTotal = calculateReportMileageTotal(lineItems);
+    function handleReceiptSelect(receipt: ApprovalQueueReceipt): void {
+        if (receipt.lineItemId === null) {
+            return;
+        }
+
+        const linkedLineItemId = receipt.lineItemId;
+        setActiveLineItemId(linkedLineItemId);
+        window.requestAnimationFrame(() => {
+            const row = document.getElementById(
+                getReviewRowElementId(linkedLineItemId),
+            );
+
+            row?.scrollIntoView({ block: "center", behavior: "smooth" });
+            row?.focus();
+        });
+    }
 
     return (
         <div className="case-queue-dialog__backdrop">
@@ -1011,6 +1048,14 @@ function ApprovalQueueReviewDialog({
                         <strong>{formatMileageDistance(mileageTotal)}</strong>
                     </span>
                 </div>
+                <ReceiptGallery
+                    activeLineItemId={activeLineItemId}
+                    receipts={receipts}
+                    reviewRows={reviewRows}
+                    view={receiptView}
+                    onReceiptSelect={handleReceiptSelect}
+                    onViewChange={setReceiptView}
+                />
                 <div className="case-queue-dialog__table-wrap">
                     <table aria-label="Report review line items">
                         <thead>
@@ -1027,7 +1072,16 @@ function ApprovalQueueReviewDialog({
                         </thead>
                         <tbody>
                             {reviewRows.map((reviewRow) => (
-                                <tr key={reviewRow.id}>
+                                <tr
+                                    className={
+                                        activeLineItemId === reviewRow.id
+                                            ? "case-queue-dialog__row--active"
+                                            : undefined
+                                    }
+                                    id={getReviewRowElementId(reviewRow.id)}
+                                    key={reviewRow.id}
+                                    tabIndex={-1}
+                                >
                                     <td>{reviewRow.merchant}</td>
                                     <td>{formatCurrency(reviewRow.amount)}</td>
                                     <td>
@@ -1156,6 +1210,152 @@ function ApprovalQueueReviewDialog({
     );
 }
 
+function ReceiptGallery({
+    activeLineItemId,
+    receipts,
+    reviewRows,
+    view,
+    onReceiptSelect,
+    onViewChange,
+}: {
+    activeLineItemId: string | null;
+    receipts: ApprovalQueueReceipt[];
+    reviewRows: ApprovalQueueReviewRow[];
+    view: "grid" | "list";
+    onReceiptSelect: (receipt: ApprovalQueueReceipt) => void;
+    onViewChange: (view: "grid" | "list") => void;
+}): JSX.Element {
+    const reviewRowsById = useMemo(
+        () => new Map(reviewRows.map((row) => [row.id, row])),
+        [reviewRows],
+    );
+
+    return (
+        <section className="receipt-gallery" aria-labelledby="receipt-heading">
+            <header className="receipt-gallery__header">
+                <h4 id="receipt-heading">
+                    Receipt Attachments ({receipts.length})
+                </h4>
+                <div
+                    className="receipt-gallery__view-toggle"
+                    aria-label="Receipt gallery view"
+                >
+                    <Button
+                        aria-pressed={view === "grid"}
+                        size="sm"
+                        variant={view === "grid" ? "primary" : "secondary"}
+                        onClick={() => onViewChange("grid")}
+                    >
+                        Grid
+                    </Button>
+                    <Button
+                        aria-pressed={view === "list"}
+                        size="sm"
+                        variant={view === "list" ? "primary" : "secondary"}
+                        onClick={() => onViewChange("list")}
+                    >
+                        List
+                    </Button>
+                </div>
+            </header>
+
+            {receipts.length === 0 ? (
+                <EmptyState
+                    body="No uploaded receipts are attached to this Expense Report."
+                    title="No receipts uploaded"
+                />
+            ) : (
+                <div
+                    className={
+                        view === "grid"
+                            ? "receipt-gallery__grid"
+                            : "receipt-gallery__list"
+                    }
+                >
+                    {receipts.map((receipt) => {
+                        const linkedReviewRow =
+                            receipt.lineItemId === null
+                                ? undefined
+                                : reviewRowsById.get(receipt.lineItemId);
+                        const isLinked = linkedReviewRow !== undefined;
+                        const lineItemLabel =
+                            linkedReviewRow === undefined
+                                ? "Unlinked receipt"
+                                : `Linked to ${linkedReviewRow.merchant}`;
+
+                        return (
+                            <button
+                                aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${lineItemLabel}.`}
+                                className={[
+                                    "receipt-gallery__item",
+                                    view === "list"
+                                        ? "receipt-gallery__item--list"
+                                        : undefined,
+                                    receipt.lineItemId !== null &&
+                                    activeLineItemId === receipt.lineItemId
+                                        ? "receipt-gallery__item--active"
+                                        : undefined,
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                disabled={!isLinked}
+                                key={receipt.id}
+                                type="button"
+                                onClick={() => onReceiptSelect(receipt)}
+                            >
+                                <span
+                                    className="receipt-gallery__preview"
+                                    aria-hidden="true"
+                                >
+                                    <span className="receipt-gallery__paper">
+                                        <span />
+                                        <span />
+                                        <span />
+                                    </span>
+                                    <span className="receipt-gallery__filename">
+                                        {receipt.filename ?? "Receipt file"}
+                                    </span>
+                                </span>
+                                <span className="receipt-gallery__meta">
+                                    <strong>{receipt.merchant}</strong>
+                                    <span>
+                                        {formatDate(receipt.receiptDate)}
+                                    </span>
+                                    <span>
+                                        {formatCurrency(receipt.amount)}
+                                    </span>
+                                    <small>
+                                        {receipt.contentType ?? "Receipt"} /{" "}
+                                        {lineItemLabel}
+                                    </small>
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function collectReportReceipts(
+    lineItems: ApprovalQueueLineItem[],
+): ApprovalQueueReceipt[] {
+    const receiptsById = new Map<string, ApprovalQueueReceipt>();
+
+    for (const lineItem of lineItems) {
+        for (const receipt of lineItem.receipts) {
+            receiptsById.set(receipt.id, receipt);
+        }
+    }
+
+    return [...receiptsById.values()];
+}
+
+function getReviewRowElementId(sourceId: string): string {
+    return `approval-review-row-${sourceId}`;
+}
+
 function getReviewActionLabel(
     reviewAction: ApprovalQueueLineItem["reviewAction"],
 ): string {
@@ -1175,6 +1375,15 @@ function formatCurrency(amount: number): string {
         currency: "USD",
         style: "currency",
     }).format(amount);
+}
+
+function formatDate(date: string): string {
+    return new Intl.DateTimeFormat("en-US", {
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+        year: "numeric",
+    }).format(new Date(`${date}T00:00:00.000Z`));
 }
 
 function formatMileageDistance(mileageDistance: number): string {

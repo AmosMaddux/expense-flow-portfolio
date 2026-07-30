@@ -126,6 +126,16 @@ type ApprovalQueueMileageEntryRow = {
     codingResultId: string;
 };
 
+type ApprovalQueueReceiptRow = {
+    id: string;
+    expenseReportId: string;
+    lineItemId: string | null;
+    merchant: string;
+    receiptDate: string;
+    amount: string;
+    blobReference: unknown;
+};
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -280,8 +290,21 @@ export async function findApprovalQueueLineItems(
 
     const lineItemRows = rows as ApprovalQueueLineItemRow[];
     const mileageRows = await findApprovalQueueMileageEntries(tenantId);
+    const reportIds = [
+        ...new Set(
+            [...lineItemRows, ...mileageRows].map((row) => row.expenseReportId),
+        ),
+    ];
+    const receiptRows =
+        reportIds.length === 0
+            ? []
+            : await findApprovalQueueReceipts(tenantId, reportIds);
 
-    return toLatestApprovalQueueLineItems(lineItemRows, mileageRows);
+    return toLatestApprovalQueueLineItems(
+        lineItemRows,
+        mileageRows,
+        receiptRows,
+    );
 }
 
 /**
@@ -1671,6 +1694,11 @@ export async function reviewExpenseReportLineItem(request: {
                 request.expenseReportId,
                 latestSubmissionId,
             );
+        const receipts = await readApprovalQueueReceiptsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
         const lineItemRow =
             request.sourceType === "mileage"
                 ? ((await readFirstApprovalQueueLineItemInTransaction(
@@ -1710,6 +1738,7 @@ export async function reviewExpenseReportLineItem(request: {
                 openFlagCount,
                 unreviewedLineItemCount,
                 mileageEntries,
+                receipts,
             ),
         };
     });
@@ -1817,6 +1846,11 @@ export async function updateExpenseReportSourceDeductibility(request: {
                 request.expenseReportId,
                 latestSubmissionId,
             );
+        const receipts = await readApprovalQueueReceiptsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
         const lineItemRow =
             request.sourceType === "mileage"
                 ? ((await readFirstApprovalQueueLineItemInTransaction(
@@ -1857,6 +1891,7 @@ export async function updateExpenseReportSourceDeductibility(request: {
                 openFlagCount,
                 unreviewedLineItemCount,
                 lineItemRow.sourceType === "mileage" ? [] : mileageEntries,
+                receipts,
             ),
         };
     });
@@ -2404,6 +2439,32 @@ async function findApprovalQueueMileageEntries(
     return rows as ApprovalQueueMileageEntryRow[];
 }
 
+async function findApprovalQueueReceipts(
+    tenantId: string,
+    reportIds: string[],
+): Promise<ApprovalQueueReceiptRow[]> {
+    const rows = await db
+        .select({
+            id: receiptMetadata.id,
+            expenseReportId: receiptMetadata.expenseReportId,
+            lineItemId: receiptMetadata.lineItemId,
+            merchant: receiptMetadata.merchant,
+            receiptDate: receiptMetadata.receiptDate,
+            amount: receiptMetadata.amount,
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, tenantId),
+                inArray(receiptMetadata.expenseReportId, reportIds),
+            ),
+        )
+        .orderBy(asc(receiptMetadata.createdAt), asc(receiptMetadata.id));
+
+    return rows;
+}
+
 async function readApprovalQueueMileageEntriesInTransaction(
     transaction: TransactionContext,
     tenantId: string,
@@ -2457,9 +2518,37 @@ async function readApprovalQueueMileageEntriesInTransaction(
     return rows as ApprovalQueueMileageEntryRow[];
 }
 
+async function readApprovalQueueReceiptsInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<ApprovalQueueReceiptRow[]> {
+    const rows = await transaction
+        .select({
+            id: receiptMetadata.id,
+            expenseReportId: receiptMetadata.expenseReportId,
+            lineItemId: receiptMetadata.lineItemId,
+            merchant: receiptMetadata.merchant,
+            receiptDate: receiptMetadata.receiptDate,
+            amount: receiptMetadata.amount,
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, tenantId),
+                eq(receiptMetadata.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(asc(receiptMetadata.createdAt), asc(receiptMetadata.id));
+
+    return rows;
+}
+
 function toLatestApprovalQueueLineItems(
     rows: ApprovalQueueLineItemRow[],
     mileageRows: ApprovalQueueMileageEntryRow[],
+    receiptRows: ApprovalQueueReceiptRow[] = [],
 ): ApprovalQueueLineItemResponse[] {
     const latestSubmissionByReport = readLatestSubmissionByReport([
         ...rows,
@@ -2472,6 +2561,7 @@ function toLatestApprovalQueueLineItems(
                 row.submissionId,
         ),
     );
+    const receiptsByReport = groupApprovalQueueReceipts(receiptRows);
 
     const openFlagCounts = new Map<string, number>();
     const unreviewedLineItemCounts = new Map<string, number>();
@@ -2521,6 +2611,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 mileageEntriesByReport.get(row.expenseReportId) ?? [],
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
         ...mileageOnlyRows.map((row) =>
@@ -2529,6 +2620,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 [],
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
     ].filter(
@@ -2580,6 +2672,7 @@ function toApprovalQueueLineItemResponse(
     openFlagCount: number,
     unreviewedLineItemCount: number,
     mileageEntries: ApprovalQueueMileageEntryRow[] = [],
+    receipts: ApprovalQueueReceiptRow[] = [],
 ): ApprovalQueueLineItemResponse {
     return {
         id: row.id,
@@ -2605,6 +2698,7 @@ function toApprovalQueueLineItemResponse(
                       0,
                   ),
         mileageEntries: mileageEntries.map(toApprovalQueueMileageEntryResponse),
+        receipts: receipts.map(toApprovalQueueReceiptResponse),
     };
 }
 
@@ -2628,6 +2722,21 @@ function groupApprovalQueueMileageEntries(
     return mileageEntriesByReport;
 }
 
+function groupApprovalQueueReceipts(
+    receiptRows: ApprovalQueueReceiptRow[],
+): Map<string, ApprovalQueueReceiptRow[]> {
+    const receiptsByReport = new Map<string, ApprovalQueueReceiptRow[]>();
+
+    for (const row of receiptRows) {
+        receiptsByReport.set(row.expenseReportId, [
+            ...(receiptsByReport.get(row.expenseReportId) ?? []),
+            row,
+        ]);
+    }
+
+    return receiptsByReport;
+}
+
 function toApprovalQueueMileageEntryResponse(
     row: ApprovalQueueMileageEntryRow,
 ) {
@@ -2643,6 +2752,36 @@ function toApprovalQueueMileageEntryResponse(
         reviewAction: row.reviewAction,
         deductible: row.deductible,
     };
+}
+
+function toApprovalQueueReceiptResponse(row: ApprovalQueueReceiptRow) {
+    return {
+        id: row.id,
+        lineItemId: row.lineItemId,
+        merchant: row.merchant,
+        receiptDate: row.receiptDate,
+        amount: Number(row.amount),
+        filename: readReceiptBlobString(row.blobReference, "filename"),
+        contentType: readReceiptBlobString(row.blobReference, "contentType"),
+    };
+}
+
+function readReceiptBlobString(
+    blobReference: unknown,
+    key: "contentType" | "filename",
+): string | null {
+    if (
+        blobReference === null ||
+        typeof blobReference !== "object" ||
+        !(key in blobReference)
+    ) {
+        return null;
+    }
+
+    const metadata = blobReference as Record<string, unknown>;
+    const value = metadata[key];
+
+    return typeof value === "string" ? value : null;
 }
 
 async function readLatestSubmissionId(

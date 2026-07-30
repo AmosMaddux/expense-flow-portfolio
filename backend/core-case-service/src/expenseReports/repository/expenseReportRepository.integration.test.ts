@@ -13,6 +13,7 @@ import {
     glCodingResult,
     lineItem,
     mileageEntry,
+    receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
 } from "../../db/schema/index.js";
@@ -34,6 +35,7 @@ import {
     buildSubmissionSourceKeys,
     clearExpenseReportFlags,
     countOpenExpenseReportFlags,
+    findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
     findExpenseReportById,
@@ -778,6 +780,120 @@ void describe("expenseReportRepository", () => {
             glAccountName: "Updated Travel Expense",
             flaggedLineItem: true,
         });
+    });
+
+    void test("returns tenant-scoped receipt metadata with Approval Queue line items", async () => {
+        const tenantId = randomUUID();
+        const otherTenantId = randomUUID();
+        const ownerId = randomUUID();
+        const report = await insertDraftExpenseReport(tenantId, {
+            ...buildNewExpenseReport(tenantId, ownerId),
+            id: randomUUID(),
+        });
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(eq(expenseReport.id, report.id));
+        const insertedLineItems = await db
+            .insert(lineItem)
+            .values({
+                id: randomUUID(),
+                tenantId,
+                expenseReportId: report.id,
+                merchant: "Synthetic Hotel",
+                expenseDate: "2026-07-21",
+                amount: "242.30",
+                currency: "USD",
+                category: "Travel",
+            })
+            .returning({ id: lineItem.id });
+        const lineItemId = insertedLineItems[0]?.id;
+        if (lineItemId === undefined) {
+            throw new Error("Expected line item to be created");
+        }
+
+        await db.insert(receiptMetadata).values([
+            {
+                id: randomUUID(),
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId,
+                merchant: "Synthetic Hotel",
+                receiptDate: "2026-07-21",
+                amount: "242.30",
+                blobReference: {
+                    objectKey: "synthetic/object-key",
+                    filename: "synthetic-hotel.pdf",
+                    contentType: "application/pdf",
+                },
+            },
+            {
+                id: randomUUID(),
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId: null,
+                merchant: "Synthetic Taxi",
+                receiptDate: "2026-07-22",
+                amount: "38.10",
+                blobReference: {
+                    objectKey: "synthetic/unlinked-object-key",
+                    filename: "synthetic-taxi.jpg",
+                    contentType: "image/jpeg",
+                },
+            },
+        ]);
+        await db.insert(glCodingResult).values({
+            id: randomUUID(),
+            submissionId: randomUUID(),
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "242.30",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const rows = await findApprovalQueueLineItems(tenantId);
+        const crossTenantRows = await findApprovalQueueLineItems(otherTenantId);
+        const reportRow = rows.find((row) => row.expenseReportId === report.id);
+        const hotelReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Hotel",
+        );
+        const taxiReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Taxi",
+        );
+
+        expect(reportRow?.receipts).toHaveLength(2);
+        expect(typeof hotelReceipt?.id).toBe("string");
+        expect(hotelReceipt).toMatchObject({
+            lineItemId,
+            merchant: "Synthetic Hotel",
+            receiptDate: "2026-07-21",
+            amount: 242.3,
+            filename: "synthetic-hotel.pdf",
+            contentType: "application/pdf",
+        });
+        expect(typeof taxiReceipt?.id).toBe("string");
+        expect(taxiReceipt).toMatchObject({
+            lineItemId: null,
+            merchant: "Synthetic Taxi",
+            receiptDate: "2026-07-22",
+            amount: 38.1,
+            filename: "synthetic-taxi.jpg",
+            contentType: "image/jpeg",
+        });
+        expect(JSON.stringify(reportRow)).not.toContain("objectKey");
+        expect(crossTenantRows).toHaveLength(0);
     });
 
     void test("writes audit and stage-transition rows for an approved transition", async () => {

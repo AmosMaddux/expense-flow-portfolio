@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     AuditEntryListOutboundResponseSchema,
     AuditEntryOutboundResponseSchema,
+    ApprovalQueueLineItemOutboundResponseSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
@@ -10,6 +11,7 @@ import {
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
     type AuditEntryResponse,
+    type ApprovalQueueLineItemResponse,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
@@ -225,6 +227,51 @@ void describe("ClearExpenseReportFlagsInboundRequestSchema", () => {
             sourceIds: ["30000000-0000-4000-8000-000000000201"],
             reason: "reviewed receipt detail",
         });
+    });
+});
+
+void describe("ApprovalQueueLineItemOutboundResponseSchema", () => {
+    void test("parses receipt metadata without exposing blob storage details", () => {
+        const parsed: ApprovalQueueLineItemResponse =
+            ApprovalQueueLineItemOutboundResponseSchema.parse({
+                id: "72000000-0000-4000-8000-000000000001",
+                sourceType: "line_item",
+                expenseReportId: "71000000-0000-4000-8000-000000000001",
+                employee: "50000000-0000-4000-8000-000000000001",
+                merchant: "Synthetic Hotel",
+                amount: 125.5,
+                glCode: "6000",
+                currentStage: "AP Review",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                deductible: false,
+                canAdvance: false,
+                reportTotalMileage: 0,
+                mileageEntries: [],
+                receipts: [
+                    {
+                        id: "81000000-0000-4000-8000-000000000001",
+                        lineItemId: "72000000-0000-4000-8000-000000000001",
+                        merchant: "Synthetic Hotel",
+                        receiptDate: "2026-07-21",
+                        amount: 125.5,
+                        filename: "synthetic-hotel.pdf",
+                        contentType: "application/pdf",
+                    },
+                ],
+                blobReference: { objectKey: "tenant/report/receipt" },
+            });
+
+        expect(parsed.receipts[0]).toStrictEqual({
+            id: "81000000-0000-4000-8000-000000000001",
+            lineItemId: "72000000-0000-4000-8000-000000000001",
+            merchant: "Synthetic Hotel",
+            receiptDate: "2026-07-21",
+            amount: 125.5,
+            filename: "synthetic-hotel.pdf",
+            contentType: "application/pdf",
+        });
+        expect("blobReference" in parsed).toBe(false);
     });
 });
 void describe("AuditEntryOutboundResponseSchema", () => {

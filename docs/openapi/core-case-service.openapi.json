@@ -390,6 +390,49 @@
                                     "deductible"
                                 ]
                             }
+                        },
+                        "receipts": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "lineItemId": {
+                                        "type": ["string", "null"],
+                                        "format": "uuid"
+                                    },
+                                    "merchant": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "receiptDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "amount": {
+                                        "type": ["number", "null"],
+                                        "minimum": 0
+                                    },
+                                    "filename": {
+                                        "type": ["string", "null"]
+                                    },
+                                    "contentType": {
+                                        "type": ["string", "null"]
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "lineItemId",
+                                    "merchant",
+                                    "receiptDate",
+                                    "amount",
+                                    "filename",
+                                    "contentType"
+                                ]
+                            }
                         }
                     },
                     "required": [
@@ -406,7 +449,8 @@
                         "deductible",
                         "canAdvance",
                         "reportTotalMileage",
-                        "mileageEntries"
+                        "mileageEntries",
+                        "receipts"
                     ]
                 }
             },
@@ -526,6 +570,49 @@
                                 "deductible"
                             ]
                         }
+                    },
+                    "receipts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "lineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "receiptDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": ["number", "null"],
+                                    "minimum": 0
+                                },
+                                "filename": {
+                                    "type": ["string", "null"]
+                                },
+                                "contentType": {
+                                    "type": ["string", "null"]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "lineItemId",
+                                "merchant",
+                                "receiptDate",
+                                "amount",
+                                "filename",
+                                "contentType"
+                            ]
+                        }
                     }
                 },
                 "required": [
@@ -542,7 +629,8 @@
                     "deductible",
                     "canAdvance",
                     "reportTotalMileage",
-                    "mileageEntries"
+                    "mileageEntries",
+                    "receipts"
                 ]
             },
             "AuditEntryListResponse": {
