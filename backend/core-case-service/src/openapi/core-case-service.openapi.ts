@@ -20,12 +20,14 @@ import {
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
+    FinanceDashboardTrendPointListSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
     MySubmissionPageSchema,
     ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadFinanceDashboardTrendQuerySchema,
     ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -170,6 +172,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const caseQueueStageRollupList = registry.register(
         "CaseQueueStageRollupList",
         CaseQueueStageRollupListSchema,
+    );
+    const readFinanceDashboardTrendRequest = registry.register(
+        "ReadFinanceDashboardTrendRequest",
+        ReadFinanceDashboardTrendQuerySchema,
+    );
+    const financeDashboardTrendPointList = registry.register(
+        "FinanceDashboardTrendPointList",
+        FinanceDashboardTrendPointListSchema,
     );
     const mySubmissionPage = registry.register(
         "MySubmissionPage",
@@ -566,6 +576,37 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             400: problemJsonResponse("Malformed rollup request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse("Authenticated user is not permitted."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/finance-dashboard/trends",
+        summary: "Get Finance Dashboard report trends",
+        description:
+            "Loads Finance Admin-only tenant-scoped daily UTC Expense Report creation volume and spend grouped by currency for the Finance Dashboard. Requests may span at most 31 days.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readFinanceDashboardTrendRequest,
+        },
+        responses: {
+            200: {
+                description: "Finance Dashboard trend points found.",
+                content: {
+                    "application/json": {
+                        schema: financeDashboardTrendPointList,
+                    },
+                },
+            },
+            400: problemJsonResponse(
+                "Malformed Finance Dashboard trend request.",
+            ),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Finance Dashboard access is limited to Finance Admins.",
+            ),
+            429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
     });

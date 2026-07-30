@@ -20,6 +20,7 @@ import {
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
+    ReadFinanceDashboardTrendQuerySchema,
     ReadMySubmissionsQuerySchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
@@ -38,6 +39,7 @@ import {
 } from "../../idempotency/idempotencyService.js";
 import { readTenantAllTransactions } from "../services/allTransactionsService.js";
 import { readCachedCaseQueueStageRollups } from "../services/caseQueueService.js";
+import { readFinanceDashboardTrend } from "../services/financeDashboardService.js";
 import {
     readMySubmissionDetail,
     readMySubmissions,
@@ -813,6 +815,33 @@ export async function getCaseQueueStageRollups(
 }
 
 /**
+ * Handles Finance Dashboard trend read requests for one tenant.
+ */
+export async function getFinanceDashboardTrend(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceDashboardAccess(auth);
+        const parsedQuery = ReadFinanceDashboardTrendQuerySchema.parse({
+            fromDate: req.query.fromDate,
+            toDate: req.query.toDate,
+        });
+        const trend = await readFinanceDashboardTrend({
+            tenantId: auth.tenantId,
+            fromDate: parsedQuery.fromDate,
+            toDate: parsedQuery.toDate,
+        });
+
+        res.status(200).json(trend);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
  * Handles All Transactions reads for Finance Admins in one tenant.
  */
 export async function getAllTransactions(
@@ -926,6 +955,18 @@ function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     }
 
     return req.auth;
+}
+
+function requireFinanceDashboardAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Finance Dashboard access is limited to Finance Admins.",
+    );
 }
 
 function requireInternalAuditTrailAccess(

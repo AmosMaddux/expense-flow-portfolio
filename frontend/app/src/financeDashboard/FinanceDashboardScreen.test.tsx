@@ -7,17 +7,47 @@ import {
     waitFor,
     within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import type { CaseQueueStageRollup } from "../caseQueue/caseQueueRollups";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
 import { FinanceDashboardScreen } from "./FinanceDashboardScreen";
+type ChartInstanceMock = {
+    config: unknown;
+    destroy: ReturnType<typeof vi.fn>;
+};
+
+const chartInstances = vi.hoisted((): ChartInstanceMock[] => []);
+const chartConstructorMock = vi.hoisted(() =>
+    vi.fn(function chartMock(_context: unknown, config: unknown) {
+        const instance = {
+            config,
+            destroy: vi.fn(),
+        };
+        chartInstances.push(instance);
+
+        return instance;
+    }),
+);
+const chartRegisterMock = vi.hoisted(() => vi.fn());
+
+vi.mock("chart.js", () => ({
+    BarElement: {},
+    CategoryScale: {},
+    Chart: Object.assign(chartConstructorMock, {
+        register: chartRegisterMock,
+    }),
+    Legend: {},
+    LinearScale: {},
+    Tooltip: {},
+}));
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 const asOfDate = "2026-07-22";
+const dashboardStateTimeout = 5_000;
 
 function createSession(overrides: Partial<AuthSession> = {}): AuthSession {
     return {
@@ -102,6 +132,34 @@ function renderFinanceDashboardScreen(
     );
 }
 
+function createTrendFetchImplementation(
+    trendBody: unknown,
+    rollups: CaseQueueStageRollup[] = [
+        {
+            currentStage: "Submitted",
+            overdueCount: 0,
+            reportCount: 6,
+        },
+    ],
+): typeof fetch {
+    return vi.fn<typeof fetch>((input) => {
+        const url = input instanceof Request ? input.url : input.toString();
+
+        if (url.startsWith("/v1/finance-dashboard/trends")) {
+            return Promise.resolve(createJsonResponse(trendBody));
+        }
+
+        return Promise.resolve(createJsonResponse(rollups));
+    });
+}
+
+function readChartConfig(index = chartInstances.length - 1): {
+    data?: { datasets?: Array<{ data?: number[]; label?: string }> };
+} {
+    return chartInstances[index]?.config as {
+        data?: { datasets?: Array<{ data?: number[]; label?: string }> };
+    };
+}
 function expectKpiCard(label: string, value: string, helper: string): void {
     const card = screen.getByRole("article", { name: `${label} KPI` });
 
@@ -109,6 +167,15 @@ function expectKpiCard(label: string, value: string, helper: string): void {
     expect(within(card).getByText(value, { selector: "strong" })).toBeTruthy();
     expect(within(card).getByText(helper, { selector: "span" })).toBeTruthy();
 }
+
+beforeEach(() => {
+    chartInstances.length = 0;
+    chartConstructorMock.mockClear();
+    chartRegisterMock.mockClear();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+        {} as CanvasRenderingContext2D,
+    );
+});
 
 afterEach(() => {
     cleanup();
@@ -176,6 +243,140 @@ describe("FinanceDashboardScreen", () => {
         expectKpiCard("Overdue Total", "25", "21 total reports");
     });
 
+    test("renders report volume and spend trend summary with accessible table", async () => {
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-21",
+                reportCount: 2,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "125.50",
+                    },
+                ],
+            },
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        expect(
+            await screen.findByRole("heading", { name: "Report Trends" }),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(
+                "6 reports and $400.00 in spend from Jun 23 to Jul 22; peak volume was 4 reports on Jul 22.",
+            ),
+        ).toBeTruthy();
+        expect(
+            screen.getByRole("img", { name: "Report trend chart" }),
+        ).toBeTruthy();
+        expect(
+            screen.getByRole("table", {
+                name: "Report volume and spend by day",
+            }),
+        ).toBeTruthy();
+        expect(screen.getByRole("button", { name: "Spend" })).toBeTruthy();
+        expect(screen.getByText("$274.50")).toBeTruthy();
+        expect(chartConstructorMock).toHaveBeenCalledOnce();
+        expect(readChartConfig().data?.datasets?.[0]?.label).toBe(
+            "Report volume",
+        );
+        expect(readChartConfig().data?.datasets?.[0]?.data).toStrictEqual([
+            2, 4,
+        ]);
+    });
+
+    test("rebuilds the Chart.js config when toggling to spend", async () => {
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-21",
+                reportCount: 2,
+                spendByCurrency: [
+                    { currency: "EUR", spendAmount: "20.00" },
+                    { currency: "USD", spendAmount: "125.50" },
+                ],
+            },
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [{ currency: "USD", spendAmount: "274.50" }],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+        fireEvent.click(screen.getByRole("button", { name: "Spend" }));
+
+        await waitFor(() =>
+            expect(chartConstructorMock).toHaveBeenCalledTimes(2),
+        );
+        expect(chartInstances[0]?.destroy).toHaveBeenCalledOnce();
+        expect(readChartConfig().data?.datasets).toEqual([
+            expect.objectContaining({ data: [20, 0], label: "EUR" }),
+            expect.objectContaining({ data: [125.5, 274.5], label: "USD" }),
+        ]);
+    });
+
+    test("destroys the Chart.js instance when the dashboard unmounts", async () => {
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+        const rendered = renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+        const chart = chartInstances[0];
+        rendered.unmount();
+
+        expect(chart?.destroy).toHaveBeenCalledOnce();
+    });
+
+    test("renders a chart empty state when KPI data exists but trend data is empty", async () => {
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-21",
+                reportCount: 0,
+                spendByCurrency: [],
+            },
+            {
+                periodStart: "2026-07-22",
+                reportCount: 0,
+                spendByCurrency: [],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        expect(
+            await screen.findByRole(
+                "region",
+                {
+                    name: "No trend data to show",
+                },
+                { timeout: dashboardStateTimeout },
+            ),
+        ).toBeTruthy();
+        expect(chartConstructorMock).not.toHaveBeenCalled();
+    });
     test("normalizes missing stages to zero in canonical stage order", async () => {
         const rollups: CaseQueueStageRollup[] = [
             { currentStage: "AP Review", reportCount: 2, overdueCount: 1 },
@@ -255,12 +456,18 @@ describe("FinanceDashboardScreen", () => {
 
         await screen.findByRole("article", { name: "Submitted KPI" });
         expectKpiCard("Submitted", "9", "3 overdue");
-        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+        expect(fetchImplementation).toHaveBeenCalledTimes(4);
         expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
             `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
         );
         expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/finance-dashboard/trends?fromDate=2026-06-23&toDate=2026-07-22",
+        );
+        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
             `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
+        );
+        expect(fetchImplementation.mock.calls[3]?.[0]).toBe(
+            "/v1/finance-dashboard/trends?fromDate=2026-06-23&toDate=2026-07-22",
         );
         expect(
             (fetchImplementation.mock.calls[0]?.[1]?.headers as Headers).get(
@@ -269,6 +476,16 @@ describe("FinanceDashboardScreen", () => {
         ).toBe("Bearer tenant-a-access-token");
         expect(
             (fetchImplementation.mock.calls[1]?.[1]?.headers as Headers).get(
+                "Authorization",
+            ),
+        ).toBe("Bearer tenant-a-access-token");
+        expect(
+            (fetchImplementation.mock.calls[2]?.[1]?.headers as Headers).get(
+                "Authorization",
+            ),
+        ).toBe("Bearer tenant-b-access-token");
+        expect(
+            (fetchImplementation.mock.calls[3]?.[1]?.headers as Headers).get(
                 "Authorization",
             ),
         ).toBe("Bearer tenant-b-access-token");
@@ -282,9 +499,13 @@ describe("FinanceDashboardScreen", () => {
         renderFinanceDashboardScreen(fetchImplementation);
 
         expect(
-            await screen.findByRole("region", {
-                name: "No Expense Reports to show",
-            }),
+            await screen.findByRole(
+                "region",
+                {
+                    name: "No Expense Reports to show",
+                },
+                { timeout: dashboardStateTimeout },
+            ),
         ).toBeTruthy();
         expect(
             screen.queryByLabelText("Finance Dashboard KPI cards"),
@@ -307,9 +528,13 @@ describe("FinanceDashboardScreen", () => {
         renderFinanceDashboardScreen(fetchImplementation);
 
         expect(
-            await screen.findByRole("region", {
-                name: "No Expense Reports to show",
-            }),
+            await screen.findByRole(
+                "region",
+                {
+                    name: "No Expense Reports to show",
+                },
+                { timeout: dashboardStateTimeout },
+            ),
         ).toBeTruthy();
         expect(
             screen.queryByLabelText("Finance Dashboard KPI cards"),

@@ -5,8 +5,34 @@ services:
             POSTGRES_DB: expenseflow_core_case
             POSTGRES_USER: expenseflow
             POSTGRES_PASSWORD: expenseflow_local_dev_only
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "pg_isready -U expenseflow -d expenseflow_core_case",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 12
         ports:
             - "55432:5432"
+
+    postgres-e2e-marker:
+        image: postgres:17-alpine
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            PGDATABASE: expenseflow_core_case
+            PGHOST: postgres
+            PGPASSWORD: expenseflow_local_dev_only
+            PGUSER: expenseflow
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                psql --set=ON_ERROR_STOP=1
+                --command="COMMENT ON DATABASE expenseflow_core_case IS
+                'expenseflow-core-case-deterministic-e2e-v1'"
 
     gl-coding:
         image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
@@ -80,6 +106,11 @@ services:
 
     redis:
         image: redis:7-alpine
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
         ports:
             - "56379:6379"
 

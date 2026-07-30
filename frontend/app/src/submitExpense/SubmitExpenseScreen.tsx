@@ -494,6 +494,9 @@ export function SubmitExpenseScreen(): JSX.Element {
                     Your Expense Report is now in the Submitted stage and ready
                     for review.
                 </p>
+                <p aria-label={`Expense Report ${submittedReportId}`}>
+                    Expense Report {submittedReportId}
+                </p>
             </section>
         );
     }

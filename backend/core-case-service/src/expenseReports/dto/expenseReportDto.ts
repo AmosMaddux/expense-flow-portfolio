@@ -9,6 +9,8 @@ import {
 
 extendZodWithOpenApi(z);
 
+const financeDashboardTrendMaxDays = 31;
+
 export const CreateExpenseReportInboundRequestSchema = z
     .object({
         owner: z.uuid(),
@@ -283,6 +285,28 @@ export const ReadCaseQueueStageRollupsQuerySchema = z.object({
     asOfDate: z.iso.date(),
 });
 
+const financeDashboardTrendDateRangeSchema = z
+    .object({
+        fromDate: z.iso.date(),
+        toDate: z.iso.date(),
+    })
+    .refine((request) => request.fromDate <= request.toDate, {
+        message: "fromDate must be on or before toDate.",
+        path: ["fromDate"],
+    })
+    .refine((request) => isWithinFinanceDashboardTrendRange(request), {
+        message: `Finance Dashboard trends support at most ${financeDashboardTrendMaxDays} days.`,
+        path: ["toDate"],
+    });
+
+export const ReadFinanceDashboardTrendInboundRequestSchema =
+    financeDashboardTrendDateRangeSchema.extend({
+        tenantId: z.uuid(),
+    });
+
+export const ReadFinanceDashboardTrendQuerySchema =
+    financeDashboardTrendDateRangeSchema;
+
 const ReadAllTransactionsFilterSchema = z.object({
     category: z.string().trim().min(1).optional(),
     status: z.enum(approvedWorkflowStages).optional(),
@@ -296,6 +320,17 @@ const ReadAllTransactionsFilterSchema = z.object({
         .refine(isValidAllTransactionsCursor)
         .optional(),
 });
+
+function isWithinFinanceDashboardTrendRange(request: {
+    fromDate: string;
+    toDate: string;
+}): boolean {
+    const fromTime = Date.parse(`${request.fromDate}T00:00:00.000Z`);
+    const toTime = Date.parse(`${request.toDate}T00:00:00.000Z`);
+    const dayCount = (toTime - fromTime) / 86_400_000 + 1;
+
+    return dayCount <= financeDashboardTrendMaxDays;
+}
 
 function isValidTransactionDateRange(request: {
     startDate?: string | undefined;
@@ -456,6 +491,21 @@ export const CaseQueueStageRollupSchema = z.object({
 
 export const CaseQueueStageRollupListSchema = z.array(
     CaseQueueStageRollupSchema,
+);
+
+export const FinanceDashboardTrendSpendBucketSchema = z.object({
+    currency: z.string().min(3).max(8),
+    spendAmount: z.string().regex(/^\d{1,12}\.\d{2}$/),
+});
+
+export const FinanceDashboardTrendPointSchema = z.object({
+    periodStart: z.iso.date(),
+    reportCount: z.number().int().nonnegative(),
+    spendByCurrency: z.array(FinanceDashboardTrendSpendBucketSchema),
+});
+
+export const FinanceDashboardTrendPointListSchema = z.array(
+    FinanceDashboardTrendPointSchema,
 );
 
 export const AllTransactionSchema = z.object({
@@ -652,6 +702,12 @@ export const readCaseQueueStageRollupsRequestSchema =
 export const readCaseQueueStageRollupsQuerySchema =
     ReadCaseQueueStageRollupsQuerySchema;
 
+export const readFinanceDashboardTrendRequestSchema =
+    ReadFinanceDashboardTrendInboundRequestSchema;
+
+export const readFinanceDashboardTrendQuerySchema =
+    ReadFinanceDashboardTrendQuerySchema;
+
 export const readAllTransactionsRequestSchema =
     ReadAllTransactionsInboundRequestSchema;
 
@@ -663,6 +719,15 @@ export const transitionExpenseReportStageRequestSchema =
 export const caseQueueStageRollupSchema = CaseQueueStageRollupSchema;
 
 export const caseQueueStageRollupListSchema = CaseQueueStageRollupListSchema;
+
+export const financeDashboardTrendSpendBucketSchema =
+    FinanceDashboardTrendSpendBucketSchema;
+
+export const financeDashboardTrendPointSchema =
+    FinanceDashboardTrendPointSchema;
+
+export const financeDashboardTrendPointListSchema =
+    FinanceDashboardTrendPointListSchema;
 
 export const allTransactionSchema = AllTransactionSchema;
 
@@ -779,6 +844,14 @@ export type ReadCaseQueueStageRollupsQuery = z.infer<
     typeof ReadCaseQueueStageRollupsQuerySchema
 >;
 
+export type ReadFinanceDashboardTrendParams = z.infer<
+    typeof ReadFinanceDashboardTrendInboundRequestSchema
+>;
+
+export type ReadFinanceDashboardTrendQuery = z.infer<
+    typeof ReadFinanceDashboardTrendQuerySchema
+>;
+
 export type ReadAllTransactionsParams = z.input<
     typeof ReadAllTransactionsInboundRequestSchema
 >;
@@ -796,6 +869,14 @@ export type TransitionExpenseReportStageRequest = z.infer<
 >;
 
 export type CaseQueueStageRollup = z.infer<typeof CaseQueueStageRollupSchema>;
+
+export type FinanceDashboardTrendSpendBucket = z.infer<
+    typeof FinanceDashboardTrendSpendBucketSchema
+>;
+
+export type FinanceDashboardTrendPoint = z.infer<
+    typeof FinanceDashboardTrendPointSchema
+>;
 
 export type AllTransaction = z.infer<typeof AllTransactionSchema>;
 

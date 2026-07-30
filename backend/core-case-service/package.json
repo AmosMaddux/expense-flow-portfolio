@@ -12,6 +12,9 @@
         "db:push": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs push --config=drizzle.config.ts",
         "dev:auth:seed": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localAuthUser.js seed",
         "dev:auth:code": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localAuthUser.js code",
+        "e2e:reset": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/e2eTestData.js reset",
+        "e2e:auth:code": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/e2eTestData.js code",
+        "e2e:verify": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/e2eTestData.js verify",
         "openapi:generate": "npm run build --workspaces=false && node dist/openapi/write-openapi.js && prettier --write ../../docs/openapi/core-case-service.openapi.json",
         "pact:generate": "PACT_OUTPUT_DIR=../../pacts vitest run --project unit src/glCoding/glCodingClient.pact.test.ts && prettier --write ../../pacts/*.json",
         "pact:publish": ": \"${PACT_BROKER_BASE_URL:?PACT_BROKER_BASE_URL is required}\" && : \"${PACT_CONSUMER_VERSION:?PACT_CONSUMER_VERSION is required}\" && npm run pact:generate --workspaces=false && pact-broker publish ../../pacts --consumer-app-version=\"$PACT_CONSUMER_VERSION\" --auto-detect-version-properties --broker-base-url=\"$PACT_BROKER_BASE_URL\"",
@@ -28,10 +31,12 @@
         "argon2": "^0.44.0",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
+        "opossum": "^10.0.0",
         "pg": "^8.22.0",
         "pino": "^10.3.1",
         "redis": "^6.1.0",
         "rfc4648": "^1.5.4",
+        "soap": "^1.10.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {
