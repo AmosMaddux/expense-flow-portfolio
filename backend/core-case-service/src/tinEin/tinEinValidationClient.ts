@@ -28,6 +28,9 @@ type SoapModule = {
         options: WsdlClientOptions,
     ) => Promise<Record<string, unknown>>;
 };
+type SoapOperationOptions = {
+    timeout?: number;
+};
 
 const nodeRequire = createRequire(import.meta.url);
 const OpossumCircuitBreaker = nodeRequire("opossum") as OpossumModule;
@@ -35,7 +38,7 @@ const OpossumCircuitBreaker = nodeRequire("opossum") as OpossumModule;
 export const TinEinValidationRequestSchema = z.object({
     identifierType: z.enum(["TIN", "EIN"]),
     identifier: z.string().regex(/^\d{9}$/),
-    legalName: z.string().min(1).max(200),
+    legalName: z.string().trim().min(1).max(200),
 });
 
 export const TinEinValidationResponseSchema = z.object({
@@ -55,7 +58,7 @@ const soapValidationPayloadSchema: z.ZodType<ValidationServicePayload> =
     z.object({
         IdentifierType: z.enum(["TIN", "EIN"]),
         Identifier: z.string().regex(/^\d{9}$/),
-        LegalName: z.string().min(1).max(200),
+        LegalName: z.string().trim().min(1).max(200),
     });
 
 export type TinEinValidationRequest = z.infer<
@@ -74,7 +77,10 @@ export type TinEinValidationClient = {
     ): Promise<TinEinValidationResponse>;
 };
 
-type ValidationServiceInvoker = (payload: unknown) => Promise<unknown>;
+type ValidationServiceInvoker = (
+    payload: unknown,
+    operationOptions?: SoapOperationOptions,
+) => Promise<unknown>;
 type WsdlClientOptions = {
     wsdl_options?: {
         timeout?: number;
@@ -89,6 +95,7 @@ type CreateValidationServiceInvoker = (
 
 export type TinEinValidationClientOptions = {
     createValidationServiceInvoker?: CreateValidationServiceInvoker;
+    soapModule?: SoapModule;
 };
 
 /**
@@ -99,7 +106,14 @@ export function createSoapTinEinValidationClient(
     options: TinEinValidationClientOptions = {},
 ): TinEinValidationClient {
     const createValidationServiceInvoker =
-        options.createValidationServiceInvoker ?? createNodeSoapInvoker;
+        options.createValidationServiceInvoker ??
+        ((wsdlUrl, operationName, wsdlOptions) =>
+            createNodeSoapInvoker(
+                wsdlUrl,
+                operationName,
+                wsdlOptions,
+                options.soapModule,
+            ));
     let invokerPromise: Promise<ValidationServiceInvoker> | undefined;
 
     const readSoapInvoker = (): Promise<ValidationServiceInvoker> => {
@@ -112,7 +126,10 @@ export function createSoapTinEinValidationClient(
                         timeout: config.TIN_EIN_VALIDATION_TIMEOUT_MS,
                     },
                 },
-            );
+            ).catch((error: unknown) => {
+                invokerPromise = undefined;
+                throw error;
+            });
         }
 
         return invokerPromise;
@@ -127,7 +144,9 @@ export function createSoapTinEinValidationClient(
                 Identifier: request.identifier,
                 LegalName: request.legalName,
             });
-            const rawSoapResponse = await invoker(soapPayload);
+            const rawSoapResponse = await invoker(soapPayload, {
+                timeout: config.TIN_EIN_VALIDATION_TIMEOUT_MS,
+            });
 
             return toTinEinValidationResponse(rawSoapResponse);
         },
@@ -168,15 +187,20 @@ async function createNodeSoapInvoker(
     wsdlUrl: string,
     operationName: string,
     options: WsdlClientOptions,
+    soapModule?: SoapModule,
 ): Promise<ValidationServiceInvoker> {
-    const { createClientAsync } = nodeRequire("soap") as SoapModule;
+    const { createClientAsync } =
+        soapModule ?? (nodeRequire("soap") as SoapModule);
     const soapClient = await createClientAsync(wsdlUrl, options);
     const asyncMethodName = `${operationName}Async`;
     const soapMethod = readSoapMethod(soapClient, asyncMethodName);
 
-    return async (payload) => {
+    return async (payload, operationOptions) => {
         try {
-            const response: unknown = await soapMethod(payload);
+            const response: unknown = await soapMethod(
+                payload,
+                operationOptions,
+            );
 
             if (Array.isArray(response)) {
                 const firstResponse: unknown = response[0];
@@ -204,9 +228,13 @@ function readSoapMethod(
         );
     }
 
-    return async (payload: unknown): Promise<unknown> => {
+    return async (
+        payload: unknown,
+        operationOptions?: SoapOperationOptions,
+    ): Promise<unknown> => {
         const response: unknown = await Reflect.apply(method, soapClient, [
             payload,
+            operationOptions,
         ]);
 
         return response;
@@ -298,8 +326,11 @@ function readOptionalString(
 ): string | undefined {
     for (const key of keys) {
         const value = record[key];
-        if (typeof value === "string" && value.trim().length > 0) {
-            return value;
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed.length > 0) {
+                return trimmed;
+            }
         }
     }
 
