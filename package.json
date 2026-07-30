@@ -15,7 +15,7 @@
         "dev:auth:seed": "npm --workspace backend/core-case-service run dev:auth:seed",
         "dev:auth:code": "npm --workspace backend/core-case-service run dev:auth:code --",
         "dev:events:receive": "sh scripts/receive-local-stage-transition-event.sh",
-        "start": "tsc --build && node --env-file=.env backend/core-case-service/dist/index.js",
+        "start": "node --env-file=.env scripts/start-local-core-case-service.mjs",
         "lint": "eslint . --max-warnings=0 && prettier --check \"**/*.{js,mjs,cjs,ts,json}\""
     },
     "repository": {

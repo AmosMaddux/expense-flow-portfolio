@@ -251,6 +251,34 @@
                                 },
                                 "deductible": {
                                     "type": ["boolean", "null"]
+                                },
+                                "owner": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["Low", "Normal", "High", "Urgent"]
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "onHold": {
+                                    "type": "boolean"
+                                },
+                                "isOverdue": {
+                                    "type": "boolean"
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
                                 }
                             },
                             "required": [
@@ -262,7 +290,15 @@
                                 "amount",
                                 "currency",
                                 "status",
-                                "deductible"
+                                "deductible",
+                                "owner",
+                                "priority",
+                                "dueDate",
+                                "onHold",
+                                "isOverdue",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction"
                             ]
                         }
                     },

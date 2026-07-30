@@ -8,6 +8,8 @@ import {
     ErrorState,
     EXPENSE_REPORT_STAGES,
     LoadingSkeleton,
+    OverdueBadge,
+    StageStepper,
     StatusBadge,
     type ExpenseReportStage,
 } from "../components";
@@ -22,7 +24,14 @@ const allTransactionSchema = z.object({
     amount: z.string().regex(/^-?\d+\.\d{2}$/),
     currency: z.string().min(3).max(3),
     status: z.enum(EXPENSE_REPORT_STAGES),
-    deductible: z.boolean().nullable(),
+    owner: z.string().uuid(),
+    priority: z.enum(["Low", "Normal", "High", "Urgent"]),
+    dueDate: z.iso.date(),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    glCode: z.string().nullable(),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(["approve", "reject"]).nullable(),
 });
 
 export const allTransactionListSchema = z.array(allTransactionSchema);
@@ -86,6 +95,9 @@ export function AllTransactionsScreen(): JSX.Element {
     const [cursor, setCursor] = useState<string | null>(null);
     const [loadedPages, setLoadedPages] = useState<LoadedTransactionPage[]>([]);
     const [nextCursor, setNextCursor] = useState<string | null>(null);
+    const [selectedExpenseReportId, setSelectedExpenseReportId] = useState<
+        string | null
+    >(null);
     const query = useAllTransactions(appliedFilters, cursor);
     const transactions = useMemo(
         () => loadedPages.flatMap((loadedPage) => loadedPage.page.items),
@@ -99,6 +111,17 @@ export function AllTransactionsScreen(): JSX.Element {
                 ),
             ).sort((left, right) => left.localeCompare(right)),
         [transactions],
+    );
+    const selectedReportTransactions = useMemo(
+        () =>
+            selectedExpenseReportId === null
+                ? []
+                : transactions.filter(
+                      (transaction) =>
+                          transaction.expenseReportId ===
+                          selectedExpenseReportId,
+                  ),
+        [selectedExpenseReportId, transactions],
     );
 
     const appendPage = (
@@ -227,7 +250,10 @@ export function AllTransactionsScreen(): JSX.Element {
                     />
                 ) : (
                     <>
-                        <AllTransactionsTable transactions={transactions} />
+                        <AllTransactionsTable
+                            onOpenReview={setSelectedExpenseReportId}
+                            transactions={transactions}
+                        />
                         {nextCursor !== null ? (
                             <div className="all-transactions__pagination">
                                 <Button
@@ -242,6 +268,12 @@ export function AllTransactionsScreen(): JSX.Element {
                                         : "Load more"}
                                 </Button>
                             </div>
+                        ) : null}
+                        {selectedReportTransactions.length > 0 ? (
+                            <TransactionReviewDialog
+                                onClose={() => setSelectedExpenseReportId(null)}
+                                transactions={selectedReportTransactions}
+                            />
                         ) : null}
                     </>
                 )}
@@ -388,8 +420,10 @@ function AllTransactionsFiltersForm({
 }
 
 function AllTransactionsTable({
+    onOpenReview,
     transactions,
 }: {
+    onOpenReview: (expenseReportId: string) => void;
     transactions: AllTransaction[];
 }): JSX.Element {
     return (
@@ -402,17 +436,19 @@ function AllTransactionsTable({
                 <thead>
                     <tr>
                         <th scope="col">Date</th>
+                        <th scope="col">Owner</th>
                         <th scope="col">Merchant</th>
                         <th scope="col">Category</th>
                         <th scope="col">Amount</th>
                         <th scope="col">Status</th>
-                        <th scope="col">Deductible</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {transactions.map((transaction) => (
                         <tr key={transaction.id}>
                             <td>{formatDate(transaction.date)}</td>
+                            <td>{formatReportOwner(transaction.owner)}</td>
                             <th scope="row">{transaction.merchant}</th>
                             <td>{transaction.category}</td>
                             <td>
@@ -427,18 +463,175 @@ function AllTransactionsTable({
                                     tone="neutral"
                                 />
                             </td>
-                            <td>{formatDeductible(transaction.deductible)}</td>
+                            <td>
+                                <Button
+                                    onClick={() =>
+                                        onOpenReview(transaction.expenseReportId)
+                                    }
+                                    size="sm"
+                                    type="button"
+                                    variant="secondary"
+                                >
+                                    Review
+                                </Button>
+                            </td>
                         </tr>
                     ))}
                 </tbody>
                 <tfoot>
                     <tr>
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                             Showing {transactions.length} line items
                         </td>
                     </tr>
                 </tfoot>
             </table>
+        </div>
+    );
+}
+
+function TransactionReviewDialog({
+    onClose,
+    transactions,
+}: {
+    onClose: () => void;
+    transactions: AllTransaction[];
+}): JSX.Element | null {
+    const report = transactions[0];
+
+    if (report === undefined) {
+        return null;
+    }
+
+    return (
+        <div className="case-queue-dialog__backdrop">
+            <section
+                aria-labelledby="all-transactions-review-dialog-heading"
+                aria-modal="true"
+                className="case-queue-dialog"
+                role="dialog"
+            >
+                <header className="case-queue-dialog__header">
+                    <div>
+                        <p className="screen-placeholder__label">
+                            Report Detail
+                        </p>
+                        <h3 id="all-transactions-review-dialog-heading">
+                            Expense Report{" "}
+                            {formatReportId(report.expenseReportId)}
+                        </h3>
+                    </div>
+                </header>
+                <div className="all-transactions-detail">
+                    <StageStepper
+                        className="all-transactions-detail__stepper"
+                        currentStage={report.status}
+                        onHold={report.onHold}
+                    />
+                    <aside
+                        aria-label="Expense Report case summary"
+                        className="all-transactions-detail__panel"
+                    >
+                        <dl>
+                            <div>
+                                <dt>Owner</dt>
+                                <dd>{formatReportOwner(report.owner)}</dd>
+                            </div>
+                            <div>
+                                <dt>Priority</dt>
+                                <dd>
+                                    <Badge
+                                        tone={getPriorityTone(
+                                            report.priority,
+                                        )}
+                                    >
+                                        {report.priority}
+                                    </Badge>
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Due date</dt>
+                                <dd>
+                                    <time dateTime={report.dueDate}>
+                                        {formatDate(report.dueDate)}
+                                    </time>
+                                    <OverdueBadge
+                                        isOverdue={report.isOverdue}
+                                    />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>on_hold</dt>
+                                <dd>
+                                    <Badge
+                                        tone={
+                                            report.onHold
+                                                ? "warning"
+                                                : "success"
+                                        }
+                                    >
+                                        {report.onHold ? "On hold" : "Active"}
+                                    </Badge>
+                                </dd>
+                            </div>
+                        </dl>
+                    </aside>
+                </div>
+                <div className="case-queue-dialog__table-wrap">
+                    <table aria-label="Expense Report review line items">
+                        <thead>
+                            <tr>
+                                <th scope="col">Merchant</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">Mileage</th>
+                                <th scope="col">GL Code</th>
+                                <th scope="col">Flag</th>
+                                <th scope="col">Review Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {transactions.map((transaction) => (
+                                <tr key={transaction.id}>
+                                    <th scope="row">{transaction.merchant}</th>
+                                    <td>
+                                        {formatCurrency(
+                                            transaction.amount,
+                                            transaction.currency,
+                                        )}
+                                    </td>
+                                    <td>-</td>
+                                    <td>{transaction.glCode ?? "Unmapped"}</td>
+                                    <td>
+                                        {transaction.flaggedLineItem ? (
+                                            <Badge tone="warning">
+                                                Over $500
+                                            </Badge>
+                                        ) : (
+                                            <Badge tone="success">Clear</Badge>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {formatReviewAction(
+                                            transaction.reviewAction,
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <footer className="case-queue-dialog__footer">
+                    <span />
+                    <Button
+                        onClick={onClose}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                    >
+                        Exit
+                    </Button>
+                </footer>
+            </section>
         </div>
     );
 }
@@ -459,12 +652,44 @@ function formatCurrency(amount: string, currency: string): string {
     }).format(Number(amount));
 }
 
-function formatDeductible(deductible: boolean | null): string {
-    if (deductible === null) {
-        return "Not set";
+function formatReportId(expenseReportId: string): string {
+    return expenseReportId.slice(0, 8).toUpperCase();
+}
+
+function formatReportOwner(owner: string): string {
+    return owner.slice(0, 8).toUpperCase();
+}
+
+function getPriorityTone(
+    priority: AllTransaction["priority"],
+): "neutral" | "info" | "warning" | "danger" {
+    if (priority === "Urgent") {
+        return "danger";
     }
 
-    return deductible ? "Yes" : "No";
+    if (priority === "High") {
+        return "warning";
+    }
+
+    if (priority === "Low") {
+        return "info";
+    }
+
+    return "neutral";
+}
+
+function formatReviewAction(
+    reviewAction: AllTransaction["reviewAction"],
+): string {
+    if (reviewAction === "approve") {
+        return "Approved";
+    }
+
+    if (reviewAction === "reject") {
+        return "Rejected";
+    }
+
+    return "Not reviewed";
 }
 
 function getAllTransactionsErrorMessage(error: Error | null): string {

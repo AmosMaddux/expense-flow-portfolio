@@ -79,11 +79,32 @@ export async function readAllTransactions(
             ${lineItem.amount} as "amount",
             ${lineItem.currency} as "currency",
             ${expenseReport.currentStage} as "status",
-            null::boolean as "deductible"
+            null::boolean as "deductible",
+            ${expenseReport.owner} as "owner",
+            ${expenseReport.priority} as "priority",
+            ${expenseReport.dueDate} as "dueDate",
+            ${expenseReport.onHold} as "onHold",
+            false as "isOverdue",
+            latest_gl_result.gl_account_code as "glCode",
+            coalesce(latest_gl_result.flagged_line_item, false) as "flaggedLineItem",
+            latest_gl_result.line_item_review_action as "reviewAction"
         from ${lineItem}
         inner join ${expenseReport}
             on ${expenseReport.id} = ${lineItem.expenseReportId}
             and ${expenseReport.tenantId} = ${lineItem.tenantId}
+        left join lateral (
+            select
+                gl_coding_result.gl_account_code,
+                gl_coding_result.flagged_line_item,
+                gl_coding_result.line_item_review_action
+            from gl_coding_result
+            where gl_coding_result.tenant_id = ${lineItem.tenantId}
+                and gl_coding_result.expense_report_id = ${lineItem.expenseReportId}
+                and gl_coding_result.source_type = 'line_item'
+                and gl_coding_result.source_id = ${lineItem.id}
+            order by gl_coding_result.coded_at desc, gl_coding_result.id desc
+            limit 1
+        ) latest_gl_result on true
         where ${sql.join(filters, sql` and `)}
         order by ${lineItem.expenseDate} desc, ${lineItem.id} asc
         limit ${pageSize + 1}
@@ -123,6 +144,18 @@ function toAllTransactionWithCursor(
         currency: String(row.currency),
         status: status as ExpenseReportStage,
         deductible: typeof row.deductible === "boolean" ? row.deductible : null,
+        owner: String(row.owner),
+        priority: toPriority(row.priority),
+        dueDate: toIsoDate(row.dueDate),
+        onHold: typeof row.onHold === "boolean" ? row.onHold : false,
+        isOverdue:
+            typeof row.isOverdue === "boolean" ? row.isOverdue : false,
+        glCode: typeof row.glCode === "string" ? row.glCode : null,
+        flaggedLineItem:
+            typeof row.flaggedLineItem === "boolean"
+                ? row.flaggedLineItem
+                : false,
+        reviewAction: toReviewAction(row.reviewAction),
         cursorExpenseDate: toIsoDate(row.cursorExpenseDate),
     };
 }
@@ -140,7 +173,36 @@ function toPublicAllTransaction(
         currency: transaction.currency,
         status: transaction.status,
         deductible: transaction.deductible,
+        owner: transaction.owner,
+        priority: transaction.priority,
+        dueDate: transaction.dueDate,
+        onHold: transaction.onHold,
+        isOverdue: transaction.isOverdue,
+        glCode: transaction.glCode,
+        flaggedLineItem: transaction.flaggedLineItem,
+        reviewAction: transaction.reviewAction,
     };
+}
+
+function toPriority(value: unknown): "Low" | "Normal" | "High" | "Urgent" {
+    if (
+        value === "Low" ||
+        value === "Normal" ||
+        value === "High" ||
+        value === "Urgent"
+    ) {
+        return value;
+    }
+
+    return "Normal";
+}
+
+function toReviewAction(value: unknown): "approve" | "reject" | null {
+    if (value === "approve" || value === "reject") {
+        return value;
+    }
+
+    return null;
 }
 
 function toIsoDateTime(value: unknown): string {

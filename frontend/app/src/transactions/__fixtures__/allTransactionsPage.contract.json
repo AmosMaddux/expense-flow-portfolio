@@ -9,7 +9,15 @@
             "amount": "64.20",
             "currency": "USD",
             "status": "AP Review",
-            "deductible": null
+            "deductible": null,
+            "owner": "cf8ea46a-778d-4634-9363-f4864a3d4424",
+            "priority": "Normal",
+            "dueDate": "2026-08-01",
+            "onHold": false,
+            "isOverdue": false,
+            "glCode": "6250",
+            "flaggedLineItem": false,
+            "reviewAction": null
         },
         {
             "id": "30000000-0000-4000-8000-000000000191",
@@ -20,7 +28,15 @@
             "amount": "92.41",
             "currency": "USD",
             "status": "Submitted",
-            "deductible": true
+            "deductible": true,
+            "owner": "cf8ea46a-778d-4634-9363-f4864a3d4424",
+            "priority": "Normal",
+            "dueDate": "2026-08-01",
+            "onHold": false,
+            "isOverdue": false,
+            "glCode": "6310",
+            "flaggedLineItem": false,
+            "reviewAction": "approve"
         }
     ],
     "nextCursor": null

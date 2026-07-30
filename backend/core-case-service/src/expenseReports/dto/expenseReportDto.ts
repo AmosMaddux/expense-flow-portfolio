@@ -468,6 +468,14 @@ export const AllTransactionSchema = z.object({
     currency: z.string().min(3).max(3),
     status: z.enum(approvedWorkflowStages),
     deductible: z.boolean().nullable(),
+    owner: z.uuid(),
+    priority: z.enum(priorityLevels),
+    dueDate: z.iso.date(),
+    onHold: z.boolean(),
+    isOverdue: z.boolean(),
+    glCode: z.string().nullable(),
+    flaggedLineItem: z.boolean(),
+    reviewAction: z.enum(lineItemReviewActions).nullable(),
 });
 
 export const AllTransactionListSchema = z.array(AllTransactionSchema);

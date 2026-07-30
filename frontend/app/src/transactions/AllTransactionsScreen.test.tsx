@@ -21,6 +21,16 @@ import allTransactionsPageContract from "./__fixtures__/allTransactionsPage.cont
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
+const defaultReportMetadata = {
+    owner: userId,
+    priority: "Normal",
+    dueDate: "2026-08-01",
+    onHold: false,
+    isOverdue: false,
+} satisfies Pick<
+    AllTransaction,
+    "owner" | "priority" | "dueDate" | "onHold" | "isOverdue"
+>;
 
 function createSession(): AuthSession {
     return {
@@ -128,7 +138,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
             {
                 id: "30000000-0000-4000-8000-000000000171",
@@ -139,7 +152,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: true,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -160,12 +176,12 @@ describe("AllTransactionsScreen", () => {
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 20, 2026 Cedar Bistro Meals \$64\.20 AP Review Not set/i,
+                name: /Jul 20, 2026 CF8EA46A Cedar Bistro Meals \$64\.20 AP Review/i,
             }),
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 18, 2026 Northstar Office Office Supplies \$92\.41 Submitted Yes/i,
+                name: /Jul 18, 2026 CF8EA46A Northstar Office Office Supplies \$92\.41 Submitted/i,
             }),
         ).toBeTruthy();
         expect(screen.getByText("Showing 2 line items")).toBeTruthy();
@@ -182,7 +198,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const updatedTransactions: AllTransaction[] = [
@@ -195,7 +214,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "118.75",
                 currency: "USD",
                 status: "Submitted",
-                deductible: true,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi
@@ -224,6 +246,77 @@ describe("AllTransactionsScreen", () => {
         expect(fetchImplementation).toHaveBeenCalledTimes(2);
     });
 
+    test("opens a report review modal from a row Review button", async () => {
+        const transactions: AllTransaction[] = [
+            {
+                id: "30000000-0000-4000-8000-000000000178",
+                expenseReportId: "60000000-0000-4000-8000-000000000178",
+                date: "2026-07-20T12:00:00.000Z",
+                merchant: "Summit Air",
+                category: "Travel",
+                amount: "512.09",
+                currency: "USD",
+                status: "AP Review",
+                glCode: "6220",
+                flaggedLineItem: true,
+                reviewAction: "reject",
+                owner: userId,
+                priority: "Urgent",
+                dueDate: "2026-07-01",
+                onHold: true,
+                isOverdue: true,
+            },
+        ];
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                createJsonResponse(createTransactionPage(transactions)),
+            ),
+        );
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const summitRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(summitRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = screen.getByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+        expect(
+            within(dialog).getByRole("list", {
+                name: "Expense Report stage progress",
+            }),
+        ).toBeTruthy();
+        const summary = within(dialog).getByRole("complementary", {
+            name: "Expense Report case summary",
+        });
+        expect(
+            within(summary).getByText(userId.slice(0, 8).toUpperCase()),
+        ).toBeTruthy();
+        expect(within(summary).getByText("Urgent")).toBeTruthy();
+        expect(within(summary).getByText("Jul 01, 2026")).toBeTruthy();
+        expect(within(summary).getByText("Overdue")).toBeTruthy();
+        expect(within(summary).getByText("On hold")).toBeTruthy();
+        expect(within(dialog).getByRole("status").textContent).toBe("Paused");
+        expect(
+            within(dialog).getByRole("table", {
+                name: "Expense Report review line items",
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Summit Air \$512\.09 - 6220 Over \$500 Rejected/i,
+            }),
+        ).toBeTruthy();
+
+        fireEvent.click(within(dialog).getByRole("button", { name: "Exit" }));
+
+        expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
     test("keeps current rows when already-applied filters are applied again", async () => {
         const transactions: AllTransaction[] = [
             {
@@ -235,7 +328,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -266,7 +362,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: null,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -398,12 +497,12 @@ describe("AllTransactionsScreen", () => {
 
         expect(
             await screen.findByRole("row", {
-                name: /Jul 20, 2026 Cedar Bistro Meals \$64\.20 AP Review Not set/i,
+                name: /Jul 20, 2026 CF8EA46A Cedar Bistro Meals \$64\.20 AP Review/i,
             }),
         ).toBeTruthy();
         expect(
             screen.getByRole("row", {
-                name: /Jul 18, 2026 Northstar Office Office Supplies \$92\.41 Submitted Yes/i,
+                name: /Jul 18, 2026 CF8EA46A Northstar Office Office Supplies \$92\.41 Submitted/i,
             }),
         ).toBeTruthy();
         expect(fetchImplementation).toHaveBeenCalledWith(
@@ -431,7 +530,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "64.20",
                 currency: "USD",
                 status: "AP Review",
-                deductible: null,
+                glCode: "6250",
+                flaggedLineItem: false,
+                reviewAction: null,
+                ...defaultReportMetadata,
             },
         ];
         const secondPage: AllTransaction[] = [
@@ -444,7 +546,10 @@ describe("AllTransactionsScreen", () => {
                 amount: "92.41",
                 currency: "USD",
                 status: "Submitted",
-                deductible: null,
+                glCode: "6310",
+                flaggedLineItem: false,
+                reviewAction: "approve",
+                ...defaultReportMetadata,
             },
         ];
         const fetchImplementation = vi
