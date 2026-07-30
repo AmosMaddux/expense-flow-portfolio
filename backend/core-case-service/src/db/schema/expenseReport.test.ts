@@ -935,6 +935,10 @@ void describe("stageTransitionProjection schema", () => {
         const indexNames = tableConfig.indexes.map(
             (index) => index.config.name,
         );
+        const checkNames = tableConfig.checks.map((check) => check.name);
+        const foreignKeyNames = tableConfig.foreignKeys.map((foreignKey) =>
+            foreignKey.getName(),
+        );
 
         expect(getTableName(stageTransitionProjection)).toBe(
             "stage_transition_projection",
@@ -960,6 +964,12 @@ void describe("stageTransitionProjection schema", () => {
                 "stage_transition_projection_tenant_report_idx",
                 "stage_transition_projection_correlation_idx",
             ]),
+        );
+        expect(checkNames).toContain(
+            "stage_transition_projection_valid_edge_check",
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_projection_expense_report_tenant_fk",
         );
     });
 });

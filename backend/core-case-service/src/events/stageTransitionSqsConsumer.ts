@@ -38,12 +38,20 @@ const deleteStageTransitionMessageRequestSchema = z
 
 type SqsCommandClient = Pick<SQSClient, "send">;
 
+export type StageTransitionPollFailureCategory =
+    "receive_failed" | "request_validation_failed";
+
 export type StageTransitionConsumerLogger = {
     messageFailed(): void;
+    pollFailed(category: StageTransitionPollFailureCategory): void;
 };
 
 export type StageTransitionSqsConsumerDependencies = {
     logger?: StageTransitionConsumerLogger;
+    waitForRetry?: (
+        delayMilliseconds: number,
+        signal: AbortSignal,
+    ) => Promise<void>;
     store?: StageTransitionProjectionStore;
 };
 
@@ -59,7 +67,15 @@ const defaultLogger: StageTransitionConsumerLogger = {
             "A stage-transition SQS message failed and remains available for retry.",
         );
     },
+    pollFailed(category) {
+        console.error(
+            `Stage-transition SQS poll failed (${category}); the consumer will retry.`,
+        );
+    },
 };
+
+const initialRetryDelayMilliseconds = 1_000;
+const maximumRetryDelayMilliseconds = 30_000;
 
 /**
  * Receives and processes one long-poll batch from the stage-transition queue.
@@ -118,7 +134,62 @@ export async function runStageTransitionSqsConsumer(
     signal: AbortSignal,
     dependencies: StageTransitionSqsConsumerDependencies = {},
 ): Promise<void> {
+    const logger = dependencies.logger ?? defaultLogger;
+    const waitForRetry = dependencies.waitForRetry ?? waitForRetryDelay;
+    let consecutiveFailureCount = 0;
+
     while (!signal.aborted) {
-        await pollStageTransitionQueueOnce(client, config, dependencies);
+        try {
+            await pollStageTransitionQueueOnce(client, config, dependencies);
+            consecutiveFailureCount = 0;
+        } catch (error: unknown) {
+            if (signal.aborted) {
+                return;
+            }
+
+            consecutiveFailureCount += 1;
+            logger.pollFailed(categorizePollFailure(error));
+            await waitForRetry(
+                calculateRetryDelayMilliseconds(consecutiveFailureCount),
+                signal,
+            );
+        }
     }
+}
+
+function categorizePollFailure(
+    error: unknown,
+): StageTransitionPollFailureCategory {
+    return error instanceof z.ZodError
+        ? "request_validation_failed"
+        : "receive_failed";
+}
+
+function calculateRetryDelayMilliseconds(
+    consecutiveFailureCount: number,
+): number {
+    return Math.min(
+        initialRetryDelayMilliseconds *
+            2 ** Math.max(0, consecutiveFailureCount - 1),
+        maximumRetryDelayMilliseconds,
+    );
+}
+
+async function waitForRetryDelay(
+    delayMilliseconds: number,
+    signal: AbortSignal,
+): Promise<void> {
+    if (signal.aborted) {
+        return;
+    }
+
+    await new Promise<void>((resolve) => {
+        const finish = () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", finish);
+            resolve();
+        };
+        const timer = setTimeout(finish, delayMilliseconds);
+        signal.addEventListener("abort", finish, { once: true });
+    });
 }

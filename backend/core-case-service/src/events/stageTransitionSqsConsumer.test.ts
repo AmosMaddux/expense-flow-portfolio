@@ -5,7 +5,10 @@ import {
 import { describe, expect, test, vi } from "vitest";
 
 import type { StageTransitionProjectionStore } from "./stageTransitionProjectionRepository.js";
-import { pollStageTransitionQueueOnce } from "./stageTransitionSqsConsumer.js";
+import {
+    pollStageTransitionQueueOnce,
+    runStageTransitionSqsConsumer,
+} from "./stageTransitionSqsConsumer.js";
 
 const config = {
     region: "us-east-1",
@@ -38,6 +41,13 @@ function createStore(): StageTransitionProjectionStore & {
 } {
     return {
         project: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
+function createLogger() {
+    return {
+        messageFailed: vi.fn(),
+        pollFailed: vi.fn(),
     };
 }
 
@@ -86,16 +96,16 @@ void describe("plain stage-transition SQS consumer", () => {
             ],
         });
         const store = createStore();
-        const messageFailed = vi.fn();
+        const logger = createLogger();
 
         const result = await pollStageTransitionQueueOnce({ send }, config, {
-            logger: { messageFailed },
+            logger,
             store,
         });
 
         expect(result).toStrictEqual({ failed: 1, processed: 0 });
         expect(store.project).not.toHaveBeenCalled();
-        expect(messageFailed).toHaveBeenCalledOnce();
+        expect(logger.messageFailed).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledOnce();
         expect(send.mock.calls[0]?.[0]).toBeInstanceOf(ReceiveMessageCommand);
     });
@@ -113,16 +123,93 @@ void describe("plain stage-transition SQS consumer", () => {
         store.project.mockRejectedValue(
             new Error("synthetic projection failure"),
         );
-        const messageFailed = vi.fn();
+        const logger = createLogger();
 
         const result = await pollStageTransitionQueueOnce({ send }, config, {
-            logger: { messageFailed },
+            logger,
             store,
         });
 
         expect(result).toStrictEqual({ failed: 1, processed: 0 });
         expect(store.project).toHaveBeenCalledOnce();
-        expect(messageFailed).toHaveBeenCalledOnce();
+        expect(logger.messageFailed).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledOnce();
+    });
+
+    void test("backs off and keeps polling after a receive failure", async () => {
+        const shutdownController = new AbortController();
+        const send = vi
+            .fn()
+            .mockRejectedValueOnce(new Error("synthetic SQS failure"))
+            .mockImplementationOnce(() => {
+                shutdownController.abort();
+                return Promise.resolve({ Messages: [] });
+            });
+        const logger = createLogger();
+        const waitForRetry = vi
+            .fn<
+                (
+                    delayMilliseconds: number,
+                    signal: AbortSignal,
+                ) => Promise<void>
+            >()
+            .mockResolvedValue(undefined);
+
+        await runStageTransitionSqsConsumer(
+            { send },
+            config,
+            shutdownController.signal,
+            {
+                logger,
+                store: createStore(),
+                waitForRetry,
+            },
+        );
+
+        expect(send).toHaveBeenCalledTimes(2);
+        expect(logger.pollFailed).toHaveBeenCalledExactlyOnceWith(
+            "receive_failed",
+        );
+        expect(waitForRetry).toHaveBeenCalledExactlyOnceWith(
+            1_000,
+            shutdownController.signal,
+        );
+    });
+
+    void test("caps exponential poll backoff at thirty seconds", async () => {
+        const shutdownController = new AbortController();
+        let receiveAttempt = 0;
+        const send = vi.fn().mockImplementation(() => {
+            receiveAttempt += 1;
+            if (receiveAttempt <= 7) {
+                return Promise.reject(new Error("synthetic SQS failure"));
+            }
+
+            shutdownController.abort();
+            return Promise.resolve({ Messages: [] });
+        });
+        const waitForRetry = vi
+            .fn<
+                (
+                    delayMilliseconds: number,
+                    signal: AbortSignal,
+                ) => Promise<void>
+            >()
+            .mockResolvedValue(undefined);
+
+        await runStageTransitionSqsConsumer(
+            { send },
+            config,
+            shutdownController.signal,
+            {
+                logger: createLogger(),
+                store: createStore(),
+                waitForRetry,
+            },
+        );
+
+        expect(waitForRetry.mock.calls.map(([delay]) => delay)).toStrictEqual([
+            1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
+        ]);
     });
 });

@@ -353,6 +353,24 @@ export const stageTransitionProjection = pgTable(
             "stage_transition_projection_changed_stage_check",
             sql`${table.previousStage} <> ${table.currentStage}`,
         ),
+        check(
+            "stage_transition_projection_valid_edge_check",
+            sql`(
+                (${table.previousStage} = 'Drafted' and ${table.currentStage} = 'Submitted')
+                or (${table.previousStage} = 'Submitted' and ${table.currentStage} = 'Manager Approval')
+                or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'AP Review')
+                or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Paid')
+                or (${table.previousStage} = 'Paid' and ${table.currentStage} = 'Reconciled')
+                or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'Drafted')
+                or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Drafted')
+            )`,
+        ),
+        foreignKey({
+            name: "stage_transition_projection_expense_report_tenant_fk",
+            // The projection must never associate an Expense Report with a different tenant.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
         index("stage_transition_projection_tenant_report_idx").on(
             table.tenantId,
             table.expenseReportId,
