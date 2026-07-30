@@ -309,6 +309,59 @@ describe("AppShell", () => {
         expect(approvalQueueLink.getAttribute("aria-current")).toBe("page");
     });
 
+    test("opens and closes mobile navigation without changing desktop markup", () => {
+        render(
+            <AppShell currentPath="/my-submissions" signedInRole="Employee" />,
+        );
+
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        const primaryNavigation = screen.getByLabelText("Primary navigation");
+
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+        expect(primaryNavigation.className).toBe("sidebar");
+        expect(
+            screen.queryByRole("button", { name: "Close navigation" }),
+        ).toBeNull();
+
+        fireEvent.click(menuButton);
+
+        expect(menuButton.getAttribute("aria-expanded")).toBe("true");
+        expect(primaryNavigation.className).toContain("sidebar--open");
+
+        fireEvent.click(
+            screen.getByRole("button", { name: "Close navigation" }),
+        );
+
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+        expect(primaryNavigation.className).toBe("sidebar");
+    });
+
+    test("closes mobile navigation after selecting a link", () => {
+        render(<AppShell signedInRole="Employee" />);
+
+        fireEvent.click(
+            screen.getByRole("button", { name: "Open navigation" }),
+        );
+
+        const sidebar = screen.getByRole("navigation", {
+            name: "Workspace sections",
+        });
+        fireEvent.click(
+            within(sidebar).getByRole("link", { name: "Submit Expense" }),
+        );
+
+        expect(window.location.pathname).toBe("/submit-expense");
+        expect(screen.getByLabelText("Primary navigation").className).toBe(
+            "sidebar",
+        );
+        expect(
+            screen
+                .getByRole("button", { name: "Open navigation" })
+                .getAttribute("aria-expanded"),
+        ).toBe("false");
+    });
     test("updates browser history and active link without a document refresh", () => {
         window.history.replaceState(null, "", "/my-submissions");
         render(<AppShell signedInRole="Employee" />);

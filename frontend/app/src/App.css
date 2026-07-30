@@ -952,6 +952,10 @@ button:disabled {
     padding: 24px 16px;
 }
 
+.sidebar-backdrop {
+    display: none;
+}
+
 .sidebar__brand {
     display: flex;
     align-items: center;
@@ -1005,6 +1009,34 @@ button:disabled {
     border-bottom: 1px solid #d9e2ec;
     background: #fff;
     padding: 18px 28px;
+}
+
+.topbar__heading {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.topbar__menu {
+    display: none;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    place-items: center;
+    gap: 4px;
+    border: 1px solid #c4c6cd;
+    border-radius: 7px;
+    background: #fff;
+    padding: 0;
+}
+
+.topbar__menu span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+    background: #303e51;
 }
 
 .topbar h1 {
@@ -1260,14 +1292,6 @@ button:disabled {
 }
 
 @media (max-width: 700px) {
-    .app-shell {
-        grid-template-columns: 1fr;
-    }
-
-    .sidebar {
-        position: static;
-    }
-
     .workspace__content,
     .mileage-form {
         padding: 20px;
@@ -1777,10 +1801,9 @@ button:disabled {
     display: grid;
     align-items: end;
     gap: 14px;
-    grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 1fr) repeat(
-            2,
-            minmax(140px, 0.8fr)
-        ) auto;
+    grid-template-columns:
+        minmax(160px, 1.2fr) minmax(150px, 1fr) repeat(2, minmax(140px, 0.8fr))
+        auto;
 }
 
 .all-transactions-filters label {
@@ -1875,17 +1898,53 @@ button:disabled {
     }
 
     .app-shell {
-        grid-template-columns: 1fr;
+        display: block;
     }
 
     .sidebar {
-        border-right: 0;
-        border-bottom: 1px solid #334e68;
+        position: fixed;
+        z-index: 90;
+        inset: 0 auto 0 0;
+        width: min(82vw, 280px);
+        max-width: calc(100vw - 48px);
+        overflow-y: auto;
+        border-right: 1px solid #334e68;
+        border-bottom: 0;
+        box-shadow: 18px 0 48px rgb(16 42 67 / 24%);
+        transform: translateX(-100%);
+        transition:
+            transform 160ms ease,
+            visibility 160ms ease;
+        visibility: hidden;
+    }
+
+    .sidebar--open {
+        transform: translateX(0);
+        visibility: visible;
+    }
+
+    .sidebar-backdrop {
+        position: fixed;
+        z-index: 80;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgb(16 42 67 / 48%);
+        padding: 0;
     }
 
     .topbar {
-        align-items: flex-start;
+        align-items: stretch;
         flex-direction: column;
+        padding: 16px 20px;
+    }
+
+    .topbar__heading {
+        align-items: flex-start;
+    }
+
+    .topbar__menu {
+        display: inline-grid;
     }
 
     .topbar__tenant {

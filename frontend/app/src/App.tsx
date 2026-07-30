@@ -186,6 +186,7 @@ export function AppShell({
     const [browserPath, setBrowserPath] = useState(
         () => window.location.pathname,
     );
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
     const landing = roleLandings[signedInRole];
@@ -226,13 +227,26 @@ export function AppShell({
         event.preventDefault();
         window.history.pushState(null, "", path);
         setBrowserPath(path);
+        setIsSidebarOpen(false);
         // Notify router/history listeners because pushState does not emit popstate.
         window.dispatchEvent(new PopStateEvent("popstate"));
     }
 
     return (
         <div className="app-shell">
-            <aside className="sidebar" aria-label="Primary navigation">
+            {isSidebarOpen ? (
+                <button
+                    aria-label="Close navigation"
+                    className="sidebar-backdrop"
+                    onClick={() => setIsSidebarOpen(false)}
+                    type="button"
+                />
+            ) : null}
+            <aside
+                aria-label="Primary navigation"
+                className={`sidebar${isSidebarOpen ? " sidebar--open" : ""}`}
+                id="primary-navigation"
+            >
                 <div className="sidebar__brand">
                     <span className="sidebar__brand-mark" aria-hidden="true">
                         EF
@@ -261,9 +275,23 @@ export function AppShell({
             </aside>
             <div className="workspace">
                 <header className="topbar">
-                    <div>
-                        <p className="topbar__eyebrow">{signedInRole}</p>
-                        <h1>{landing.label}</h1>
+                    <div className="topbar__heading">
+                        <button
+                            aria-controls="primary-navigation"
+                            aria-expanded={isSidebarOpen}
+                            aria-label="Open navigation"
+                            className="topbar__menu"
+                            onClick={() => setIsSidebarOpen(true)}
+                            type="button"
+                        >
+                            <span aria-hidden="true" />
+                            <span aria-hidden="true" />
+                            <span aria-hidden="true" />
+                        </button>
+                        <div>
+                            <p className="topbar__eyebrow">{signedInRole}</p>
+                            <h1>{landing.label}</h1>
+                        </div>
                     </div>
                     {onLogout === undefined ? (
                         <div className="topbar__tenant">{signedInRole}</div>
