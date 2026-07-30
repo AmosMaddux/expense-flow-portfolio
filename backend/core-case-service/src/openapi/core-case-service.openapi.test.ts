@@ -28,6 +28,10 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.[
                 "/v1/expense-reports/{id}/line-items/{sourceId}/review"
             ];
+        const receiptContentPath =
+            document.paths?.[
+                "/v1/expense-reports/{id}/receipts/{receiptId}/content"
+            ];
         const sourceReviewPath =
             document.paths?.[
                 "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review"
@@ -39,6 +43,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportSubmitPath?.post).toBeDefined();
         expect(flagClearPath?.post).toBeDefined();
         expect(lineItemReviewPath?.post).toBeDefined();
+        expect(receiptContentPath?.get).toBeDefined();
         expect(sourceReviewPath?.post).toBeDefined();
         expect(auditEntriesPath?.get).toBeDefined();
         expect(transactionsPath?.get).toBeDefined();
@@ -48,6 +53,10 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const receiptUploadPath =
             document.paths?.[
                 "/v1/expense-reports/{id}/receipt-uploads/{uploadId}"
+            ];
+        const receiptContentPath =
+            document.paths?.[
+                "/v1/expense-reports/{id}/receipts/{receiptId}/content"
             ];
         const mileagePath =
             document.paths?.["/v1/expense-reports/{id}/mileage-entries"];
@@ -63,6 +72,15 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(receiptUploadPath?.put?.responses?.[201]),
         ).toContain("#/components/schemas/ReceiptUploadResponse");
+        expect(JSON.stringify(receiptContentPath?.get?.parameters)).toContain(
+            "receiptId",
+        );
+        expect(
+            JSON.stringify(receiptContentPath?.get?.responses?.[200]),
+        ).toContain("application/pdf");
+        expect(
+            JSON.stringify(receiptContentPath?.get?.responses?.[404]),
+        ).toContain("#/components/schemas/ProblemJson");
         expect(mileageIdempotencyHeader).toMatchObject({
             in: "header",
             name: "Idempotency-Key",
@@ -495,6 +513,7 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(responseSchema)).toContain("canAdvance");
         expect(JSON.stringify(responseSchema)).toContain("receipts");
         expect(JSON.stringify(responseSchema)).toContain("lineItemId");
+        expect(JSON.stringify(responseSchema)).toContain("previewUrl");
         expect(JSON.stringify(responseSchema)).not.toContain("blobReference");
     });
 

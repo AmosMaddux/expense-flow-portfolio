@@ -136,6 +136,12 @@ type ApprovalQueueReceiptRow = {
     blobReference: unknown;
 };
 
+export type ReceiptContentMetadata = {
+    contentType: string;
+    filename: string | null;
+    objectKey: string;
+};
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -305,6 +311,54 @@ export async function findApprovalQueueLineItems(
         mileageRows,
         receiptRows,
     );
+}
+
+/**
+ * Reads tenant-scoped receipt storage metadata for an internal review preview.
+ */
+export async function findReceiptContentMetadata(request: {
+    tenantId: string;
+    expenseReportId: string;
+    receiptId: string;
+}): Promise<ReceiptContentMetadata | undefined> {
+    const rows = await db
+        .select({
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .innerJoin(
+            expenseReport,
+            and(
+                eq(expenseReport.tenantId, receiptMetadata.tenantId),
+                eq(expenseReport.id, receiptMetadata.expenseReportId),
+            ),
+        )
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, request.tenantId),
+                eq(receiptMetadata.expenseReportId, request.expenseReportId),
+                eq(receiptMetadata.id, request.receiptId),
+                inArray(expenseReport.currentStage, [
+                    "Submitted",
+                    "Manager Approval",
+                    "AP Review",
+                ]),
+            ),
+        )
+        .limit(1);
+    const blobReference = rows[0]?.blobReference;
+    const objectKey = readReceiptBlobString(blobReference, "objectKey");
+    const contentType = readReceiptBlobString(blobReference, "contentType");
+
+    if (objectKey === null || contentType === null) {
+        return undefined;
+    }
+
+    return {
+        contentType,
+        filename: readReceiptBlobString(blobReference, "filename"),
+        objectKey,
+    };
 }
 
 /**
@@ -2603,6 +2657,15 @@ function toLatestApprovalQueueLineItems(
                 row.submissionId &&
             !reportsWithLineItems.has(row.expenseReportId),
     );
+    const reportsWithIncludedReceipts = new Set<string>();
+    const readReportReceiptsOnce = (expenseReportId: string) => {
+        if (reportsWithIncludedReceipts.has(expenseReportId)) {
+            return [];
+        }
+
+        reportsWithIncludedReceipts.add(expenseReportId);
+        return receiptsByReport.get(expenseReportId) ?? [];
+    };
 
     return [
         ...latestLineItemRows.map((row) =>
@@ -2611,7 +2674,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 mileageEntriesByReport.get(row.expenseReportId) ?? [],
-                receiptsByReport.get(row.expenseReportId) ?? [],
+                readReportReceiptsOnce(row.expenseReportId),
             ),
         ),
         ...mileageOnlyRows.map((row) =>
@@ -2620,7 +2683,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 [],
-                receiptsByReport.get(row.expenseReportId) ?? [],
+                readReportReceiptsOnce(row.expenseReportId),
             ),
         ),
     ].filter(
@@ -2763,12 +2826,13 @@ function toApprovalQueueReceiptResponse(row: ApprovalQueueReceiptRow) {
         amount: Number(row.amount),
         filename: readReceiptBlobString(row.blobReference, "filename"),
         contentType: readReceiptBlobString(row.blobReference, "contentType"),
+        previewUrl: `/v1/expense-reports/${row.expenseReportId}/receipts/${row.id}/content`,
     };
 }
 
 function readReceiptBlobString(
     blobReference: unknown,
-    key: "contentType" | "filename",
+    key: "contentType" | "filename" | "objectKey",
 ): string | null {
     if (
         blobReference === null ||

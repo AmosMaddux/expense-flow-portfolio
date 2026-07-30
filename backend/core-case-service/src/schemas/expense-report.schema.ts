@@ -30,6 +30,7 @@ export {
     MySubmissionPageSchema,
     MySubmissionSchema,
     MySubmissionsCursorSchema,
+    ReceiptContentParamsSchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
     ReceiptUploadParamsSchema,

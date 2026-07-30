@@ -51,6 +51,8 @@ const lineItems: ApprovalQueueLineItem[] = [
                 amount: 742.18,
                 filename: "northstar-hotel.pdf",
                 contentType: "application/pdf",
+                previewUrl:
+                    "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/receipts/81000000-0000-4000-8000-000000000001/content",
             },
         ],
         mileageEntries: [
@@ -122,6 +124,8 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
                 amount: 428.5,
                 filename: "united-air.pdf",
                 contentType: "application/pdf",
+                previewUrl:
+                    "/v1/expense-reports/71000000-0000-4000-8000-000000000005/receipts/81000000-0000-4000-8000-000000000005/content",
             },
         ],
         mileageEntries: [
@@ -567,6 +571,13 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Linked to Northstar Hotels"),
         ).toBeTruthy();
+        expect(
+            screen
+                .getByRole("link", { name: "Open receipt" })
+                .getAttribute("href"),
+        ).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/receipts/81000000-0000-4000-8000-000000000001/content",
+        );
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
@@ -575,6 +586,10 @@ describe("CaseQueueScreen", () => {
 
     test("selecting a receipt focuses and highlights its linked line item", async () => {
         const scrollIntoView = vi.fn();
+        const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+            Element.prototype,
+            "scrollIntoView",
+        );
         const requestAnimationFrame = vi
             .spyOn(window, "requestAnimationFrame")
             .mockImplementation((callback) => {
@@ -609,6 +624,15 @@ describe("CaseQueueScreen", () => {
         expect(reviewRow.className).toContain("case-queue-dialog__row--active");
         expect(document.activeElement).toBe(reviewRow);
         expect(scrollIntoView).toHaveBeenCalled();
+        if (originalScrollIntoView === undefined) {
+            delete Element.prototype.scrollIntoView;
+        } else {
+            Object.defineProperty(
+                Element.prototype,
+                "scrollIntoView",
+                originalScrollIntoView,
+            );
+        }
         requestAnimationFrame.mockRestore();
     });
 
@@ -625,6 +649,8 @@ describe("CaseQueueScreen", () => {
                         amount: 512,
                         filename: "zenith-unlinked.pdf",
                         contentType: "application/pdf",
+                        previewUrl:
+                            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/receipts/81000000-0000-4000-8000-000000000099/content",
                     },
                 ],
             },
@@ -661,6 +687,13 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Unlinked receipt"),
         ).toBeTruthy();
+        expect(
+            screen
+                .getByRole("link", { name: "Open receipt" })
+                .getAttribute("href"),
+        ).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/receipts/81000000-0000-4000-8000-000000000099/content",
+        );
     });
 
     test("opens one report with a separate expense row and mileage row for review", async () => {

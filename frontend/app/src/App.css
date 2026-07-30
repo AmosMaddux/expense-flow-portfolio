@@ -1685,35 +1685,21 @@ button:disabled {
 .receipt-gallery__item {
     display: grid;
     min-width: 0;
-    gap: 12px;
+    gap: 0;
     border: 1px solid #d9e2ec;
     border-radius: 8px;
     background: #ffffff;
     color: inherit;
-    cursor: pointer;
-    font: inherit;
-    padding: 0;
-    text-align: left;
     transition:
         border-color 160ms ease,
         box-shadow 160ms ease,
         transform 160ms ease;
 }
 
-.receipt-gallery__item:hover:not(:disabled) {
+.receipt-gallery__item:hover {
     border-color: #0b5fff;
     box-shadow: 0 10px 24px rgb(15 23 42 / 9%);
     transform: translateY(-1px);
-}
-
-.receipt-gallery__item:focus-visible {
-    outline: 3px solid #9fb3c8;
-    outline-offset: 3px;
-}
-
-.receipt-gallery__item:disabled {
-    cursor: not-allowed;
-    opacity: 0.62;
 }
 
 .receipt-gallery__item--active {
@@ -1724,7 +1710,37 @@ button:disabled {
 .receipt-gallery__item--list {
     grid-template-columns: 88px minmax(0, 1fr);
     align-items: center;
-    padding: 10px;
+    padding: 10px 10px 0;
+}
+
+.receipt-gallery__select {
+    display: grid;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+    text-align: left;
+}
+
+.receipt-gallery__select:focus-visible,
+.receipt-gallery__open:focus-visible {
+    outline: 3px solid #9fb3c8;
+    outline-offset: 3px;
+}
+
+.receipt-gallery__select:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+}
+
+.receipt-gallery__item--list .receipt-gallery__select {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 12px;
 }
 
 .receipt-gallery__preview {
@@ -1810,6 +1826,31 @@ button:disabled {
 .receipt-gallery__meta small {
     color: #52606d;
     font-size: 0.8rem;
+}
+
+.receipt-gallery__open {
+    display: inline-flex;
+    width: fit-content;
+    min-height: 32px;
+    align-items: center;
+    margin: 0 12px 12px;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    background: #f0f4f8;
+    color: #243b53;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 6px 10px;
+    text-decoration: none;
+}
+
+.receipt-gallery__item--list .receipt-gallery__open {
+    grid-column: 2;
+    margin: 8px 0 10px;
+}
+
+.receipt-gallery__open:hover {
+    background: #d9e2ec;
 }
 
 .case-queue-support {

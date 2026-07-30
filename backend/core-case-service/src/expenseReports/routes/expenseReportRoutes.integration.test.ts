@@ -103,6 +103,9 @@ const redisClientMock = vi.hoisted(() => ({
     }),
 }));
 const receiptStorageMock = vi.hoisted(() => ({
+    get: vi
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode("synthetic receipt")),
     put: vi.fn().mockResolvedValue({
         objectKey: "synthetic/receipt-object",
     }),
@@ -252,6 +255,7 @@ void describe("Expense Report routes", () => {
         redisClientMock.incr.mockClear();
         receiptStorageMock.put.mockClear();
         receiptStorageMock.verify.mockClear();
+        receiptStorageMock.get.mockClear();
         stageTransitionPublishMock.mockClear();
         glCodingClientMock.mockResolvedValue({
             coded_items: [],
@@ -3415,6 +3419,78 @@ void describe("Expense Report routes", () => {
                 reviewAction: "reject",
             }),
         );
+    });
+
+    void test("returns tenant-scoped receipt content for internal review", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000934";
+        const otherTenantId = "40000000-0000-4000-8000-000000000935";
+        const actorId = "50000000-0000-4000-8000-000000000934";
+        const reportId = "60000000-0000-4000-8000-000000000934";
+        const receiptId = "70000000-0000-4000-8000-000000000934";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: actorId,
+            dueDate: "2026-08-01",
+            currentStage: "AP Review",
+        });
+        await db.insert(receiptMetadata).values({
+            id: receiptId,
+            tenantId,
+            expenseReportId: reportId,
+            lineItemId: null,
+            merchant: "Synthetic Hotel",
+            receiptDate: "2026-07-21",
+            amount: "242.30",
+            blobReference: {
+                objectKey: "synthetic/receipt-object",
+                filename: "synthetic-hotel.pdf",
+                contentType: "application/pdf",
+            },
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/receipts/${receiptId}/content`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        "Department Manager",
+                    ]),
+                },
+            },
+        );
+        const employeeResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/receipts/${receiptId}/content`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        "Employee",
+                    ]),
+                },
+            },
+        );
+        const crossTenantResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/receipts/${receiptId}/content`,
+            {
+                headers: {
+                    authorization: authorizationHeader(otherTenantId, actorId, [
+                        "Department Manager",
+                    ]),
+                },
+            },
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("application/pdf");
+        expect(response.headers.get("content-disposition")).toBe(
+            'inline; filename="synthetic-hotel.pdf"',
+        );
+        expect(await response.text()).toBe("synthetic receipt");
+        expect(receiptStorageMock.get).toHaveBeenCalledWith(
+            "synthetic/receipt-object",
+        );
+        expect(employeeResponse.status).toBe(403);
+        expect(crossTenantResponse.status).toBe(404);
     });
 
     void test("reviews and clears flags for a Manager Approval mileage source", async () => {

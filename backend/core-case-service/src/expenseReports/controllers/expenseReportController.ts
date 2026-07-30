@@ -17,6 +17,7 @@ import {
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadAllTransactionsQuerySchema,
+    ReceiptContentParamsSchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
@@ -60,6 +61,7 @@ import {
     readDraftExpenseContent,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    readReceiptContent,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
@@ -789,6 +791,39 @@ export async function getCaseQueueLineItems(
 }
 
 /**
+ * Handles internal receipt content reads for report review.
+ */
+export async function getExpenseReportReceiptContent(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const parsedParams = ReceiptContentParamsSchema.parse({
+            id: req.params.id,
+            receiptId: req.params.receiptId,
+        });
+        const receipt = await readReceiptContent({
+            expenseReportId: parsedParams.id,
+            receiptId: parsedParams.receiptId,
+            tenantId: auth.tenantId,
+            roles: auth.roles,
+        });
+
+        res.set("Content-Type", receipt.contentType);
+        res.set(
+            "Content-Disposition",
+            `inline${receipt.filename === null ? "" : `; filename="${escapeHeaderValue(receipt.filename)}"`}`,
+        );
+        res.status(200).send(Buffer.from(receipt.content));
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
  * Handles Case Queue rollup read requests for one tenant.
  */
 export async function getCaseQueueStageRollups(
@@ -921,6 +956,10 @@ function readExpenseReportId(body: unknown): string | undefined {
     const id = body.id;
 
     return typeof id === "string" ? id : undefined;
+}
+
+function escapeHeaderValue(value: string): string {
+    return value.replace(/["\\\r\n]/g, "_");
 }
 
 function requireAuthContext(req: Request): NonNullable<Request["auth"]> {

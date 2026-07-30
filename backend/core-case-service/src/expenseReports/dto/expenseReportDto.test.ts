@@ -257,6 +257,8 @@ void describe("ApprovalQueueLineItemOutboundResponseSchema", () => {
                         amount: 125.5,
                         filename: "synthetic-hotel.pdf",
                         contentType: "application/pdf",
+                        previewUrl:
+                            "/v1/expense-reports/71000000-0000-4000-8000-000000000001/receipts/81000000-0000-4000-8000-000000000001/content",
                     },
                 ],
                 blobReference: { objectKey: "tenant/report/receipt" },
@@ -270,6 +272,8 @@ void describe("ApprovalQueueLineItemOutboundResponseSchema", () => {
             amount: 125.5,
             filename: "synthetic-hotel.pdf",
             contentType: "application/pdf",
+            previewUrl:
+                "/v1/expense-reports/71000000-0000-4000-8000-000000000001/receipts/81000000-0000-4000-8000-000000000001/content",
         });
         expect("blobReference" in parsed).toBe(false);
     });

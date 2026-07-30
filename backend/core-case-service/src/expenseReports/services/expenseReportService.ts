@@ -26,6 +26,7 @@ import {
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
     findExpenseReportById,
+    findReceiptContentMetadata,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
     insertMileageEntry,
@@ -81,6 +82,12 @@ export type StageTransitionEventDependencies = {
 export type SubmitExpenseReportResult = {
     correlationId: string;
     report: ExpenseReportResponse;
+};
+
+export type ReceiptContentResponse = {
+    content: Uint8Array;
+    contentType: string;
+    filename: string | null;
 };
 
 /**
@@ -147,6 +154,31 @@ export async function readApprovalQueueLineItems(request: {
     }
 
     return findApprovalQueueLineItems(request.tenantId);
+}
+
+/**
+ * Reads receipt bytes for an internal reviewer after tenant and workflow scoping.
+ */
+export async function readReceiptContent(request: {
+    expenseReportId: string;
+    receiptId: string;
+    tenantId: string;
+    roles: RoleName[];
+}): Promise<ReceiptContentResponse> {
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    const metadata = await findReceiptContentMetadata(request);
+    if (metadata === undefined) {
+        throw new NotFoundError("Receipt not found.");
+    }
+
+    return {
+        content: await getDefaultReceiptStorage().get(metadata.objectKey),
+        contentType: metadata.contentType,
+        filename: metadata.filename,
+    };
 }
 
 /**

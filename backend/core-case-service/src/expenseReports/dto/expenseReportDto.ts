@@ -163,6 +163,13 @@ export const ReceiptUploadParamsSchema = z
     })
     .strict();
 
+export const ReceiptContentParamsSchema = z
+    .object({
+        id: z.uuid(),
+        receiptId: z.uuid(),
+    })
+    .strict();
+
 export const ReceiptUploadMetadataInboundRequestSchema = z
     .object({
         filename: z.string().trim().min(1).max(255),
@@ -593,6 +600,7 @@ export const ApprovalQueueReceiptOutboundResponseSchema = z.object({
     amount: z.coerce.number().nonnegative(),
     filename: z.string().nullable(),
     contentType: z.string().nullable(),
+    previewUrl: z.string().min(1),
 });
 
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({

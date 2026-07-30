@@ -30,6 +30,7 @@ import {
     ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
+    ReceiptContentParamsSchema,
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
@@ -314,6 +315,46 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             413: problemJsonResponse("Receipt exceeds 10 MB."),
             429: rateLimitExceededResponse.ref,
             502: problemJsonResponse("Receipt storage rejected the upload."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/receipts/{receiptId}/content",
+        summary: "Read receipt content for internal review",
+        description:
+            "Streams tenant-scoped receipt bytes for Department Manager and Finance Admin report review without exposing receipt storage object keys.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: ReceiptContentParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Receipt content found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/pdf": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/png": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/jpeg": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                    "image/webp": {
+                        schema: z.string().openapi({ format: "binary" }),
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed receipt content request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse(
+                "Internal receipt review access required.",
+            ),
+            404: problemJsonResponse("Receipt not found."),
+            429: rateLimitExceededResponse.ref,
+            502: problemJsonResponse("Receipt storage unavailable."),
         },
     });
 

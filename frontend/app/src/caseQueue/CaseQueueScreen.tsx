@@ -52,6 +52,7 @@ const approvalQueueReceiptSchema = z.object({
     amount: z.coerce.number().nonnegative(),
     filename: z.string().nullable(),
     contentType: z.string().nullable(),
+    previewUrl: z.string().min(1),
 });
 
 const approvalQueueLineItemSchema = z.object({
@@ -1284,8 +1285,7 @@ function ReceiptGallery({
                                 : `Linked to ${linkedReviewRow.merchant}`;
 
                         return (
-                            <button
-                                aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${lineItemLabel}.`}
+                            <article
                                 className={[
                                     "receipt-gallery__item",
                                     view === "list"
@@ -1298,38 +1298,51 @@ function ReceiptGallery({
                                 ]
                                     .filter(Boolean)
                                     .join(" ")}
-                                disabled={!isLinked}
                                 key={receipt.id}
-                                type="button"
-                                onClick={() => onReceiptSelect(receipt)}
                             >
-                                <span
-                                    className="receipt-gallery__preview"
-                                    aria-hidden="true"
+                                <button
+                                    aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${receipt.filename ?? "Receipt file"}. ${receipt.contentType ?? "Receipt"}. ${lineItemLabel}.`}
+                                    className="receipt-gallery__select"
+                                    disabled={!isLinked}
+                                    type="button"
+                                    onClick={() => onReceiptSelect(receipt)}
                                 >
-                                    <span className="receipt-gallery__paper">
-                                        <span />
-                                        <span />
-                                        <span />
+                                    <span
+                                        className="receipt-gallery__preview"
+                                        aria-hidden="true"
+                                    >
+                                        <span className="receipt-gallery__paper">
+                                            <span />
+                                            <span />
+                                            <span />
+                                        </span>
+                                        <span className="receipt-gallery__filename">
+                                            {receipt.filename ?? "Receipt file"}
+                                        </span>
                                     </span>
-                                    <span className="receipt-gallery__filename">
-                                        {receipt.filename ?? "Receipt file"}
+                                    <span className="receipt-gallery__meta">
+                                        <strong>{receipt.merchant}</strong>
+                                        <span>
+                                            {formatDate(receipt.receiptDate)}
+                                        </span>
+                                        <span>
+                                            {formatCurrency(receipt.amount)}
+                                        </span>
+                                        <small>
+                                            {receipt.contentType ?? "Receipt"} /{" "}
+                                            {lineItemLabel}
+                                        </small>
                                     </span>
-                                </span>
-                                <span className="receipt-gallery__meta">
-                                    <strong>{receipt.merchant}</strong>
-                                    <span>
-                                        {formatDate(receipt.receiptDate)}
-                                    </span>
-                                    <span>
-                                        {formatCurrency(receipt.amount)}
-                                    </span>
-                                    <small>
-                                        {receipt.contentType ?? "Receipt"} /{" "}
-                                        {lineItemLabel}
-                                    </small>
-                                </span>
-                            </button>
+                                </button>
+                                <a
+                                    className="receipt-gallery__open"
+                                    href={receipt.previewUrl}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                >
+                                    Open receipt
+                                </a>
+                            </article>
                         );
                     })}
                 </div>
