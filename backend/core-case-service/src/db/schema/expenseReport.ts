@@ -324,6 +324,53 @@ export type NewStageTransitionOutbox = InferInsertModel<
     typeof stageTransitionOutbox
 >;
 
+export const stageTransitionProjection = pgTable(
+    "stage_transition_projection",
+    {
+        eventId: uuid("event_id").primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        correlationId: uuid("correlation_id").notNull(),
+        previousStage: text("previous_stage").notNull(),
+        currentStage: text("current_stage").notNull(),
+        transitionedAt: timestamp("transitioned_at", {
+            withTimezone: true,
+        }).notNull(),
+        projectedAt: timestamp("projected_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "stage_transition_projection_previous_stage_check",
+            sql`${table.previousStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_projection_current_stage_check",
+            sql`${table.currentStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_projection_changed_stage_check",
+            sql`${table.previousStage} <> ${table.currentStage}`,
+        ),
+        index("stage_transition_projection_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.transitionedAt,
+        ),
+        index("stage_transition_projection_correlation_idx").on(
+            table.correlationId,
+        ),
+    ],
+);
+
+export type StageTransitionProjection = InferSelectModel<
+    typeof stageTransitionProjection
+>;
+export type NewStageTransitionProjection = InferInsertModel<
+    typeof stageTransitionProjection
+>;
+
 export const lineItem = pgTable(
     "line_item",
     {

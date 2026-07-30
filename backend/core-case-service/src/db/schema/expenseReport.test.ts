@@ -21,6 +21,7 @@ import {
     receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
+    stageTransitionProjection,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -923,6 +924,42 @@ void describe("stageTransitionOutbox schema", () => {
         );
         expect(foreignKeyNames).toContain(
             "stage_transition_outbox_expense_report_tenant_fk",
+        );
+    });
+});
+
+void describe("stageTransitionProjection schema", () => {
+    void test("defines an idempotent tenant-scoped event projection", () => {
+        const tableConfig = getTableConfig(stageTransitionProjection);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+        const indexNames = tableConfig.indexes.map(
+            (index) => index.config.name,
+        );
+
+        expect(getTableName(stageTransitionProjection)).toBe(
+            "stage_transition_projection",
+        );
+        expect(columnNames).toEqual(
+            expect.arrayContaining([
+                "event_id",
+                "tenant_id",
+                "expense_report_id",
+                "correlation_id",
+                "previous_stage",
+                "current_stage",
+                "transitioned_at",
+                "projected_at",
+            ]),
+        );
+        expect(
+            tableConfig.columns.find((column) => column.name === "event_id")
+                ?.primary,
+        ).toBe(true);
+        expect(indexNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_projection_tenant_report_idx",
+                "stage_transition_projection_correlation_idx",
+            ]),
         );
     });
 });
