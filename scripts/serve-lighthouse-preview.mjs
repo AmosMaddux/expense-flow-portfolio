@@ -15,7 +15,10 @@ const server = createServer((req, res) => {
         return;
     }
 
-    void serveStaticAsset(req.url ?? "/", res);
+    serveStaticAsset(req, res).catch((error) => {
+        console.error("Unable to serve Lighthouse preview asset.", error);
+        sendPlainText(res, 500, "Unable to serve Lighthouse preview asset.");
+    });
 });
 
 server.listen(port, "127.0.0.1", () => {
@@ -24,19 +27,35 @@ server.listen(port, "127.0.0.1", () => {
     );
 });
 
-async function serveStaticAsset(url, res) {
-    const pathname = decodeURIComponent(
-        new URL(url, "http://localhost").pathname,
-    );
+async function serveStaticAsset(req, res) {
+    let pathname;
+    try {
+        pathname = decodeURIComponent(
+            new URL(req.url ?? "/", "http://localhost").pathname,
+        );
+    } catch {
+        sendPlainText(res, 400, "Malformed preview asset URL.");
+        return;
+    }
+
     const requestedPath = path.normalize(path.join(distDir, pathname));
     const relativePath = path.relative(distDir, requestedPath);
     const isDistPath =
         relativePath === "" ||
         (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-    const assetPath = isDistPath
-        ? requestedPath
-        : path.join(distDir, "index.html");
-    const filePath = await resolveFilePath(assetPath);
+    if (!isDistPath) {
+        sendPlainText(res, 400, "Preview asset path is outside the build.");
+        return;
+    }
+
+    const filePath = await resolveFilePath(
+        requestedPath,
+        isNavigationRequest(req, pathname),
+    );
+    if (filePath === undefined) {
+        sendPlainText(res, 404, "Preview asset was not found.");
+        return;
+    }
 
     res.writeHead(200, {
         "Content-Type": getContentType(filePath),
@@ -44,16 +63,33 @@ async function serveStaticAsset(url, res) {
             ? "no-store"
             : "public, max-age=31536000, immutable",
     });
-    createReadStream(filePath).pipe(res);
+    if (req.method === "HEAD") {
+        res.end();
+        return;
+    }
+
+    const stream = createReadStream(filePath);
+    stream.on("error", (error) => {
+        console.error("Unable to stream Lighthouse preview asset.", error);
+        res.destroy(error);
+    });
+    stream.pipe(res);
 }
 
-async function resolveFilePath(assetPath) {
+async function resolveFilePath(assetPath, canServeFallback) {
     const assetStat = await stat(assetPath).catch(() => undefined);
     if (assetStat?.isFile() === true) {
         return assetPath;
     }
 
-    return path.join(distDir, "index.html");
+    if (!canServeFallback) {
+        return undefined;
+    }
+
+    const fallbackPath = path.join(distDir, "index.html");
+    const fallbackStat = await stat(fallbackPath).catch(() => undefined);
+
+    return fallbackStat?.isFile() === true ? fallbackPath : undefined;
 }
 
 function proxyApiRequest(req, res) {
@@ -90,4 +126,21 @@ function getContentType(filePath) {
     }
 
     return "application/octet-stream";
+}
+
+function isNavigationRequest(req, pathname) {
+    return (
+        (req.method === "GET" || req.method === "HEAD") &&
+        (pathname === "/" || (req.headers.accept ?? "").includes("text/html"))
+    );
+}
+
+function sendPlainText(res, statusCode, message) {
+    if (res.headersSent) {
+        res.destroy();
+        return;
+    }
+
+    res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(message);
 }

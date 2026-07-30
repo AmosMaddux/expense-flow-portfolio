@@ -256,7 +256,7 @@ Docker Compose, waits for their health checks, resets and seeds E2E data, then
 lets Playwright start the Express API and Vite frontend through configured
 health-checked web servers. The suite includes the employee-to-manager
 happy-path test plus axe scans for the Finance Dashboard, Approval Queue, and
-Log Mileage screens.
+Log Mileage screens. The axe gate fails on serious and critical violations.
 
 Run only the axe accessibility scans:
 

@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
-import { expectNoCriticalAxeViolations } from "./support/a11y.mjs";
-import { e2eAccounts, login } from "./support/auth.mjs";
+import { expectNoSeriousOrCriticalAxeViolations } from "./support/a11y.mjs";
+import { e2eAccounts, login, resetE2eTestData } from "./support/auth.mjs";
 
 test.describe("ExpenseFlow accessibility gates", () => {
-    test("Dashboard has no critical axe violations", async ({
+    test("Dashboard has no serious or critical axe violations", async ({
         page,
     }, testInfo) => {
         await login(page, e2eAccounts.manager);
@@ -18,15 +18,24 @@ test.describe("ExpenseFlow accessibility gates", () => {
             page.getByRole("heading", { name: "Workload Overview" }),
         ).toBeVisible();
         await expect(
-            page
-                .getByLabel("Finance Dashboard KPI cards")
-                .or(page.getByText("No Expense Reports to show")),
+            page.getByLabel("Finance Dashboard KPI cards"),
         ).toBeVisible();
+        await expectKpi(page, "Drafted", "0", "0 overdue");
+        await expectKpi(page, "Submitted", "1", "1 overdue");
+        await expectKpi(page, "Manager Approval", "1", "0 overdue");
+        await expectKpi(page, "AP Review", "0", "0 overdue");
+        await expectKpi(page, "Paid", "0", "0 overdue");
+        await expectKpi(page, "Reconciled", "0", "0 overdue");
+        await expectKpi(page, "Overdue Total", "1", "2 total reports");
 
-        await expectNoCriticalAxeViolations(page, testInfo, "Dashboard");
+        await expectNoSeriousOrCriticalAxeViolations(
+            page,
+            testInfo,
+            "Dashboard",
+        );
     });
 
-    test("Approval Queue has no critical axe violations", async ({
+    test("Approval Queue has no serious or critical axe violations", async ({
         page,
     }, testInfo) => {
         await login(page, e2eAccounts.manager);
@@ -47,18 +56,22 @@ test.describe("ExpenseFlow accessibility gates", () => {
             ),
         ).toBeVisible();
 
-        await expectNoCriticalAxeViolations(page, testInfo, "Approval Queue");
+        await expectNoSeriousOrCriticalAxeViolations(
+            page,
+            testInfo,
+            "Approval Queue",
+        );
     });
 
-    test("Mileage has no critical axe violations", async ({
+    test("Mileage has no serious or critical axe violations", async ({
         page,
     }, testInfo) => {
-        let shouldSubmitDraft = false;
+        let shouldResetE2eData = false;
 
         try {
             await login(page, e2eAccounts.employee);
             await createDraftExpenseReport(page);
-            shouldSubmitDraft = true;
+            shouldResetE2eData = true;
             await page.getByRole("link", { name: "Log Mileage" }).click();
 
             await expect(
@@ -72,14 +85,25 @@ test.describe("ExpenseFlow accessibility gates", () => {
                 page.getByRole("button", { name: "Add to Draft" }),
             ).toBeVisible();
 
-            await expectNoCriticalAxeViolations(page, testInfo, "Mileage");
+            await expectNoSeriousOrCriticalAxeViolations(
+                page,
+                testInfo,
+                "Mileage",
+            );
         } finally {
-            if (shouldSubmitDraft) {
-                await submitDraftExpenseReport(page);
+            if (shouldResetE2eData) {
+                resetE2eTestData();
             }
         }
     });
 });
+
+async function expectKpi(page, label, value, helper) {
+    const card = page.getByRole("article", { name: `${label} KPI` });
+    await expect(card).toBeVisible();
+    await expect(card.locator("strong")).toHaveText(value);
+    await expect(card).toContainText(helper);
+}
 
 async function createDraftExpenseReport(page) {
     await page.getByRole("link", { name: "Submit Expense" }).click();
@@ -104,24 +128,4 @@ async function createDraftExpenseReport(page) {
     await draftResponse;
 
     await expect(page.getByText("Draft saved")).toBeVisible();
-}
-
-async function submitDraftExpenseReport(page) {
-    await page.getByRole("link", { name: "Submit Expense" }).click();
-    await expect(
-        page.getByRole("heading", { name: "Submit Expense" }),
-    ).toBeVisible();
-
-    const submitResponse = page.waitForResponse(
-        (response) =>
-            response.url().includes("/v1/expense-reports/") &&
-            response.url().endsWith("/submit") &&
-            response.status() === 201,
-    );
-    await page.getByRole("button", { name: "Submit Expense Report" }).click();
-    await submitResponse;
-
-    await expect(
-        page.getByRole("heading", { name: "Expense submitted" }),
-    ).toBeVisible();
 }

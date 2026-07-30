@@ -32,6 +32,8 @@ type E2eTransaction = Parameters<Parameters<E2eDatabase["transaction"]>[0]>[0];
 const e2eCommandSchema = z.enum(["reset", "code", "verify"]);
 const e2eAccountNameSchema = z.enum(["employee", "manager"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
+const e2eCanaryTenantId = "81000000-0000-4000-8000-000000000011";
+const e2eCanaryOwnerId = "81000000-0000-4000-8000-000000000012";
 const e2eDatabaseName = "expenseflow_core_case";
 const e2eDatabaseMarkerName = "pg_database description";
 const e2eDatabaseMarkerValue = "expenseflow-core-case-deterministic-e2e-v1";
@@ -66,6 +68,32 @@ const e2eGlMappings = [
         category: "Lodging",
         accountCode: "6300-E2E",
         accountName: "E2E Lodging Expense",
+    },
+] as const;
+const e2eCaseQueueReports = [
+    {
+        id: "81000000-0000-4000-8000-000000000201",
+        currentStage: "Submitted",
+        dueDate: "2026-07-01",
+        tenantId: e2eTenantId,
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000202",
+        currentStage: "Manager Approval",
+        dueDate: "2026-08-15",
+        tenantId: e2eTenantId,
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000211",
+        currentStage: "Submitted",
+        dueDate: "2026-07-01",
+        tenantId: e2eCanaryTenantId,
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000212",
+        currentStage: "AP Review",
+        dueDate: "2026-07-01",
+        tenantId: e2eCanaryTenantId,
     },
 ] as const;
 
@@ -109,7 +137,10 @@ async function resetE2eTestData(): Promise<void> {
         await assertDedicatedE2eDatabase(database);
         await applyPendingCoreCaseMigrations(environment.DATABASE_URL);
         await database.transaction(async (transaction) => {
-            await clearE2eTenantData(transaction);
+            await clearE2eTenantData(transaction, [
+                e2eTenantId,
+                e2eCanaryTenantId,
+            ]);
             await seedE2eTenantData(transaction, environment);
         });
 
@@ -121,6 +152,7 @@ async function resetE2eTestData(): Promise<void> {
                 `manager: ${e2eAccounts.manager.email}`,
                 "roles: Employee, Department Manager",
                 "GL mappings: Travel, Meals, Lodging",
+                "Case Queue reports: Submitted overdue, Manager Approval on track",
                 "",
             ].join("\n"),
         );
@@ -153,45 +185,59 @@ async function verifyE2eTestData(): Promise<void> {
     const database = drizzle(pool, { schema });
 
     try {
-        const [users, roles, mappings, reports] = await Promise.all([
-            database
-                .select({ id: user.id, email: user.email })
-                .from(user)
-                .where(eq(user.tenantId, e2eTenantId)),
-            database
-                .select({ userId: role.userId, name: role.name })
-                .from(role)
-                .where(eq(role.tenantId, e2eTenantId)),
-            database
-                .select({ category: glMapping.category })
-                .from(glMapping)
-                .where(eq(glMapping.tenantId, e2eTenantId)),
-            database
-                .select({ id: expenseReport.id })
-                .from(expenseReport)
-                .where(eq(expenseReport.tenantId, e2eTenantId)),
-        ]);
+        const [users, roles, mappings, reports, canaryReports] =
+            await Promise.all([
+                database
+                    .select({ id: user.id, email: user.email })
+                    .from(user)
+                    .where(eq(user.tenantId, e2eTenantId)),
+                database
+                    .select({ userId: role.userId, name: role.name })
+                    .from(role)
+                    .where(eq(role.tenantId, e2eTenantId)),
+                database
+                    .select({ category: glMapping.category })
+                    .from(glMapping)
+                    .where(eq(glMapping.tenantId, e2eTenantId)),
+                database
+                    .select({
+                        currentStage: expenseReport.currentStage,
+                        dueDate: expenseReport.dueDate,
+                        tenantId: expenseReport.tenantId,
+                    })
+                    .from(expenseReport)
+                    .where(eq(expenseReport.tenantId, e2eTenantId)),
+                database
+                    .select({ tenantId: expenseReport.tenantId })
+                    .from(expenseReport)
+                    .where(eq(expenseReport.tenantId, e2eCanaryTenantId)),
+            ]);
 
         if (
             users.length !== 2 ||
             roles.length !== 2 ||
             mappings.length !== e2eGlMappings.length ||
-            reports.length !== 0
+            reports.length !== 2 ||
+            reports.some((report) => report.tenantId !== e2eTenantId) ||
+            canaryReports.length !== 2
         ) {
             throw new Error(
-                `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}.`,
+                `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}, canaryReports=${canaryReports.length}.`,
             );
         }
 
         process.stdout.write(
-            "Synthetic E2E data verification passed: 2 users, 2 roles, 3 GL mappings, 0 reports.\n",
+            "Synthetic E2E data verification passed: 2 users, 2 roles, 3 GL mappings, 2 tenant reports.\n",
         );
     } finally {
         await pool.end();
     }
 }
 
-async function clearE2eTenantData(transaction: E2eTransaction): Promise<void> {
+async function clearE2eTenantData(
+    transaction: E2eTransaction,
+    tenantIds: string[],
+): Promise<void> {
     await transaction.execute(
         sql`alter table "audit_entry" disable trigger "audit_entry_prevent_mutation_trigger"`,
     );
@@ -200,10 +246,12 @@ async function clearE2eTenantData(transaction: E2eTransaction): Promise<void> {
     );
 
     try {
-        for (const tableName of tenantOwnedTablesInDeleteOrder) {
-            await transaction.execute(
-                sql`delete from ${sql.identifier(tableName)} where tenant_id = ${e2eTenantId}`,
-            );
+        for (const tenantId of tenantIds) {
+            for (const tableName of tenantOwnedTablesInDeleteOrder) {
+                await transaction.execute(
+                    sql`delete from ${sql.identifier(tableName)} where tenant_id = ${tenantId}`,
+                );
+            }
         }
     } finally {
         await transaction.execute(
@@ -263,6 +311,11 @@ async function seedE2eTenantData(
             email: account.email,
         });
     }
+    await transaction.insert(user).values({
+        id: e2eCanaryOwnerId,
+        tenantId: e2eCanaryTenantId,
+        email: "canary.manager.e2e@example.test",
+    });
 
     for (const mapping of e2eGlMappings) {
         await transaction.insert(glCode).values({
@@ -276,6 +329,20 @@ async function seedE2eTenantData(
             tenantId: e2eTenantId,
             category: mapping.category,
             glCodeId: mapping.id,
+        });
+    }
+
+    for (const report of e2eCaseQueueReports) {
+        await transaction.insert(expenseReport).values({
+            id: report.id,
+            tenantId: report.tenantId,
+            owner:
+                report.tenantId === e2eTenantId
+                    ? e2eAccounts.manager.userId
+                    : e2eCanaryOwnerId,
+            dueDate: report.dueDate,
+            currentStage: report.currentStage,
+            priority: "Normal",
         });
     }
 }

@@ -2,16 +2,17 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect } from "@playwright/test";
 
 /**
- * Runs axe and fails only when critical-impact violations are present.
+ * Runs axe and fails when serious or critical violations are present.
  */
-export async function expectNoCriticalAxeViolations(
+export async function expectNoSeriousOrCriticalAxeViolations(
     page,
     testInfo,
     screenName,
 ) {
     const results = await new AxeBuilder({ page }).analyze();
-    const criticalViolations = results.violations.filter(
-        (violation) => violation.impact === "critical",
+    const blockingViolations = results.violations.filter(
+        (violation) =>
+            violation.impact === "serious" || violation.impact === "critical",
     );
 
     await testInfo.attach(`${screenName.toLowerCase()}-axe-results`, {
@@ -24,8 +25,8 @@ export async function expectNoCriticalAxeViolations(
     }
 
     expect(
-        criticalViolations,
-        formatViolationFailure(screenName, criticalViolations),
+        blockingViolations,
+        formatViolationFailure(screenName, blockingViolations),
     ).toEqual([]);
 }
 
@@ -41,11 +42,11 @@ function formatViolationSummary(screenName, violations) {
 
 function formatViolationFailure(screenName, violations) {
     if (violations.length === 0) {
-        return `${screenName} has no critical axe violations.`;
+        return `${screenName} has no serious or critical axe violations.`;
     }
 
     return [
-        `${screenName} has ${violations.length} critical axe violation(s):`,
+        `${screenName} has ${violations.length} serious or critical axe violation(s):`,
         ...violations.map(formatViolation),
     ].join("\n\n");
 }

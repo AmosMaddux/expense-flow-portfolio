@@ -55,6 +55,21 @@ export async function login(page, account, previousTotpCode) {
     throw new Error(`Unable to sign in as ${account.name} before MFA expired.`);
 }
 
+/**
+ * Restores the deterministic E2E tenant data to its seeded baseline.
+ */
+export function resetE2eTestData() {
+    execFileSync(
+        "node",
+        [
+            "--env-file=.env",
+            "backend/core-case-service/dist/dev/e2eTestData.js",
+            "reset",
+        ],
+        { encoding: "utf8", stdio: "inherit" },
+    );
+}
+
 async function waitForAuthenticatedWorkspace(page) {
     try {
         await page
