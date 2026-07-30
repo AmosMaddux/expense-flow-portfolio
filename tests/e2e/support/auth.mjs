@@ -14,6 +14,10 @@ export const e2eAccounts = {
         name: "manager",
         email: "manager.e2e@example.test",
     },
+    financeAdmin: {
+        name: "financeAdmin",
+        email: "finance.admin.e2e@example.test",
+    },
 };
 const lastTotpCodeByAccount = new Map();
 

@@ -30,7 +30,7 @@ type E2eDatabase = NodePgDatabase<typeof schema>;
 type E2eTransaction = Parameters<Parameters<E2eDatabase["transaction"]>[0]>[0];
 
 const e2eCommandSchema = z.enum(["reset", "code", "verify"]);
-const e2eAccountNameSchema = z.enum(["employee", "manager"]);
+const e2eAccountNameSchema = z.enum(["employee", "manager", "financeAdmin"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
 const e2eCanaryTenantId = "81000000-0000-4000-8000-000000000011";
 const e2eCanaryOwnerId = "81000000-0000-4000-8000-000000000012";
@@ -48,6 +48,11 @@ const e2eAccounts = {
         userId: "81000000-0000-4000-8000-000000000003",
         email: "manager.e2e@example.test",
         role: "Department Manager",
+    },
+    financeAdmin: {
+        userId: "81000000-0000-4000-8000-000000000004",
+        email: "finance.admin.e2e@example.test",
+        role: "Finance Admin",
     },
 } as const;
 const e2eGlMappings = [
@@ -105,6 +110,7 @@ const tenantOwnedTablesInDeleteOrder = [
     "gl_coding_result",
     "mileage_entry",
     "line_item",
+    "stage_transition_outbox",
     "stage_transition",
     "audit_entry",
     "expense_report",
@@ -150,7 +156,8 @@ async function resetE2eTestData(): Promise<void> {
                 `tenant: ${e2eTenantId}`,
                 `employee: ${e2eAccounts.employee.email}`,
                 `manager: ${e2eAccounts.manager.email}`,
-                "roles: Employee, Department Manager",
+                `financeAdmin: ${e2eAccounts.financeAdmin.email}`,
+                "roles: Employee, Department Manager, Finance Admin",
                 "GL mappings: Travel, Meals, Lodging",
                 "Case Queue reports: Submitted overdue, Manager Approval on track",
                 "",
@@ -214,8 +221,8 @@ async function verifyE2eTestData(): Promise<void> {
             ]);
 
         if (
-            users.length !== 2 ||
-            roles.length !== 2 ||
+            users.length !== 3 ||
+            roles.length !== 3 ||
             mappings.length !== e2eGlMappings.length ||
             reports.length !== 2 ||
             reports.some((report) => report.tenantId !== e2eTenantId) ||
@@ -227,7 +234,7 @@ async function verifyE2eTestData(): Promise<void> {
         }
 
         process.stdout.write(
-            "Synthetic E2E data verification passed: 2 users, 2 roles, 3 GL mappings, 2 tenant reports.\n",
+            "Synthetic E2E data verification passed: 3 users, 3 roles, 3 GL mappings, 2 tenant reports.\n",
         );
     } finally {
         await pool.end();

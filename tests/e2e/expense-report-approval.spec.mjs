@@ -54,7 +54,7 @@ test("employee submits an expense report and manager approves it", async ({
         const managerPage = await managerContext.newPage();
         managerTotpCode = await login(managerPage, e2eAccounts.manager);
         await expect(
-            managerPage.getByRole("heading", { name: "Finance Dashboard" }),
+            managerPage.getByRole("heading", { name: "Expense Reports" }),
         ).toBeVisible();
 
         await managerPage.getByRole("link", { name: "Approval Queue" }).click();

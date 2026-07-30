@@ -1,8 +1,8 @@
 const tenantId =
     process.env.EXPENSEFLOW_E2E_TENANT_ID ??
     "81000000-0000-4000-8000-000000000001";
-const managerUserId = "81000000-0000-4000-8000-000000000003";
-const operatorRoles = ["Department Manager"];
+const financeAdminUserId = "81000000-0000-4000-8000-000000000004";
+const operatorRoles = ["Finance Admin"];
 
 module.exports = async function authenticateOperator(browser) {
     await Promise.all((await browser.pages()).map(installRefreshInterceptor));
@@ -53,7 +53,7 @@ async function createSession() {
 
     return {
         tenantId,
-        userId: managerUserId,
+        userId: financeAdminUserId,
         accessToken,
         accessTokenExpiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
     };
@@ -68,7 +68,7 @@ async function signAccessToken(issuedAtSeconds, expiresAtSeconds) {
     };
     const payload = {
         iss: process.env.AUTH_JWT_ISSUER ?? "expenseflow-core-case-service",
-        sub: managerUserId,
+        sub: financeAdminUserId,
         tenant_id: tenantId,
         roles: operatorRoles,
         token_use: "access",

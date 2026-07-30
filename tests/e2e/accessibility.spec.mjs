@@ -9,7 +9,7 @@ test.describe("ExpenseFlow accessibility gates", () => {
     test("Dashboard has no serious or critical axe violations", async ({
         page,
     }, testInfo) => {
-        await login(page, e2eAccounts.manager);
+        await login(page, e2eAccounts.financeAdmin);
 
         await expect(
             page.getByRole("heading", { name: "Finance Dashboard" }),
