@@ -903,6 +903,45 @@
                     "updatedAt"
                 ]
             },
+            "FinanceDashboardTrendPointList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "periodStart": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "spendByCurrency": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "currency": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 8
+                                    },
+                                    "spendAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d{1,12}\\.\\d{2}$"
+                                    }
+                                },
+                                "required": ["currency", "spendAmount"]
+                            }
+                        }
+                    },
+                    "required": [
+                        "periodStart",
+                        "reportCount",
+                        "spendByCurrency"
+                    ]
+                }
+            },
             "LoginErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -1328,6 +1367,20 @@
                     }
                 },
                 "required": ["asOfDate"]
+            },
+            "ReadFinanceDashboardTrendRequest": {
+                "type": "object",
+                "properties": {
+                    "fromDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "toDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["fromDate", "toDate"]
             },
             "ReadMySubmissionsQuery": {
                 "type": "object",
@@ -2661,6 +2714,92 @@
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/finance-dashboard/trends": {
+            "get": {
+                "summary": "Get Finance Dashboard report trends",
+                "description": "Loads Finance Admin-only tenant-scoped daily UTC Expense Report creation volume and spend grouped by currency for the Finance Dashboard. Requests may span at most 31 days.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "fromDate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "toDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finance Dashboard trend points found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceDashboardTrendPointList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed Finance Dashboard trend request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Finance Dashboard access is limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
                     },
                     "500": {
                         "description": "Unexpected server error.",

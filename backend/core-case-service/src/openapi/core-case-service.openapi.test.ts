@@ -151,6 +151,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
 
     void test("documents bearer authentication for every Expense Report route", () => {
         const caseQueueRollupsPath = document.paths?.["/v1/case-queue/rollups"];
+        const financeDashboardTrendsPath =
+            document.paths?.["/v1/finance-dashboard/trends"];
         const caseQueueLineItemsPath =
             document.paths?.["/v1/case-queue/line-items"];
         const expenseReportsPath = document.paths?.["/v1/expense-reports"];
@@ -180,6 +182,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(caseQueueRollupsPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(financeDashboardTrendsPath?.get?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(caseQueueLineItemsPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
@@ -206,6 +211,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         ]);
         expect(caseQueueRollupsPath?.get?.responses?.[401]).toBeDefined();
         expect(caseQueueRollupsPath?.get?.responses?.[403]).toBeDefined();
+        expect(financeDashboardTrendsPath?.get?.responses?.[401]).toBeDefined();
+        expect(financeDashboardTrendsPath?.get?.responses?.[403]).toBeDefined();
         expect(caseQueueLineItemsPath?.get?.responses?.[401]).toBeDefined();
         expect(caseQueueLineItemsPath?.get?.responses?.[403]).toBeDefined();
         expect(transactionsPath?.get?.responses?.[401]).toBeDefined();
@@ -371,6 +378,32 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         );
     });
 
+    void test("documents the Finance Dashboard trend endpoint", () => {
+        const trendPath = document.paths?.["/v1/finance-dashboard/trends"];
+        const parameters = trendPath?.get?.parameters ?? [];
+        const parameterNames = parameters
+            .filter((parameter) => "name" in parameter)
+            .map((parameter) => parameter.name);
+        const responseSchema = JSON.stringify(trendPath?.get?.responses?.[200]);
+        const trendPointListSchema = JSON.stringify(
+            document.components?.schemas?.FinanceDashboardTrendPointList,
+        );
+
+        expect(trendPath?.get).toBeDefined();
+        expect(trendPath?.get?.security).toStrictEqual([{ bearerAuth: [] }]);
+        expect(parameterNames).toStrictEqual(["fromDate", "toDate"]);
+        expect(JSON.stringify(parameters)).not.toContain("tenant");
+        expect(responseSchema).toContain(
+            "#/components/schemas/FinanceDashboardTrendPointList",
+        );
+        expect(trendPointListSchema).toContain("spendByCurrency");
+        expect(trendPointListSchema).toContain("spendAmount");
+        expect(trendPointListSchema).toContain("currency");
+        expect(trendPath?.get?.responses?.[400]).toBeDefined();
+        expect(trendPath?.get?.responses?.[401]).toBeDefined();
+        expect(trendPath?.get?.responses?.[403]).toBeDefined();
+        expect(trendPath?.get?.responses?.[429]).toBeDefined();
+    });
     void test("does not document tenant input for Case Queue rollups", () => {
         const parameters =
             document.paths?.["/v1/case-queue/rollups"]?.get?.parameters ?? [];
