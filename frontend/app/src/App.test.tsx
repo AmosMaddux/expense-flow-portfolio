@@ -3,6 +3,7 @@ import {
     fireEvent,
     render,
     screen,
+    waitFor,
     within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -18,6 +19,65 @@ import {
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
+const originalMatchMedia = window.matchMedia;
+
+type MatchMediaController = {
+    setMatches: (matches: boolean) => void;
+};
+
+function installMatchMedia(matches: boolean): MatchMediaController {
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+    const mediaQueryList = {
+        matches,
+        media: "(max-width: 760px)",
+        onchange: null,
+        addEventListener: (
+            type: string,
+            listener: EventListenerOrEventListenerObject,
+        ): void => {
+            if (type === "change" && typeof listener === "function") {
+                listeners.add(listener);
+            }
+        },
+        removeEventListener: (
+            type: string,
+            listener: EventListenerOrEventListenerObject,
+        ): void => {
+            if (type === "change" && typeof listener === "function") {
+                listeners.delete(listener);
+            }
+        },
+        addListener: (listener: (event: MediaQueryListEvent) => void): void => {
+            listeners.add(listener);
+        },
+        removeListener: (
+            listener: (event: MediaQueryListEvent) => void,
+        ): void => {
+            listeners.delete(listener);
+        },
+        dispatchEvent: (): boolean => true,
+    } as MediaQueryList;
+
+    Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: vi.fn(() => mediaQueryList),
+    });
+
+    return {
+        setMatches: (nextMatches: boolean): void => {
+            Object.defineProperty(mediaQueryList, "matches", {
+                configurable: true,
+                value: nextMatches,
+            });
+            listeners.forEach((listener) =>
+                listener({
+                    matches: nextMatches,
+                    media: mediaQueryList.media,
+                } as MediaQueryListEvent),
+            );
+        },
+    };
+}
 
 function createSession(role: Role = "Finance Admin"): AuthSession {
     return {
@@ -72,6 +132,10 @@ async function completePrimarySignIn(): Promise<void> {
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+    });
     window.history.replaceState(null, "", "/");
 });
 
@@ -309,7 +373,8 @@ describe("AppShell", () => {
         expect(approvalQueueLink.getAttribute("aria-current")).toBe("page");
     });
 
-    test("opens and closes mobile navigation without changing desktop markup", () => {
+    test("toggles the mobile navigation state and backdrop", async () => {
+        installMatchMedia(true);
         render(
             <AppShell currentPath="/my-submissions" signedInRole="Employee" />,
         );
@@ -318,32 +383,103 @@ describe("AppShell", () => {
             name: "Open navigation",
         });
         const primaryNavigation = screen.getByLabelText("Primary navigation");
+        const workspace = screen.getByRole("main").closest(".workspace");
 
         expect(menuButton.getAttribute("aria-expanded")).toBe("false");
         expect(primaryNavigation.className).toBe("sidebar");
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
         expect(
-            screen.queryByRole("button", { name: "Close navigation" }),
+            screen.queryByRole("button", { name: "Close navigation overlay" }),
         ).toBeNull();
 
         fireEvent.click(menuButton);
 
-        expect(menuButton.getAttribute("aria-expanded")).toBe("true");
+        const closeButton = screen.getByRole("button", {
+            name: "Close navigation",
+        });
+        expect(closeButton).toBe(document.activeElement);
         expect(primaryNavigation.className).toContain("sidebar--open");
+        expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+        expect(
+            screen.getByRole("button", { name: "Close navigation overlay" }),
+        ).not.toBeNull();
 
-        fireEvent.click(
-            screen.getByRole("button", { name: "Close navigation" }),
-        );
+        fireEvent.click(closeButton);
 
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
         expect(menuButton.getAttribute("aria-expanded")).toBe("false");
         expect(primaryNavigation.className).toBe("sidebar");
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
     });
 
-    test("closes mobile navigation after selecting a link", () => {
-        render(<AppShell signedInRole="Employee" />);
+    test("clears modal navigation state after resizing to desktop", async () => {
+        const matchMediaController = installMatchMedia(true);
+        const { container } = render(
+            <AppShell currentPath="/log-mileage" signedInRole="Employee" />,
+        );
+        const workspace = container.querySelector(".workspace");
 
         fireEvent.click(
             screen.getByRole("button", { name: "Open navigation" }),
         );
+        expect(
+            screen.getByLabelText("Primary navigation").getAttribute("role"),
+        ).toBe("dialog");
+        expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+
+        matchMediaController.setMatches(false);
+
+        await waitFor(() =>
+            expect(
+                screen
+                    .getByLabelText("Primary navigation")
+                    .getAttribute("role"),
+            ).toBeNull(),
+        );
+        expect(
+            screen.queryByRole("button", { name: "Close navigation overlay" }),
+        ).toBeNull();
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+    });
+
+    test("supports keyboard dismissal and focus trapping in mobile navigation", async () => {
+        installMatchMedia(true);
+        render(<AppShell currentPath="/log-mileage" signedInRole="Employee" />);
+
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        fireEvent.click(menuButton);
+
+        const primaryNavigation = screen.getByLabelText("Primary navigation");
+        const closeButton = screen.getByRole("button", {
+            name: "Close navigation",
+        });
+        const lastLink = within(primaryNavigation).getByRole("link", {
+            name: "Log Mileage",
+        });
+
+        lastLink.focus();
+        fireEvent.keyDown(primaryNavigation, { key: "Tab" });
+        expect(closeButton).toBe(document.activeElement);
+
+        fireEvent.keyDown(primaryNavigation, { key: "Tab", shiftKey: true });
+        expect(lastLink).toBe(document.activeElement);
+
+        fireEvent.keyDown(document, { key: "Escape" });
+
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
+        expect(primaryNavigation.className).toBe("sidebar");
+    });
+
+    test("closes mobile navigation after selecting a link", async () => {
+        installMatchMedia(true);
+        render(<AppShell signedInRole="Employee" />);
+
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        fireEvent.click(menuButton);
 
         const sidebar = screen.getByRole("navigation", {
             name: "Workspace sections",
@@ -356,11 +492,8 @@ describe("AppShell", () => {
         expect(screen.getByLabelText("Primary navigation").className).toBe(
             "sidebar",
         );
-        expect(
-            screen
-                .getByRole("button", { name: "Open navigation" })
-                .getAttribute("aria-expanded"),
-        ).toBe("false");
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
     });
     test("updates browser history and active link without a document refresh", () => {
         window.history.replaceState(null, "", "/my-submissions");

@@ -960,12 +960,38 @@ button:disabled {
     display: none;
 }
 
+.sidebar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .sidebar__brand {
     display: flex;
     align-items: center;
     gap: 10px;
     font-size: 1.125rem;
     font-weight: 700;
+}
+
+.sidebar__close {
+    display: none;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(240 244 248 / 38%);
+    border-radius: 7px;
+    background: transparent;
+    color: #f0f4f8;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.sidebar__close:hover {
+    background: #243b53;
 }
 
 .sidebar__brand-mark {
@@ -1028,7 +1054,6 @@ button:disabled {
     height: 40px;
     flex: 0 0 auto;
     place-items: center;
-    gap: 3px;
     border: 1px solid #c4c6cd;
     border-radius: 7px;
     background: #fff;
@@ -1916,16 +1941,27 @@ button:disabled {
         border-right: 1px solid #334e68;
         border-bottom: 0;
         box-shadow: 18px 0 48px rgb(16 42 67 / 24%);
+        opacity: 0;
         transform: translateX(-100%);
         transition:
             transform 160ms ease,
-            visibility 160ms ease;
+            opacity 160ms ease,
+            visibility 0s linear 160ms;
         visibility: hidden;
     }
 
     .sidebar--open {
+        opacity: 1;
         transform: translateX(0);
+        transition:
+            transform 160ms ease,
+            opacity 160ms ease,
+            visibility 0s;
         visibility: visible;
+    }
+
+    .sidebar__close {
+        display: inline-flex;
     }
 
     .sidebar-backdrop {
