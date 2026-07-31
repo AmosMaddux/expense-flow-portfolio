@@ -2350,33 +2350,6 @@
                     "method": "btree",
                     "with": {}
                 },
-                "stage_transition_tenant_report_id_unique_idx": {
-                    "name": "stage_transition_tenant_report_id_unique_idx",
-                    "columns": [
-                        {
-                            "expression": "id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        },
-                        {
-                            "expression": "tenant_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        },
-                        {
-                            "expression": "expense_report_id",
-                            "isExpression": false,
-                            "asc": true,
-                            "nulls": "last"
-                        }
-                    ],
-                    "isUnique": true,
-                    "concurrently": false,
-                    "method": "btree",
-                    "with": {}
-                },
                 "stage_transition_tenant_occurred_at_idx": {
                     "name": "stage_transition_tenant_occurred_at_idx",
                     "columns": [
@@ -2625,19 +2598,6 @@
                     "tableTo": "expense_report",
                     "columnsFrom": ["tenant_id", "expense_report_id"],
                     "columnsTo": ["tenant_id", "id"],
-                    "onDelete": "no action",
-                    "onUpdate": "no action"
-                },
-                "stage_transition_outbox_transition_tenant_report_fk": {
-                    "name": "stage_transition_outbox_transition_tenant_report_fk",
-                    "tableFrom": "stage_transition_outbox",
-                    "tableTo": "stage_transition",
-                    "columnsFrom": [
-                        "stage_transition_id",
-                        "tenant_id",
-                        "expense_report_id"
-                    ],
-                    "columnsTo": ["id", "tenant_id", "expense_report_id"],
                     "onDelete": "no action",
                     "onUpdate": "no action"
                 }

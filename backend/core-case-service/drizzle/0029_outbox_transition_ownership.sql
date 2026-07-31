@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "stage_transition_tenant_report_id_unique_idx" ON "stage_transition" USING btree ("id","tenant_id","expense_report_id");--> statement-breakpoint
+ALTER TABLE "stage_transition_outbox" ADD CONSTRAINT "stage_transition_outbox_transition_tenant_report_fk" FOREIGN KEY ("stage_transition_id","tenant_id","expense_report_id") REFERENCES "public"."stage_transition"("id","tenant_id","expense_report_id") ON DELETE no action ON UPDATE no action;

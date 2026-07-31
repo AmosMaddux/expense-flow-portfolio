@@ -23,8 +23,6 @@ CREATE TABLE "stage_transition_outbox" (
 --> statement-breakpoint
 ALTER TABLE "stage_transition_outbox" ADD CONSTRAINT "stage_transition_outbox_stage_transition_id_stage_transition_id_fk" FOREIGN KEY ("stage_transition_id") REFERENCES "public"."stage_transition"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stage_transition_outbox" ADD CONSTRAINT "stage_transition_outbox_expense_report_tenant_fk" FOREIGN KEY ("tenant_id","expense_report_id") REFERENCES "public"."expense_report"("tenant_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "stage_transition_tenant_report_id_unique_idx" ON "stage_transition" USING btree ("id","tenant_id","expense_report_id");--> statement-breakpoint
-ALTER TABLE "stage_transition_outbox" ADD CONSTRAINT "stage_transition_outbox_transition_tenant_report_fk" FOREIGN KEY ("stage_transition_id","tenant_id","expense_report_id") REFERENCES "public"."stage_transition"("id","tenant_id","expense_report_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "stage_transition_outbox_transition_unique_idx" ON "stage_transition_outbox" USING btree ("stage_transition_id");--> statement-breakpoint
 CREATE INDEX "stage_transition_outbox_submission_idempotency_idx" ON "stage_transition_outbox" USING btree ("tenant_id","expense_report_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "stage_transition_outbox_dispatch_idx" ON "stage_transition_outbox" USING btree ("published_at","dead_lettered_at","next_attempt_at","locked_until");

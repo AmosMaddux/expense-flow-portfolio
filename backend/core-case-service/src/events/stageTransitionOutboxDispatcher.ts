@@ -26,6 +26,18 @@ export type StageTransitionOutboxDispatcher = {
 };
 
 /**
+ * Signals that another dispatcher owns or completed the claimed outbox event.
+ */
+export class StageTransitionOutboxOwnershipLostError extends Error {
+    public constructor(eventId: string) {
+        super(
+            `Stage transition outbox event ${eventId} could not be completed because its claim is no longer current.`,
+        );
+        this.name = "StageTransitionOutboxOwnershipLostError";
+    }
+}
+
+/**
  * Dispatches a specific event immediately or a batch of due outbox events.
  */
 export async function dispatchStageTransitionOutboxEvents(
@@ -100,7 +112,7 @@ async function publishClaimedEvent(
     } catch {
         const failedAt = now();
         const isDeadLettered = event.attemptCount >= defaultMaxAttempts;
-        await store.markFailed(
+        const markedFailed = await store.markFailed(
             event,
             new Date(
                 failedAt.getTime() +
@@ -108,10 +120,16 @@ async function publishClaimedEvent(
             ),
             isDeadLettered ? failedAt : undefined,
         );
+        if (!markedFailed) {
+            throw new StageTransitionOutboxOwnershipLostError(event.id);
+        }
         return;
     }
 
-    await store.markPublished(event, now());
+    const markedPublished = await store.markPublished(event, now());
+    if (!markedPublished) {
+        throw new StageTransitionOutboxOwnershipLostError(event.id);
+    }
 }
 
 function calculateRetryDelayMilliseconds(attemptCount: number): number {

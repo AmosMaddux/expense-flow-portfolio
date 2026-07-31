@@ -204,6 +204,13 @@
             "when": 1785357547700,
             "tag": "0028_manual_deductibility",
             "breakpoints": true
+        },
+        {
+            "idx": 29,
+            "version": "7",
+            "when": 1785523200000,
+            "tag": "0029_outbox_transition_ownership",
+            "breakpoints": true
         }
     ]
 }

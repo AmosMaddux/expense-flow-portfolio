@@ -963,7 +963,108 @@ void describe("expenseReportRepository", () => {
                 fromStage: "Drafted",
                 toStage: "Submitted",
             }),
-        ).rejects.toThrow();
+        ).rejects.toMatchObject({
+            cause: {
+                code: "23503",
+                constraint:
+                    "stage_transition_outbox_transition_tenant_report_fk",
+            },
+        });
+    });
+
+    void test("rolls back the stage change, audit entry, and transition when the outbox insert fails", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000200";
+        const actorId = "20000000-0000-4000-8000-000000000200";
+        const duplicateEventId = randomUUID();
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        const preexistingTransitionId = randomUUID();
+        await db.insert(stageTransition).values({
+            id: preexistingTransitionId,
+            tenantId,
+            expenseReportId: report.id,
+            actor: actorId,
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            reason: "synthetic_preexisting_event",
+            occurredAt: new Date("2026-07-29T18:00:00.000Z"),
+        });
+        await db.insert(stageTransitionOutbox).values({
+            id: duplicateEventId,
+            stageTransitionId: preexistingTransitionId,
+            tenantId,
+            expenseReportId: report.id,
+            correlationId: randomUUID(),
+            fromStage: "Drafted",
+            toStage: "Submitted",
+            occurredAt: new Date("2026-07-29T18:00:00.000Z"),
+            nextAttemptAt: new Date("2026-07-29T18:00:00.000Z"),
+        });
+
+        await expect(
+            transitionExpenseReportStage({
+                tenantId,
+                id: report.id,
+                actor: actorId,
+                fromStage: "Drafted",
+                toStage: "Submitted",
+                reason: "employee_submitted",
+                correlationId: randomUUID(),
+                eventId: duplicateEventId,
+                occurredAt: new Date("2026-07-29T18:01:00.000Z"),
+            }),
+        ).rejects.toMatchObject({
+            cause: {
+                code: "23505",
+                constraint: "stage_transition_outbox_pkey",
+            },
+        });
+
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const approvedAuditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, report.id),
+                    eq(auditEntry.action, "transition_approved"),
+                ),
+            );
+        const attemptedTransitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, report.id),
+                    eq(stageTransition.reason, "employee_submitted"),
+                ),
+            );
+        const duplicateOutboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.id, duplicateEventId));
+
+        expect(persistedReport?.currentStage).toBe("Drafted");
+        expect(approvedAuditRows).toHaveLength(0);
+        expect(attemptedTransitionRows).toHaveLength(0);
+        expect(duplicateOutboxRows).toHaveLength(1);
     });
 
     void test("clears line-item flags after review", async () => {

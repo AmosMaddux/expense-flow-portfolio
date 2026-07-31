@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 
 import {
     expenseReport,
@@ -11,19 +11,31 @@ import {
 } from "../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
 
+const testDatabase = vi.hoisted(
+    () =>
+        ({ client: undefined }) as {
+            client: Pool | undefined;
+        },
+);
+
 vi.mock("../db/client.js", () => {
-    const client = new Pool({
+    testDatabase.client = new Pool({
         connectionString: getCoreCaseTestDatabaseUrl(),
     });
-    const db = drizzle(client);
+    const db = drizzle(testDatabase.client);
 
     return { db };
 });
 
 import {
     claimStageTransitionOutboxEvents,
+    markStageTransitionOutboxEventFailed,
     markStageTransitionOutboxEventPublished,
 } from "./stageTransitionOutboxRepository.js";
+
+afterAll(async () => {
+    await testDatabase.client?.end();
+});
 
 void describe("stageTransitionOutboxRepository", () => {
     void test("reports stale completion when the claimed lock no longer matches", async () => {
@@ -63,6 +75,49 @@ void describe("stageTransitionOutboxRepository", () => {
         const validCompletion = await markStageTransitionOutboxEventPublished(
             claimedEvent,
             new Date("2026-07-29T18:00:02.000Z"),
+        );
+
+        expect(staleCompletion).toBe(false);
+        expect(validCompletion).toBe(true);
+    });
+
+    void test("reports stale failure completion when the claimed lock no longer matches", async () => {
+        const tenantId = randomUUID();
+        const reportId = randomUUID();
+        const ownerId = randomUUID();
+        const transitionId = randomUUID();
+        const eventId = randomUUID();
+        const claimTime = new Date("2026-07-29T19:00:00.000Z");
+
+        await seedOutboxRow({
+            eventId,
+            ownerId,
+            reportId,
+            tenantId,
+            transitionId,
+        });
+
+        const [claimedEvent] = await claimStageTransitionOutboxEvents({
+            eventId,
+            leaseMilliseconds: 30_000,
+            limit: 1,
+            maxAttempts: 10,
+            now: claimTime,
+        });
+
+        expect(claimedEvent).toBeDefined();
+
+        if (claimedEvent === undefined) {
+            throw new Error("Expected an outbox event to be claimed.");
+        }
+
+        const staleCompletion = await markStageTransitionOutboxEventFailed(
+            { ...claimedEvent, lockId: randomUUID() },
+            new Date("2026-07-29T19:00:02.000Z"),
+        );
+        const validCompletion = await markStageTransitionOutboxEventFailed(
+            claimedEvent,
+            new Date("2026-07-29T19:00:03.000Z"),
         );
 
         expect(staleCompletion).toBe(false);
