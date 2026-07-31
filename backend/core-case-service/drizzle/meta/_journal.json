@@ -218,6 +218,13 @@
             "when": 1785447295689,
             "tag": "0030_soft_vermin",
             "breakpoints": true
+        },
+        {
+            "idx": 31,
+            "version": "7",
+            "when": 1785536156600,
+            "tag": "0031_magenta_sue_storm",
+            "breakpoints": true
         }
     ]
 }
