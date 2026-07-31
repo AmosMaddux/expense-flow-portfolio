@@ -7,6 +7,10 @@
     "scripts": {
         "build": "tsc --build",
         "dev:events:consume": "npm run build --workspaces=false && node --env-file=../../.env dist/events/stageTransitionSqsConsumerMain.js",
+        "start": "npm run build --workspaces=false && node --env-file=../../.env dist/index.js",
+        "db:generate": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs generate --config=drizzle.config.ts",
+        "db:migrate": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs migrate --config=drizzle.config.ts",
+        "db:push": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs push --config=drizzle.config.ts",
         "dev:auth:seed": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localAuthUser.js seed",
         "dev:auth:code": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localAuthUser.js code",
         "e2e:reset": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/e2eTestData.js reset",
@@ -29,10 +33,12 @@
         "argon2": "^0.44.0",
         "drizzle-orm": "^0.45.2",
         "express": "^5.1.0",
+        "opossum": "^10.0.0",
         "pg": "^8.22.0",
         "pino": "^10.3.1",
         "redis": "^6.1.0",
         "rfc4648": "^1.5.4",
+        "soap": "^1.10.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {

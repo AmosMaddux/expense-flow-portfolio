@@ -60,6 +60,7 @@ import {
     readDraftExpenseContent,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    readExpenseReportReviewDetail,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
@@ -865,6 +866,31 @@ export async function getAllTransactions(
         });
 
         res.status(200).json(transactions);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Finance Admin report-detail reads independent of transaction filters.
+ */
+export async function getExpenseReportReviewDetail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceAdminAllTransactionsAccess(auth);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const detail = await readExpenseReportReviewDetail({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+        });
+
+        res.status(200).json(detail);
     } catch (error: unknown) {
         next(error);
     }

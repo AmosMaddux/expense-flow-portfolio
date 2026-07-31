@@ -3,6 +3,7 @@ import {
     fireEvent,
     render,
     screen,
+    waitFor,
     within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -18,6 +19,65 @@ import {
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
+const originalMatchMedia = window.matchMedia;
+
+type MatchMediaController = {
+    setMatches: (matches: boolean) => void;
+};
+
+function installMatchMedia(matches: boolean): MatchMediaController {
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+    const mediaQueryList = {
+        matches,
+        media: "(max-width: 760px)",
+        onchange: null,
+        addEventListener: (
+            type: string,
+            listener: EventListenerOrEventListenerObject,
+        ): void => {
+            if (type === "change" && typeof listener === "function") {
+                listeners.add(listener);
+            }
+        },
+        removeEventListener: (
+            type: string,
+            listener: EventListenerOrEventListenerObject,
+        ): void => {
+            if (type === "change" && typeof listener === "function") {
+                listeners.delete(listener);
+            }
+        },
+        addListener: (listener: (event: MediaQueryListEvent) => void): void => {
+            listeners.add(listener);
+        },
+        removeListener: (
+            listener: (event: MediaQueryListEvent) => void,
+        ): void => {
+            listeners.delete(listener);
+        },
+        dispatchEvent: (): boolean => true,
+    } as MediaQueryList;
+
+    Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: vi.fn(() => mediaQueryList),
+    });
+
+    return {
+        setMatches: (nextMatches: boolean): void => {
+            Object.defineProperty(mediaQueryList, "matches", {
+                configurable: true,
+                value: nextMatches,
+            });
+            listeners.forEach((listener) =>
+                listener({
+                    matches: nextMatches,
+                    media: mediaQueryList.media,
+                } as MediaQueryListEvent),
+            );
+        },
+    };
+}
 
 function createSession(role: Role = "Finance Admin"): AuthSession {
     return {
@@ -72,6 +132,11 @@ async function completePrimarySignIn(): Promise<void> {
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: originalMatchMedia,
+    });
+    document.body.style.overflow = "";
     window.history.replaceState(null, "", "/");
 });
 
@@ -309,6 +374,137 @@ describe("AppShell", () => {
         expect(approvalQueueLink.getAttribute("aria-current")).toBe("page");
     });
 
+    test("toggles the mobile navigation state and backdrop", async () => {
+        installMatchMedia(true);
+        render(
+            <AppShell currentPath="/my-submissions" signedInRole="Employee" />,
+        );
+
+        document.body.style.overflow = "auto";
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        const primaryNavigation = screen.getByLabelText("Primary navigation");
+        const workspace = screen.getByRole("main").closest(".workspace");
+
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+        expect(primaryNavigation.className).toBe("sidebar");
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("auto");
+        expect(
+            screen.queryByRole("button", { name: "Close navigation overlay" }),
+        ).toBeNull();
+
+        fireEvent.click(menuButton);
+
+        const closeButton = screen.getByRole("button", {
+            name: "Close navigation",
+        });
+        expect(closeButton).toBe(document.activeElement);
+        expect(primaryNavigation.className).toContain("sidebar--open");
+        expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+        expect(document.body.style.overflow).toBe("hidden");
+        expect(
+            screen.getByRole("button", { name: "Close navigation overlay" }),
+        ).not.toBeNull();
+
+        fireEvent.click(closeButton);
+
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+        expect(primaryNavigation.className).toBe("sidebar");
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("auto");
+    });
+
+    test("clears modal navigation state after resizing to desktop", async () => {
+        document.body.style.overflow = "scroll";
+        const matchMediaController = installMatchMedia(true);
+        const { container } = render(
+            <AppShell currentPath="/log-mileage" signedInRole="Employee" />,
+        );
+        const workspace = container.querySelector(".workspace");
+
+        fireEvent.click(
+            screen.getByRole("button", { name: "Open navigation" }),
+        );
+        expect(
+            screen.getByLabelText("Primary navigation").getAttribute("role"),
+        ).toBe("dialog");
+        expect(workspace?.getAttribute("aria-hidden")).toBe("true");
+        expect(document.body.style.overflow).toBe("hidden");
+
+        matchMediaController.setMatches(false);
+
+        await waitFor(() =>
+            expect(
+                screen
+                    .getByLabelText("Primary navigation")
+                    .getAttribute("role"),
+            ).toBeNull(),
+        );
+        expect(
+            screen.queryByRole("button", { name: "Close navigation overlay" }),
+        ).toBeNull();
+        expect(workspace?.hasAttribute("aria-hidden")).toBe(false);
+        expect(document.body.style.overflow).toBe("scroll");
+    });
+
+    test("supports keyboard dismissal and focus trapping in mobile navigation", async () => {
+        installMatchMedia(true);
+        render(<AppShell currentPath="/log-mileage" signedInRole="Employee" />);
+
+        document.body.style.overflow = "auto";
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        fireEvent.click(menuButton);
+
+        const primaryNavigation = screen.getByLabelText("Primary navigation");
+        const closeButton = screen.getByRole("button", {
+            name: "Close navigation",
+        });
+        const lastLink = within(primaryNavigation).getByRole("link", {
+            name: "Log Mileage",
+        });
+
+        lastLink.focus();
+        fireEvent.keyDown(primaryNavigation, { key: "Tab" });
+        expect(closeButton).toBe(document.activeElement);
+
+        fireEvent.keyDown(primaryNavigation, { key: "Tab", shiftKey: true });
+        expect(lastLink).toBe(document.activeElement);
+
+        fireEvent.keyDown(document, { key: "Escape" });
+
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
+        expect(primaryNavigation.className).toBe("sidebar");
+    });
+
+    test("closes mobile navigation after selecting a link", async () => {
+        installMatchMedia(true);
+        render(<AppShell signedInRole="Employee" />);
+
+        document.body.style.overflow = "auto";
+        const menuButton = screen.getByRole("button", {
+            name: "Open navigation",
+        });
+        fireEvent.click(menuButton);
+
+        const sidebar = screen.getByRole("navigation", {
+            name: "Workspace sections",
+        });
+        fireEvent.click(
+            within(sidebar).getByRole("link", { name: "Submit Expense" }),
+        );
+
+        expect(window.location.pathname).toBe("/submit-expense");
+        expect(screen.getByLabelText("Primary navigation").className).toBe(
+            "sidebar",
+        );
+        await waitFor(() => expect(menuButton).toBe(document.activeElement));
+        expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+    });
     test("updates browser history and active link without a document refresh", () => {
         window.history.replaceState(null, "", "/my-submissions");
         render(<AppShell signedInRole="Employee" />);

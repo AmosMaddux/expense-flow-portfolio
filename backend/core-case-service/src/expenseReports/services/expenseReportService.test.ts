@@ -9,6 +9,7 @@ import {
 const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
+const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
 const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
@@ -23,6 +24,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     findAuditEntriesByExpenseReportId: findAuditEntriesByExpenseReportIdMock,
     findCurrentDraftExpenseReport: findCurrentDraftExpenseReportMock,
     findExpenseReportById: findExpenseReportByIdMock,
+    findExpenseReportReviewDetail: findExpenseReportReviewDetailMock,
     insertDeniedSubmissionAuditEntry: vi.fn(),
     insertDeniedWorkflowTransitionAttempt: vi.fn(),
     insertDraftExpenseReport: vi.fn(),
@@ -45,6 +47,7 @@ import {
     updateExpenseReportSourceDeductibility,
     readCurrentDraftExpenseReport,
     readExpenseReportAuditEntries,
+    readExpenseReportReviewDetail,
     transitionExpenseReportWorkflow,
 } from "./expenseReportService.js";
 
@@ -54,6 +57,7 @@ beforeEach(() => {
     process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
     findCurrentDraftExpenseReportMock.mockReset();
     findExpenseReportByIdMock.mockReset();
+    findExpenseReportReviewDetailMock.mockReset();
     insertMileageEntryMock.mockReset();
     transitionExpenseReportStageMock.mockReset();
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
@@ -217,6 +221,58 @@ void describe("Expense Report mileage service", () => {
             tenantId,
             ownerId,
         );
+    });
+
+    void test("reads complete Finance Admin report detail with service-computed overdue", async () => {
+        findExpenseReportReviewDetailMock.mockResolvedValue({
+            expenseReportId,
+            owner: ownerId,
+            priority: "Urgent",
+            dueDate: "2026-07-29",
+            status: "AP Review",
+            onHold: false,
+            isOverdue: false,
+            lineItems: [
+                {
+                    id: "30000000-0000-4000-8000-000000000901",
+                    merchant: "Synthetic Air",
+                    category: "Travel",
+                    date: "2026-07-20",
+                    amount: "512.09",
+                    currency: "USD",
+                    glCode: "6220",
+                    flaggedLineItem: true,
+                    reviewAction: "approve",
+                    deductible: null,
+                },
+                {
+                    id: "30000000-0000-4000-8000-000000000902",
+                    merchant: "Synthetic Bistro",
+                    category: "Meals",
+                    date: "2026-07-21",
+                    amount: "48.33",
+                    currency: "USD",
+                    glCode: "6250",
+                    flaggedLineItem: false,
+                    reviewAction: null,
+                    deductible: null,
+                },
+            ],
+            mileageEntries: [],
+        });
+
+        const detail = await readExpenseReportReviewDetail({
+            id: expenseReportId,
+            tenantId,
+            now: () => new Date("2026-07-30T12:00:00.000Z"),
+        });
+
+        expect(findExpenseReportReviewDetailMock).toHaveBeenCalledWith(
+            tenantId,
+            expenseReportId,
+        );
+        expect(detail.isOverdue).toBe(true);
+        expect(detail.lineItems).toHaveLength(2);
     });
 
     void test("adds mileage and computes reimbursement from configuration", async () => {

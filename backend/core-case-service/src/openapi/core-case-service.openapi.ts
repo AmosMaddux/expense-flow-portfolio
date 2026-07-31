@@ -19,6 +19,7 @@ import {
     CreateMileageEntryInboundRequestSchema,
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportOutboundResponseSchema,
+    ExpenseReportReviewDetailSchema,
     FinanceDashboardTrendPointListSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
@@ -83,6 +84,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportResponse = registry.register(
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
+    );
+    const expenseReportReviewDetailResponse = registry.register(
+        "ExpenseReportReviewDetailResponse",
+        ExpenseReportReviewDetailSchema,
     );
     const createMileageEntryRequest = registry.register(
         "CreateMileageEntryRequest",
@@ -832,6 +837,34 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             409: problemJsonResponse(
                 "Mileage can only be added while the Expense Report is Drafted.",
             ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/review-detail",
+        summary: "Get complete Expense Report review detail",
+        description:
+            "Loads all line-item and mileage sources for a Finance Admin report-detail surface independent of All Transactions filters or pagination.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Expense Report review detail found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: expenseReportReviewDetailResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Finance Admin access required."),
+            404: problemJsonResponse("Expense Report not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

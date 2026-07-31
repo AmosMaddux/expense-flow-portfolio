@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import { expenseReport, lineItem } from "../schema/index.js";
+import { expenseReport, glCodingResult, lineItem } from "../schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { readAllTransactions } from "./allTransactions.js";
 
@@ -100,6 +100,28 @@ void describe("readAllTransactions", () => {
                 createdAt: new Date("2026-07-06T10:00:00.000Z"),
             },
         ]);
+
+        await db.insert(glCodingResult).values({
+            id: "86000000-0000-4000-8000-000000000103",
+            submissionId: "87000000-0000-4000-8000-000000000103",
+            tenantId: tenantOneId,
+            expenseReportId: "84000000-0000-4000-8000-000000000102",
+            sourceType: "line_item",
+            sourceId: "85000000-0000-4000-8000-000000000103",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6220",
+            glAccountName: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            flaggedLineItem: true,
+            flagCode: "amount_over_500",
+            flagMessage: "Line item exceeds $500.",
+            lineItemReviewAction: "approve",
+            lineItemReviewedBy: ownerId,
+            lineItemReviewedAt: new Date("2026-07-06T10:00:00.000Z"),
+            codedAt: new Date("2026-07-05T10:00:00.000Z"),
+        });
     });
 
     afterAll(async () => {
@@ -133,6 +155,21 @@ void describe("readAllTransactions", () => {
                 (transaction) => transaction.deductible === null,
             ),
         ).toBe(true);
+        expect(transactions.items[0]).toMatchObject({
+            owner: ownerId,
+            priority: "Normal",
+            dueDate: "2026-08-02",
+            onHold: false,
+            isOverdue: false,
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+        });
+        expect(transactions.items[1]).toMatchObject({
+            glCode: null,
+            flaggedLineItem: false,
+            reviewAction: null,
+        });
         expect(
             transactions.items.some(
                 (transaction) => transaction.merchant === "Other Tenant Rail",
@@ -161,6 +198,14 @@ void describe("readAllTransactions", () => {
             currency: "USD",
             status: "AP Review",
             deductible: null,
+            owner: ownerId,
+            priority: "Normal",
+            dueDate: "2026-08-02",
+            onHold: false,
+            isOverdue: false,
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
         });
         expect(transactions.items[0]?.date).toBe("2026-07-05T00:00:00.000Z");
     });

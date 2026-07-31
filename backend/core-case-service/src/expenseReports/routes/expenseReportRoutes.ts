@@ -10,6 +10,7 @@ import {
     getDraftExpenseContent,
     getExpenseReportAuditEntries,
     getExpenseReportById,
+    getExpenseReportReviewDetail,
     getFinanceDashboardTrend,
     getMileageConfig,
     patchExpenseReportSourceDeductibility,
@@ -105,5 +106,9 @@ expenseReportRouter.patch(
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",
     getExpenseReportAuditEntries,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/review-detail",
+    getExpenseReportReviewDetail,
 );
 expenseReportRouter.get("/expense-reports/:id", getExpenseReportById);
