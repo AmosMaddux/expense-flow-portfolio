@@ -1,0 +1,190 @@
+services:
+    postgres:
+        image: postgres:17-alpine
+        environment:
+            POSTGRES_DB: expenseflow_core_case
+            POSTGRES_USER: expenseflow
+            POSTGRES_PASSWORD: expenseflow_local_dev_only
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "pg_isready -U expenseflow -d expenseflow_core_case",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "55432:5432"
+
+    postgres-e2e-marker:
+        image: postgres:17-alpine
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            PGDATABASE: expenseflow_core_case
+            PGHOST: postgres
+            PGPASSWORD: expenseflow_local_dev_only
+            PGUSER: expenseflow
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                psql --set=ON_ERROR_STOP=1
+                --command="COMMENT ON DATABASE expenseflow_core_case IS
+                'expenseflow-core-case-deterministic-e2e-v1'"
+
+    gl-coding:
+        image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+        working_dir: /workspace
+        command:
+            [
+                "uv",
+                "run",
+                "--no-dev",
+                "uvicorn",
+                "backend.python.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8001",
+            ]
+        depends_on:
+            postgres:
+                condition: service_started
+        environment:
+            AUTH_JWT_CLOCK_SKEW_SECONDS: ${AUTH_JWT_CLOCK_SKEW_SECONDS:-10}
+            AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
+            AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
+            AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
+            DATABASE_URL: postgres://expenseflow:expenseflow_local_dev_only@postgres:5432/expenseflow_core_case
+            MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
+            UV_CACHE_DIR: /tmp/uv-cache
+            UV_LINK_MODE: copy
+            UV_PROJECT_ENVIRONMENT: /tmp/expenseflow-venv
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "8001:8001"
+        volumes:
+            - .:/workspace:ro
+            - gl-coding-cache:/tmp/uv-cache
+            - gl-coding-venv:/tmp/expenseflow-venv
+
+    gl-mapping-init:
+        image: postgres:17-alpine
+        depends_on:
+            postgres:
+                condition: service_started
+        environment:
+            PGDATABASE: expenseflow_core_case
+            PGHOST: postgres
+            PGPASSWORD: expenseflow_local_dev_only
+            PGUSER: expenseflow
+            VITE_TENANT_ID: ${VITE_TENANT_ID:-8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb}
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                until psql -tAc
+                "SELECT to_regclass('public.gl_mapping') IS NOT NULL"
+                | grep -q t;
+                do sleep 2; done;
+                psql
+                --set=tenant_id="$$VITE_TENANT_ID"
+                --file=/local-dev/seed-gl-mappings.sql
+        volumes:
+            - ./scripts/seed-local-gl-mappings.sql:/local-dev/seed-gl-mappings.sql:ro
+
+    redis:
+        image: redis:7-alpine
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "56379:6379"
+
+    minio:
+        image: minio/minio:latest
+        command: ["server", "/data"]
+        environment:
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER:-expenseflow-local}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-expenseflow-local-dev-only}
+        ports:
+            - "59000:9000"
+
+    minio-init:
+        image: minio/mc:latest
+        depends_on:
+            - minio
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                until mc alias set local http://minio:9000
+                "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD";
+                do sleep 1; done;
+                mc mb --ignore-existing local/expenseflow-receipts-local;
+        environment:
+            MINIO_ROOT_USER: ${MINIO_ROOT_USER:-expenseflow-local}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-expenseflow-local-dev-only}
+
+    dynamodb:
+        image: amazon/dynamodb-local:latest
+        command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+        ports:
+            - "58000:8000"
+
+    dynamodb-init:
+        image: amazon/aws-cli:latest
+        depends_on:
+            - dynamodb
+        environment:
+            AWS_ACCESS_KEY_ID: expenseflow-local
+            AWS_SECRET_ACCESS_KEY: expenseflow-local
+            AWS_DEFAULT_REGION: us-east-1
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                until aws dynamodb list-tables --endpoint-url http://dynamodb:8000;
+                do sleep 1; done;
+                aws dynamodb create-table
+                --endpoint-url http://dynamodb:8000
+                --table-name expenseflow-idempotency-local
+                --attribute-definitions AttributeName=pk,AttributeType=S
+                --key-schema AttributeName=pk,KeyType=HASH
+                --billing-mode PAY_PER_REQUEST
+                || true;
+                aws dynamodb update-time-to-live
+                --endpoint-url http://dynamodb:8000
+                --table-name expenseflow-idempotency-local
+                --time-to-live-specification Enabled=true,AttributeName=ttl
+                || true
+
+    localstack:
+        image: localstack/localstack:4.8
+        environment:
+            AWS_DEFAULT_REGION: us-east-1
+            SERVICES: sns,sqs
+        healthcheck:
+            test: ["CMD", "awslocal", "sns", "list-topics"]
+            interval: 5s
+            timeout: 3s
+            retries: 12
+        ports:
+            - "4566:4566"
+        volumes:
+            - ./scripts/init-local-stage-transition-events.sh:/etc/localstack/init/ready.d/init-stage-transition-events.sh:ro
+
+volumes:
+    gl-coding-cache:
+    gl-coding-venv:

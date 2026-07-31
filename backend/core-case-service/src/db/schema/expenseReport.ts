@@ -1,5 +1,6 @@
 import { sql, type InferInsertModel, type InferSelectModel } from "drizzle-orm";
 import {
+    bigserial,
     boolean,
     check,
     date,
@@ -26,6 +27,46 @@ export const approvedWorkflowStages = [
 
 export const priorityLevels = ["Low", "Normal", "High", "Urgent"] as const;
 
+export const approvedAttachmentContentTypes = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "text/plain",
+    "text/csv",
+    "application/json",
+] as const;
+
+export const glCodingSourceTypes = ["line_item", "mileage"] as const;
+export const lineItemReviewActions = ["approve", "reject"] as const;
+
+function buildStaticStringInListSql(values: readonly string[]) {
+    if (values.length === 0) {
+        throw new Error(
+            "Static SQL allowlists must contain at least one value.",
+        );
+    }
+
+    // sql.raw preserves literal migration SQL; use only with hard-coded schema allowlists.
+    return sql.join(
+        values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`)),
+        sql`, `,
+    );
+}
+
+const approvedWorkflowStageCheckSql = buildStaticStringInListSql(
+    approvedWorkflowStages,
+);
+const priorityLevelCheckSql = buildStaticStringInListSql(priorityLevels);
+const approvedAttachmentContentTypeCheckSql = buildStaticStringInListSql(
+    approvedAttachmentContentTypes,
+);
+const glCodingSourceTypeCheckSql =
+    buildStaticStringInListSql(glCodingSourceTypes);
+const lineItemReviewActionCheckSql = buildStaticStringInListSql(
+    lineItemReviewActions,
+);
+
 export const expenseReport = pgTable(
     "expense_report",
     {
@@ -47,11 +88,11 @@ export const expenseReport = pgTable(
     (table) => [
         check(
             "expense_report_current_stage_check",
-            sql`${table.currentStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.currentStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "expense_report_priority_check",
-            sql`${table.priority} in ('Low', 'Normal', 'High', 'Urgent')`,
+            sql`${table.priority} in (${priorityLevelCheckSql})`,
         ),
         check(
             "expense_report_hold_reason_check",
@@ -93,6 +134,7 @@ export const auditEntry = pgTable(
     "audit_entry",
     {
         id: uuid("id").defaultRandom().primaryKey(),
+        sequence: bigserial("sequence", { mode: "number" }),
         tenantId: uuid("tenant_id").notNull(),
         expenseReportId: uuid("expense_report_id").notNull(),
         actorId: uuid("actor_id").notNull(),
@@ -103,6 +145,7 @@ export const auditEntry = pgTable(
         stageBeforeAction: text("stage_before_action").notNull(),
         stageAfterProposedAction: text("stage_after_proposed_action").notNull(),
         denialReason: text("denial_reason"),
+        outcomeReason: text("outcome_reason"),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -110,20 +153,25 @@ export const auditEntry = pgTable(
     (table) => [
         check(
             "audit_entry_denial_reason_check",
-            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} <> 'transition_approved' or ${table.denialReason} is null)`,
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared', 'line_item_flags_clear_denied') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
         ),
         check(
             "audit_entry_stage_before_action_check",
-            sql`${table.stageBeforeAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageBeforeAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "audit_entry_stage_after_proposed_action_check",
-            sql`${table.stageAfterProposedAction} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.stageAfterProposedAction} in (${approvedWorkflowStageCheckSql})`,
         ),
         index("audit_entry_tenant_report_created_at_idx").on(
             table.tenantId,
             table.expenseReportId,
             table.createdAt,
+        ),
+        index("audit_entry_tenant_report_sequence_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.sequence,
         ),
         index("audit_entry_tenant_actor_created_at_idx").on(
             table.tenantId,
@@ -156,11 +204,11 @@ export const stageTransition = pgTable(
     (table) => [
         check(
             "stage_transition_from_stage_check",
-            sql`${table.fromStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.fromStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_to_stage_check",
-            sql`${table.toStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.toStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_reason_check",
@@ -177,6 +225,7 @@ export const stageTransition = pgTable(
                 or (${table.fromStage} = 'Paid' and ${table.toStage} = 'Reconciled')
                 or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'Drafted')
                 or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Drafted')
+                or (${table.fromStage} = ${table.toStage} and ${table.reason} like 'transition_denied:%')
             )`,
         ),
         foreignKey({
@@ -186,6 +235,12 @@ export const stageTransition = pgTable(
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
         index("stage_transition_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+        // Outbox rows reference this key so transition, tenant, and report ownership stay inseparable.
+        uniqueIndex("stage_transition_tenant_report_id_unique_idx").on(
+            table.id,
             table.tenantId,
             table.expenseReportId,
         ),
@@ -209,6 +264,7 @@ export const stageTransitionOutbox = pgTable(
         expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
         correlationId: uuid("correlation_id").notNull(),
+        idempotencyKey: text("idempotency_key"),
         fromStage: text("from_stage").notNull(),
         toStage: text("to_stage").notNull(),
         occurredAt: timestamp("occurred_at", { withTimezone: true })
@@ -226,11 +282,11 @@ export const stageTransitionOutbox = pgTable(
     (table) => [
         check(
             "stage_transition_outbox_from_stage_check",
-            sql`${table.fromStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.fromStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_outbox_to_stage_check",
-            sql`${table.toStage} in ('Drafted', 'Submitted', 'Manager Approval', 'AP Review', 'Paid', 'Reconciled')`,
+            sql`${table.toStage} in (${approvedWorkflowStageCheckSql})`,
         ),
         check(
             "stage_transition_outbox_changed_stage_check",
@@ -246,12 +302,31 @@ export const stageTransitionOutbox = pgTable(
         ),
         foreignKey({
             name: "stage_transition_outbox_expense_report_tenant_fk",
-            // Tenant joins prevent outbox events from identifying another tenant's report.
+            // Tenant-scoped ownership prevents an outbox event from identifying another tenant's report.
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
+        foreignKey({
+            name: "stage_transition_outbox_transition_tenant_report_fk",
+            // Transition ownership is checked as a unit so outbox events cannot mix tenants or reports.
+            columns: [
+                table.stageTransitionId,
+                table.tenantId,
+                table.expenseReportId,
+            ],
+            foreignColumns: [
+                stageTransition.id,
+                stageTransition.tenantId,
+                stageTransition.expenseReportId,
+            ],
+        }),
         uniqueIndex("stage_transition_outbox_transition_unique_idx").on(
             table.stageTransitionId,
+        ),
+        index("stage_transition_outbox_submission_idempotency_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.idempotencyKey,
         ),
         index("stage_transition_outbox_dispatch_idx").on(
             table.publishedAt,
@@ -274,6 +349,7 @@ export const lineItem = pgTable(
     {
         id: uuid("id").defaultRandom().primaryKey(),
         merchant: text("merchant").notNull(),
+        expenseDate: date("expense_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
         currency: text("currency").notNull(),
         category: text("category").notNull(),
@@ -291,6 +367,22 @@ export const lineItem = pgTable(
             table.tenantId,
             table.expenseReportId,
         ),
+        index("line_item_tenant_expense_date_id_idx").on(
+            table.tenantId,
+            table.expenseDate.desc(),
+            table.id.asc(),
+        ),
+        index("line_item_tenant_category_expense_date_id_idx").on(
+            table.tenantId,
+            table.category,
+            table.expenseDate.desc(),
+            table.id.asc(),
+        ),
+        // Receipt metadata uses this composite key to enforce tenant ownership.
+        uniqueIndex("line_item_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
         foreignKey({
             name: "line_item_tenant_expense_report_fk",
             // Tenant joins prevent line items from attaching to another tenant's report.
@@ -300,6 +392,139 @@ export const lineItem = pgTable(
     ],
 );
 
+export const glCode = pgTable(
+    "gl_code",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        accountCode: text("account_code").notNull(),
+        accountName: text("account_name").notNull(),
+        description: text("description"),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_code_account_code_not_blank_check",
+            sql`nullif(btrim(${table.accountCode}), '') is not null`,
+        ),
+        check(
+            "gl_code_account_name_not_blank_check",
+            sql`nullif(btrim(${table.accountName}), '') is not null`,
+        ),
+        uniqueIndex("gl_code_tenant_account_code_unique_idx").on(
+            table.tenantId,
+            table.accountCode,
+        ),
+        // Mapping rows use this key so their tenant_id must match the referenced GL code.
+        uniqueIndex("gl_code_tenant_id_unique_idx").on(
+            table.tenantId,
+            table.id,
+        ),
+    ],
+);
+
+export const glMapping = pgTable(
+    "gl_mapping",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        category: text("category").notNull(),
+        glCodeId: uuid("gl_code_id").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_mapping_category_not_blank_check",
+            sql`nullif(btrim(${table.category}), '') is not null`,
+        ),
+        uniqueIndex("gl_mapping_tenant_category_unique_idx").on(
+            table.tenantId,
+            table.category,
+        ),
+        index("gl_mapping_tenant_gl_code_idx").on(
+            table.tenantId,
+            table.glCodeId,
+        ),
+        foreignKey({
+            name: "gl_mapping_gl_code_tenant_fk",
+            // Tenant joins prevent category mappings from pointing to another tenant's GL code.
+            columns: [table.tenantId, table.glCodeId],
+            foreignColumns: [glCode.tenantId, glCode.id],
+        }),
+    ],
+);
+
+export const glCodingResult = pgTable(
+    "gl_coding_result",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        submissionId: uuid("submission_id").notNull(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        sourceType: text("source_type").notNull(),
+        sourceId: uuid("source_id").notNull(),
+        category: text("category").notNull(),
+        mappingStatus: text("mapping_status").notNull(),
+        glAccountCode: text("gl_account_code"),
+        glAccountName: text("gl_account_name"),
+        amount: numeric("amount", { precision: 12, scale: 2 }),
+        currency: text("currency"),
+        flaggedLineItem: boolean("flagged_line_item").notNull().default(false),
+        flagCode: text("flag_code"),
+        flagMessage: text("flag_message"),
+        deductible: boolean("deductible").notNull().default(false),
+        lineItemReviewAction: text("line_item_review_action"),
+        lineItemReviewReason: text("line_item_review_reason"),
+        lineItemReviewedBy: uuid("line_item_reviewed_by"),
+        lineItemReviewedAt: timestamp("line_item_reviewed_at", {
+            withTimezone: true,
+        }),
+        codedAt: timestamp("coded_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "gl_coding_result_source_type_check",
+            sql`${table.sourceType} in (${glCodingSourceTypeCheckSql})`,
+        ),
+        check(
+            "gl_coding_result_mapping_status_check",
+            sql`${table.mappingStatus} in ('mapped', 'unmapped')`,
+        ),
+        check(
+            "gl_coding_result_line_item_review_check",
+            sql`(${table.lineItemReviewAction} is null and ${table.lineItemReviewReason} is null and ${table.lineItemReviewedBy} is null and ${table.lineItemReviewedAt} is null) or (${table.sourceType} in ('line_item', 'mileage') and ${table.lineItemReviewAction} in (${lineItemReviewActionCheckSql}) and ${table.lineItemReviewedBy} is not null and ${table.lineItemReviewedAt} is not null and (${table.lineItemReviewAction} <> 'reject' or nullif(btrim(${table.lineItemReviewReason}), '') is not null))`,
+        ),
+        foreignKey({
+            name: "gl_coding_result_expense_report_tenant_fk",
+            // Tenant joins prevent coding history from attaching to another tenant's report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("gl_coding_result_tenant_source_coded_at_idx").on(
+            table.tenantId,
+            table.sourceType,
+            table.sourceId,
+            table.codedAt,
+            table.id,
+        ),
+        index("gl_coding_result_tenant_submission_idx").on(
+            table.tenantId,
+            table.submissionId,
+        ),
+    ],
+);
 export const caseComment = pgTable(
     "case_comment",
     {
@@ -358,7 +583,7 @@ export const attachmentMetadata = pgTable(
         check(
             "attachment_metadata_content_type_check",
             // Canonical MIME types keep attachment handling predictable downstream.
-            sql`${table.contentType} in ('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/csv', 'application/json')`,
+            sql`${table.contentType} in (${approvedAttachmentContentTypeCheckSql})`,
         ),
         foreignKey({
             name: "attachment_metadata_expense_report_tenant_fk",
@@ -379,6 +604,8 @@ export const receiptMetadata = pgTable(
         id: uuid("id").defaultRandom().primaryKey(),
         expenseReportId: uuid("expense_report_id").notNull(),
         tenantId: uuid("tenant_id").notNull(),
+        // Nullable only for receipt metadata created before line-item links existed.
+        lineItemId: uuid("line_item_id"),
         merchant: text("merchant").notNull(),
         receiptDate: date("receipt_date").notNull(),
         amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
@@ -398,9 +625,19 @@ export const receiptMetadata = pgTable(
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
+        foreignKey({
+            name: "receipt_metadata_line_item_tenant_fk",
+            // The authenticated tenant must own both the receipt and its line item.
+            columns: [table.tenantId, table.lineItemId],
+            foreignColumns: [lineItem.tenantId, lineItem.id],
+        }),
         index("receipt_metadata_tenant_report_idx").on(
             table.tenantId,
             table.expenseReportId,
+        ),
+        index("receipt_metadata_tenant_line_item_idx").on(
+            table.tenantId,
+            table.lineItemId,
         ),
     ],
 );
@@ -437,6 +674,12 @@ export const mileageEntry = pgTable(
 
 export type LineItem = InferSelectModel<typeof lineItem>;
 export type NewLineItem = InferInsertModel<typeof lineItem>;
+export type GlCode = InferSelectModel<typeof glCode>;
+export type NewGlCode = InferInsertModel<typeof glCode>;
+export type GlMapping = InferSelectModel<typeof glMapping>;
+export type NewGlMapping = InferInsertModel<typeof glMapping>;
+export type GlCodingResult = InferSelectModel<typeof glCodingResult>;
+export type NewGlCodingResult = InferInsertModel<typeof glCodingResult>;
 export type CaseComment = InferSelectModel<typeof caseComment>;
 export type NewCaseComment = InferInsertModel<typeof caseComment>;
 export type AttachmentMetadata = InferSelectModel<typeof attachmentMetadata>;

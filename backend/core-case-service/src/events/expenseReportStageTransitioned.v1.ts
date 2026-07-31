@@ -1,59 +1,68 @@
 import { z } from "zod";
 
-export const ExpenseReportStageTransitionedEventSchema = z.object({
-    specversion: z.literal("1.0"),
-    id: z.uuid(),
-    source: z.literal("expense-flow.core-case-service"),
-    type: z.literal("expense-report.stage-transitioned.v1"),
-    subject: z.string().min(1),
-    time: z.iso.datetime(),
-    datacontenttype: z.literal("application/json"),
-    data: z.object({
+import { approvedWorkflowStages } from "../db/schema/index.js";
+import { isExpenseReportWorkflowEdge } from "../expenseReports/domain/expenseReportWorkflow.js";
+
+export const EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE =
+    "com.expenseflow.expense-report.stage-transitioned.v1" as const;
+
+export const EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA =
+    "urn:expenseflow:schema:events:expense-report-stage-transitioned:v1" as const;
+
+export const ExpenseReportStageTransitionedDataV1Schema = z
+    .object({
         caseId: z.uuid(),
         tenantId: z.uuid(),
-        stageTransitionId: z.uuid(),
-        fromStage: z.string().min(1),
-        toStage: z.string().min(1),
+        fromStage: z.enum(approvedWorkflowStages),
+        toStage: z.enum(approvedWorkflowStages),
         correlationId: z.uuid(),
-    }),
-});
+    })
+    .strict()
+    .refine(
+        (data) => isExpenseReportWorkflowEdge(data.fromStage, data.toStage),
+        {
+            message: "Stage transition must use an allowed workflow edge.",
+            path: ["toStage"],
+        },
+    );
 
-export type ExpenseReportStageTransitionedEvent = z.infer<
-    typeof ExpenseReportStageTransitionedEventSchema
+export const ExpenseReportStageTransitionedCloudEventV1Schema = z
+    .object({
+        specversion: z.literal("1.0"),
+        type: z.literal(EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE),
+        source: z.literal("urn:expenseflow:core-case-service"),
+        id: z.uuid(),
+        time: z.iso.datetime({ offset: true }),
+        subject: z.string().regex(/^expense-reports\/[0-9a-f-]{36}$/i),
+        datacontenttype: z.literal("application/json"),
+        dataschema: z.literal(EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA),
+        correlationid: z.uuid(),
+        data: ExpenseReportStageTransitionedDataV1Schema,
+    })
+    .strict()
+    .superRefine((event, context) => {
+        if (event.subject !== `expense-reports/${event.data.caseId}`) {
+            context.addIssue({
+                code: "custom",
+                message: "CloudEvent subject must identify data.caseId.",
+                path: ["subject"],
+            });
+        }
+
+        if (event.correlationid !== event.data.correlationId) {
+            context.addIssue({
+                code: "custom",
+                message:
+                    "CloudEvent correlationid must match data.correlationId.",
+                path: ["correlationid"],
+            });
+        }
+    });
+
+export type ExpenseReportStageTransitionedDataV1 = z.infer<
+    typeof ExpenseReportStageTransitionedDataV1Schema
 >;
 
-export type BuildExpenseReportStageTransitionedEventRequest = {
-    eventId: string;
-    expenseReportId: string;
-    tenantId: string;
-    stageTransitionId: string;
-    fromStage: string;
-    toStage: string;
-    correlationId: string;
-    occurredAt: Date;
-};
-
-/**
- * Builds the CloudEvents payload for a committed Expense Report stage transition.
- */
-export function buildExpenseReportStageTransitionedEvent(
-    request: BuildExpenseReportStageTransitionedEventRequest,
-): ExpenseReportStageTransitionedEvent {
-    return ExpenseReportStageTransitionedEventSchema.parse({
-        specversion: "1.0",
-        id: request.eventId,
-        source: "expense-flow.core-case-service",
-        type: "expense-report.stage-transitioned.v1",
-        subject: `expense-report/${request.expenseReportId}`,
-        time: request.occurredAt.toISOString(),
-        datacontenttype: "application/json",
-        data: {
-            caseId: request.expenseReportId,
-            tenantId: request.tenantId,
-            stageTransitionId: request.stageTransitionId,
-            fromStage: request.fromStage,
-            toStage: request.toStage,
-            correlationId: request.correlationId,
-        },
-    });
-}
+export type ExpenseReportStageTransitionedCloudEventV1 = z.infer<
+    typeof ExpenseReportStageTransitionedCloudEventV1Schema
+>;

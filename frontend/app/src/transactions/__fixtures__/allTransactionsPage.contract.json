@@ -1,0 +1,43 @@
+{
+    "items": [
+        {
+            "id": "30000000-0000-4000-8000-000000000190",
+            "expenseReportId": "60000000-0000-4000-8000-000000000190",
+            "date": "2026-07-20T00:00:00.000Z",
+            "merchant": "Cedar Bistro",
+            "category": "Meals",
+            "amount": "64.20",
+            "currency": "USD",
+            "status": "AP Review",
+            "deductible": null,
+            "owner": "cf8ea46a-778d-4634-9363-f4864a3d4424",
+            "priority": "Normal",
+            "dueDate": "2026-08-01",
+            "onHold": false,
+            "isOverdue": false,
+            "glCode": "6250",
+            "flaggedLineItem": false,
+            "reviewAction": null
+        },
+        {
+            "id": "30000000-0000-4000-8000-000000000191",
+            "expenseReportId": "60000000-0000-4000-8000-000000000191",
+            "date": "2026-07-18T00:00:00.000Z",
+            "merchant": "Northstar Office",
+            "category": "Office Supplies",
+            "amount": "92.41",
+            "currency": "USD",
+            "status": "Submitted",
+            "deductible": true,
+            "owner": "cf8ea46a-778d-4634-9363-f4864a3d4424",
+            "priority": "Normal",
+            "dueDate": "2026-08-01",
+            "onHold": false,
+            "isOverdue": false,
+            "glCode": "6310",
+            "flaggedLineItem": false,
+            "reviewAction": "approve"
+        }
+    ],
+    "nextCursor": null
+}

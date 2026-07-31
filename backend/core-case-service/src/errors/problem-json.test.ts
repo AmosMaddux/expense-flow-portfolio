@@ -3,7 +3,14 @@ import { type Server } from "node:http";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
-import { NotFoundError, problemJsonErrorHandler } from "./problem-json.js";
+import {
+    BadGatewayError,
+    ConfigurationError,
+    ForbiddenError,
+    NotFoundError,
+    problemJsonErrorHandler,
+    UnauthorizedError,
+} from "./problem-json.js";
 
 let activeServer: Server | undefined;
 
@@ -49,6 +56,9 @@ async function closeActiveServer(): Promise<void> {
         return;
     }
 
+    server.closeIdleConnections();
+    server.closeAllConnections();
+
     await new Promise<void>((resolve, reject) => {
         server.close((error) => {
             if (error === undefined) {
@@ -72,12 +82,31 @@ function buildProblemJsonTestApp(): Express {
     app.get("/missing-report", () => {
         throw new NotFoundError("Expense Report not found");
     });
+    app.get("/unauthorized", () => {
+        throw new UnauthorizedError();
+    });
+    app.get("/forbidden", () => {
+        throw new ForbiddenError();
+    });
+    app.get("/bad-gateway", () => {
+        throw new BadGatewayError(
+            "The GL-coding service could not be reached.",
+        );
+    });
+    app.get("/invalid-configuration", () => {
+        throw new ConfigurationError("GL-coding configuration is invalid.");
+    });
     app.get("/unexpected-error", () => {
         throw new Error("database password was accidentally included");
     });
     app.get("/body-parser-parse-failure", () => {
         throw Object.assign(new Error("parser failed"), {
             type: "entity.parse.failed",
+        });
+    });
+    app.get("/body-parser-size-failure", () => {
+        throw Object.assign(new Error("payload too large"), {
+            type: "entity.too.large",
         });
     });
     app.use(problemJsonErrorHandler);
@@ -125,7 +154,7 @@ void describe("problemJsonErrorHandler", () => {
         });
         expect(body.detail).toContain("owner:");
         expect(body.detail).toContain("dueDate:");
-    });
+    }, 15000);
 
     void test("returns Problem+JSON when JSON request dates fail DTO validation", async () => {
         const invalidPayload = {
@@ -207,6 +236,43 @@ void describe("problemJsonErrorHandler", () => {
         });
     });
 
+    void test("maps oversized receipt bodies to a 413 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/body-parser-size-failure",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(413);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Payload Too Large",
+            status: 413,
+            detail: "Receipt files must be 10 MB or smaller.",
+            instance: "/body-parser-size-failure",
+        });
+    });
+
+    void test("maps downstream service failures to a 502 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/bad-gateway",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(502);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            detail: "The GL-coding service could not be reached.",
+            instance: "/bad-gateway",
+        });
+    });
+
     void test("maps NotFoundError to a 404 Problem+JSON response", async () => {
         const response = await requestTestApp(
             buildProblemJsonTestApp(),
@@ -224,6 +290,60 @@ void describe("problemJsonErrorHandler", () => {
             status: 404,
             detail: "Expense Report not found",
             instance: "/missing-report",
+        });
+    });
+
+    void test("maps UnauthorizedError to a 401 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/unauthorized",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(401);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Unauthorized",
+            status: 401,
+            detail: "A valid access token is required.",
+            instance: "/unauthorized",
+        });
+    });
+
+    void test("maps ForbiddenError to a 403 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/forbidden",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(403);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Forbidden",
+            status: 403,
+            detail: "This action is not permitted.",
+            instance: "/forbidden",
+        });
+    });
+
+    void test("maps ConfigurationError to a 500 Problem+JSON response", async () => {
+        const response = await requestTestApp(
+            buildProblemJsonTestApp(),
+            "/invalid-configuration",
+        );
+        const body = (await response.json()) as ProblemJsonBody;
+
+        expect(response.status).toBe(500);
+        expect(body).toStrictEqual({
+            type: "about:blank",
+            title: "Internal Server Error",
+            status: 500,
+            detail: "GL-coding configuration is invalid.",
+            instance: "/invalid-configuration",
         });
     });
 

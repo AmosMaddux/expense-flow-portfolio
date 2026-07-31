@@ -1,16 +1,17 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    AddDraftExpenseContentInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    createAddDraftExpenseContentInboundRequestSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
 } from "./expense-report.schema.js";
 
 const validCreateExpenseReportRequest = {
-    tenant_id: "10000000-0000-4000-8000-000000000100",
     owner: "20000000-0000-4000-8000-000000000001",
     dueDate: "2026-07-31",
 };
@@ -41,32 +42,28 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         });
     });
 
-    void test("keeps workflow stage out of the inbound create request contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            currentStage: "Submitted",
-        });
-
-        expect(parsed).not.toHaveProperty("currentStage");
+    void test("rejects workflow stage in the inbound create request contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                currentStage: "Submitted",
+            }),
+        ).toThrow();
     });
 
-    void test("requires tenant scope using the database-backed tenant_id field", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse(
-            validCreateExpenseReportRequest,
-        );
-
-        expect(parsed.tenant_id).toBe(
-            validCreateExpenseReportRequest.tenant_id,
-        );
-    });
-
-    void test("keeps camelCase tenant scope out of the inbound create request contract", () => {
-        const parsed = CreateExpenseReportInboundRequestSchema.parse({
-            ...validCreateExpenseReportRequest,
-            tenantId: validExpenseReportResponse.tenantId,
-        });
-
-        expect(parsed).not.toHaveProperty("tenantId");
+    void test("rejects client-supplied tenant scope in the create contract", () => {
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenant_id: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
+        expect(() =>
+            CreateExpenseReportInboundRequestSchema.parse({
+                ...validCreateExpenseReportRequest,
+                tenantId: validExpenseReportResponse.tenantId,
+            }),
+        ).toThrow();
     });
 
     void test("accepts an explicit priority", () => {
@@ -82,7 +79,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
                 dueDate: validCreateExpenseReportRequest.dueDate,
-                tenant_id: validCreateExpenseReportRequest.tenant_id,
             }),
         ).toThrow();
     });
@@ -90,7 +86,6 @@ void describe("CreateExpenseReportInboundRequestSchema", () => {
     void test("rejects invalid identifiers and dates", () => {
         expect(() =>
             CreateExpenseReportInboundRequestSchema.parse({
-                tenant_id: validCreateExpenseReportRequest.tenant_id,
                 owner: validCreateExpenseReportRequest.owner,
                 dueDate: "July 31, 2026",
             }),
@@ -116,6 +111,86 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
                 id: "expense-report-one",
             }),
         ).toThrow();
+    });
+});
+
+void describe("AddDraftExpenseContentInboundRequestSchema", () => {
+    const validRequest = {
+        lineItems: [
+            {
+                merchant: "Synthetic Conference Center",
+                expenseDate: "2026-07-23",
+                category: "Travel",
+                amount: 125.5,
+                currency: "USD",
+            },
+        ],
+        receipts: [
+            {
+                lineItemIndex: 0,
+                uploadId: "30000000-0000-4000-8000-000000000001",
+                filename: "synthetic-receipt.pdf",
+                contentType: "application/pdf",
+                sizeBytes: 2048,
+            },
+        ],
+    };
+
+    void test("validates line items and receipt references", () => {
+        expect(
+            AddDraftExpenseContentInboundRequestSchema.parse(validRequest),
+        ).toStrictEqual(validRequest);
+    });
+
+    void test("rejects a receipt that does not reference a line item", () => {
+        expect(() =>
+            AddDraftExpenseContentInboundRequestSchema.parse({
+                ...validRequest,
+                receipts: [
+                    {
+                        ...validRequest.receipts[0],
+                        lineItemIndex: 1,
+                    },
+                ],
+            }),
+        ).toThrow("Receipt must reference a submitted line item.");
+    });
+
+    void test("rejects unsupported receipt content and invalid amounts", () => {
+        expect(() =>
+            AddDraftExpenseContentInboundRequestSchema.parse({
+                lineItems: [
+                    {
+                        ...validRequest.lineItems[0],
+                        amount: -1,
+                    },
+                ],
+                receipts: [
+                    {
+                        ...validRequest.receipts[0],
+                        contentType: "application/octet-stream",
+                    },
+                ],
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects future expense dates using the backend clock", () => {
+        const schema = createAddDraftExpenseContentInboundRequestSchema(
+            () => new Date("2026-07-25T12:00:00.000Z"),
+        );
+
+        expect(() =>
+            schema.parse({
+                ...validRequest,
+                lineItems: [
+                    {
+                        ...validRequest.lineItems[0],
+                        expenseDate: "2026-07-26",
+                    },
+                ],
+            }),
+        ).toThrow("Expense date cannot be in the future.");
     });
 });
 

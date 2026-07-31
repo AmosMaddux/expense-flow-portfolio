@@ -6,10 +6,30 @@ export {
     readCaseQueueReportsForStage,
     readCaseQueueStageRollups,
     type CaseQueueReport,
-    type CaseQueueStageRollup,
     type ReadCaseQueueReportsForStageParams,
-    type ReadCaseQueueStageRollupsParams,
 } from "./db/queries/caseQueueRollups.js";
+export {
+    readAllTransactions,
+    type ExpenseReportStage as AllTransactionsExpenseReportStage,
+} from "./db/queries/allTransactions.js";
+export {
+    readCachedCaseQueueStageRollups,
+    transitionExpenseReportStage,
+    type CaseQueueServiceDependencies,
+} from "./expenseReports/services/caseQueueService.js";
+export {
+    EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA,
+    EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE,
+    ExpenseReportStageTransitionedCloudEventV1Schema,
+    ExpenseReportStageTransitionedDataV1Schema,
+    type ExpenseReportStageTransitionedCloudEventV1,
+    type ExpenseReportStageTransitionedDataV1,
+} from "./events/index.js";
+export {
+    type CaseQueueStageRollup,
+    type ReadCaseQueueStageRollupsParams,
+    type TransitionExpenseReportStageRequest,
+} from "./expenseReports/dto/expenseReportDto.js";
 
 const PORT = process.env.PORT ?? 3000;
 
@@ -19,10 +39,7 @@ async function startCoreCaseService(): Promise<void> {
         await applyPendingCoreCaseMigrations();
     }
 
-    if (process.env.STAGE_TRANSITION_SNS_TOPIC_ARN !== undefined) {
-        startStageTransitionOutboxDispatcher();
-    }
-
+    startStageTransitionOutboxDispatcher();
     app.listen(PORT, () => {
         console.log(`Server is running locally at http://localhost:${PORT}`);
         console.log(

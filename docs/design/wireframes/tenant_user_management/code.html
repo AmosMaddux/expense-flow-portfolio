@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="en" class="light" style="">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+        <script id="tailwind-config">
+            try {
+                tailwind.config = {
+                    darkMode: "class",
+                    theme: {
+                        extend: {
+                            colors: {
+                                "tertiary-fixed": "#ffddb8",
+                                tertiary: "#583500",
+                                surface: "#f7f9fb",
+                                "primary-container": "#475569",
+                                "secondary-container": "#6cf8bb",
+                                "surface-container-lowest": "#ffffff",
+                                "tertiary-fixed-dim": "#ffb95f",
+                                "primary-fixed-dim": "#b9c7df",
+                                background: "#f7f9fb",
+                                secondary: "#006c49",
+                                "tertiary-container": "#774a00",
+                                "on-secondary-fixed-variant": "#005236",
+                                "primary-fixed": "#d5e3fc",
+                                "on-surface-variant": "#44474c",
+                                primary: "#303e51",
+                                "inverse-on-surface": "#eff1f3",
+                                "on-surface": "#191c1e",
+                                "on-tertiary-container": "#ffbb66",
+                                "inverse-primary": "#b9c7df",
+                                "on-tertiary-fixed": "#2a1700",
+                                "on-primary": "#ffffff",
+                                "on-primary-fixed": "#0d1c2e",
+                                "outline-variant": "#c4c6cd",
+                                "surface-container-low": "#f2f4f6",
+                                "on-error": "#ffffff",
+                                outline: "#75777d",
+                                "on-error-container": "#93000a",
+                                "on-background": "#191c1e",
+                                "on-secondary-container": "#00714d",
+                                "surface-container-high": "#e6e8ea",
+                                "surface-tint": "#515f74",
+                                "surface-container": "#eceef0",
+                                "secondary-fixed-dim": "#4edea3",
+                                "on-tertiary": "#ffffff",
+                                error: "#ba1a1a",
+                                "surface-bright": "#f7f9fb",
+                                "surface-variant": "#e0e3e5",
+                                "surface-container-highest": "#e0e3e5",
+                                "on-secondary": "#ffffff",
+                                "on-secondary-fixed": "#002113",
+                                "error-container": "#ffdad6",
+                                "secondary-fixed": "#6ffbbe",
+                                "on-primary-container": "#bbcae1",
+                                "on-primary-fixed-variant": "#3a485b",
+                                "on-tertiary-fixed-variant": "#653e00",
+                                "surface-dim": "#d8dadc",
+                                "inverse-surface": "#2d3133",
+                            },
+                            borderRadius: {
+                                DEFAULT: "0.125rem",
+                                lg: "0.25rem",
+                                xl: "0.5rem",
+                                full: "0.75rem",
+                            },
+                            spacing: {
+                                container_max_width: "1440px",
+                                header_height: "64px",
+                                xl: "32px",
+                                sm: "8px",
+                                sidebar_width: "260px",
+                                xs: "4px",
+                                lg: "24px",
+                                base: "4px",
+                                md: "16px",
+                            },
+                            fontFamily: {
+                                "headline-sm": ["Inter"],
+                                "body-sm": ["Inter"],
+                                "body-md": ["Inter"],
+                                "label-md": ["JetBrains Mono"],
+                                "headline-md": ["Inter"],
+                                "headline-lg": ["Inter"],
+                            },
+                            fontSize: {
+                                "headline-sm": [
+                                    "16px",
+                                    { lineHeight: "24px", fontWeight: "600" },
+                                ],
+                                "body-sm": [
+                                    "12px",
+                                    { lineHeight: "16px", fontWeight: "400" },
+                                ],
+                                "body-md": [
+                                    "14px",
+                                    { lineHeight: "20px", fontWeight: "400" },
+                                ],
+                                "label-md": [
+                                    "12px",
+                                    {
+                                        lineHeight: "16px",
+                                        letterSpacing: "0.02em",
+                                        fontWeight: "500",
+                                    },
+                                ],
+                                "headline-md": [
+                                    "20px",
+                                    {
+                                        lineHeight: "28px",
+                                        letterSpacing: "-0.01em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                                "headline-lg": [
+                                    "24px",
+                                    {
+                                        lineHeight: "32px",
+                                        letterSpacing: "-0.02em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                };
+            } catch (_e) {}
+        </script>
+        <meta charset="utf-8" />
+    </head>
+    <body
+        class="bg-surface font-body-md text-on-surface antialiased overflow-hidden"
+    >
+        <!-- Shell: SideNavBar -->
+        <aside
+            class="fixed left-0 top-0 h-full w-[260px] flex flex-col bg-surface border-r border-outline-variant z-50"
+        >
+            <div class="p-lg">
+                <h1
+                    class="text-headline-md font-headline-md font-bold text-primary"
+                >
+                    ExpenseFlow
+                </h1>
+                <p class="font-body-sm text-body-sm text-on-surface-variant">
+                    Management System
+                </p>
+            </div>
+            <nav class="flex-1 overflow-y-auto px-md pb-md space-y-1">
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="description"
+                        >description</span
+                    >
+                    My Submissions
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="add_circle"
+                        >add_circle</span
+                    >
+                    Submit Expense
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="directions_car"
+                        >directions_car</span
+                    >
+                    Log Mileage
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span class="material-symbols-outlined text-[20px]"
+                        >rule</span
+                    >
+                    Approval Queue
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span class="material-symbols-outlined text-[20px]"
+                        >group</span
+                    >
+                    Team &amp; Users
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="dashboard"
+                        >dashboard</span
+                    >
+                    Dashboard
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="assessment"
+                        >assessment</span
+                    >
+                    Reports
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span
+                        class="material-symbols-outlined text-[20px]"
+                        data-original-icon="account_tree"
+                        >account_tree</span
+                    >
+                    GL Mapping
+                </a>
+                <!-- ACTIVE TAB: Tenants -->
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-primary font-bold bg-surface-container-high font-label-md text-label-md rounded"
+                >
+                    <span class="material-symbols-outlined text-[20px]"
+                        >domain</span
+                    >
+                    Tenants
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span class="material-symbols-outlined text-[20px]"
+                        >history</span
+                    >
+                    Audit Log
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-3 px-3 py-2 text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md rounded"
+                >
+                    <span class="material-symbols-outlined text-[20px]"
+                        >settings</span
+                    >
+                    Settings
+                </a>
+            </nav>
+            <div class="p-md mt-auto">
+                <button
+                    class="w-full py-3 bg-primary-container text-on-primary font-headline-sm text-headline-sm rounded-lg hover:opacity-90 active:scale-95 transition-all"
+                >
+                    Submit Expense
+                </button>
+            </div>
+        </aside>
+        <!-- Shell: TopNavBar -->
+        <header
+            class="fixed top-0 left-[260px] w-[calc(100%-260px)] h-[64px] bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-lg z-40"
+        >
+            <div class="flex items-center gap-xl">
+                <span
+                    class="text-headline-md font-headline-md font-extrabold text-primary"
+                    >Platform Admin</span
+                >
+                <div class="flex items-center gap-md">
+                    <a
+                        href="#"
+                        class="text-primary font-bold border-b-2 border-primary font-body-md text-body-md py-5"
+                        >Role Switcher<span
+                            class="ml-2 px-2 py-0.5 bg-tertiary-fixed text-on-tertiary-fixed-variant text-[10px] rounded uppercase font-bold"
+                            >Design Review Only</span
+                        ></a
+                    >
+                </div>
+            </div>
+            <div class="flex items-center gap-lg">
+                <div class="relative w-64">
+                    <span
+                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline"
+                        >search</span
+                    >
+                    <input
+                        type="text"
+                        placeholder="Search tenants..."
+                        class="w-full pl-10 pr-4 py-1.5 bg-surface-container border border-outline-variant rounded-full text-body-md focus:ring-1 focus:ring-primary outline-none"
+                    />
+                </div>
+                <div class="flex items-center gap-md">
+                    <button
+                        class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors"
+                    >
+                        <span
+                            class="material-symbols-outlined"
+                            data-original-icon="notifications"
+                            >notifications</span
+                        >
+                    </button>
+                    <button
+                        class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors"
+                    >
+                        <span
+                            class="material-symbols-outlined"
+                            data-original-icon="help_outline"
+                            >help_outline</span
+                        >
+                    </button>
+                    <div
+                        class="h-8 w-8 bg-surface-variant rounded-full overflow-hidden border border-outline-variant"
+                    >
+                        <img
+                            class="w-full h-full object-cover"
+                            data-alt="Professional headshot of a corporate platform administrator, featuring clean lighting and a minimalist gray background, emphasizing a professional and utilitarian aesthetic for a high-density management system."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuALAhy6Z_hhZ6i9o1q3EN5T-2AwCHq2Hj2Dpc6o1AHVbOno7ZKqUdrAbVpSHHBCdkTQhwr47326Q-N1wOMYXWEnJOUcyH-L76mY12laCSBJ91_zxlUBp0LnFev9Wj-35w2u7jcx1cl8REZ_H2vzXAbOIxZ_Ru8LD7GxZzCOQ1hY9Z0W1dfHWoosSngjXtrL1DsaCFAjs8_2nRSU2aCoANJUFp3VwRkr8DOhmdjyi3xRydcQiBKTDWo"
+                        />
+                    </div>
+                    <button
+                        class="text-primary font-headline-sm text-headline-sm hover:opacity-80 transition-opacity"
+                    >
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </header>
+        <!-- Main Content Canvas -->
+        <main
+            class="ml-[260px] mt-[64px] h-[calc(100vh-64px)] overflow-y-auto bg-background p-lg"
+        >
+            <div class="max-w-[1200px] mx-auto space-y-lg">
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
+                    <div
+                        class="bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm"
+                    >
+                        <p
+                            class="text-label-md font-label-md text-on-surface-variant"
+                        >
+                            Total Tenants
+                        </p>
+                        <h2
+                            class="text-headline-lg font-headline-lg text-primary mt-1"
+                        >
+                            124
+                        </h2>
+                        <p
+                            class="text-body-sm font-body-sm text-secondary mt-2"
+                        >
+                            ↑ 4.2% since last month
+                        </p>
+                    </div>
+                    <div
+                        class="bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm"
+                    >
+                        <p
+                            class="text-label-md font-label-md text-on-surface-variant"
+                        >
+                            Active Users
+                        </p>
+                        <h2
+                            class="text-headline-lg font-headline-lg text-primary mt-1"
+                        >
+                            8,432
+                        </h2>
+                        <p
+                            class="text-body-sm font-body-sm text-on-surface-variant mt-2"
+                        >
+                            Across all platforms
+                        </p>
+                    </div>
+                    <div
+                        class="bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm"
+                    >
+                        <p
+                            class="text-label-md font-label-md text-on-surface-variant"
+                        >
+                            Pending Approvals
+                        </p>
+                        <h2
+                            class="text-headline-lg font-headline-lg text-primary mt-1"
+                        >
+                            12
+                        </h2>
+                        <p class="text-body-sm font-body-sm text-error mt-2">
+                            Critical system updates
+                        </p>
+                    </div>
+                    <div
+                        class="bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm"
+                    >
+                        <p
+                            class="text-label-md font-label-md text-on-surface-variant"
+                        >
+                            System Health
+                        </p>
+                        <h2
+                            class="text-headline-lg font-headline-lg text-primary mt-1"
+                        >
+                            99.9%
+                        </h2>
+                        <p
+                            class="text-body-sm font-body-sm text-secondary mt-2"
+                        >
+                            Optimal performance
+                        </p>
+                    </div>
+                </div>
+                <!-- Management Table Container -->
+                <div
+                    class="bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden shadow-sm"
+                >
+                    <div
+                        class="p-md border-b border-outline-variant flex justify-between items-center bg-surface-container-low"
+                    >
+                        <h3
+                            class="font-headline-sm text-headline-sm text-primary"
+                        >
+                            Tenant Directory
+                        </h3>
+                        <div class="flex gap-md">
+                            <button
+                                class="px-md py-2 border border-outline-variant rounded text-body-md font-medium text-primary hover:bg-surface-container-high transition-colors"
+                            >
+                                Export CSV
+                            </button>
+                            <button
+                                class="px-md py-2 bg-primary-container text-on-primary rounded text-body-md font-medium hover:opacity-90 transition-opacity"
+                            >
+                                Add Tenant
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Table Header -->
+                    <div
+                        class="grid grid-cols-12 px-lg py-3 bg-surface-container-low border-b border-outline-variant text-label-md font-label-md text-outline uppercase tracking-wider"
+                    >
+                        <div class="col-span-1"></div>
+                        <div class="col-span-4">Tenant Name</div>
+                        <div class="col-span-2 text-center">User Count</div>
+                        <div class="col-span-2 text-center">Status</div>
+                        <div class="col-span-2 text-center">Last Active</div>
+                        <div class="col-span-1"></div>
+                    </div>
+                    <!-- Table Body -->
+                    <div class="divide-y divide-outline-variant">
+                        <!-- Tenant Row 1 (Expanded Example) -->
+                        <div class="tenant-group">
+                            <div
+                                class="grid grid-cols-12 px-lg py-4 items-center hover:bg-surface-container-low transition-colors cursor-pointer"
+                                onclick="toggleTenant('tenant-1')"
+                            >
+                                <div class="col-span-1 text-on-surface-variant">
+                                    <span
+                                        class="material-symbols-outlined transition-transform"
+                                        id="icon-tenant-1"
+                                        data-original-icon="keyboard_arrow_right"
+                                        >keyboard_arrow_right</span
+                                    >
+                                </div>
+                                <div class="col-span-4 flex items-center gap-3">
+                                    <div
+                                        class="w-8 h-8 rounded bg-primary flex items-center justify-center text-white text-xs font-bold"
+                                    >
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-001
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-001
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-001
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-001
+                                        </p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="col-span-2 text-center font-body-md"
+                                >
+                                    500
+                                </div>
+                                <div class="col-span-2 flex justify-center">
+                                    <span
+                                        class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-secondary-container text-on-secondary-container"
+                                        >Verified</span
+                                    >
+                                </div>
+                                <div
+                                    class="col-span-2 text-center text-body-sm text-on-surface-variant"
+                                >
+                                    2 mins ago
+                                </div>
+                                <div class="col-span-1 flex justify-end">
+                                    <button
+                                        class="p-1 hover:bg-surface-container-highest rounded"
+                                    >
+                                        <span
+                                            class="material-symbols-outlined text-outline"
+                                            data-original-icon="more_vert"
+                                            >more_vert</span
+                                        >
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Expanded Content -->
+                            <div
+                                class="hidden bg-surface border-y border-outline-variant shadow-inner px-xl py-lg"
+                                id="tenant-1"
+                            >
+                                <div
+                                    class="flex items-center justify-between mb-lg"
+                                >
+                                    <h4
+                                        class="text-headline-sm font-headline-sm text-on-surface-variant"
+                                    >
+                                        User Access Controls: Tenant-001
+                                    </h4>
+                                    <div class="flex gap-md">
+                                        <input
+                                            class="px-3 py-1.5 bg-surface-container-lowest border border-outline-variant rounded text-body-sm w-48"
+                                            placeholder="Filter users..."
+                                            type="text"
+                                        />
+                                        <button
+                                            class="text-primary font-bold text-body-sm hover:underline"
+                                        >
+                                            + New User
+                                        </button>
+                                    </div>
+                                </div>
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr
+                                            class="border-b border-outline-variant text-label-md font-label-md text-outline"
+                                        >
+                                            <th class="py-2">User Identity</th>
+                                            <th class="py-2 text-center">
+                                                Platform Admin
+                                            </th>
+                                            <th class="py-2 text-center">
+                                                Expense Approver
+                                            </th>
+                                            <th class="py-2 text-center">
+                                                Reporting Access
+                                            </th>
+                                            <th class="py-2 text-right">
+                                                Actions
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody
+                                        class="divide-y divide-outline-variant"
+                                    >
+                                        <!-- User Row -->
+                                        <tr
+                                            class="hover:bg-surface-container-high transition-colors"
+                                        >
+                                            <td class="py-3">
+                                                <div
+                                                    class="flex items-center gap-3"
+                                                >
+                                                    <div
+                                                        class="w-8 h-8 rounded-full bg-surface-variant"
+                                                    >
+                                                        <p
+                                                            class="font-headline-sm text-headline-sm"
+                                                        >
+                                                            User Alpha
+                                                        </p>
+                                                        <p
+                                                            class="text-body-sm text-on-surface-variant"
+                                                        >
+                                                            user-alpha@example.test
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p
+                                                            class="font-headline-sm text-headline-sm"
+                                                        >
+                                                            User Alpha
+                                                        </p>
+                                                        <p
+                                                            class="text-body-sm text-on-surface-variant"
+                                                        >
+                                                            user-alpha@example.test
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    checked=""
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    checked=""
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-right">
+                                                <button
+                                                    class="text-primary font-body-sm hover:underline"
+                                                >
+                                                    Edit
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <!-- -->
+                                        <tr
+                                            class="hover:bg-surface-container-high transition-colors"
+                                        >
+                                            <td class="py-3">
+                                                <div
+                                                    class="flex items-center gap-3"
+                                                >
+                                                    <div
+                                                        class="w-8 h-8 rounded-full bg-surface-variant"
+                                                    >
+                                                        <p
+                                                            class="font-headline-sm text-headline-sm"
+                                                        >
+                                                            User Beta
+                                                        </p>
+                                                        <p
+                                                            class="text-body-sm text-on-surface-variant"
+                                                        >
+                                                            user-beta@example.test
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p
+                                                            class="font-headline-sm text-headline-sm"
+                                                        >
+                                                            User Beta
+                                                        </p>
+                                                        <p
+                                                            class="text-body-sm text-on-surface-variant"
+                                                        >
+                                                            user-beta@example.test
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    checked=""
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-center">
+                                                <input
+                                                    checked=""
+                                                    class="w-4 h-4 rounded border-outline text-primary focus:ring-primary"
+                                                    type="checkbox"
+                                                />
+                                            </td>
+                                            <td class="py-3 text-right">
+                                                <button
+                                                    class="text-primary font-body-sm hover:underline"
+                                                >
+                                                    Edit
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <!-- Tenant Row 2 -->
+                        <div class="tenant-group">
+                            <div
+                                class="grid grid-cols-12 px-lg py-4 items-center hover:bg-surface-container-low transition-colors cursor-pointer"
+                                onclick="toggleTenant('tenant-2')"
+                            >
+                                <div class="col-span-1 text-on-surface-variant">
+                                    <span
+                                        class="material-symbols-outlined transition-transform"
+                                        id="icon-tenant-2"
+                                        >keyboard_arrow_right</span
+                                    >
+                                </div>
+                                <div class="col-span-4 flex items-center gap-3">
+                                    <div
+                                        class="w-8 h-8 rounded bg-surface-variant flex items-center justify-center text-primary text-xs font-bold"
+                                    >
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-002
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-002
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-002
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-002
+                                        </p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="col-span-2 text-center font-body-md"
+                                >
+                                    120
+                                </div>
+                                <div class="col-span-2 flex justify-center">
+                                    <span
+                                        class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-surface-container-high text-on-surface-variant"
+                                        >Pending</span
+                                    >
+                                </div>
+                                <div
+                                    class="col-span-2 text-center text-body-sm text-on-surface-variant"
+                                >
+                                    14 hours ago
+                                </div>
+                                <div class="col-span-1 flex justify-end">
+                                    <button
+                                        class="p-1 hover:bg-surface-container-highest rounded"
+                                    >
+                                        <span
+                                            class="material-symbols-outlined text-outline"
+                                            >more_vert</span
+                                        >
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                class="hidden bg-surface border-y border-outline-variant px-xl py-lg"
+                                id="tenant-2"
+                            >
+                                <p
+                                    class="text-on-surface-variant italic font-body-md"
+                                >
+                                    Configuration pending for Tenant-002.
+                                </p>
+                            </div>
+                        </div>
+                        <!-- -->
+                        <div class="tenant-group">
+                            <div
+                                class="grid grid-cols-12 px-lg py-4 items-center hover:bg-surface-container-low transition-colors cursor-pointer"
+                                onclick="toggleTenant('tenant-3')"
+                            >
+                                <div class="col-span-1 text-on-surface-variant">
+                                    <span
+                                        class="material-symbols-outlined transition-transform"
+                                        id="icon-tenant-3"
+                                        >keyboard_arrow_right</span
+                                    >
+                                </div>
+                                <div class="col-span-4 flex items-center gap-3">
+                                    <div
+                                        class="w-8 h-8 rounded bg-error-container flex items-center justify-center text-on-error-container text-xs font-bold"
+                                    >
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-003
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-003
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm text-primary"
+                                        >
+                                            Tenant-003
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            ID: T-003
+                                        </p>
+                                    </div>
+                                </div>
+                                <div
+                                    class="col-span-2 text-center font-body-md"
+                                >
+                                    85
+                                </div>
+                                <div class="col-span-2 flex justify-center">
+                                    <span
+                                        class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-tertiary-fixed text-on-tertiary-fixed-variant"
+                                        >Inactive</span
+                                    >
+                                </div>
+                                <div
+                                    class="col-span-2 text-center text-body-sm text-on-surface-variant"
+                                >
+                                    6 days ago
+                                </div>
+                                <div class="col-span-1 flex justify-end">
+                                    <button
+                                        class="p-1 hover:bg-surface-container-highest rounded"
+                                    >
+                                        <span
+                                            class="material-symbols-outlined text-outline"
+                                            >more_vert</span
+                                        >
+                                    </button>
+                                </div>
+                            </div>
+                            <div
+                                class="hidden bg-surface border-y border-outline-variant px-xl py-lg"
+                                id="tenant-3"
+                            >
+                                <p class="text-on-surface-variant font-body-md">
+                                    Account suspended for Tenant-003 due to
+                                    billing delinquency. Access restricted to
+                                    Admin only.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Footer Pagination -->
+                    <div
+                        class="p-md bg-surface-container-lowest border-t border-outline-variant flex items-center justify-between"
+                    >
+                        <p class="text-body-sm text-on-surface-variant">
+                            Showing 1-10 of 124 tenants
+                        </p>
+                        <div class="flex items-center gap-xs">
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded hover:bg-surface-container-high transition-colors"
+                            >
+                                <span
+                                    class="material-symbols-outlined text-[18px]"
+                                    >chevron_left</span
+                                >
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center bg-primary-container text-on-primary rounded text-body-sm font-bold"
+                            >
+                                1
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded text-body-sm hover:bg-surface-container-high"
+                            >
+                                2
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded text-body-sm hover:bg-surface-container-high"
+                            >
+                                3
+                            </button>
+                            <span class="px-2 text-outline">...</span>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded text-body-sm hover:bg-surface-container-high"
+                            >
+                                13
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded hover:bg-surface-container-high transition-colors"
+                            >
+                                <span
+                                    class="material-symbols-outlined text-[18px]"
+                                    >chevron_right</span
+                                >
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Permission Settings Grid (Bento Style) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+                    <div
+                        class="col-span-2 bg-surface-container-lowest border border-outline-variant p-lg rounded-lg shadow-sm flex flex-col gap-md"
+                    >
+                        <div
+                            class="flex items-center gap-3 border-b border-outline-variant pb-3"
+                        >
+                            <span class="material-symbols-outlined text-primary"
+                                >security</span
+                            >
+                            <h3
+                                class="font-headline-sm text-headline-sm text-primary"
+                            >
+                                Global Permission Defaults
+                            </h3>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-lg">
+                            <div class="space-y-md">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm"
+                                        >
+                                            Email Domain Lockdown
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            2FA Enforcement
+                                        </p>
+                                    </div>
+                                    <label
+                                        class="relative inline-flex items-center cursor-pointer"
+                                    >
+                                        <input
+                                            checked=""
+                                            class="sr-only peer"
+                                            type="checkbox"
+                                        />
+                                        <div
+                                            class="w-10 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
+                                        ></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm"
+                                        >
+                                            Auto-Provisioning
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            Create user on first login
+                                        </p>
+                                    </div>
+                                    <label
+                                        class="relative inline-flex items-center cursor-pointer"
+                                    >
+                                        <input
+                                            class="sr-only peer"
+                                            type="checkbox"
+                                        />
+                                        <div
+                                            class="w-10 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
+                                        ></div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="space-y-md">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm"
+                                        >
+                                            MFA Requirements
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            Global 2FA for Admins
+                                        </p>
+                                    </div>
+                                    <label
+                                        class="relative inline-flex items-center cursor-pointer"
+                                    >
+                                        <input
+                                            checked=""
+                                            class="sr-only peer"
+                                            type="checkbox"
+                                        />
+                                        <div
+                                            class="w-10 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
+                                        ></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p
+                                            class="font-headline-sm text-headline-sm"
+                                        >
+                                            Data Masking
+                                        </p>
+                                        <p
+                                            class="text-body-sm text-on-surface-variant"
+                                        >
+                                            Hide sensitive PII in logs
+                                        </p>
+                                    </div>
+                                    <label
+                                        class="relative inline-flex items-center cursor-pointer"
+                                    >
+                                        <input
+                                            checked=""
+                                            class="sr-only peer"
+                                            type="checkbox"
+                                        />
+                                        <div
+                                            class="w-10 h-5 bg-surface-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
+                                        ></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        class="bg-primary-container text-on-primary p-lg rounded-lg shadow-md flex flex-col justify-between"
+                    >
+                        <div>
+                            <h3 class="font-headline-md text-headline-md">
+                                Platform Health
+                            </h3>
+                            <p
+                                class="text-body-sm text-on-primary-container mt-2"
+                            >
+                                Critical infrastructure monitor across all
+                                multi-tenant nodes.
+                            </p>
+                        </div>
+                        <div class="py-lg">
+                            <div
+                                class="flex justify-between text-label-md mb-2"
+                            >
+                                <span class="">Storage Usage</span>
+                                <span class="">78%</span>
+                            </div>
+                            <div
+                                class="w-full bg-surface-variant/20 rounded-full h-1.5"
+                            >
+                                <div
+                                    class="bg-on-primary h-1.5 rounded-full"
+                                    style="width: 78%"
+                                ></div>
+                            </div>
+                        </div>
+                        <button
+                            class="w-full py-2 bg-surface-container-lowest text-primary font-bold rounded hover:bg-white transition-colors"
+                        >
+                            Infrastructure Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <script class="">
+            function toggleTenant(tenantId) {
+                const row = document.getElementById(tenantId);
+                const icon = document.getElementById("icon-" + tenantId);
+                const allExpanded =
+                    document.querySelectorAll('[id^="tenant-"]');
+                const allIcons = document.querySelectorAll(
+                    '[id^="icon-tenant-"]',
+                );
+
+                allExpanded.forEach((el) => {
+                    if (el.id !== tenantId) el.classList.add("hidden");
+                });
+                allIcons.forEach((ic) => {
+                    if (ic.id !== "icon-" + tenantId)
+                        ic.style.transform = "rotate(0deg)";
+                });
+
+                if (row.classList.contains("hidden")) {
+                    row.classList.remove("hidden");
+                    icon.style.transform = "rotate(90deg)";
+                } else {
+                    row.classList.add("hidden");
+                    icon.style.transform = "rotate(0deg)";
+                }
+            }
+        </script>
+    </body>
+</html>

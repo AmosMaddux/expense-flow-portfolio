@@ -16,7 +16,7 @@ export default [
     js.configs.recommended,
     ...tseslint.configs.recommendedTypeChecked,
     {
-        files: ["**/*.{js,mjs,cjs,ts}"],
+        files: ["**/*.{js,mjs,cjs,ts,tsx}"],
         languageOptions: {
             globals: {
                 ...globals.node,
@@ -25,6 +25,7 @@ export default [
                 projectService: {
                     allowDefaultProject: [
                         "backend/core-case-service/drizzle.config.ts",
+                        "frontend/app/vite.config.ts",
                         "vitest.config.ts",
                     ],
                 },
@@ -32,6 +33,14 @@ export default [
         },
         rules: {
             "@typescript-eslint/no-floating-promises": "error",
+        },
+    },
+    {
+        files: ["frontend/app/**/*.{ts,tsx}"],
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
         },
     },
     {

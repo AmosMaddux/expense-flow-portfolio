@@ -1,123 +1,126 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { ClaimedStageTransitionOutboxEvent } from "./stageTransitionOutboxRepository.js";
-import type { ExpenseReportStageTransitionedEvent } from "./expenseReportStageTransitioned.v1.js";
+import type {
+    ClaimedStageTransitionOutboxEvent,
+    StageTransitionOutboxStore,
+} from "./stageTransitionOutboxRepository.js";
 import { dispatchStageTransitionOutboxEvents } from "./stageTransitionOutboxDispatcher.js";
-import type { StageTransitionOutboxStore } from "./stageTransitionOutboxRepository.js";
 
-const claimedEvent: ClaimedStageTransitionOutboxEvent = {
-    id: "90000000-0000-4000-8000-000000000001",
-    stageTransitionId: "91000000-0000-4000-8000-000000000001",
-    expenseReportId: "92000000-0000-4000-8000-000000000001",
-    tenantId: "93000000-0000-4000-8000-000000000001",
-    correlationId: "94000000-0000-4000-8000-000000000001",
-    fromStage: "Drafted",
-    toStage: "Submitted",
-    occurredAt: new Date("2026-08-02T10:00:00.000Z"),
-    lockId: "95000000-0000-4000-8000-000000000001",
+const event: ClaimedStageTransitionOutboxEvent = {
+    id: "40000000-0000-4000-8000-000000000011",
+    tenantId: "10000000-0000-4000-8000-000000000011",
+    expenseReportId: "30000000-0000-4000-8000-000000000011",
+    correlationId: "50000000-0000-4000-8000-000000000011",
+    fromStage: "Submitted",
+    toStage: "Manager Approval",
+    occurredAt: new Date("2026-07-29T18:00:00.000Z"),
     attemptCount: 1,
+    lockId: "60000000-0000-4000-8000-000000000011",
 };
 
-function buildDependencies(
-    publish: (event: ExpenseReportStageTransitionedEvent) => Promise<void>,
-) {
-    const claimPending = vi
-        .fn<StageTransitionOutboxStore["claimPending"]>()
-        .mockResolvedValue([claimedEvent]);
-    const markPublished = vi
-        .fn<StageTransitionOutboxStore["markPublished"]>()
-        .mockResolvedValue(undefined);
-    const markFailed = vi
-        .fn<StageTransitionOutboxStore["markFailed"]>()
-        .mockResolvedValue(undefined);
-
+function createStore(
+    claimedEvents: ClaimedStageTransitionOutboxEvent[] = [event],
+): StageTransitionOutboxStore & {
+    claim: ReturnType<typeof vi.fn>;
+    markFailed: ReturnType<typeof vi.fn>;
+    markPublished: ReturnType<typeof vi.fn>;
+} {
     return {
-        dependencies: {
-            now: vi.fn(() => new Date("2026-08-02T10:01:00.000Z")),
-            publisher: {
-                publish,
-            },
-            store: {
-                claimPending,
-                markPublished,
-                markFailed,
-            },
-        },
-        claimPending,
-        markPublished,
-        markFailed,
+        claim: vi.fn().mockResolvedValue(claimedEvents),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+        markPublished: vi.fn().mockResolvedValue(undefined),
     };
 }
 
-void describe("dispatchStageTransitionOutboxEvents", () => {
-    void test("publishes claimed outbox rows and marks them sent", async () => {
-        const publish = vi
-            .fn<(event: ExpenseReportStageTransitionedEvent) => Promise<void>>()
-            .mockResolvedValue(undefined);
-        const { dependencies, claimPending, markPublished, markFailed } =
-            buildDependencies(publish);
+void describe("stage-transition outbox dispatcher", () => {
+    void test("publishes a claimed event exactly once and marks it complete", async () => {
+        const store = createStore();
+        const publish = vi.fn().mockResolvedValue(undefined);
+        const publishedAt = new Date("2026-07-29T18:00:01.000Z");
 
-        const publishedCount = await dispatchStageTransitionOutboxEvents(
-            claimedEvent.id,
-            dependencies,
-        );
-
-        expect(publishedCount).toBe(1);
-        expect(claimPending).toHaveBeenCalledWith(
-            expect.objectContaining({
-                eventId: claimedEvent.id,
-                batchSize: 1,
-                maxAttempts: 10,
-            }),
-        );
-        const publishedEvent = publish.mock.calls[0]?.[0];
-
-        expect(publishedEvent).toBeDefined();
-        expect(publishedEvent?.id).toBe(claimedEvent.id);
-        expect(publishedEvent?.type).toBe(
-            "expense-report.stage-transitioned.v1",
-        );
-        expect(publishedEvent?.data).toMatchObject({
-            caseId: claimedEvent.expenseReportId,
-            tenantId: claimedEvent.tenantId,
-            stageTransitionId: claimedEvent.stageTransitionId,
+        await dispatchStageTransitionOutboxEvents(event.id, {
+            now: () => publishedAt,
+            publisher: { publish },
+            store,
         });
-        expect(markPublished).toHaveBeenCalledWith(
-            claimedEvent.id,
-            claimedEvent.lockId,
-            new Date("2026-08-02T10:01:00.000Z"),
-        );
-        expect(markFailed).not.toHaveBeenCalled();
+
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(publish).toHaveBeenCalledWith({
+            caseId: event.expenseReportId,
+            tenantId: event.tenantId,
+            fromStage: "Submitted",
+            toStage: "Manager Approval",
+            correlationId: event.correlationId,
+            eventId: event.id,
+            occurredAt: event.occurredAt,
+        });
+        expect(store.markPublished).toHaveBeenCalledWith(event, publishedAt);
+        expect(store.markFailed).not.toHaveBeenCalled();
     });
 
-    void test("releases a claimed outbox row for retry when publish fails", async () => {
-        const publish = vi
-            .fn<(event: ExpenseReportStageTransitionedEvent) => Promise<void>>()
-            .mockRejectedValue(new Error("sns down"));
-        const { dependencies, claimPending, markPublished, markFailed } =
-            buildDependencies(publish);
+    void test("retains an event for retry when SNS publishing fails", async () => {
+        const store = createStore();
+        const failedAt = new Date("2026-07-29T18:00:01.000Z");
 
-        const publishedCount = await dispatchStageTransitionOutboxEvents(
-            undefined,
-            dependencies,
-        );
-
-        expect(publishedCount).toBe(0);
-        expect(claimPending).toHaveBeenCalledWith(
-            expect.objectContaining({
-                batchSize: 25,
+        await expect(
+            dispatchStageTransitionOutboxEvents(event.id, {
+                now: () => failedAt,
+                publisher: {
+                    publish: vi
+                        .fn()
+                        .mockRejectedValue(new Error("synthetic SNS failure")),
+                },
+                store,
             }),
-        );
-        const claimRequest = claimPending.mock.calls[0]?.[0];
+        ).resolves.toBeUndefined();
 
-        expect(claimRequest).toBeDefined();
-        expect(claimRequest).not.toHaveProperty("eventId");
-        expect(markPublished).not.toHaveBeenCalled();
-        expect(markFailed).toHaveBeenCalledWith(
-            claimedEvent.id,
-            claimedEvent.lockId,
-            new Date("2026-08-02T10:01:01.000Z"),
+        expect(store.markPublished).not.toHaveBeenCalled();
+        expect(store.markFailed).toHaveBeenCalledWith(
+            event,
+            new Date("2026-07-29T18:00:02.000Z"),
             undefined,
+        );
+    });
+
+    void test("does not mark a published event failed when completion marking fails", async () => {
+        const store = createStore();
+        const publish = vi.fn().mockResolvedValue(undefined);
+        store.markPublished.mockRejectedValue(
+            new Error("synthetic stale completion"),
+        );
+
+        await expect(
+            dispatchStageTransitionOutboxEvents(event.id, {
+                now: () => new Date("2026-07-29T18:00:01.000Z"),
+                publisher: { publish },
+                store,
+            }),
+        ).rejects.toThrow("synthetic stale completion");
+
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(store.markPublished).toHaveBeenCalledTimes(1);
+        expect(store.markFailed).not.toHaveBeenCalled();
+    });
+
+    void test("dead-letters an event after the final failed attempt", async () => {
+        const finalAttemptEvent = { ...event, attemptCount: 10 };
+        const store = createStore([finalAttemptEvent]);
+        const failedAt = new Date("2026-07-29T18:00:01.000Z");
+
+        await dispatchStageTransitionOutboxEvents(event.id, {
+            now: () => failedAt,
+            publisher: {
+                publish: vi
+                    .fn()
+                    .mockRejectedValue(new Error("synthetic SNS failure")),
+            },
+            store,
+        });
+
+        expect(store.markFailed).toHaveBeenCalledWith(
+            finalAttemptEvent,
+            new Date("2026-07-29T18:05:01.000Z"),
+            failedAt,
         );
     });
 });

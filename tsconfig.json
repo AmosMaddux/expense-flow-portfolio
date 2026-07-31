@@ -1,4 +1,4 @@
 {
     "files": [],
-    "references": [{ "path": "backend/core-case-service" }]
+    "references": [{ "path": "./backend/core-case-service/tsconfig.json" }]
 }

@@ -3,65 +3,51 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { stageTransitionOutbox } from "../db/schema/index.js";
+import { stageTransitionOutbox } from "../db/schema/expenseReport.js";
 
 export type ClaimedStageTransitionOutboxEvent = {
     id: string;
-    stageTransitionId: string;
-    expenseReportId: string;
     tenantId: string;
+    expenseReportId: string;
     correlationId: string;
     fromStage: string;
     toStage: string;
     occurredAt: Date;
-    lockId: string;
     attemptCount: number;
+    lockId: string;
 };
 
 export type ClaimStageTransitionOutboxEventsRequest = {
-    batchSize: number;
-    leaseUntil: Date;
-    now: Date;
-    maxAttempts: number;
     eventId?: string;
+    leaseMilliseconds: number;
+    limit: number;
+    maxAttempts: number;
+    now: Date;
 };
 
 export type StageTransitionOutboxStore = {
-    claimPending(
+    claim(
         request: ClaimStageTransitionOutboxEventsRequest,
     ): Promise<ClaimedStageTransitionOutboxEvent[]>;
-    markPublished(
-        eventId: string,
-        lockId: string,
-        publishedAt: Date,
-    ): Promise<void>;
     markFailed(
-        eventId: string,
-        lockId: string,
+        event: ClaimedStageTransitionOutboxEvent,
         nextAttemptAt: Date,
         deadLetteredAt?: Date,
-    ): Promise<void>;
+    ): Promise<boolean>;
+    markPublished(
+        event: ClaimedStageTransitionOutboxEvent,
+        publishedAt: Date,
+    ): Promise<boolean>;
 };
 
 /**
- * Creates the default database store for the stage-transition outbox relay.
+ * Claims due outbox events with a lease so concurrent dispatchers cannot publish the same attempt.
  */
-export function createStageTransitionOutboxStore(): StageTransitionOutboxStore {
-    return {
-        claimPending,
-        markPublished,
-        markFailed,
-    };
-}
-
-/**
- * Claims pending outbox rows with a short lease so multiple relays can run safely.
- */
-export async function claimPending(
+export async function claimStageTransitionOutboxEvents(
     request: ClaimStageTransitionOutboxEventsRequest,
 ): Promise<ClaimedStageTransitionOutboxEvent[]> {
     return db.transaction(async (transaction) => {
-        const pendingRows = await transaction
+        const candidates = await transaction
             .select({ id: stageTransitionOutbox.id })
             .from(stageTransitionOutbox)
             .where(
@@ -70,95 +56,106 @@ export async function claimPending(
                     isNull(stageTransitionOutbox.deadLetteredAt),
                     lte(stageTransitionOutbox.nextAttemptAt, request.now),
                     lt(stageTransitionOutbox.attemptCount, request.maxAttempts),
-                    request.eventId === undefined
-                        ? undefined
-                        : eq(stageTransitionOutbox.id, request.eventId),
                     or(
                         isNull(stageTransitionOutbox.lockedUntil),
                         lte(stageTransitionOutbox.lockedUntil, request.now),
                     ),
+                    request.eventId === undefined
+                        ? undefined
+                        : eq(stageTransitionOutbox.id, request.eventId),
                 ),
             )
             .orderBy(asc(stageTransitionOutbox.nextAttemptAt))
-            .limit(request.batchSize)
+            .limit(request.limit)
             .for("update", { skipLocked: true });
-        const eventIds = pendingRows.map((row) => row.id);
-
-        if (eventIds.length === 0) {
+        const ids = candidates.map((candidate) => candidate.id);
+        if (ids.length === 0) {
             return [];
         }
 
         const lockId = randomUUID();
-
-        return transaction
+        const lockedUntil = new Date(
+            request.now.getTime() + request.leaseMilliseconds,
+        );
+        const claimed = await transaction
             .update(stageTransitionOutbox)
             .set({
-                lockId,
-                lockedUntil: request.leaseUntil,
                 attemptCount: sql`${stageTransitionOutbox.attemptCount} + 1`,
+                lockId,
+                lockedUntil,
             })
-            .where(inArray(stageTransitionOutbox.id, eventIds))
+            .where(inArray(stageTransitionOutbox.id, ids))
             .returning({
                 id: stageTransitionOutbox.id,
-                stageTransitionId: stageTransitionOutbox.stageTransitionId,
-                expenseReportId: stageTransitionOutbox.expenseReportId,
                 tenantId: stageTransitionOutbox.tenantId,
+                expenseReportId: stageTransitionOutbox.expenseReportId,
                 correlationId: stageTransitionOutbox.correlationId,
                 fromStage: stageTransitionOutbox.fromStage,
                 toStage: stageTransitionOutbox.toStage,
                 occurredAt: stageTransitionOutbox.occurredAt,
-                lockId: sql<string>`${lockId}`,
                 attemptCount: stageTransitionOutbox.attemptCount,
             });
+
+        return claimed.map((event) => ({ ...event, lockId }));
     });
 }
 
 /**
- * Marks a leased outbox row as published after SNS accepts the event.
+ * Marks a claimed outbox event as published.
  */
-export async function markPublished(
-    eventId: string,
-    lockId: string,
+export async function markStageTransitionOutboxEventPublished(
+    event: ClaimedStageTransitionOutboxEvent,
     publishedAt: Date,
-): Promise<void> {
-    await db
+): Promise<boolean> {
+    const updatedRows = await db
         .update(stageTransitionOutbox)
         .set({
-            publishedAt,
             lockId: null,
             lockedUntil: null,
+            publishedAt,
         })
         .where(
             and(
-                eq(stageTransitionOutbox.id, eventId),
-                eq(stageTransitionOutbox.lockId, lockId),
+                eq(stageTransitionOutbox.id, event.id),
+                eq(stageTransitionOutbox.lockId, event.lockId),
                 isNull(stageTransitionOutbox.publishedAt),
             ),
-        );
+        )
+        .returning({ id: stageTransitionOutbox.id });
+
+    return updatedRows.length === 1;
 }
 
 /**
- * Releases a leased outbox row after a failed publish attempt.
+ * Releases a failed outbox event for retry or marks it dead-lettered.
  */
-export async function markFailed(
-    eventId: string,
-    lockId: string,
+export async function markStageTransitionOutboxEventFailed(
+    event: ClaimedStageTransitionOutboxEvent,
     nextAttemptAt: Date,
     deadLetteredAt?: Date,
-): Promise<void> {
-    await db
+): Promise<boolean> {
+    const updatedRows = await db
         .update(stageTransitionOutbox)
         .set({
             lockId: null,
             lockedUntil: null,
             nextAttemptAt,
-            deadLetteredAt: deadLetteredAt ?? null,
+            ...(deadLetteredAt === undefined ? {} : { deadLetteredAt }),
         })
         .where(
             and(
-                eq(stageTransitionOutbox.id, eventId),
-                eq(stageTransitionOutbox.lockId, lockId),
+                eq(stageTransitionOutbox.id, event.id),
+                eq(stageTransitionOutbox.lockId, event.lockId),
                 isNull(stageTransitionOutbox.publishedAt),
             ),
-        );
+        )
+        .returning({ id: stageTransitionOutbox.id });
+
+    return updatedRows.length === 1;
 }
+
+export const defaultStageTransitionOutboxStore: StageTransitionOutboxStore = {
+    claim: claimStageTransitionOutboxEvents,
+    markFailed: markStageTransitionOutboxEventFailed,
+    markPublished: markStageTransitionOutboxEventPublished,
+};

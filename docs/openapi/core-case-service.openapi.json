@@ -1,9 +1,9 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "ExpenseFlow Core Case Service API",
+        "title": "ExpenseFlow Core Case Service API v1",
         "version": "1.0.0",
-        "description": "Discoverable contract for Core Case Service Expense Report endpoints."
+        "description": "Version 1 contract for Core Case Service endpoints. Fields are never removed or changed silently within v1: a field is first marked deprecated with a migration note and remains supported until a future API version. Per-tenant rate limits apply to bearer-authenticated routes; pre-authentication endpoints require separate abuse controls because submitted tenant identifiers are not trusted."
     },
     "servers": [
         {
@@ -12,14 +12,707 @@
         }
     ],
     "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT"
+            }
+        },
+        "headers": {
+            "RateLimitLimit": {
+                "description": "Maximum tenant requests in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitRemaining": {
+                "description": "Tenant requests remaining in the current window.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "RateLimitReset": {
+                "description": "Seconds until the current tenant window resets.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RateLimitCost": {
+                "description": "Request units charged for this API call.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "RetryAfter": {
+                "description": "Seconds until the tenant may retry the request.",
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "responses": {
+            "RateLimitExceeded": {
+                "description": "The authenticated tenant request limit was exceeded.",
+                "headers": {
+                    "RateLimit-Limit": {
+                        "$ref": "#/components/headers/RateLimitLimit"
+                    },
+                    "RateLimit-Remaining": {
+                        "$ref": "#/components/headers/RateLimitRemaining"
+                    },
+                    "RateLimit-Reset": {
+                        "$ref": "#/components/headers/RateLimitReset"
+                    },
+                    "X-RateLimit-Cost": {
+                        "$ref": "#/components/headers/RateLimitCost"
+                    },
+                    "Retry-After": {
+                        "$ref": "#/components/headers/RetryAfter"
+                    }
+                },
+                "content": {
+                    "application/problem+json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ProblemJson"
+                        }
+                    }
+                }
+            }
+        },
         "schemas": {
-            "CreateExpenseReportRequest": {
+            "AddDraftExpenseContentRequest": {
                 "type": "object",
                 "properties": {
-                    "tenant_id": {
+                    "lineItems": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 240
+                                },
+                                "expenseDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "enum": ["Travel", "Meals", "Lodging"]
+                                },
+                                "amount": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9999999999.99
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "enum": ["USD"]
+                                }
+                            },
+                            "required": [
+                                "merchant",
+                                "expenseDate",
+                                "category",
+                                "amount",
+                                "currency"
+                            ],
+                            "additionalProperties": false
+                        },
+                        "minItems": 1,
+                        "maxItems": 50
+                    },
+                    "receipts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "lineItemIndex": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "uploadId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "filename": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 255
+                                },
+                                "contentType": {
+                                    "type": "string",
+                                    "enum": [
+                                        "application/pdf",
+                                        "image/png",
+                                        "image/jpeg",
+                                        "image/webp"
+                                    ]
+                                },
+                                "sizeBytes": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 10485760
+                                }
+                            },
+                            "required": [
+                                "lineItemIndex",
+                                "uploadId",
+                                "filename",
+                                "contentType",
+                                "sizeBytes"
+                            ],
+                            "additionalProperties": false
+                        },
+                        "maxItems": 50
+                    }
+                },
+                "required": ["lineItems", "receipts"],
+                "additionalProperties": false
+            },
+            "AddDraftExpenseContentResponse": {
+                "type": "object",
+                "properties": {
+                    "expenseReportId": {
                         "type": "string",
                         "format": "uuid"
                     },
+                    "lineItemIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "receiptIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                },
+                "required": ["expenseReportId", "lineItemIds", "receiptIds"]
+            },
+            "AllTransactionPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "expenseReportId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Drafted",
+                                        "Submitted",
+                                        "Manager Approval",
+                                        "AP Review",
+                                        "Paid",
+                                        "Reconciled"
+                                    ]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                },
+                                "owner": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["Low", "Normal", "High", "Urgent"]
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "onHold": {
+                                    "type": "boolean"
+                                },
+                                "isOverdue": {
+                                    "type": "boolean"
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "expenseReportId",
+                                "date",
+                                "merchant",
+                                "category",
+                                "amount",
+                                "currency",
+                                "status",
+                                "deductible",
+                                "owner",
+                                "priority",
+                                "dueDate",
+                                "onHold",
+                                "isOverdue",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction"
+                            ]
+                        }
+                    },
+                    "nextCursor": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": ["items", "nextCursor"]
+            },
+            "ApprovalQueueLineItemListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "sourceType": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "employee": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "merchant": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "amount": {
+                            "type": ["number", "null"],
+                            "minimum": 0
+                        },
+                        "glCode": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "flaggedLineItem": {
+                            "type": "boolean"
+                        },
+                        "reviewAction": {
+                            "type": ["string", "null"],
+                            "enum": ["approve", "reject", null]
+                        },
+                        "deductible": {
+                            "type": "boolean"
+                        },
+                        "canAdvance": {
+                            "type": "boolean"
+                        },
+                        "reportTotalMileage": {
+                            "type": ["number", "null"],
+                            "minimum": 0
+                        },
+                        "mileageEntries": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "expenseReportId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "route": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "distance": {
+                                        "type": "number",
+                                        "exclusiveMinimum": 0
+                                    },
+                                    "mileageDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "amount": {
+                                        "type": ["number", "null"],
+                                        "minimum": 0
+                                    },
+                                    "glCode": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "flaggedLineItem": {
+                                        "type": "boolean"
+                                    },
+                                    "reviewAction": {
+                                        "type": ["string", "null"],
+                                        "enum": ["approve", "reject", null]
+                                    },
+                                    "deductible": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "expenseReportId",
+                                    "route",
+                                    "distance",
+                                    "mileageDate",
+                                    "amount",
+                                    "glCode",
+                                    "flaggedLineItem",
+                                    "reviewAction",
+                                    "deductible"
+                                ]
+                            }
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "sourceType",
+                        "expenseReportId",
+                        "employee",
+                        "merchant",
+                        "amount",
+                        "glCode",
+                        "currentStage",
+                        "flaggedLineItem",
+                        "reviewAction",
+                        "deductible",
+                        "canAdvance",
+                        "reportTotalMileage",
+                        "mileageEntries"
+                    ]
+                }
+            },
+            "ApprovalQueueLineItemResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "sourceType": {
+                        "type": "string",
+                        "enum": ["line_item", "mileage"]
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "employee": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "amount": {
+                        "type": ["number", "null"],
+                        "minimum": 0
+                    },
+                    "glCode": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "currentStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "flaggedLineItem": {
+                        "type": "boolean"
+                    },
+                    "reviewAction": {
+                        "type": ["string", "null"],
+                        "enum": ["approve", "reject", null]
+                    },
+                    "deductible": {
+                        "type": "boolean"
+                    },
+                    "canAdvance": {
+                        "type": "boolean"
+                    },
+                    "reportTotalMileage": {
+                        "type": ["number", "null"],
+                        "minimum": 0
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "expenseReportId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "route": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "distance": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                },
+                                "mileageDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": ["number", "null"],
+                                    "minimum": 0
+                                },
+                                "glCode": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "expenseReportId",
+                                "route",
+                                "distance",
+                                "mileageDate",
+                                "amount",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction",
+                                "deductible"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "sourceType",
+                    "expenseReportId",
+                    "employee",
+                    "merchant",
+                    "amount",
+                    "glCode",
+                    "currentStage",
+                    "flaggedLineItem",
+                    "reviewAction",
+                    "deductible",
+                    "canAdvance",
+                    "reportTotalMileage",
+                    "mileageEntries"
+                ]
+            },
+            "AuditEntryListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "tenantId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "actorId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "action": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "stageBeforeAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "stageAfterProposedAction": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "denialReason": {
+                            "type": ["string", "null"]
+                        },
+                        "outcomeReason": {
+                            "type": ["string", "null"]
+                        },
+                        "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "tenantId",
+                        "expenseReportId",
+                        "actorId",
+                        "action",
+                        "stageBeforeAction",
+                        "stageAfterProposedAction",
+                        "denialReason",
+                        "outcomeReason",
+                        "createdAt"
+                    ]
+                }
+            },
+            "CaseQueueStageRollupList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "currentStage": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "overdueCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["currentStage", "reportCount", "overdueCount"]
+                }
+            },
+            "ClearExpenseReportFlagsRequest": {
+                "type": "object",
+                "properties": {
+                    "sourceIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "minItems": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["sourceIds", "reason"],
+                "additionalProperties": false
+            },
+            "ClearExpenseReportFlagsResponse": {
+                "type": "object",
+                "properties": {
+                    "clearedFlagCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": ["clearedFlagCount"]
+            },
+            "CreateExpenseReportRequest": {
+                "type": "object",
+                "properties": {
                     "owner": {
                         "type": "string",
                         "format": "uuid"
@@ -34,7 +727,155 @@
                         "default": "Normal"
                     }
                 },
-                "required": ["tenant_id", "owner", "dueDate"]
+                "required": ["owner", "dueDate"],
+                "additionalProperties": false
+            },
+            "CreateMileageEntryRequest": {
+                "type": "object",
+                "properties": {
+                    "route": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 500
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 999999.99
+                    },
+                    "mileageDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["route", "distance", "mileageDate"],
+                "additionalProperties": false
+            },
+            "DraftExpenseContentResponse": {
+                "type": "object",
+                "properties": {
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "lineItems": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "merchant": {
+                                    "type": "string"
+                                },
+                                "expenseDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "enum": ["Travel", "Meals", "Lodging"]
+                                },
+                                "amount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "enum": ["USD"]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "merchant",
+                                "expenseDate",
+                                "category",
+                                "amount",
+                                "currency"
+                            ]
+                        }
+                    },
+                    "receipts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "lineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "filename": {
+                                    "type": ["string", "null"]
+                                },
+                                "merchant": {
+                                    "type": "string"
+                                },
+                                "receiptDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "lineItemId",
+                                "filename",
+                                "merchant",
+                                "receiptDate",
+                                "amount"
+                            ]
+                        }
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "route": {
+                                    "type": "string"
+                                },
+                                "distance": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                },
+                                "mileageDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "reimbursementAmount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "route",
+                                "distance",
+                                "mileageDate",
+                                "reimbursementAmount"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "expenseReportId",
+                    "lineItems",
+                    "receipts",
+                    "mileageEntries"
+                ]
             },
             "ExpenseReportResponse": {
                 "type": "object",
@@ -98,6 +939,566 @@
                     "updatedAt"
                 ]
             },
+            "ExpenseReportReviewDetailResponse": {
+                "type": "object",
+                "properties": {
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "owner": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["Low", "Normal", "High", "Urgent"]
+                    },
+                    "dueDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "onHold": {
+                        "type": "boolean"
+                    },
+                    "isOverdue": {
+                        "type": "boolean"
+                    },
+                    "lineItems": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "date",
+                                "amount",
+                                "currency",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction",
+                                "deductible",
+                                "merchant",
+                                "category"
+                            ]
+                        }
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^-?\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "glCode": {
+                                    "type": ["string", "null"]
+                                },
+                                "flaggedLineItem": {
+                                    "type": "boolean"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                },
+                                "deductible": {
+                                    "type": ["boolean", "null"]
+                                },
+                                "route": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "distance": {
+                                    "type": "string",
+                                    "pattern": "^\\d+\\.\\d{2}$"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "date",
+                                "amount",
+                                "currency",
+                                "glCode",
+                                "flaggedLineItem",
+                                "reviewAction",
+                                "deductible",
+                                "route",
+                                "distance"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "expenseReportId",
+                    "owner",
+                    "priority",
+                    "dueDate",
+                    "status",
+                    "onHold",
+                    "isOverdue",
+                    "lineItems",
+                    "mileageEntries"
+                ]
+            },
+            "FinanceDashboardTrendPointList": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "periodStart": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "reportCount": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "spendByCurrency": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "currency": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 8
+                                    },
+                                    "spendAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d{1,12}\\.\\d{2}$"
+                                    }
+                                },
+                                "required": ["currency", "spendAmount"]
+                            }
+                        }
+                    },
+                    "required": [
+                        "periodStart",
+                        "reportCount",
+                        "spendByCurrency"
+                    ]
+                }
+            },
+            "LoginErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "enum": [
+                            "INVALID_CREDENTIALS",
+                            "MFA_REQUIRED",
+                            "INVALID_MFA_CODE"
+                        ]
+                    },
+                    "message": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["code", "message"]
+            },
+            "LoginRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "totpCode": {
+                        "type": "string"
+                    }
+                },
+                "required": ["tenantId", "email", "password"]
+            },
+            "LoginResponse": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "accessToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "accessTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "refreshTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "tenantId",
+                    "userId",
+                    "accessToken",
+                    "accessTokenExpiresAt",
+                    "refreshToken",
+                    "refreshTokenExpiresAt"
+                ]
+            },
+            "MfaEnrollmentRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    }
+                },
+                "required": ["tenantId", "userId", "email"]
+            },
+            "MfaEnrollmentResponse": {
+                "type": "object",
+                "properties": {
+                    "provisioningUri": {
+                        "type": "string"
+                    }
+                },
+                "required": ["provisioningUri"]
+            },
+            "MileageConfigResponse": {
+                "type": "object",
+                "properties": {
+                    "ratePerMile": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": ["USD"]
+                    }
+                },
+                "required": ["ratePerMile", "currency"]
+            },
+            "MileageEntryResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "route": {
+                        "type": "string"
+                    },
+                    "distance": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                    },
+                    "mileageDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "reimbursement": {
+                        "type": "object",
+                        "properties": {
+                            "ratePerMile": {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                            },
+                            "amount": {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": ["USD"]
+                            }
+                        },
+                        "required": ["ratePerMile", "amount", "currency"]
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "expenseReportId",
+                    "route",
+                    "distance",
+                    "mileageDate",
+                    "reimbursement",
+                    "createdAt",
+                    "updatedAt"
+                ]
+            },
+            "MySubmissionDetail": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "currentStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "rejectionReason": {
+                        "type": ["string", "null"]
+                    },
+                    "lineItems": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "merchant": {
+                                    "type": "string"
+                                },
+                                "expenseDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "category": {
+                                    "type": "string"
+                                },
+                                "amount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "currency": {
+                                    "type": "string"
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "merchant",
+                                "expenseDate",
+                                "category",
+                                "amount",
+                                "currency",
+                                "reviewAction"
+                            ]
+                        }
+                    },
+                    "mileageEntries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "route": {
+                                    "type": "string"
+                                },
+                                "distance": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                },
+                                "mileageDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "reimbursementAmount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "enum": ["USD"]
+                                },
+                                "reviewAction": {
+                                    "type": ["string", "null"],
+                                    "enum": ["approve", "reject", null]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "route",
+                                "distance",
+                                "mileageDate",
+                                "reimbursementAmount",
+                                "currency",
+                                "reviewAction"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "currentStage",
+                    "rejectionReason",
+                    "lineItems",
+                    "mileageEntries"
+                ]
+            },
+            "MySubmissionPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "currentStage": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Drafted",
+                                        "Submitted",
+                                        "Manager Approval",
+                                        "AP Review",
+                                        "Paid",
+                                        "Reconciled"
+                                    ]
+                                },
+                                "isSentBack": {
+                                    "type": "boolean"
+                                },
+                                "onHold": {
+                                    "type": "boolean"
+                                },
+                                "isOverdue": {
+                                    "type": "boolean"
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "dueDate",
+                                "currentStage",
+                                "isSentBack",
+                                "onHold",
+                                "isOverdue",
+                                "createdAt",
+                                "updatedAt"
+                            ]
+                        }
+                    },
+                    "nextCursor": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": ["items", "nextCursor"]
+            },
             "ProblemJson": {
                 "type": "object",
                 "properties": {
@@ -119,17 +1520,194 @@
                 },
                 "required": ["type", "title", "status", "detail", "instance"]
             },
-            "TransitionExpenseReportRequest": {
+            "ReadAllTransactionsRequest": {
                 "type": "object",
                 "properties": {
-                    "tenantId": {
+                    "category": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "startDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "endDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ReadCaseQueueStageRollupsRequest": {
+                "type": "object",
+                "properties": {
+                    "asOfDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["asOfDate"]
+            },
+            "ReadFinanceDashboardTrendRequest": {
+                "type": "object",
+                "properties": {
+                    "fromDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "toDate": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                },
+                "required": ["fromDate", "toDate"]
+            },
+            "ReadMySubmissionsQuery": {
+                "type": "object",
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "pageSize": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 25
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ReceiptUploadMetadataRequest": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                    },
+                    "contentType": {
+                        "type": "string",
+                        "enum": [
+                            "application/pdf",
+                            "image/png",
+                            "image/jpeg",
+                            "image/webp"
+                        ]
+                    },
+                    "sizeBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 10485760
+                    }
+                },
+                "required": ["filename", "contentType", "sizeBytes"],
+                "additionalProperties": false
+            },
+            "ReceiptUploadResponse": {
+                "type": "object",
+                "properties": {
+                    "uploadId": {
                         "type": "string",
                         "format": "uuid"
                     },
-                    "actor": {
+                    "filename": {
+                        "type": "string"
+                    },
+                    "contentType": {
+                        "type": "string",
+                        "enum": [
+                            "application/pdf",
+                            "image/png",
+                            "image/jpeg",
+                            "image/webp"
+                        ]
+                    },
+                    "sizeBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                    }
+                },
+                "required": ["uploadId", "filename", "contentType", "sizeBytes"]
+            },
+            "ReviewExpenseReportLineItemParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
                         "type": "string",
                         "format": "uuid"
                     },
+                    "sourceId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id", "sourceId"]
+            },
+            "ReviewExpenseReportLineItemRequest": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["approve", "reject"]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            },
+            "ReviewExpenseReportSourceParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "sourceType": {
+                        "type": "string",
+                        "enum": ["line_item", "mileage"]
+                    },
+                    "sourceId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id", "sourceType", "sourceId"]
+            },
+            "SubmitExpenseReportRequest": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "TransitionExpenseReportWorkflowRequest": {
+                "type": "object",
+                "properties": {
                     "toStage": {
                         "type": "string",
                         "enum": [
@@ -144,22 +1722,1555 @@
                     "reason": {
                         "type": "string",
                         "minLength": 1
-                    },
-                    "correlationId": {
-                        "type": "string",
-                        "format": "uuid"
                     }
                 },
-                "required": ["tenantId", "actor", "toStage", "reason"]
+                "required": ["toStage", "reason"],
+                "additionalProperties": false
+            },
+            "UpdateDraftLineItemRequest": {
+                "type": "object",
+                "properties": {
+                    "merchant": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                    },
+                    "expenseDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["Travel", "Meals", "Lodging"]
+                    },
+                    "amount": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9999999999.99
+                    },
+                    "currency": {
+                        "type": "string",
+                        "enum": ["USD"]
+                    }
+                },
+                "required": [
+                    "merchant",
+                    "expenseDate",
+                    "category",
+                    "amount",
+                    "currency"
+                ],
+                "additionalProperties": false
+            },
+            "UpdateExpenseReportSourceDeductibilityRequest": {
+                "type": "object",
+                "properties": {
+                    "deductible": {
+                        "type": "boolean"
+                    }
+                },
+                "required": ["deductible"],
+                "additionalProperties": false
             }
         },
         "parameters": {}
     },
     "paths": {
-        "/expense-reports": {
+        "/v1/expense-reports/{id}/receipt-uploads/{uploadId}": {
+            "put": {
+                "summary": "Upload a receipt to a Drafted Expense Report",
+                "description": "Stores receipt bytes for the authenticated Employee's own Drafted Expense Report before its metadata is attached to a line item.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "uploadId",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                        },
+                        "required": true,
+                        "name": "filename",
+                        "in": "query"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/pdf": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        },
+                        "image/png": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        },
+                        "image/jpeg": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        },
+                        "image/webp": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Receipt uploaded.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ReceiptUploadResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed receipt upload.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Drafted Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Receipt exceeds 10 MB.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "502": {
+                        "description": "Receipt storage rejected the upload.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/draft-content": {
+            "post": {
+                "summary": "Add line items and receipt references to a draft",
+                "description": "Atomically adds validated line items and receipt references to the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "required": true,
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AddDraftExpenseContentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Draft expense content added.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AddDraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed draft content request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Drafted Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense content can only be added while the report is Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "summary": "Get saved content from a draft",
+                "description": "Returns saved line items, receipt metadata, and mileage entries from the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Draft expense content found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Drafted Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/line-items/{sourceId}": {
+            "patch": {
+                "summary": "Update a saved draft line item",
+                "description": "Updates one line item in the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateDraftLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed draft update.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a saved draft line item",
+                "description": "Deletes one line item from the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/mileage-entries/{sourceId}": {
+            "patch": {
+                "summary": "Update a saved draft mileage entry",
+                "description": "Updates one mileage entry in the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMileageEntryRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed draft update.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a saved draft mileage entry",
+                "description": "Deletes one mileage entry from the authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated draft content.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DraftExpenseContentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Draft expense entry not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense entries can only be changed while Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/my-submissions": {
+            "get": {
+                "summary": "Get the employee's Expense Reports",
+                "description": "Returns only Expense Reports owned by the authenticated Employee within the authenticated tenant, including workflow position and overdue state.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 25
+                        },
+                        "required": false,
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Employee submissions found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MySubmissionPage"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/submission-detail": {
+            "get": {
+                "summary": "Get an employee submission's line items and mileage",
+                "description": "Returns line items and mileage only when the Expense Report belongs to the authenticated Employee within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Employee submission detail found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MySubmissionDetail"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed Expense Report identifier.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/case-queue/line-items": {
+            "get": {
+                "summary": "List Approval Queue line items",
+                "description": "Loads latest-submission line items waiting for manager review within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Approval Queue line items found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Case Queue access is limited to internal roles.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/case-queue/rollups": {
+            "get": {
+                "summary": "Get Case Queue rollups",
+                "description": "Loads Case Queue rollups for the authenticated tenant from the Redis cache or DynamoDB source of record.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "asOfDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Case Queue rollups found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseQueueStageRollupList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed rollup request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/finance-dashboard/trends": {
+            "get": {
+                "summary": "Get Finance Dashboard report trends",
+                "description": "Loads Finance Admin-only tenant-scoped daily UTC Expense Report creation volume and spend grouped by currency for the Finance Dashboard. Requests may span at most 31 days.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "fromDate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": true,
+                        "name": "toDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finance Dashboard trend points found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FinanceDashboardTrendPointList"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed Finance Dashboard trend request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Finance Dashboard access is limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transactions": {
+            "get": {
+                "summary": "Get All Transactions",
+                "description": "Loads tenant-scoped line items across Expense Reports for Finance Admin review.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": false,
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "required": false,
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": false,
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": false,
+                        "name": "endDate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All Transactions rows found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AllTransactionPage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed transaction list request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/login": {
+            "post": {
+                "summary": "Authenticate with email, password, and optional TOTP MFA",
+                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login succeeded and tokens were issued.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed login request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid credentials, MFA required, or invalid MFA code.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/mfa/enroll": {
+            "post": {
+                "summary": "Enroll TOTP MFA",
+                "description": "Provisions a TOTP secret for a tenant user and returns an authenticator-app provisioning URI.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MfaEnrollmentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "TOTP MFA enrollment created.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MfaEnrollmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed MFA enrollment request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports": {
             "post": {
                 "summary": "Create an Expense Report",
-                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries.",
+                "description": "Creates an Expense Report case in Drafted stage and records the initial audit and stage-transition entries within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -173,6 +3284,20 @@
                 "responses": {
                     "201": {
                         "description": "Expense Report created.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -191,6 +3316,39 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Submission with this idempotency key is already in progress.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -204,10 +3362,295 @@
                 }
             }
         },
-        "/expense-reports/{id}": {
+        "/v1/expense-reports/drafts/current": {
             "get": {
-                "summary": "Get an Expense Report",
-                "description": "Loads an Expense Report case by identifier.",
+                "summary": "Get the employee's current Drafted Expense Report",
+                "description": "Loads the most recently updated Drafted Expense Report owned by the authenticated Employee.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current Drafted Expense Report found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No Drafted Expense Report found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/config/mileage": {
+            "get": {
+                "summary": "Get the configured mileage reimbursement rate",
+                "description": "Returns the server-configured per-mile reimbursement policy used by the Employee Mileage Tracker.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Mileage reimbursement configuration found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MileageConfigResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/mileage-entries": {
+            "post": {
+                "summary": "Add mileage to a Drafted Expense Report",
+                "description": "Adds a validated mileage entry to an authenticated Employee's own Drafted Expense Report.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "required": true,
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMileageEntryRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Mileage entry added.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MileageEntryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed mileage request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Employee Portal access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Drafted Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Mileage can only be added while the Expense Report is Drafted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/review-detail": {
+            "get": {
+                "summary": "Get complete Expense Report review detail",
+                "description": "Loads all line-item and mileage sources for a Finance Admin report-detail surface independent of All Transactions filters or pagination.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "schema": {
@@ -221,11 +3664,45 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Expense Report found.",
+                        "description": "Expense Report review detail found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                    "$ref": "#/components/schemas/ExpenseReportReviewDetailResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Finance Admin access required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
                                 }
                             }
                         }
@@ -240,6 +3717,9 @@
                             }
                         }
                     },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
                     "500": {
                         "description": "Unexpected server error.",
                         "content": {
@@ -253,10 +3733,15 @@
                 }
             }
         },
-        "/expense-reports/{id}/transitions": {
-            "post": {
-                "summary": "Transition an Expense Report",
-                "description": "Moves an Expense Report to the next workflow stage and records the outbound stage-transition event intent in the outbox table.",
+        "/v1/expense-reports/{id}": {
+            "get": {
+                "summary": "Get an Expense Report",
+                "description": "Loads an Expense Report case by identifier within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "schema": {
@@ -268,19 +3753,153 @@
                         "in": "path"
                     }
                 ],
+                "responses": {
+                    "200": {
+                        "description": "Expense Report found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/submit": {
+            "post": {
+                "summary": "Submit an Expense Report",
+                "description": "Advances an Employee-owned Drafted Expense Report to Submitted after GL-coding line items and mileage with a tenant-scoped service JWT.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report submissions."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report submissions.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
+                    }
+                ],
                 "requestBody": {
                     "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/TransitionExpenseReportRequest"
+                                "$ref": "#/components/schemas/SubmitExpenseReportRequest"
                             }
                         }
                     }
                 },
                 "responses": {
-                    "200": {
-                        "description": "Expense Report transitioned.",
+                    "201": {
+                        "description": "Expense Report submitted.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -290,7 +3909,27 @@
                         }
                     },
                     "400": {
-                        "description": "Malformed transition request.",
+                        "description": "Malformed submit request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -310,7 +3949,762 @@
                         }
                     },
                     "409": {
-                        "description": "Invalid workflow transition.",
+                        "description": "Only Drafted Expense Reports can be submitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "GL-coding service request failed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/transitions": {
+            "post": {
+                "summary": "Transition an Expense Report",
+                "description": "Applies role, current-stage, and Manager Approval flag guards before advancing or sending an Expense Report back to Drafted.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TransitionExpenseReportWorkflowRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report transitioned.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by the published stage-transition event.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed transition request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense Report cannot transition from its current stage or has uncleared flags.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/line-items/{sourceId}/review": {
+            "post": {
+                "summary": "Review an Expense Report line item",
+                "description": "Records a manager approve or reject decision for one latest-submission line item during Manager Approval.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReviewExpenseReportLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Line item reviewed.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed line-item review request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report line item not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Line items can only be reviewed during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/review": {
+            "post": {
+                "summary": "Review an Expense Report source",
+                "description": "Records a manager approve or reject decision for one latest-submission line item or mileage source during Manager Approval.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "required": true,
+                        "name": "sourceType",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ReviewExpenseReportLineItemRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report source reviewed.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed source review request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report source not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Expense Report sources can only be reviewed during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/sources/{sourceType}/{sourceId}/deductibility": {
+            "patch": {
+                "summary": "Update Expense Report source deductibility",
+                "description": "Records a manual deductibility flag for one latest-submission line item or mileage source during AP Review. No auto-classification is performed.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": ["line_item", "mileage"]
+                        },
+                        "required": true,
+                        "name": "sourceType",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "sourceId",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateExpenseReportSourceDeductibilityRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report source deductibility updated.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApprovalQueueLineItemResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed deductibility request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report source not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Deductibility can only be updated during AP Review.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/flags/clear": {
+            "post": {
+                "summary": "Clear reviewed Expense Report flags",
+                "description": "Clears reviewed over-threshold line-item flags so Manager Approval can advance after the final flag is cleared.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClearExpenseReportFlagsRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report flags cleared.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClearExpenseReportFlagsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed flag-clear request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Line-item flags can only be cleared during Manager Approval.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/audit-entries": {
+            "get": {
+                "summary": "List Expense Report audit entries",
+                "description": "Loads append-only audit entries for the Expense Report Audit Trail view within the authenticated tenant.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Audit entries found for the Expense Report.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditEntryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

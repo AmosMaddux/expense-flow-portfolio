@@ -12,6 +12,9 @@ node_modules
 build/
 *.tsbuildinfo
 **/dist
+coverage/
+playwright-report/
+test-results/
 
 # dotenv environment variable files
 .env

@@ -1,0 +1,1123 @@
+<!doctype html>
+<html lang="en" class="light" style="">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+        <script id="tailwind-config">
+            try {
+                tailwind.config = {
+                    darkMode: "class",
+                    theme: {
+                        extend: {
+                            colors: {
+                                "tertiary-fixed": "#ffddb8",
+                                tertiary: "#583500",
+                                surface: "#f7f9fb",
+                                "primary-container": "#475569",
+                                "secondary-container": "#6cf8bb",
+                                "surface-container-lowest": "#ffffff",
+                                "tertiary-fixed-dim": "#ffb95f",
+                                "primary-fixed-dim": "#b9c7df",
+                                background: "#f7f9fb",
+                                secondary: "#006c49",
+                                "tertiary-container": "#774a00",
+                                "on-secondary-fixed-variant": "#005236",
+                                "primary-fixed": "#d5e3fc",
+                                "on-surface-variant": "#44474c",
+                                primary: "#303e51",
+                                "inverse-on-surface": "#eff1f3",
+                                "on-surface": "#191c1e",
+                                "on-tertiary-container": "#ffbb66",
+                                "inverse-primary": "#b9c7df",
+                                "on-tertiary-fixed": "#2a1700",
+                                "on-primary": "#ffffff",
+                                "on-primary-fixed": "#0d1c2e",
+                                "outline-variant": "#c4c6cd",
+                                "surface-container-low": "#f2f4f6",
+                                "on-error": "#ffffff",
+                                outline: "#75777d",
+                                "on-error-container": "#93000a",
+                                "on-background": "#191c1e",
+                                "on-secondary-container": "#00714d",
+                                "surface-container-high": "#e6e8ea",
+                                "surface-tint": "#515f74",
+                                "surface-container": "#eceef0",
+                                "secondary-fixed-dim": "#4edea3",
+                                "on-tertiary": "#ffffff",
+                                error: "#ba1a1a",
+                                "surface-bright": "#f7f9fb",
+                                "surface-variant": "#e0e3e5",
+                                "surface-container-highest": "#e0e3e5",
+                                "on-secondary": "#ffffff",
+                                "on-secondary-fixed": "#002113",
+                                "error-container": "#ffdad6",
+                                "secondary-fixed": "#6ffbbe",
+                                "on-primary-container": "#bbcae1",
+                                "on-primary-fixed-variant": "#3a485b",
+                                "on-tertiary-fixed-variant": "#653e00",
+                                "surface-dim": "#d8dadc",
+                                "inverse-surface": "#2d3133",
+                            },
+                            borderRadius: {
+                                DEFAULT: "0.125rem",
+                                lg: "0.25rem",
+                                xl: "0.5rem",
+                                full: "0.75rem",
+                            },
+                            spacing: {
+                                container_max_width: "1440px",
+                                header_height: "64px",
+                                xl: "32px",
+                                sm: "8px",
+                                sidebar_width: "260px",
+                                xs: "4px",
+                                lg: "24px",
+                                base: "4px",
+                                md: "16px",
+                            },
+                            fontFamily: {
+                                "headline-sm": ["Inter"],
+                                "body-sm": ["Inter"],
+                                "body-md": ["Inter"],
+                                "label-sm": ["JetBrains Mono"],
+                                "headline-md": ["Inter"],
+                                "body-lg": ["Inter"],
+                                "label-md": ["JetBrains Mono"],
+                                "headline-lg": ["Inter"],
+                            },
+                            fontSize: {
+                                "headline-sm": [
+                                    "16px",
+                                    { lineHeight: "24px", fontWeight: "600" },
+                                ],
+                                "body-sm": [
+                                    "12px",
+                                    { lineHeight: "16px", fontWeight: "400" },
+                                ],
+                                "body-md": [
+                                    "14px",
+                                    { lineHeight: "20px", fontWeight: "400" },
+                                ],
+                                "label-sm": [
+                                    "10px",
+                                    { lineHeight: "12px", fontWeight: "500" },
+                                ],
+                                "headline-md": [
+                                    "20px",
+                                    {
+                                        lineHeight: "28px",
+                                        letterSpacing: "-0.01em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                                "body-lg": [
+                                    "16px",
+                                    { lineHeight: "24px", fontWeight: "400" },
+                                ],
+                                "label-md": [
+                                    "12px",
+                                    {
+                                        lineHeight: "16px",
+                                        letterSpacing: "0.02em",
+                                        fontWeight: "500",
+                                    },
+                                ],
+                                "headline-lg": [
+                                    "24px",
+                                    {
+                                        lineHeight: "32px",
+                                        letterSpacing: "-0.02em",
+                                        fontWeight: "600",
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                };
+            } catch (_e) {}
+        </script>
+        <meta charset="utf-8" />
+    </head>
+    <body
+        class="bg-surface text-on-surface font-body-md selection:bg-primary-fixed selection:text-on-primary-fixed"
+    >
+        <!-- Sidebar Navigation -->
+        <aside
+            class="fixed left-0 top-0 h-full w-[260px] flex flex-col border-r border-outline-variant bg-surface z-50 overflow-y-auto"
+        >
+            <div class="p-lg flex items-center gap-md">
+                <div
+                    class="w-10 h-10 bg-primary flex items-center justify-center rounded-lg"
+                >
+                    <span
+                        class="material-symbols-outlined text-on-primary"
+                        style="font-variation-settings: &quot;FILL&quot; 1"
+                        data-original-icon="account_balance_wallet"
+                        >account_balance_wallet</span
+                    >
+                </div>
+                <div>
+                    <h1
+                        class="text-headline-md font-headline-md font-bold text-primary"
+                    >
+                        ExpenseFlow
+                    </h1>
+                    <p
+                        class="font-body-sm text-body-sm text-on-surface-variant"
+                    >
+                        Management System
+                    </p>
+                </div>
+            </div>
+            <nav class="mt-md flex-1 px-md space-y-xs">
+                <!-- Active Tab: My Submissions -->
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-primary font-bold hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        style="font-variation-settings: &quot;FILL&quot; 1"
+                        data-original-icon="description"
+                        >description</span
+                    >
+                    <span class="font-label-md text-label-md"
+                        >My Submissions</span
+                    >
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="add_circle"
+                        >add_circle</span
+                    >
+                    <span class="font-label-md text-label-md"
+                        >Submit Expense</span
+                    >
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="directions_car"
+                        >directions_car</span
+                    >
+                    <span class="font-label-md text-label-md">Log Mileage</span>
+                </a>
+                <div class="pt-lg pb-sm px-md">
+                    <span
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                        >Management</span
+                    >
+                </div>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span class="material-symbols-outlined">rule</span>
+                    <span class="font-label-md text-label-md"
+                        >Approval Queue</span
+                    >
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span class="material-symbols-outlined">group</span>
+                    <span class="font-label-md text-label-md"
+                        >Team &amp; Users</span
+                    >
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="dashboard"
+                        >dashboard</span
+                    >
+                    <span class="font-label-md text-label-md">Dashboard</span>
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="assessment"
+                        >assessment</span
+                    >
+                    <span class="font-label-md text-label-md">Reports</span>
+                </a>
+                <div class="pt-lg pb-sm px-md">
+                    <span
+                        class="font-label-sm text-label-sm text-outline uppercase tracking-wider"
+                        >System</span
+                    >
+                </div>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="account_tree"
+                        >account_tree</span
+                    >
+                    <span class="font-label-md text-label-md">GL Mapping</span>
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span class="material-symbols-outlined">domain</span>
+                    <span class="font-label-md text-label-md">Tenants</span>
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span class="material-symbols-outlined">history</span>
+                    <span class="font-label-md text-label-md">Audit Log</span>
+                </a>
+                <a
+                    href="#"
+                    class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 duration-150"
+                >
+                    <span class="material-symbols-outlined">settings</span>
+                    <span class="font-label-md text-label-md">Settings</span>
+                </a>
+            </nav>
+            <div class="p-lg mt-auto">
+                <button
+                    class="w-full py-md px-lg bg-primary text-on-primary rounded-lg flex items-center justify-center gap-sm hover:opacity-90 transition-opacity active:scale-95 duration-150 shadow-sm"
+                >
+                    <span class="material-symbols-outlined">add</span>
+                    <span class="font-headline-sm text-headline-sm"
+                        >Submit Expense</span
+                    >
+                </button>
+            </div>
+        </aside>
+        <!-- Top Navigation Bar -->
+        <header
+            class="fixed top-0 left-[260px] w-[calc(100%-260px)] h-[64px] bg-surface-container-lowest border-b border-outline-variant flex items-center justify-between px-lg z-40"
+        >
+            <div class="flex items-center gap-lg">
+                <div
+                    class="flex items-center gap-sm bg-surface-container-low px-md py-xs rounded-full border border-outline-variant"
+                >
+                    <span
+                        class="material-symbols-outlined text-primary text-[18px]"
+                        data-original-icon="corporate_fare"
+                        >corporate_fare</span
+                    >
+                    <span class="font-body-md text-body-md text-on-surface"
+                        >Tenant-001</span
+                    >
+                    <span
+                        class="material-symbols-outlined text-on-surface-variant text-[16px]"
+                        data-original-icon="expand_more"
+                        >expand_more</span
+                    >
+                </div>
+                <nav class="hidden md:flex gap-md">
+                    <a
+                        href="#"
+                        class="text-primary font-bold border-b-2 border-primary py-xs font-body-md text-body-md"
+                        >Role Switcher<span
+                            class="ml-sm px-sm py-xs bg-surface-container-high text-label-sm rounded text-outline font-normal"
+                            >Design Review Only</span
+                        ></a
+                    >
+                </nav>
+            </div>
+            <div class="flex items-center gap-md">
+                <div class="relative group">
+                    <input
+                        type="text"
+                        placeholder="Search expenses..."
+                        class="bg-surface-container-low border border-outline-variant rounded-full py-sm pl-xl pr-md text-body-md focus:ring-1 focus:ring-primary focus:border-primary transition-all w-64"
+                    />
+                    <span
+                        class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-outline"
+                        >search</span
+                    >
+                </div>
+                <button
+                    class="p-sm hover:bg-surface-container-high rounded-full relative"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="notifications"
+                        >notifications</span
+                    >
+                    <span
+                        class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"
+                    ></span>
+                </button>
+                <button
+                    class="p-sm hover:bg-surface-container-high rounded-full"
+                >
+                    <span
+                        class="material-symbols-outlined"
+                        data-original-icon="help_outline"
+                        >help_outline</span
+                    >
+                </button>
+                <div class="h-8 w-px bg-outline-variant mx-xs"></div>
+                <div class="flex items-center gap-sm cursor-pointer group">
+                    <span
+                        class="font-body-md text-body-md text-on-surface-variant mr-md"
+                        >User A</span
+                    ><img
+                        class="w-8 h-8 rounded-full border border-outline-variant object-cover"
+                        data-alt="Professional studio portrait of a corporate employee for a user profile avatar. Clean lighting, minimalist background, wearing a professional blazer. High-end professional aesthetic matching a corporate dashboard theme with soft blue and gray tones."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOXeMxAjYnSO1-6Po3zCvLMuj6hm0OVgux7huzN6fL5R81BjX7GIiy5db2q1Ix-c0mgTh6ZBP-FuYlXWZkCRVFsYY9dwGNUhLpYwjVP6Gz0u-MOX1dIQtl-BxuiiiXdTem936XWSn9uM-IWwO34gQsuY7GRN9zMK-tBta4T2psvx3pDZ9q17lXig9pw9kdNHh6tt9w95D5-0kjr8knIyoXdTbctDBPVRl5m1BZKlp6KCksRPHsYQY"
+                    />
+                    <span
+                        class="material-symbols-outlined text-outline group-hover:text-primary transition-colors"
+                        >logout</span
+                    >
+                    <span
+                        class="font-body-md text-body-md text-on-surface-variant group-hover:text-primary transition-colors"
+                        >Logout</span
+                    >
+                </div>
+            </div>
+        </header>
+        <!-- Main Content Area -->
+        <main class="ml-[260px] pt-[64px] min-h-screen p-lg">
+            <div class="max-w-7xl mx-auto space-y-lg">
+                <!-- Page Header -->
+                <div class="flex justify-between items-end">
+                    <div>
+                        <h2
+                            class="font-headline-lg text-headline-lg text-on-surface"
+                        >
+                            My Submissions
+                        </h2>
+                        <p
+                            class="font-body-md text-body-md text-on-surface-variant"
+                        >
+                            Review and manage your expense reports.
+                        </p>
+                    </div>
+                    <div class="flex gap-sm">
+                        <button
+                            class="flex items-center gap-sm px-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-body-md hover:bg-surface-container-high transition-colors"
+                        >
+                            <span class="material-symbols-outlined text-[20px]"
+                                >filter_list</span
+                            >
+                            Filter
+                        </button>
+                        <button
+                            class="flex items-center gap-sm px-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-body-md hover:bg-surface-container-high transition-colors"
+                        >
+                            <span
+                                class="material-symbols-outlined text-[20px]"
+                                data-original-icon="download"
+                                >download</span
+                            >
+                            Export
+                        </button>
+                    </div>
+                </div>
+                <!-- KPI Cards - Bento Style -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-lg">
+                    <div
+                        class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-[0_4px_12px_rgba(15,23,42,0.04)] relative overflow-hidden group"
+                    >
+                        <div class="flex justify-between items-start mb-md">
+                            <div
+                                class="p-sm bg-secondary-container/20 rounded-lg"
+                            >
+                                <span
+                                    class="material-symbols-outlined text-secondary"
+                                    >payments</span
+                                >
+                            </div>
+                            <span
+                                class="font-label-sm text-label-sm text-secondary bg-secondary-container/30 px-sm py-xs rounded-full"
+                                >+12% vs last year</span
+                            >
+                        </div>
+                        <div class="space-y-xs">
+                            <h4
+                                class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Reimbursements YTD
+                            </h4>
+                            <p
+                                class="font-headline-lg text-headline-lg text-on-surface"
+                            >
+                                $12,450.00
+                            </p>
+                        </div>
+                        <div
+                            class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity"
+                        >
+                            <span class="material-symbols-outlined text-[120px]"
+                                >payments</span
+                            >
+                        </div>
+                    </div>
+                    <div
+                        class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-[0_4px_12px_rgba(15,23,42,0.04)] relative overflow-hidden group"
+                    >
+                        <div class="flex justify-between items-start mb-md">
+                            <div class="p-sm bg-tertiary-fixed/30 rounded-lg">
+                                <span
+                                    class="material-symbols-outlined text-tertiary-container"
+                                    >pending_actions</span
+                                >
+                            </div>
+                        </div>
+                        <div class="space-y-xs">
+                            <h4
+                                class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider"
+                            >
+                                Pending Approval
+                            </h4>
+                            <p
+                                class="font-headline-lg text-headline-lg text-on-surface"
+                            >
+                                04
+                                <span
+                                    class="text-body-md font-normal text-outline"
+                                    >Reports</span
+                                >
+                            </p>
+                        </div>
+                        <div
+                            class="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:opacity-[0.06] transition-opacity"
+                        >
+                            <span class="material-symbols-outlined text-[120px]"
+                                >pending_actions</span
+                            >
+                        </div>
+                    </div>
+                    <div
+                        class="bg-primary p-lg rounded-xl shadow-[0_8px_20px_rgba(15,23,42,0.1)] relative overflow-hidden flex flex-col justify-between"
+                    >
+                        <div class="z-10">
+                            <h4
+                                class="font-label-md text-label-md text-primary-fixed uppercase tracking-wider mb-xs"
+                            >
+                                Next Payout
+                            </h4>
+                            <p
+                                class="font-headline-md text-headline-md text-on-primary"
+                            >
+                                Friday, Oct 27
+                            </p>
+                        </div>
+                        <div class="z-10 flex items-center gap-sm mt-md">
+                            <span
+                                class="font-body-sm text-body-sm text-primary-fixed"
+                                >Est. Amount:</span
+                            >
+                            <span
+                                class="font-headline-sm text-headline-sm text-on-primary"
+                                >$1,230.50</span
+                            >
+                        </div>
+                        <!-- Abstract Background Pattern -->
+                        <div
+                            class="absolute inset-0 opacity-10 pointer-events-none"
+                        >
+                            <svg
+                                height="100%"
+                                preserveAspectRatio="none"
+                                viewBox="0 0 100 100"
+                                width="100%"
+                                class=""
+                            >
+                                <path
+                                    d="M0 100 C 20 0 50 0 100 100"
+                                    fill="none"
+                                    stroke="white"
+                                    stroke-width="0.5"
+                                ></path>
+                                <path
+                                    d="M0 80 C 30 20 60 20 100 80"
+                                    fill="none"
+                                    stroke="white"
+                                    stroke-width="0.5"
+                                ></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <!-- Submissions Table -->
+                <div
+                    class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden"
+                >
+                    <div
+                        class="p-lg border-b border-outline-variant flex justify-between items-center bg-surface-container-low"
+                    >
+                        <h3
+                            class="font-headline-sm text-headline-sm text-on-surface"
+                        >
+                            Recent Submissions
+                        </h3>
+                        <div class="flex gap-md">
+                            <div
+                                class="flex bg-surface border border-outline-variant rounded-lg p-xs"
+                            >
+                                <button
+                                    class="px-md py-xs bg-surface-container-highest rounded font-label-md text-label-md text-primary"
+                                >
+                                    All
+                                </button>
+                                <button
+                                    class="px-md py-xs rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface"
+                                >
+                                    Active
+                                </button>
+                                <button
+                                    class="px-md py-xs rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface"
+                                >
+                                    Settled
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-surface-container-low/50">
+                                    <th
+                                        class="px-lg py-md font-label-md text-label-md text-outline uppercase"
+                                    >
+                                        Report Name
+                                    </th>
+                                    <th
+                                        class="px-lg py-md font-label-md text-label-md text-outline uppercase"
+                                    >
+                                        Date
+                                    </th>
+                                    <th
+                                        class="px-lg py-md font-label-md text-label-md text-outline uppercase"
+                                    >
+                                        Amount
+                                    </th>
+                                    <th
+                                        class="px-lg py-md font-label-md text-label-md text-outline uppercase"
+                                    >
+                                        Stage
+                                    </th>
+                                    <th
+                                        class="px-lg py-md font-label-md text-label-md text-outline uppercase text-right"
+                                    >
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-outline-variant">
+                                <!-- Row 1: Approved -->
+                                <tr
+                                    class="hover:bg-surface-container-low/30 transition-colors group"
+                                >
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center gap-md">
+                                            <div
+                                                class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined text-on-surface-variant text-[20px]"
+                                                    >receipt_long</span
+                                                >
+                                            </div>
+                                            <div>
+                                                <p
+                                                    class="font-body-md text-body-md font-bold text-on-surface"
+                                                >
+                                                    EXP-SYN-001
+                                                </p>
+                                                <p
+                                                    class="font-body-sm text-body-sm text-outline"
+                                                >
+                                                    ID-9823-X1
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md text-on-surface"
+                                        >
+                                            Oct 12, 2023
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-outline"
+                                        >
+                                            14:32 PM
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md font-bold text-on-surface"
+                                        >
+                                            $2,450.20
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-secondary"
+                                        >
+                                            Reimbursable
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center">
+                                            <span
+                                                class="px-sm py-xs bg-secondary-container/20 text-secondary border border-secondary/20 rounded-full font-label-sm text-label-sm"
+                                                >Approved</span
+                                            >
+                                            <div
+                                                class="flex-1 ml-md hidden xl:flex items-center max-w-[200px]"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div
+                                                    class="stage-line completed"
+                                                ></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div
+                                                    class="stage-line completed"
+                                                ></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div
+                                                    class="stage-line completed"
+                                                ></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md text-right">
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >visibility</span
+                                            >
+                                        </button>
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >more_vert</span
+                                            >
+                                        </button>
+                                    </td>
+                                </tr>
+                                <!-- Row 2: Submitted / Pending -->
+                                <tr
+                                    class="hover:bg-surface-container-low/30 transition-colors group"
+                                >
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center gap-md">
+                                            <div
+                                                class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined text-on-surface-variant text-[20px]"
+                                                    >laptop_mac</span
+                                                >
+                                            </div>
+                                            <div>
+                                                <p
+                                                    class="font-body-md text-body-md font-bold text-on-surface"
+                                                >
+                                                    EXP-SYN-002
+                                                </p>
+                                                <p
+                                                    class="font-body-sm text-body-sm text-outline"
+                                                >
+                                                    ID-4412-Y2
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md text-on-surface"
+                                        >
+                                            Oct 18, 2023
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-outline"
+                                        >
+                                            09:15 AM
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md font-bold text-on-surface"
+                                        >
+                                            $599.00
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-secondary"
+                                        >
+                                            Reimbursable
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center">
+                                            <span
+                                                class="px-sm py-xs bg-primary-fixed text-primary border border-primary/10 rounded-full font-label-sm text-label-sm"
+                                                >Submitted</span
+                                            >
+                                            <div
+                                                class="flex-1 ml-md hidden xl:flex items-center max-w-[200px]"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div
+                                                    class="stage-line completed"
+                                                ></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-primary ring-2 ring-primary-fixed"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md text-right">
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >visibility</span
+                                            >
+                                        </button>
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >more_vert</span
+                                            >
+                                        </button>
+                                    </td>
+                                </tr>
+                                <!-- Row 3: Flagged / Warning -->
+                                <tr
+                                    class="hover:bg-surface-container-low/30 transition-colors group"
+                                >
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center gap-md">
+                                            <div
+                                                class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined text-on-surface-variant text-[20px]"
+                                                    >restaurant</span
+                                                >
+                                            </div>
+                                            <div class="">
+                                                <p
+                                                    class="font-body-md text-body-md font-bold text-on-surface"
+                                                >
+                                                    EXP-SYN-003
+                                                </p>
+                                                <p
+                                                    class="font-body-sm text-body-sm text-outline"
+                                                >
+                                                    ID-1129-Z3
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md text-on-surface"
+                                        >
+                                            Oct 20, 2023
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-outline"
+                                        >
+                                            21:44 PM
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md font-bold text-on-surface"
+                                        >
+                                            $184.30
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-tertiary-container"
+                                        >
+                                            Missing Receipt
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center">
+                                            <span
+                                                class="px-sm py-xs bg-tertiary-fixed text-tertiary-container border border-tertiary/10 rounded-full font-label-sm text-label-sm"
+                                                >Action Required</span
+                                            >
+                                            <div
+                                                class="flex-1 ml-md hidden xl:flex items-center max-w-[200px]"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-secondary"
+                                                ></div>
+                                                <div
+                                                    class="stage-line completed"
+                                                ></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-error ring-2 ring-error-container"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md text-right">
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined text-error"
+                                                >priority_high</span
+                                            >
+                                        </button>
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >more_vert</span
+                                            >
+                                        </button>
+                                    </td>
+                                </tr>
+                                <!-- Row 4: Draft -->
+                                <tr
+                                    class="hover:bg-surface-container-low/30 transition-colors group"
+                                >
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center gap-md">
+                                            <div
+                                                class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center"
+                                            >
+                                                <span
+                                                    class="material-symbols-outlined text-on-surface-variant text-[20px]"
+                                                    >commute</span
+                                                >
+                                            </div>
+                                            <div>
+                                                <p
+                                                    class="font-body-md text-body-md font-bold text-on-surface"
+                                                >
+                                                    EXP-SYN-004
+                                                </p>
+                                                <p
+                                                    class="font-body-sm text-body-sm text-outline"
+                                                >
+                                                    ID-0058-W4
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md text-on-surface"
+                                        >
+                                            Oct 24, 2023
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-outline"
+                                        >
+                                            11:02 AM
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <p
+                                            class="font-body-md text-body-md font-bold text-on-surface"
+                                        >
+                                            $42.80
+                                        </p>
+                                        <p
+                                            class="font-body-sm text-body-sm text-outline"
+                                        >
+                                            Personal Car
+                                        </p>
+                                    </td>
+                                    <td class="px-lg py-md">
+                                        <div class="flex items-center">
+                                            <span
+                                                class="px-sm py-xs bg-surface-container-high text-on-surface-variant border border-outline-variant rounded-full font-label-sm text-label-sm"
+                                                >Draft</span
+                                            >
+                                            <div
+                                                class="flex-1 ml-md hidden xl:flex items-center max-w-[200px]"
+                                            >
+                                                <div
+                                                    class="w-3 h-3 rounded-full bg-outline ring-2 ring-surface-container-high"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                                <div class="stage-line"></div>
+                                                <div
+                                                    class="w-3 h-3 rounded-full border-2 border-outline bg-white"
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-lg py-md text-right">
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-primary hover:bg-surface-container-high rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >edit</span
+                                            >
+                                        </button>
+                                        <button
+                                            class="p-sm text-on-surface-variant hover:text-error hover:bg-error-container/20 rounded transition-colors"
+                                        >
+                                            <span
+                                                class="material-symbols-outlined"
+                                                >delete</span
+                                            >
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Pagination-->
+                    <div
+                        class="p-lg border-t border-outline-variant flex items-center justify-between bg-surface-container-low/30"
+                    >
+                        <p
+                            class="font-body-sm text-body-sm text-on-surface-variant"
+                        >
+                            Showing 4 of 24 submissions
+                        </p>
+                        <div class="flex gap-xs">
+                            <button
+                                class="p-sm border border-outline-variant rounded hover:bg-surface-container-high disabled:opacity-50"
+                                disabled=""
+                            >
+                                <span class="material-symbols-outlined"
+                                    >chevron_left</span
+                                >
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center bg-primary text-on-primary rounded font-label-md"
+                            >
+                                1
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center hover:bg-surface-container-high rounded font-label-md"
+                            >
+                                2
+                            </button>
+                            <button
+                                class="w-8 h-8 flex items-center justify-center hover:bg-surface-container-high rounded font-label-md"
+                            >
+                                3
+                            </button>
+                            <button
+                                class="p-sm border border-outline-variant rounded hover:bg-surface-container-high"
+                            >
+                                <span class="material-symbols-outlined"
+                                    >chevron_right</span
+                                >
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <!-- Floating Action Button (FAB) -->
+        <button
+            class="fixed bottom-xl right-xl w-[56px] h-[56px] bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all group z-50"
+        >
+            <span class="material-symbols-outlined text-[28px]">add</span>
+            <div
+                class="absolute right-full mr-md py-sm px-lg bg-inverse-surface text-inverse-on-surface rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none"
+            >
+                Submit Expense
+            </div>
+        </button>
+        <script class="">
+            // Micro-interactions and subtle effects
+            document.querySelectorAll("a, button").forEach((el) => {
+                el.addEventListener("click", (e) => {
+                    // Click ripple or effect logic can go here
+                });
+            });
+
+            // Initialize any tooltips or animations if needed
+            console.log("ExpenseFlow Dashboard Initialized");
+        </script>
+    </body>
+</html>
