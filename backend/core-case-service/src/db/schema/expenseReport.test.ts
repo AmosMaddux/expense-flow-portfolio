@@ -234,6 +234,10 @@ void describe("expenseReport schema", () => {
             tableConfig.checks.map((constraint) => constraint.name).sort(),
         ).toEqual([
             "expense_report_current_stage_check",
+            "expense_report_employer_ein_check",
+            "expense_report_employer_ein_validation_complete_check",
+            "expense_report_employer_ein_validation_status_check",
+            "expense_report_employer_legal_name_check",
             "expense_report_hold_reason_check",
             "expense_report_priority_check",
         ]);
@@ -278,7 +282,7 @@ void describe("expenseReport schema", () => {
         const migrationSql = migrationStatements.join("\n").toLowerCase();
 
         expect(migrationSql).toContain('create table "expense_report"');
-        expect(migrationSql.includes("status")).toBeFalsy();
+        expect(migrationSql).not.toContain('"status"');
 
         for (const columnName of requiredExpenseReportColumnNames) {
             expect(migrationSql).toContain(columnName);

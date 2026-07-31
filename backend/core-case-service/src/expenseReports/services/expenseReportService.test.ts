@@ -879,25 +879,43 @@ void describe("Expense Report submission EIN validation", () => {
             ein: "123456789",
             legalName: "Synthetic Employer LLC",
         });
-        expect(submitDraftExpenseReportMock).toHaveBeenCalledWith(
-            tenantId,
-            expenseReportId,
-            actorId,
-            expect.any(String),
-            expect.objectContaining({ coded_items: expect.any(Array) }),
-            expectedSourceKeys,
-            expectedFingerprint,
-            expect.objectContaining({
-                ein: "123456789",
-                legalName: "Synthetic Employer LLC",
-                result: invalidEinResult,
-                validatedAt: expect.any(Date),
-            }),
-            expect.objectContaining({
-                correlationId,
-                idempotencyKey: "synthetic-submit-ein-validation",
-            }),
-        );
+        expect(submitDraftExpenseReportMock).toHaveBeenCalledTimes(1);
+        const submitDraftCall = submitDraftExpenseReportMock.mock.calls[0] as [
+            string,
+            string,
+            string,
+            string,
+            { coded_items: unknown[] },
+            Set<string>,
+            string,
+            {
+                ein: string;
+                legalName: string;
+                result: typeof invalidEinResult;
+                validatedAt: Date;
+            },
+            {
+                correlationId: string;
+                idempotencyKey: string;
+            },
+        ];
+        expect(submitDraftCall[0]).toBe(tenantId);
+        expect(submitDraftCall[1]).toBe(expenseReportId);
+        expect(submitDraftCall[2]).toBe(actorId);
+        expect(typeof submitDraftCall[3]).toBe("string");
+        expect(submitDraftCall[4].coded_items).toHaveLength(1);
+        expect(submitDraftCall[5]).toBe(expectedSourceKeys);
+        expect(submitDraftCall[6]).toBe(expectedFingerprint);
+        expect(submitDraftCall[7]).toMatchObject({
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+            result: invalidEinResult,
+        });
+        expect(submitDraftCall[7].validatedAt).toBeInstanceOf(Date);
+        expect(submitDraftCall[8]).toMatchObject({
+            correlationId,
+            idempotencyKey: "synthetic-submit-ein-validation",
+        });
         expect(result.report.employerEinValidation).toStrictEqual({
             status: "invalid",
             isValid: false,
