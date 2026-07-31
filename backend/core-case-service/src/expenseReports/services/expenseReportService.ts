@@ -27,11 +27,13 @@ import {
     findDraftExpenseContent,
     findExpenseReportById,
     findExpenseReportReviewDetail,
+    compensatePaidSettlementStage,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
     insertMileageEntry,
     insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
+    insertSettlementSagaAuditEntry,
     insertDeniedWorkflowTransitionAttempt,
     readDraftSubmissionSources,
     reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
@@ -67,6 +69,7 @@ import {
     type ReceiptUploadResponse,
     type ReviewExpenseReportLineItemRequest,
     type ReviewExpenseReportSourceParams,
+    type SettleExpenseReportRequest,
     type TransitionExpenseReportWorkflowRequest,
     type UpdateExpenseReportSourceDeductibilityRequest,
 } from "../../schemas/expense-report.schema.js";
@@ -76,10 +79,19 @@ import {
     dispatchStageTransitionOutboxEvents,
     type StageTransitionOutboxDispatcher,
 } from "../../events/stageTransitionOutboxDispatcher.js";
+import {
+    syntheticPaymentStubIssuer,
+    type PaymentStubIssuer,
+} from "./paymentStubIssuer.js";
 
 export type StageTransitionEventDependencies = {
     stageTransitionOutboxDispatcher: StageTransitionOutboxDispatcher;
 };
+
+export type SettlementSagaDependencies =
+    Partial<StageTransitionEventDependencies> & {
+        paymentStubIssuer?: PaymentStubIssuer;
+    };
 
 export type SubmitExpenseReportResult = {
     correlationId: string;
@@ -899,12 +911,182 @@ export async function transitionExpenseReportWorkflow(
     return toExpenseReportResponse(transitionedReport);
 }
 
+/**
+ * Issues the MVP payment stub and reconciles the report as one compensating saga.
+ */
+export async function settleExpenseReportWorkflow(
+    request: SettleExpenseReportRequest & {
+        id: string;
+        tenantId: string;
+        actorId: string;
+        roles: RoleName[];
+        correlationId: string;
+    },
+    dependencies: SettlementSagaDependencies = {},
+): Promise<ExpenseReportResponse> {
+    const report = await findExpenseReportById(request.tenantId, request.id);
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError(
+            "Authenticated role is not permitted to settle Expense Reports.",
+        );
+    }
+
+    if (report.currentStage !== "AP Review") {
+        throw new ConflictError(
+            `Expense Report settlement can only start from AP Review; this report is in ${report.currentStage}.`,
+        );
+    }
+
+    const paymentIssuer =
+        dependencies.paymentStubIssuer ?? syntheticPaymentStubIssuer;
+    const payment = await paymentIssuer.issue({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        actorId: request.actorId,
+        correlationId: request.correlationId,
+    });
+    const sagaReason = request.reason ?? "Settlement saga completed.";
+
+    try {
+        await insertSettlementSagaAuditEntry({
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actorId,
+            currentStage: "AP Review",
+            action: "payment_stub_issued",
+            outcomeReason: `Synthetic payment stub issued for settlement saga ${request.correlationId}.`,
+        });
+
+        await runSettlementTransition({
+            tenantId: request.tenantId,
+            id: request.id,
+            actorId: request.actorId,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: "payment_stub_issued",
+            correlationId: request.correlationId,
+            dependencies,
+        });
+
+        await runSettlementTransition({
+            tenantId: request.tenantId,
+            id: request.id,
+            actorId: request.actorId,
+            fromStage: "Paid",
+            toStage: "Reconciled",
+            reason: sagaReason,
+            correlationId: request.correlationId,
+            dependencies,
+        });
+    } catch (error: unknown) {
+        await compensateSettlementSaga({
+            tenantId: request.tenantId,
+            id: request.id,
+            actorId: request.actorId,
+            correlationId: request.correlationId,
+            paymentId: payment.paymentId,
+            paymentIssuer,
+        });
+        throw error;
+    }
+
+    const reconciledReport = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+    );
+    if (reconciledReport === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    return toExpenseReportResponse(reconciledReport);
+}
+
+async function runSettlementTransition(request: {
+    tenantId: string;
+    id: string;
+    actorId: string;
+    fromStage: ExpenseReportStage;
+    toStage: ExpenseReportStage;
+    reason: string;
+    correlationId: string;
+    dependencies: SettlementSagaDependencies;
+}): Promise<void> {
+    const outboxEventId = randomUUID();
+    const didTransition = await transitionExpenseReportStageInStore({
+        tenantId: request.tenantId,
+        id: request.id,
+        actor: request.actorId,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        reason: request.reason,
+        correlationId: request.correlationId,
+        eventId: outboxEventId,
+        occurredAt: new Date(),
+    });
+
+    if (!didTransition) {
+        throw new ConflictError(
+            `Expense Report cannot transition from ${request.fromStage} to ${request.toStage}.`,
+        );
+    }
+
+    await invalidateCachedCaseQueueStageRollups(request.tenantId);
+    await dispatchOutboxEvent(outboxEventId, request.dependencies);
+}
+
+async function compensateSettlementSaga(request: {
+    tenantId: string;
+    id: string;
+    actorId: string;
+    correlationId: string;
+    paymentId: string;
+    paymentIssuer: PaymentStubIssuer;
+}): Promise<void> {
+    await request.paymentIssuer.compensate({
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        actorId: request.actorId,
+        correlationId: request.correlationId,
+        paymentId: request.paymentId,
+        reason: "Settlement saga failed before reconciliation completed.",
+    });
+    const compensationResult = await compensatePaidSettlementStage({
+        tenantId: request.tenantId,
+        id: request.id,
+        actor: request.actorId,
+        reason: "Settlement saga failed before reconciliation completed.",
+    });
+
+    if (
+        compensationResult.kind !== "compensated" &&
+        compensationResult.kind !== "already_prior_stage"
+    ) {
+        throw new ConflictError(
+            "Settlement saga failed and compensation could not restore the prior stage.",
+        );
+    }
+
+    await insertSettlementSagaAuditEntry({
+        tenantId: request.tenantId,
+        id: request.id,
+        actor: request.actorId,
+        currentStage: "AP Review",
+        action: "payment_stub_compensated",
+        outcomeReason: `Synthetic payment stub compensated for settlement saga ${request.correlationId}.`,
+    });
+    await invalidateCachedCaseQueueStageRollups(request.tenantId);
+}
+
 async function dispatchOutboxEvent(
     eventId: string,
-    dependencies?: StageTransitionEventDependencies,
+    dependencies?: Partial<StageTransitionEventDependencies>,
 ): Promise<void> {
     try {
-        if (dependencies === undefined) {
+        if (dependencies?.stageTransitionOutboxDispatcher === undefined) {
             await dispatchStageTransitionOutboxEvents(eventId);
             return;
         }

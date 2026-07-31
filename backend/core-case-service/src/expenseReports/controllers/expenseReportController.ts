@@ -25,6 +25,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
     SubmitExpenseReportOperationResultSchema,
@@ -65,6 +66,7 @@ import {
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
     submitExpenseReport,
+    settleExpenseReportWorkflow,
     transitionExpenseReportWorkflow,
     updateExpenseReportSourceDeductibility,
     updateDraftLineItem,
@@ -626,6 +628,39 @@ export async function postExpenseReportTransition(
             actorId: auth.userId,
             roles: auth.roles,
             toStage: parsedRequest.toStage,
+            reason: parsedRequest.reason,
+            correlationId,
+        });
+
+        res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles the Issue Payment stub then Reconciled settlement saga.
+ */
+export async function postExpenseReportSettlement(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = SettleExpenseReportInboundRequestSchema.parse(
+            req.body ?? {},
+        );
+        const correlationId = parseOrCreateCorrelationId(req);
+        res.set("X-Correlation-Id", correlationId);
+        const report = await settleExpenseReportWorkflow({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
             reason: parsedRequest.reason,
             correlationId,
         });

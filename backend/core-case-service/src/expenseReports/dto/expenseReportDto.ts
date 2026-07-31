@@ -230,6 +230,12 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     })
     .strict();
 
+export const SettleExpenseReportInboundRequestSchema = z
+    .object({
+        reason: z.string().trim().min(1).optional(),
+    })
+    .strict();
+
 export const StageTransitionCorrelationHeaderSchema = z
     .object({
         correlationId: z.uuid().optional(),
@@ -677,6 +683,9 @@ export const submitExpenseReportRequestSchema =
 export const transitionExpenseReportWorkflowRequestSchema =
     TransitionExpenseReportWorkflowInboundRequestSchema;
 
+export const settleExpenseReportRequestSchema =
+    SettleExpenseReportInboundRequestSchema;
+
 export const clearExpenseReportFlagsRequestSchema =
     ClearExpenseReportFlagsInboundRequestSchema;
 
@@ -802,6 +811,10 @@ export type SubmitExpenseReportRequest = z.infer<
 
 export type TransitionExpenseReportWorkflowRequest = z.infer<
     typeof TransitionExpenseReportWorkflowInboundRequestSchema
+>;
+
+export type SettleExpenseReportRequest = z.infer<
+    typeof SettleExpenseReportInboundRequestSchema
 >;
 
 export type StageTransitionCorrelationHeader = z.infer<

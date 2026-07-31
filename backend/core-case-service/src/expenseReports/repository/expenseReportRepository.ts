@@ -58,6 +58,24 @@ type StageTransitionEventContext = {
     occurredAt: Date;
 };
 
+export type SettlementSagaAuditRequest = {
+    tenantId: string;
+    id: string;
+    actor: string;
+    currentStage: ExpenseReportStage;
+    action:
+        | "payment_stub_issued"
+        | "payment_stub_compensated"
+        | "settlement_saga_compensated";
+    outcomeReason: string;
+};
+
+export type SettlementSagaCompensationResult =
+    | { kind: "compensated" }
+    | { kind: "already_prior_stage" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -2107,6 +2125,97 @@ export async function transitionExpenseReportStage(
         });
 
         return true;
+    });
+}
+
+/**
+ * Appends an audit entry for a settlement-saga side effect.
+ */
+export async function insertSettlementSagaAuditEntry(
+    request: SettlementSagaAuditRequest,
+): Promise<void> {
+    await db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+        );
+
+        if (report === undefined) {
+            return;
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: request.action,
+            stageBeforeAction: request.currentStage,
+            stageAfterProposedAction: request.currentStage,
+            denialReason: null,
+            outcomeReason: request.outcomeReason,
+        });
+    });
+}
+
+/**
+ * Restores a settlement saga from Paid to AP Review after a later saga step fails.
+ */
+export async function compensatePaidSettlementStage(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    reason: string;
+}): Promise<SettlementSagaCompensationResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage === "AP Review") {
+            return { kind: "already_prior_stage" };
+        }
+
+        if (report.currentStage !== "Paid") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "AP Review",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "Paid"),
+                ),
+            );
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "settlement_saga_compensated",
+            stageBeforeAction: "Paid",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: request.reason,
+        });
+
+        return { kind: "compensated" };
     });
 }
 
