@@ -48,13 +48,14 @@ test.describe("ExpenseFlow accessibility gates", () => {
         await expect(
             page.getByRole("region", { name: "Approval Queue reports" }),
         ).toBeVisible();
+        const seededReportRow = page.getByRole("row", {
+            name: "Expense Report 81000000-0000-4000-8000-000000000201",
+        });
         await expect(
-            page.getByRole("table", { name: "Approval Queue reports" }).or(
-                page.getByRole("region", {
-                    name: "No reports waiting for review",
-                }),
-            ),
+            page.getByRole("table", { name: "Approval Queue reports" }),
         ).toBeVisible();
+        await expect(seededReportRow).toBeVisible();
+        await expect(seededReportRow).toContainText("Submitted");
 
         await expectNoSeriousOrCriticalAxeViolations(
             page,

@@ -54,7 +54,7 @@ type TrendMetric = "volume" | "spend";
  * Renders the Finance Admin dashboard workload KPIs and trend chart.
  */
 export function FinanceDashboardScreen({
-    asOfDate = getCurrentLocalDate(),
+    asOfDate = getFinanceDashboardAsOfDate(),
 }: FinanceDashboardScreenProps): JSX.Element {
     const fromDate = getPriorDate(asOfDate, 29);
     const rollupQuery = useCaseQueueRollups(asOfDate);
@@ -119,6 +119,13 @@ export function FinanceDashboardScreen({
                 </>
             )}
         </section>
+    );
+}
+
+function getFinanceDashboardAsOfDate(): string {
+    return (
+        import.meta.env.VITE_FINANCE_DASHBOARD_AS_OF_DATE ??
+        getCurrentLocalDate()
     );
 }
 

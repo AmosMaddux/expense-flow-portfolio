@@ -9,6 +9,7 @@ const previewReadyUrl = "http://127.0.0.1:4173/";
 const e2eTenantId =
     process.env.EXPENSEFLOW_E2E_TENANT_ID ??
     "81000000-0000-4000-8000-000000000001";
+const e2eAsOfDate = process.env.EXPENSEFLOW_E2E_AS_OF_DATE ?? "2026-07-31";
 const childProcesses = [];
 
 await main();
@@ -21,6 +22,7 @@ async function main() {
         await run("npm", ["run", "e2e:reset"]);
         await run("npm", ["run", "build"], {
             VITE_API_BASE_URL: "",
+            VITE_FINANCE_DASHBOARD_AS_OF_DATE: e2eAsOfDate,
             VITE_TENANT_ID: e2eTenantId,
         });
 

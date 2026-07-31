@@ -14,8 +14,10 @@ import { applyPendingCoreCaseMigrations } from "../db/migrations.js";
 import {
     credential,
     expenseReport,
+    glCodingResult,
     glCode,
     glMapping,
+    lineItem,
     mfaEnrollment,
     role,
     user,
@@ -34,6 +36,7 @@ const e2eAccountNameSchema = z.enum(["employee", "manager", "financeAdmin"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
 const e2eCanaryTenantId = "81000000-0000-4000-8000-000000000011";
 const e2eCanaryOwnerId = "81000000-0000-4000-8000-000000000012";
+const e2eAsOfDate = "2026-07-31";
 const e2eDatabaseName = "expenseflow_core_case";
 const e2eDatabaseMarkerName = "pg_database description";
 const e2eDatabaseMarkerValue = "expenseflow-core-case-deterministic-e2e-v1";
@@ -101,6 +104,19 @@ const e2eCaseQueueReports = [
         tenantId: e2eCanaryTenantId,
     },
 ] as const;
+const e2eApprovalQueueLineItem = {
+    id: "81000000-0000-4000-8000-000000000301",
+    expenseReportId: "81000000-0000-4000-8000-000000000201",
+    merchant: "E2E Approval Queue Travel",
+    expenseDate: "2026-07-01",
+    amount: "120.00",
+    currency: "USD",
+    category: "Travel",
+} as const;
+const e2eApprovalQueueCodingResult = {
+    id: "81000000-0000-4000-8000-000000000401",
+    submissionId: "81000000-0000-4000-8000-000000000501",
+} as const;
 
 const localDatabaseHostnames = new Set(["127.0.0.1", "[::1]", "localhost"]);
 const tenantOwnedTablesInDeleteOrder = [
@@ -192,7 +208,7 @@ async function verifyE2eTestData(): Promise<void> {
     const database = drizzle(pool, { schema });
 
     try {
-        const [users, roles, mappings, reports, canaryReports] =
+        const [users, roles, mappings, reports, canaryReports, queueLineItems] =
             await Promise.all([
                 database
                     .select({ id: user.id, email: user.email })
@@ -215,9 +231,31 @@ async function verifyE2eTestData(): Promise<void> {
                     .from(expenseReport)
                     .where(eq(expenseReport.tenantId, e2eTenantId)),
                 database
-                    .select({ tenantId: expenseReport.tenantId })
+                    .select({
+                        currentStage: expenseReport.currentStage,
+                        dueDate: expenseReport.dueDate,
+                        tenantId: expenseReport.tenantId,
+                    })
                     .from(expenseReport)
                     .where(eq(expenseReport.tenantId, e2eCanaryTenantId)),
+                database
+                    .select({
+                        amount: glCodingResult.amount,
+                        expenseReportId: glCodingResult.expenseReportId,
+                        glAccountCode: glCodingResult.glAccountCode,
+                        id: lineItem.id,
+                        merchant: lineItem.merchant,
+                        tenantId: lineItem.tenantId,
+                    })
+                    .from(lineItem)
+                    .innerJoin(
+                        glCodingResult,
+                        and(
+                            eq(glCodingResult.tenantId, lineItem.tenantId),
+                            eq(glCodingResult.sourceId, lineItem.id),
+                        ),
+                    )
+                    .where(eq(lineItem.tenantId, e2eTenantId)),
             ]);
 
         if (
@@ -225,20 +263,73 @@ async function verifyE2eTestData(): Promise<void> {
             roles.length !== 3 ||
             mappings.length !== e2eGlMappings.length ||
             reports.length !== 2 ||
-            reports.some((report) => report.tenantId !== e2eTenantId) ||
-            canaryReports.length !== 2
+            !matchesExpectedReports(reports, [
+                {
+                    currentStage: "Submitted",
+                    dueDate: "2026-07-01",
+                    tenantId: e2eTenantId,
+                },
+                {
+                    currentStage: "Manager Approval",
+                    dueDate: "2026-08-15",
+                    tenantId: e2eTenantId,
+                },
+            ]) ||
+            canaryReports.length !== 2 ||
+            !matchesExpectedReports(canaryReports, [
+                {
+                    currentStage: "Submitted",
+                    dueDate: "2026-07-01",
+                    tenantId: e2eCanaryTenantId,
+                },
+                {
+                    currentStage: "AP Review",
+                    dueDate: "2026-07-01",
+                    tenantId: e2eCanaryTenantId,
+                },
+            ]) ||
+            queueLineItems.length !== 1 ||
+            queueLineItems[0]?.id !== e2eApprovalQueueLineItem.id ||
+            queueLineItems[0].tenantId !== e2eTenantId ||
+            queueLineItems[0].expenseReportId !==
+                e2eApprovalQueueLineItem.expenseReportId ||
+            queueLineItems[0].merchant !== e2eApprovalQueueLineItem.merchant ||
+            queueLineItems[0].amount !== e2eApprovalQueueLineItem.amount ||
+            queueLineItems[0].glAccountCode !== "6100-E2E"
         ) {
             throw new Error(
-                `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}, canaryReports=${canaryReports.length}.`,
+                `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}, canaryReports=${canaryReports.length}, queueLineItems=${queueLineItems.length}.`,
             );
         }
 
         process.stdout.write(
-            "Synthetic E2E data verification passed: 3 users, 3 roles, 3 GL mappings, 2 tenant reports.\n",
+            `Synthetic E2E data verification passed: 3 users, 3 roles, 3 GL mappings, 2 tenant reports as of ${e2eAsOfDate}.\n`,
         );
     } finally {
         await pool.end();
     }
+}
+
+function matchesExpectedReports(
+    reports: Array<{
+        currentStage: string;
+        dueDate: string;
+        tenantId: string;
+    }>,
+    expectedReports: Array<{
+        currentStage: string;
+        dueDate: string;
+        tenantId: string;
+    }>,
+): boolean {
+    return expectedReports.every((expectedReport) =>
+        reports.some(
+            (report) =>
+                report.currentStage === expectedReport.currentStage &&
+                report.dueDate === expectedReport.dueDate &&
+                report.tenantId === expectedReport.tenantId,
+        ),
+    );
 }
 
 async function clearE2eTenantData(
@@ -352,6 +443,31 @@ async function seedE2eTenantData(
             priority: "Normal",
         });
     }
+
+    await transaction.insert(lineItem).values({
+        id: e2eApprovalQueueLineItem.id,
+        tenantId: e2eTenantId,
+        expenseReportId: e2eApprovalQueueLineItem.expenseReportId,
+        merchant: e2eApprovalQueueLineItem.merchant,
+        expenseDate: e2eApprovalQueueLineItem.expenseDate,
+        amount: e2eApprovalQueueLineItem.amount,
+        currency: e2eApprovalQueueLineItem.currency,
+        category: e2eApprovalQueueLineItem.category,
+    });
+    await transaction.insert(glCodingResult).values({
+        id: e2eApprovalQueueCodingResult.id,
+        tenantId: e2eTenantId,
+        expenseReportId: e2eApprovalQueueLineItem.expenseReportId,
+        sourceType: "line_item",
+        sourceId: e2eApprovalQueueLineItem.id,
+        submissionId: e2eApprovalQueueCodingResult.submissionId,
+        category: e2eApprovalQueueLineItem.category,
+        mappingStatus: "mapped",
+        glAccountCode: "6100-E2E",
+        glAccountName: "E2E Travel Expense",
+        amount: e2eApprovalQueueLineItem.amount,
+        currency: e2eApprovalQueueLineItem.currency,
+    });
 }
 
 async function assertDedicatedE2eDatabase(

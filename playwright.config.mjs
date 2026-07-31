@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 const frontendBaseUrl =
     process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5173";
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
+const e2eAsOfDate = "2026-07-31";
 
 export default defineConfig({
     testDir: "./tests/e2e",
@@ -39,6 +40,7 @@ export default defineConfig({
             reuseExistingServer: !process.env.CI,
             env: {
                 ...process.env,
+                VITE_FINANCE_DASHBOARD_AS_OF_DATE: e2eAsOfDate,
                 VITE_TENANT_ID: e2eTenantId,
             },
         },
