@@ -54,7 +54,7 @@ const legalNameSchema = z
     });
 
 export const TinEinValidationRequestSchema = z.object({
-    identifierType: z.enum(["TIN", "EIN", "SSN"]),
+    identifierType: z.enum(["EIN", "SSN"]),
     identifier: z.string().regex(/^\d{9}$/),
     legalName: legalNameSchema,
 });
@@ -495,8 +495,9 @@ async function addTaxpayerStatusIfAvailable(
         return validation;
     }
 
+    let statusResponse: unknown;
     try {
-        const statusResponse = await invoker.getTaxpayerStatus(
+        statusResponse = await invoker.getTaxpayerStatus(
             {
                 TIN: soapPayload.TIN,
                 TINType: soapPayload.TINType,
@@ -505,11 +506,15 @@ async function addTaxpayerStatusIfAvailable(
                 timeout,
             },
         );
+    } catch (error: unknown) {
+        if (error instanceof TinEinValidationServiceError) {
+            return validation;
+        }
 
-        return addTaxpayerStatus(validation, statusResponse);
-    } catch {
-        return validation;
+        throw error;
     }
+
+    return addTaxpayerStatus(validation, statusResponse);
 }
 
 function addTaxpayerStatus(

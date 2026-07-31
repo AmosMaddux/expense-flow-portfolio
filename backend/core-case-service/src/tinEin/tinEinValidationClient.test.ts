@@ -128,29 +128,13 @@ void describe("SOAP TIN/EIN validation client", () => {
         );
     });
 
-    void test("maps TIN requests to the TIVS SSN discriminator", async () => {
-        const verifyTaxpayer = vi.fn().mockResolvedValue({
-            MatchCode: "3",
-            TINType: "SSN",
-        });
-        const client = createSoapTinEinValidationClient(config, {
-            createValidationServiceInvoker: () =>
-                Promise.resolve({ verifyTaxpayer }),
-        });
-
-        await expect(
-            client.validateTinEin({
+    void test("requires callers to choose the concrete TIVS taxpayer discriminator", () => {
+        expect(() =>
+            TinEinValidationRequestSchema.parse({
                 ...request,
                 identifierType: "TIN",
             }),
-        ).resolves.toStrictEqual({
-            isValid: false,
-            rejectionReason: "Taxpayer identifier and legal name do not match.",
-        });
-        expect(verifyTaxpayer).toHaveBeenCalledWith(
-            expect.objectContaining({ TINType: "SSN" }),
-            expect.any(Object),
-        );
+        ).toThrow();
     });
 
     void test("maps live TIVS invalid match codes to clean rejection reasons", async () => {
@@ -264,7 +248,9 @@ void describe("SOAP TIN/EIN validation client", () => {
                     getTaxpayerStatus: vi
                         .fn()
                         .mockRejectedValue(
-                            new Error("synthetic status outage"),
+                            new TinEinValidationServiceError(
+                                "Synthetic status outage.",
+                            ),
                         ),
                 }),
         });
@@ -471,9 +457,10 @@ void describe("SOAP TIN/EIN validation client", () => {
                 }),
         });
 
-        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
-            isValid: true,
-            normalizedLegalName: "Synthetic Expense Vendor LLC",
+        await expect(client.validateTinEin(request)).rejects.toMatchObject({
+            name: "TinEinValidationServiceError",
+            message:
+                "The TIN/EIN validation service returned an invalid status date.",
         });
     });
 

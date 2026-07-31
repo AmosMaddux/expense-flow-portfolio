@@ -2,6 +2,9 @@ import { z } from "zod";
 
 import { ConfigurationError } from "../errors/problem-json.js";
 
+const environmentBooleanSchema = z
+    .enum(["true", "false"])
+    .transform((value) => value === "true");
 const tinEinValidationEnvironmentSchema = z
     .object({
         TIN_EIN_VALIDATION_WSDL_URL: z.string().url(),
@@ -14,9 +17,8 @@ const tinEinValidationEnvironmentSchema = z
             .string()
             .min(1)
             .default("GetTaxpayerStatus"),
-        TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: z.coerce
-            .boolean()
-            .default(false),
+        TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED:
+            environmentBooleanSchema.default(false),
         TIN_EIN_VALIDATION_USERNAME: z.string().min(1).optional(),
         TIN_EIN_VALIDATION_PASSWORD: z.string().min(1).optional(),
         TIN_EIN_VALIDATION_TIMEOUT_MS: z.coerce

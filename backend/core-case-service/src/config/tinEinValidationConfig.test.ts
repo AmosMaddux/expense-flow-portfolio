@@ -27,7 +27,7 @@ void describe("TIN/EIN validation client configuration", () => {
                 "https://tin-ein.example.test/tivs",
             TIN_EIN_VALIDATION_OPERATION_NAME: "VerifyTaxpayer",
             TIN_EIN_VALIDATION_STATUS_OPERATION_NAME: "GetTaxpayerStatus",
-            TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: true,
+            TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: false,
             TIN_EIN_VALIDATION_USERNAME: "synthetic-user",
             TIN_EIN_VALIDATION_PASSWORD: "synthetic-password",
             TIN_EIN_VALIDATION_TIMEOUT_MS: 3000,
@@ -46,6 +46,23 @@ void describe("TIN/EIN validation client configuration", () => {
         expect(config.TIN_EIN_VALIDATION_STATUS_OPERATION_NAME).toBe(
             "GetTaxpayerStatus",
         );
+    });
+
+    void test("parses explicit status enrichment booleans", () => {
+        expect(
+            loadTinEinValidationConfig({
+                TIN_EIN_VALIDATION_WSDL_URL:
+                    "https://tin-ein.example.test/tivs?wsdl",
+                TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: "true",
+            }).TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED,
+        ).toBe(true);
+        expect(
+            loadTinEinValidationConfig({
+                TIN_EIN_VALIDATION_WSDL_URL:
+                    "https://tin-ein.example.test/tivs?wsdl",
+                TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED: "false",
+            }).TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED,
+        ).toBe(false);
     });
 
     void test("requires an explicit WSDL URL", () => {
