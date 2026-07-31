@@ -17,15 +17,7 @@ async function main() {
     try {
         await ensureLocalEnv();
         loadDotenv();
-        await run("docker", [
-            "compose",
-            "up",
-            "-d",
-            "--wait",
-            "postgres",
-            "redis",
-            "gl-coding",
-        ]);
+        await run("npm", ["run", "e2e:services"]);
         await run("npm", ["run", "e2e:reset"]);
         await run("npm", ["run", "build"], {
             VITE_API_BASE_URL: "",
