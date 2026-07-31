@@ -253,7 +253,10 @@ void describe("Expense Report submission across Core Case and GL-coding services
                     "content-type": "application/json",
                     "idempotency-key": "cross-tenant-submit",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -301,7 +304,10 @@ void describe("Expense Report submission across Core Case and GL-coding services
                     "content-type": "application/json",
                     "idempotency-key": "cross-service-submit",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const submitted = (await submitResponse.json()) as {

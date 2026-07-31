@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
     approvedWorkflowStages,
+    employerEinValidationStatuses,
     lineItemReviewActions,
     priorityLevels,
 } from "../../db/schema/index.js";
@@ -10,6 +11,14 @@ import {
 extendZodWithOpenApi(z);
 
 const financeDashboardTrendMaxDays = 31;
+const employerLegalNameSchema = z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !containsControlCharacter(value), {
+        message: "Legal name cannot include control characters.",
+    });
 
 export const CreateExpenseReportInboundRequestSchema = z
     .object({
@@ -221,7 +230,12 @@ export const DraftExpenseContentOutboundResponseSchema = z.object({
     ),
 });
 
-export const SubmitExpenseReportInboundRequestSchema = z.object({}).strict();
+export const SubmitExpenseReportInboundRequestSchema = z
+    .object({
+        employerEin: z.string().regex(/^\d{9}$/),
+        employerLegalName: employerLegalNameSchema,
+    })
+    .strict();
 
 export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     .object({
@@ -326,6 +340,20 @@ const ReadAllTransactionsFilterSchema = z.object({
         .refine(isValidAllTransactionsCursor)
         .optional(),
 });
+
+function containsControlCharacter(value: string): boolean {
+    for (const character of value) {
+        const codePoint = character.codePointAt(0);
+        if (
+            codePoint !== undefined &&
+            (codePoint <= 0x1f || codePoint === 0x7f)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 function isWithinFinanceDashboardTrendRange(request: {
     fromDate: string;
@@ -456,6 +484,16 @@ export const IdempotentSubmissionHeaderSchema = z.object({
         .regex(/^[A-Za-z0-9._:-]+$/),
 });
 
+export const EmployerEinValidationOutboundResponseSchema = z
+    .object({
+        status: z.enum(employerEinValidationStatuses),
+        isValid: z.boolean(),
+        reason: z.string().nullable(),
+        serviceReferenceId: z.string().nullable(),
+        validatedAt: z.date(),
+    })
+    .nullable();
+
 // Outbound response gatekeeper: only the public Expense Report case shape leaves the API.
 export const ExpenseReportOutboundResponseSchema = z.object({
     id: z.uuid(),
@@ -466,6 +504,12 @@ export const ExpenseReportOutboundResponseSchema = z.object({
     currentStage: z.enum(approvedWorkflowStages),
     onHold: z.boolean(),
     holdReason: z.string().nullable(),
+    employerEin: z
+        .string()
+        .regex(/^\d{9}$/)
+        .nullable(),
+    employerLegalName: z.string().nullable(),
+    employerEinValidation: EmployerEinValidationOutboundResponseSchema,
     createdAt: z.date(),
     updatedAt: z.date(),
 });

@@ -6,6 +6,9 @@ import {
     NotFoundError,
 } from "../../errors/problem-json.js";
 
+const buildSubmissionSourceFingerprintMock = vi.hoisted(() => vi.fn());
+const buildSubmissionSourceKeysMock = vi.hoisted(() => vi.fn());
+const codeExpenseLineItemsMock = vi.hoisted(() => vi.fn());
 const findAuditEntriesByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCaseCommentsByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
@@ -21,6 +24,8 @@ const recordExpenseReportSettlementPaymentMock = vi.hoisted(() => vi.fn());
 const transitionIssuedExpenseReportSettlementToPaidMock = vi.hoisted(() =>
     vi.fn(),
 );
+const readDraftSubmissionSourcesMock = vi.hoisted(() => vi.fn());
+const submitDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
 const compensatePaidSettlementStageMock = vi.hoisted(() => vi.fn());
 const insertDeniedWorkflowTransitionAttemptMock = vi.hoisted(() => vi.fn());
@@ -30,8 +35,8 @@ const updateExpenseReportSourceDeductibilityMock = vi.hoisted(() => vi.fn());
 vi.mock("../repository/expenseReportRepository.js", () => ({
     abandonUnpaidExpenseReportSettlementClaim:
         abandonUnpaidExpenseReportSettlementClaimMock,
-    buildSubmissionSourceFingerprint: vi.fn(),
-    buildSubmissionSourceKeys: vi.fn(),
+    buildSubmissionSourceFingerprint: buildSubmissionSourceFingerprintMock,
+    buildSubmissionSourceKeys: buildSubmissionSourceKeysMock,
     clearExpenseReportFlags: vi.fn(),
     claimExpenseReportSettlement: claimExpenseReportSettlementMock,
     compensatePaidSettlementStage: compensatePaidSettlementStageMock,
@@ -52,16 +57,45 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
         markExpenseReportSettlementCompensatedMock,
     reconcileExpenseReportSettlementStage:
         reconcileExpenseReportSettlementStageMock,
-    readDraftSubmissionSources: vi.fn(),
+    readDraftSubmissionSources: readDraftSubmissionSourcesMock,
     recordExpenseReportSettlementPayment:
         recordExpenseReportSettlementPaymentMock,
     reviewExpenseReportLineItem: vi.fn(),
-    submitDraftExpenseReport: vi.fn(),
+    submitDraftExpenseReport: submitDraftExpenseReportMock,
     transitionIssuedExpenseReportSettlementToPaid:
         transitionIssuedExpenseReportSettlementToPaidMock,
     transitionExpenseReportStage: transitionExpenseReportStageMock,
     updateExpenseReportSourceDeductibility:
         updateExpenseReportSourceDeductibilityMock,
+}));
+
+vi.mock("../../auth/shared/accessTokenSigner.js", () => ({
+    signAccessToken: vi.fn(() => ({ accessToken: "synthetic-access-token" })),
+}));
+
+vi.mock("../../config/authJwtConfig.js", () => ({
+    loadAuthJwtConfig: vi.fn(() => ({
+        AUTH_JWT_ALGORITHM: "RS256",
+        AUTH_JWT_AUDIENCE: "expenseflow-api",
+        AUTH_JWT_EXPIRES_IN_SECONDS: 300,
+        AUTH_JWT_ISSUER: "expenseflow-test",
+        AUTH_JWT_PRIVATE_KEY: "synthetic-private-key",
+        AUTH_JWT_PUBLIC_KEY: "synthetic-public-key",
+    })),
+}));
+
+vi.mock("../../config/glCodingConfig.js", () => ({
+    loadDefaultGlCodingConfig: vi.fn(() => ({
+        GL_CODING_SERVICE_BASE_URL: "https://gl-coding.example.test",
+        GL_CODING_TIMEOUT_MS: 100,
+        GL_CODING_MAX_RETRIES: 0,
+        GL_CODING_BASE_BACKOFF_MS: 1,
+        GL_CODING_MAX_BACKOFF_MS: 1,
+    })),
+}));
+
+vi.mock("../../glCoding/glCodingClient.js", () => ({
+    codeExpenseLineItems: codeExpenseLineItemsMock,
 }));
 
 vi.mock("./caseQueueService.js", () => ({
@@ -78,6 +112,7 @@ import {
     readExpenseReportComments,
     readExpenseReportReviewDetail,
     settleExpenseReportWorkflow,
+    submitExpenseReport,
     transitionExpenseReportWorkflow,
 } from "./expenseReportService.js";
 
@@ -87,6 +122,9 @@ beforeEach(() => {
     process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
     findAuditEntriesByExpenseReportIdMock.mockReset();
     findCaseCommentsByExpenseReportIdMock.mockReset();
+    buildSubmissionSourceFingerprintMock.mockReset();
+    buildSubmissionSourceKeysMock.mockReset();
+    codeExpenseLineItemsMock.mockReset();
     findCurrentDraftExpenseReportMock.mockReset();
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
@@ -98,6 +136,8 @@ beforeEach(() => {
     reconcileExpenseReportSettlementStageMock.mockReset();
     recordExpenseReportSettlementPaymentMock.mockReset();
     transitionIssuedExpenseReportSettlementToPaidMock.mockReset();
+    readDraftSubmissionSourcesMock.mockReset();
+    submitDraftExpenseReportMock.mockReset();
     transitionExpenseReportStageMock.mockReset();
     compensatePaidSettlementStageMock.mockReset();
     insertDeniedWorkflowTransitionAttemptMock.mockReset();
@@ -738,6 +778,133 @@ void describe("Expense Report settlement saga", () => {
 
         expect(issue).not.toHaveBeenCalled();
         expect(compensate).not.toHaveBeenCalled();
+    });
+});
+
+void describe("Expense Report submission EIN validation", () => {
+    void test("validates employer EIN during submission and persists a non-blocking invalid result", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000811";
+        const actorId = "50000000-0000-4000-8000-000000000811";
+        const expenseReportId = "60000000-0000-4000-8000-000000000811";
+        const correlationId = "70000000-0000-4000-8000-000000000811";
+        const sourceId = "80000000-0000-4000-8000-000000000811";
+        const expectedSourceKeys = new Set([`line_item:${sourceId}`]);
+        const expectedFingerprint = "synthetic-submission-fingerprint";
+        const invalidEinResult = {
+            status: "invalid" as const,
+            isValid: false as const,
+            rejectionReason: "Synthetic EIN and legal name mismatch.",
+            serviceReferenceId: "synthetic-reference-811",
+        };
+        const submittedReport = {
+            id: expenseReportId,
+            tenantId,
+            owner: actorId,
+            dueDate: "2026-07-31",
+            priority: "Normal",
+            currentStage: "Submitted",
+            onHold: false,
+            holdReason: null,
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "invalid",
+            employerEinValidationReason:
+                "Synthetic EIN and legal name mismatch.",
+            employerEinServiceReferenceId: "synthetic-reference-811",
+            employerEinValidatedAt: new Date("2026-07-30T12:00:00.000Z"),
+            createdAt: new Date("2026-07-20T12:00:00.000Z"),
+            updatedAt: new Date("2026-07-30T12:00:00.000Z"),
+        };
+        const einValidationAcl = {
+            validateEin: vi.fn().mockResolvedValue(invalidEinResult),
+        };
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+
+        readDraftSubmissionSourcesMock.mockResolvedValue({
+            report: { id: expenseReportId },
+            lineItems: [
+                {
+                    id: sourceId,
+                    merchant: "Synthetic Air",
+                    amount: "42.00",
+                    currency: "USD",
+                    category: "Travel",
+                },
+            ],
+            mileageEntries: [],
+        });
+        buildSubmissionSourceKeysMock.mockReturnValue(expectedSourceKeys);
+        buildSubmissionSourceFingerprintMock.mockReturnValue(
+            expectedFingerprint,
+        );
+        codeExpenseLineItemsMock.mockResolvedValue({
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "42.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+        submitDraftExpenseReportMock.mockResolvedValue(submittedReport);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        const result = await submitExpenseReport(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Employee"],
+                correlationId,
+                idempotencyKey: "synthetic-submit-ein-validation",
+                employerEin: "123456789",
+                employerLegalName: "Synthetic Employer LLC",
+            },
+            {
+                einValidationAcl,
+                stageTransitionOutboxDispatcher: { dispatch },
+            },
+        );
+
+        expect(einValidationAcl.validateEin).toHaveBeenCalledExactlyOnceWith({
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+        });
+        expect(submitDraftExpenseReportMock).toHaveBeenCalledWith(
+            tenantId,
+            expenseReportId,
+            actorId,
+            expect.any(String),
+            expect.objectContaining({ coded_items: expect.any(Array) }),
+            expectedSourceKeys,
+            expectedFingerprint,
+            expect.objectContaining({
+                ein: "123456789",
+                legalName: "Synthetic Employer LLC",
+                result: invalidEinResult,
+                validatedAt: expect.any(Date),
+            }),
+            expect.objectContaining({
+                correlationId,
+                idempotencyKey: "synthetic-submit-ein-validation",
+            }),
+        );
+        expect(result.report.employerEinValidation).toStrictEqual({
+            status: "invalid",
+            isValid: false,
+            reason: "Synthetic EIN and legal name mismatch.",
+            serviceReferenceId: "synthetic-reference-811",
+            validatedAt: new Date("2026-07-30T12:00:00.000Z"),
+        });
     });
 });
 

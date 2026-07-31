@@ -46,6 +46,12 @@ export const expenseReportSettlementStatuses = [
     "reconciled",
 ] as const;
 
+export const employerEinValidationStatuses = [
+    "valid",
+    "invalid",
+    "unreachable",
+] as const;
+
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
         throw new Error(
@@ -75,6 +81,9 @@ const lineItemReviewActionCheckSql = buildStaticStringInListSql(
 const expenseReportSettlementStatusCheckSql = buildStaticStringInListSql(
     expenseReportSettlementStatuses,
 );
+const employerEinValidationStatusCheckSql = buildStaticStringInListSql(
+    employerEinValidationStatuses,
+);
 
 export const expenseReport = pgTable(
     "expense_report",
@@ -83,6 +92,16 @@ export const expenseReport = pgTable(
         currentStage: text("current_stage").notNull().default("Drafted"),
         onHold: boolean("on_hold").notNull().default(false),
         holdReason: text("hold_reason"),
+        employerEin: text("employer_ein"),
+        employerLegalName: text("employer_legal_name"),
+        employerEinValidationStatus: text("employer_ein_validation_status"),
+        employerEinValidationReason: text("employer_ein_validation_reason"),
+        employerEinServiceReferenceId: text(
+            "employer_ein_service_reference_id",
+        ),
+        employerEinValidatedAt: timestamp("employer_ein_validated_at", {
+            withTimezone: true,
+        }),
         owner: uuid("owner").notNull(),
         priority: text("priority").notNull().default("Normal"),
         dueDate: date("due_date").notNull(),
@@ -106,6 +125,22 @@ export const expenseReport = pgTable(
         check(
             "expense_report_hold_reason_check",
             sql`(${table.onHold} = true and nullif(btrim(${table.holdReason}), '') is not null) or (${table.onHold} = false and ${table.holdReason} is null)`,
+        ),
+        check(
+            "expense_report_employer_ein_check",
+            sql`${table.employerEin} is null or ${table.employerEin} ~ '^[0-9]{9}$'`,
+        ),
+        check(
+            "expense_report_employer_legal_name_check",
+            sql`${table.employerLegalName} is null or nullif(btrim(${table.employerLegalName}), '') is not null`,
+        ),
+        check(
+            "expense_report_employer_ein_validation_status_check",
+            sql`${table.employerEinValidationStatus} is null or ${table.employerEinValidationStatus} in (${employerEinValidationStatusCheckSql})`,
+        ),
+        check(
+            "expense_report_employer_ein_validation_complete_check",
+            sql`(${table.employerEinValidationStatus} is null and ${table.employerEinValidationReason} is null and ${table.employerEinServiceReferenceId} is null and ${table.employerEinValidatedAt} is null) or (${table.employerEin} is not null and ${table.employerLegalName} is not null and ${table.employerEinValidationStatus} is not null and ${table.employerEinValidatedAt} is not null)`,
         ),
         index("expense_report_tenant_stage_idx").on(
             table.tenantId,
@@ -162,7 +197,7 @@ export const auditEntry = pgTable(
     (table) => [
         check(
             "audit_entry_denial_reason_check",
-            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared', 'line_item_flags_clear_denied') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
+            sql`(${table.action} <> 'transition_denied' or nullif(btrim(${table.denialReason}), '') is not null) and (${table.action} = 'transition_denied' or ${table.denialReason} is null) and (${table.action} not in ('transition_sent_back', 'line_item_flags_cleared', 'line_item_flags_clear_denied', 'employer_ein_validated') or nullif(btrim(${table.outcomeReason}), '') is not null)`,
         ),
         check(
             "audit_entry_stage_before_action_check",

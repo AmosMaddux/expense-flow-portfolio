@@ -1278,7 +1278,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-130",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const body = (await response.json()) as { currentStage?: string };
@@ -2056,7 +2059,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-132",
                     "x-correlation-id": correlationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2074,7 +2080,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-132",
                     "x-correlation-id": replayCorrelationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const replayBody = (await replayResponse.json()) as {
@@ -2207,7 +2216,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-232",
                     "x-correlation-id": correlationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         await db
@@ -2224,7 +2236,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-232",
                     "x-correlation-id": "70000000-0000-4000-8000-000000000233",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const replayBody = (await replayResponse.json()) as {
@@ -2282,7 +2297,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-745",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2311,7 +2329,10 @@ void describe("Expense Report routes", () => {
                     ),
                     "content-type": "application/json",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2355,7 +2376,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-135",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2395,7 +2419,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-140",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -2456,7 +2483,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-136",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2540,7 +2570,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-138",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -2640,7 +2673,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-142",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -5463,7 +5499,10 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-184",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 

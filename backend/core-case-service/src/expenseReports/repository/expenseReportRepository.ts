@@ -36,6 +36,7 @@ import {
     stageTransitionOutbox,
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
+import type { EinValidationResult } from "../../tinEin/tinEinValidationAcl.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import type {
     ApprovalQueueLineItemResponse,
@@ -89,6 +90,13 @@ export type SettlementPaymentRecordResult =
 
 export type AbandonSettlementClaimResult =
     { kind: "abandoned" } | { kind: "not_abandoned" };
+
+type EmployerEinValidationForSubmission = {
+    ein: string;
+    legalName: string;
+    result: EinValidationResult;
+    validatedAt: Date;
+};
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -1406,6 +1414,16 @@ export async function submitDraftExpenseReport(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
     expectedSourceFingerprint: SubmissionSourceFingerprint,
+    employerValidation: EmployerEinValidationForSubmission = {
+        ein: "000000000",
+        legalName: "Synthetic Employer LLC",
+        result: {
+            status: "unreachable",
+            isValid: false,
+            rejectionReason: "EIN validation was not provided.",
+        },
+        validatedAt: new Date(),
+    },
     eventContext: StageTransitionEventContext = {
         correlationId: randomUUID(),
         eventId: randomUUID(),
@@ -1463,7 +1481,21 @@ export async function submitDraftExpenseReport(
 
         const updatedReports = await transaction
             .update(expenseReport)
-            .set({ currentStage: "Submitted", updatedAt: new Date() })
+            .set({
+                currentStage: "Submitted",
+                employerEin: employerValidation.ein,
+                employerLegalName: employerValidation.legalName,
+                employerEinValidationStatus: employerValidation.result.status,
+                employerEinValidationReason: readEmployerEinValidationReason(
+                    employerValidation.result,
+                ),
+                employerEinServiceReferenceId:
+                    readEmployerEinServiceReferenceId(
+                        employerValidation.result,
+                    ),
+                employerEinValidatedAt: employerValidation.validatedAt,
+                updatedAt: new Date(),
+            })
             .where(
                 and(
                     eq(expenseReport.tenantId, tenantId),
@@ -1524,6 +1556,19 @@ export async function submitDraftExpenseReport(
             "Drafted",
             "transition_approved",
         );
+        await appendAuditEntry(transaction, {
+            tenantId,
+            expenseReportId,
+            actorId,
+            action: "employer_ein_validated",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            denialReason: null,
+            outcomeReason: buildEmployerEinValidationAuditOutcome(
+                employerValidation.result,
+            ),
+        });
+
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId,
             id: expenseReportId,
@@ -2170,6 +2215,7 @@ export async function transitionExpenseReportStage(
             undefined,
             isSendBackTransition(request) ? request.reason : undefined,
         );
+
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId: request.tenantId,
             id: request.id,
@@ -3097,6 +3143,43 @@ async function readApprovalQueueLineItemInTransaction(
         .limit(1);
 
     return rows[0] as ApprovalQueueLineItemRow | undefined;
+}
+
+function readEmployerEinValidationReason(
+    result: EinValidationResult,
+): string | null {
+    if (result.status === "valid") {
+        return null;
+    }
+
+    return result.rejectionReason ?? null;
+}
+
+function readEmployerEinServiceReferenceId(
+    result: EinValidationResult,
+): string | null {
+    if ("serviceReferenceId" in result) {
+        return result.serviceReferenceId ?? null;
+    }
+
+    return null;
+}
+
+function buildEmployerEinValidationAuditOutcome(
+    result: EinValidationResult,
+): string {
+    const parts = [`employer_ein_validation:status=${result.status}`];
+    const serviceReferenceId = readEmployerEinServiceReferenceId(result);
+    const reason = readEmployerEinValidationReason(result);
+
+    if (serviceReferenceId !== null) {
+        parts.push(`service_reference_id=${serviceReferenceId}`);
+    }
+    if (reason !== null) {
+        parts.push(`reason=${reason}`);
+    }
+
+    return parts.join(";");
 }
 
 function readLatestSubmissionByReport(

@@ -579,6 +579,8 @@ export async function postExpenseReportSubmission(
                 roles: auth.roles,
                 correlationId,
                 idempotencyKey,
+                employerEin: parsedRequest.employerEin,
+                employerLegalName: parsedRequest.employerLegalName,
             });
         const requestHash = createIdempotencyRequestHash({
             id: parsedParams.id,
