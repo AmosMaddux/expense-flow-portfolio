@@ -59,6 +59,19 @@ void describe("expenseReportRepository", () => {
             dueDate: "2026-07-02",
         };
     }
+    function buildSyntheticEmployerValidation() {
+        return {
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+            result: {
+                status: "valid" as const,
+                isValid: true as const,
+                normalizedLegalName: "Synthetic Employer LLC",
+                serviceReferenceId: "synthetic-ein-reference",
+            },
+            validatedAt: new Date("2026-07-31T00:00:00.000Z"),
+        };
+    }
 
     void test("inserts a Drafted Expense Report", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000183";
@@ -496,6 +509,7 @@ void describe("expenseReportRepository", () => {
                     },
                 ],
             }),
+            buildSyntheticEmployerValidation(),
         );
 
         expect(submitted?.currentStage).toBe("Submitted");
@@ -528,8 +542,10 @@ void describe("expenseReportRepository", () => {
                 ),
             );
 
-        expect(auditRows).toHaveLength(2);
-        expect(auditRows[1]).toMatchObject({
+        expect(auditRows).toHaveLength(3);
+        expect(
+            auditRows.find((row) => row.action === "transition_approved"),
+        ).toMatchObject({
             tenantId,
             expenseReportId: report.id,
             actorId,
@@ -537,6 +553,22 @@ void describe("expenseReportRepository", () => {
             stageBeforeAction: "Drafted",
             stageAfterProposedAction: "Submitted",
             denialReason: null,
+        });
+        expect(
+            auditRows.find((row) => row.action === "employer_ein_validated"),
+        ).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            actorId,
+            action: "employer_ein_validated",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            denialReason: null,
+            outcomeReason: JSON.stringify({
+                status: "valid",
+                reason: null,
+                serviceReferenceId: "synthetic-ein-reference",
+            }),
         });
         expect(transitionRows).toHaveLength(2);
         expect(transitionRows[1]).toMatchObject({
@@ -673,6 +705,7 @@ void describe("expenseReportRepository", () => {
                 },
                 expectedSourceKeys,
                 expectedFingerprint,
+                buildSyntheticEmployerValidation(),
             );
             await new Promise((resolve) => setTimeout(resolve, 100));
             const contentPromise = insertDraftExpenseContent({
@@ -1874,6 +1907,7 @@ void describe("expenseReportRepository", () => {
                         ],
                         mileageEntries: [],
                     }),
+                    buildSyntheticEmployerValidation(),
                 ),
             ).rejects.toThrow("GL-coding service");
 

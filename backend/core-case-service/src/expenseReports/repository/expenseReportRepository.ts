@@ -1414,16 +1414,7 @@ export async function submitDraftExpenseReport(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
     expectedSourceFingerprint: SubmissionSourceFingerprint,
-    employerValidation: EmployerEinValidationForSubmission = {
-        ein: "000000000",
-        legalName: "Synthetic Employer LLC",
-        result: {
-            status: "unreachable",
-            isValid: false,
-            rejectionReason: "EIN validation was not provided.",
-        },
-        validatedAt: new Date(),
-    },
+    employerValidation: EmployerEinValidationForSubmission,
     eventContext: StageTransitionEventContext = {
         correlationId: randomUUID(),
         eventId: randomUUID(),

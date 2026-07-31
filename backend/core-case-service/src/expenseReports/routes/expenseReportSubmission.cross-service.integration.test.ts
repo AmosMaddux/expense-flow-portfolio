@@ -330,6 +330,28 @@ void describe("Expense Report submission across Core Case and GL-coding services
 
         expect(submitResponse.status).toBe(201);
         expect(submitted.currentStage).toBe("Submitted");
+        expect(einValidationAclValidateMock).toHaveBeenCalledWith({
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+        });
+
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        expect(reportRows[0]).toMatchObject({
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "valid",
+            employerEinValidationReason: null,
+            employerEinServiceReferenceId: "synthetic-ein-reference",
+        });
+        expect(reportRows[0]?.employerEinValidatedAt).toBeInstanceOf(Date);
 
         const codingRows = await db
             .select()
