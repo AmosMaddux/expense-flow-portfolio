@@ -10,7 +10,7 @@ on:
 jobs:
     ui-quality-gate:
         name: UI quality gate
-        runs-on: ubuntu-latest
+        runs-on: self-hosted
         timeout-minutes: 35
 
         steps:
