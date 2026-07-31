@@ -172,7 +172,16 @@ describe("readMySubmissionDetail", () => {
     test("scopes the detail read and maps line items and mileage", async () => {
         const reportId = "30000000-0000-4000-8000-000000000010";
         const findDetail = vi.fn().mockResolvedValue({
-            report: buildReport({ id: reportId }),
+            report: buildReport({
+                id: reportId,
+                employerEin: "123456789",
+                employerLegalName: "Synthetic Employer LLC",
+                employerEinValidationStatus: "invalid",
+                employerEinValidationReason:
+                    "Synthetic EIN and legal name mismatch.",
+                employerEinServiceReferenceId: "synthetic-reference-010",
+                employerEinValidatedAt: new Date("2026-07-30T12:00:00.000Z"),
+            }),
             rejectionReason: "Receipt does not match the submitted amount.",
             lineItems: [
                 {
@@ -222,6 +231,13 @@ describe("readMySubmissionDetail", () => {
         expect(detail.rejectionReason).toBe(
             "Receipt does not match the submitted amount.",
         );
+        expect(detail.employerEinValidation).toStrictEqual({
+            status: "invalid",
+            isValid: false,
+            reason: "Synthetic EIN and legal name mismatch.",
+            serviceReferenceId: "synthetic-reference-010",
+            validatedAt: new Date("2026-07-30T12:00:00.000Z"),
+        });
         expect(detail.mileageEntries[0]).toMatchObject({
             distance: 10,
             currency: "USD",

@@ -1213,7 +1213,7 @@
                                 "type": ["string", "null"]
                             },
                             "validatedAt": {
-                                "type": "string",
+                                "type": ["string", "null"],
                                 "format": "date-time"
                             }
                         },
@@ -1652,6 +1652,42 @@
                     "rejectionReason": {
                         "type": ["string", "null"]
                     },
+                    "employerEin": {
+                        "type": ["string", "null"],
+                        "pattern": "^\\d{9}$"
+                    },
+                    "employerLegalName": {
+                        "type": ["string", "null"]
+                    },
+                    "employerEinValidation": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": ["valid", "invalid", "unreachable"]
+                            },
+                            "isValid": {
+                                "type": "boolean"
+                            },
+                            "reason": {
+                                "type": ["string", "null"]
+                            },
+                            "serviceReferenceId": {
+                                "type": ["string", "null"]
+                            },
+                            "validatedAt": {
+                                "type": ["string", "null"],
+                                "format": "date-time"
+                            }
+                        },
+                        "required": [
+                            "status",
+                            "isValid",
+                            "reason",
+                            "serviceReferenceId",
+                            "validatedAt"
+                        ]
+                    },
                     "lineItems": {
                         "type": "array",
                         "items": {
@@ -1743,6 +1779,9 @@
                     "id",
                     "currentStage",
                     "rejectionReason",
+                    "employerEin",
+                    "employerLegalName",
+                    "employerEinValidation",
                     "lineItems",
                     "mileageEntries"
                 ]

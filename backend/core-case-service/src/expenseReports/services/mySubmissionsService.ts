@@ -122,6 +122,26 @@ export async function readMySubmissionDetail(
         id: content.report.id,
         currentStage: content.report.currentStage,
         rejectionReason: content.rejectionReason,
+        employerEin: content.report.employerEin ?? null,
+        employerLegalName: content.report.employerLegalName ?? null,
+        employerEinValidation:
+            content.report.employerEinValidationStatus === null ||
+            content.report.employerEinValidationStatus === undefined ||
+            content.report.employerEinValidatedAt === null ||
+            content.report.employerEinValidatedAt === undefined
+                ? null
+                : {
+                      status: content.report.employerEinValidationStatus as
+                          "valid" | "invalid" | "unreachable",
+                      isValid:
+                          content.report.employerEinValidationStatus ===
+                          "valid",
+                      reason:
+                          content.report.employerEinValidationReason ?? null,
+                      serviceReferenceId:
+                          content.report.employerEinServiceReferenceId ?? null,
+                      validatedAt: content.report.employerEinValidatedAt,
+                  },
         lineItems: content.lineItems.map((item) => ({
             id: item.id,
             merchant: item.merchant,

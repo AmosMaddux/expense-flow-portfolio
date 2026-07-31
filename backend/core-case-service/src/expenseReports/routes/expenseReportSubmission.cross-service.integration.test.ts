@@ -33,6 +33,13 @@ import {
     syntheticRsaPublicKeyBase64,
 } from "../../testSupport/jwtTestKeys.js";
 
+const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
+    createEinValidationAcl: () => ({
+        validateEin: einValidationAclValidateMock,
+    }),
+}));
 vi.mock("../../db/client.js", () => {
     const client = new Pool({
         connectionString: getCoreCaseTestDatabaseUrl(),
@@ -194,6 +201,13 @@ void describe("Expense Report submission across Core Case and GL-coding services
     });
 
     beforeEach(() => {
+        einValidationAclValidateMock.mockReset();
+        einValidationAclValidateMock.mockResolvedValue({
+            status: "valid",
+            isValid: true,
+            normalizedLegalName: "Synthetic Employer LLC",
+            serviceReferenceId: "synthetic-ein-reference",
+        });
         idempotencyRecords.clear();
         Object.values(idempotencyStoreMock).forEach((mock) => mock.mockClear());
         stageTransitionPublishMock.mockClear();

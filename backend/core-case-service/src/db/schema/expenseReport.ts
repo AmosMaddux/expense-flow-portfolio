@@ -140,7 +140,7 @@ export const expenseReport = pgTable(
         ),
         check(
             "expense_report_employer_ein_validation_complete_check",
-            sql`(${table.employerEinValidationStatus} is null and ${table.employerEinValidationReason} is null and ${table.employerEinServiceReferenceId} is null and ${table.employerEinValidatedAt} is null) or (${table.employerEin} is not null and ${table.employerLegalName} is not null and ${table.employerEinValidationStatus} is not null and ${table.employerEinValidatedAt} is not null)`,
+            sql`(${table.employerEin} is null and ${table.employerLegalName} is null and ${table.employerEinValidationStatus} is null and ${table.employerEinValidationReason} is null and ${table.employerEinServiceReferenceId} is null and ${table.employerEinValidatedAt} is null) or (${table.employerEin} is not null and ${table.employerLegalName} is not null and ${table.employerEinValidationStatus} is not null and ${table.employerEinValidatedAt} is not null)`,
         ),
         index("expense_report_tenant_stage_idx").on(
             table.tenantId,

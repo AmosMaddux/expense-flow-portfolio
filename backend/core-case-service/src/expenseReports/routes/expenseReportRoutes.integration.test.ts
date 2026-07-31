@@ -38,6 +38,13 @@ import { PolicyReferenceOutboundResponseSchema } from "../dto/expenseReportDto.j
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
+const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
+    createEinValidationAcl: () => ({
+        validateEin: einValidationAclValidateMock,
+    }),
+}));
 vi.mock("../../db/client.js", () => {
     const client = new Pool({
         connectionString: getCoreCaseTestDatabaseUrl(),
@@ -245,6 +252,13 @@ function refreshAuthorizationHeader(tenantId: string, userId: string): string {
 
 void describe("Expense Report routes", () => {
     beforeEach(() => {
+        einValidationAclValidateMock.mockReset();
+        einValidationAclValidateMock.mockResolvedValue({
+            status: "valid",
+            isValid: true,
+            normalizedLegalName: "Synthetic Employer LLC",
+            serviceReferenceId: "synthetic-ein-reference",
+        });
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
         idempotencyStoreMock.getResult.mockClear();
@@ -2048,6 +2062,12 @@ void describe("Expense Report routes", () => {
         stageTransitionPublishMock.mockRejectedValueOnce(
             new Error("synthetic SNS failure"),
         );
+        einValidationAclValidateMock.mockResolvedValueOnce({
+            status: "invalid",
+            isValid: false,
+            rejectionReason: "Synthetic EIN and legal name mismatch.",
+            serviceReferenceId: "synthetic-reference-invalid-132",
+        });
 
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
@@ -2145,6 +2165,18 @@ void describe("Expense Report routes", () => {
                 }),
             ]),
         );
+        const employerValidationAudit = auditRows.find(
+            (row) => row.action === "employer_ein_validated",
+        );
+        expect(employerValidationAudit).toMatchObject({
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            outcomeReason: JSON.stringify({
+                status: "invalid",
+                reason: "Synthetic EIN and legal name mismatch.",
+                serviceReferenceId: "synthetic-reference-invalid-132",
+            }),
+        });
         expect(transitionRows).toContainEqual(
             expect.objectContaining({
                 actor: owner,

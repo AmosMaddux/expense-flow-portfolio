@@ -490,7 +490,7 @@ export const EmployerEinValidationOutboundResponseSchema = z
         isValid: z.boolean(),
         reason: z.string().nullable(),
         serviceReferenceId: z.string().nullable(),
-        validatedAt: z.date(),
+        validatedAt: z.coerce.date(),
     })
     .nullable();
 
@@ -656,6 +656,12 @@ export const MySubmissionDetailSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(approvedWorkflowStages),
     rejectionReason: z.string().nullable(),
+    employerEin: z
+        .string()
+        .regex(/^\d{9}$/)
+        .nullable(),
+    employerLegalName: z.string().nullable(),
+    employerEinValidation: EmployerEinValidationOutboundResponseSchema,
     lineItems: z.array(
         z.object({
             id: z.uuid(),

@@ -3168,18 +3168,11 @@ function readEmployerEinServiceReferenceId(
 function buildEmployerEinValidationAuditOutcome(
     result: EinValidationResult,
 ): string {
-    const parts = [`employer_ein_validation:status=${result.status}`];
-    const serviceReferenceId = readEmployerEinServiceReferenceId(result);
-    const reason = readEmployerEinValidationReason(result);
-
-    if (serviceReferenceId !== null) {
-        parts.push(`service_reference_id=${serviceReferenceId}`);
-    }
-    if (reason !== null) {
-        parts.push(`reason=${reason}`);
-    }
-
-    return parts.join(";");
+    return JSON.stringify({
+        status: result.status,
+        reason: readEmployerEinValidationReason(result),
+        serviceReferenceId: readEmployerEinServiceReferenceId(result),
+    });
 }
 
 function readLatestSubmissionByReport(

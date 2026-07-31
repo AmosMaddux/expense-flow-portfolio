@@ -644,25 +644,12 @@ export async function submitExpenseReport(
         new Date(),
     );
     try {
-        let employerValidationResult;
-        try {
-            const einValidationAcl =
-                dependencies.einValidationAcl ?? createEinValidationAcl();
-            employerValidationResult = await einValidationAcl.validateEin({
-                ein: request.employerEin,
-                legalName: request.employerLegalName,
-            });
-        } catch (error: unknown) {
-            if (!(error instanceof ConfigurationError)) {
-                throw error;
-            }
-
-            employerValidationResult = {
-                status: "unreachable" as const,
-                isValid: false as const,
-                rejectionReason: "EIN validation is temporarily unavailable.",
-            };
-        }
+        const einValidationAcl =
+            dependencies.einValidationAcl ?? createEinValidationAcl();
+        const employerValidationResult = await einValidationAcl.validateEin({
+            ein: request.employerEin,
+            legalName: request.employerLegalName,
+        });
         const employerEinValidatedAt = new Date();
 
         const glResponse = await codeExpenseLineItems(
