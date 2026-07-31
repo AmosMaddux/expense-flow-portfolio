@@ -7,6 +7,7 @@ import {
     readTenantAllTransactions,
     type AllTransactionsServiceDependencies,
 } from "./allTransactionsService.js";
+import type { AllTransaction } from "../../schemas/expense-report.schema.js";
 
 const allTransactionsPageContractFixtureUrl = new URL(
     "../../../../../frontend/app/src/transactions/__fixtures__/allTransactionsPage.contract.json",
@@ -35,6 +36,14 @@ void describe("readTenantAllTransactions", () => {
                     currency: "USD",
                     status: "AP Review",
                     deductible: null,
+                    owner: "50000000-0000-4000-8000-000000000180",
+                    priority: "Normal",
+                    dueDate: "2026-08-01",
+                    onHold: false,
+                    isOverdue: false,
+                    glCode: "6250",
+                    flaggedLineItem: false,
+                    reviewAction: null,
                 },
             ],
             nextCursor: null,
@@ -64,6 +73,129 @@ void describe("readTenantAllTransactions", () => {
         });
         expect(transactions.items).toHaveLength(1);
         expect(transactions.nextCursor).toBeNull();
+    });
+
+    void test("computes overdue values with an injectable UTC clock", async () => {
+        const baseTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000183",
+            expenseReportId: "60000000-0000-4000-8000-000000000183",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
+            status: "AP Review",
+            deductible: null,
+            owner: "50000000-0000-4000-8000-000000000183",
+            priority: "Normal",
+            dueDate: "2026-07-30",
+            onHold: false,
+            isOverdue: false,
+            glCode: "6250",
+            flaggedLineItem: false,
+            reviewAction: null,
+        };
+        const readAllTransactions = vi.fn().mockResolvedValue({
+            items: [
+                {
+                    ...baseTransaction,
+                    id: "30000000-0000-4000-8000-000000000183",
+                    dueDate: "2026-07-29",
+                },
+                {
+                    ...baseTransaction,
+                    id: "30000000-0000-4000-8000-000000000184",
+                    dueDate: "2026-07-30",
+                },
+                {
+                    ...baseTransaction,
+                    id: "30000000-0000-4000-8000-000000000185",
+                    dueDate: "2026-07-29",
+                    status: "Reconciled",
+                },
+                {
+                    ...baseTransaction,
+                    id: "30000000-0000-4000-8000-000000000186",
+                    dueDate: "2026-07-31",
+                },
+            ],
+            nextCursor: null,
+        });
+        const dependencies: AllTransactionsServiceDependencies = {
+            now: () => new Date("2026-07-30T23:59:59.999Z"),
+            transactionStore: { readAllTransactions },
+        };
+
+        const transactions = await readTenantAllTransactions(
+            {
+                tenantId: "40000000-0000-4000-8000-000000000183",
+            },
+            dependencies,
+        );
+
+        expect(
+            transactions.items.map(({ id, isOverdue }) => ({
+                id,
+                isOverdue,
+            })),
+        ).toEqual([
+            {
+                id: "30000000-0000-4000-8000-000000000183",
+                isOverdue: true,
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000184",
+                isOverdue: false,
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000185",
+                isOverdue: false,
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000186",
+                isOverdue: false,
+            },
+        ]);
+    });
+
+    void test("uses UTC date boundaries when deriving the service clock date", async () => {
+        const readAllTransactions = vi.fn().mockResolvedValue({
+            items: [
+                {
+                    id: "30000000-0000-4000-8000-000000000187",
+                    expenseReportId: "60000000-0000-4000-8000-000000000187",
+                    date: "2026-07-20T12:00:00.000Z",
+                    merchant: "Cedar Bistro",
+                    category: "Meals",
+                    amount: "64.20",
+                    currency: "USD",
+                    status: "AP Review",
+                    deductible: null,
+                    owner: "50000000-0000-4000-8000-000000000187",
+                    priority: "Normal",
+                    dueDate: "2026-07-30",
+                    onHold: false,
+                    isOverdue: true,
+                    glCode: "6250",
+                    flaggedLineItem: false,
+                    reviewAction: null,
+                },
+            ],
+            nextCursor: null,
+        });
+        const dependencies: AllTransactionsServiceDependencies = {
+            now: () => new Date("2026-07-31T00:00:00.000Z"),
+            transactionStore: { readAllTransactions },
+        };
+
+        const transactions = await readTenantAllTransactions(
+            {
+                tenantId: "40000000-0000-4000-8000-000000000187",
+            },
+            dependencies,
+        );
+
+        expect(transactions.items[0]?.isOverdue).toBe(true);
     });
 
     void test("rejects invalid date ranges before querying the store", async () => {

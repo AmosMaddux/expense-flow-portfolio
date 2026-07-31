@@ -204,6 +204,20 @@
             "when": 1785357547700,
             "tag": "0028_manual_deductibility",
             "breakpoints": true
+        },
+        {
+            "idx": 29,
+            "version": "7",
+            "when": 1785420189074,
+            "tag": "0029_sharp_whiplash",
+            "breakpoints": true
+        },
+        {
+            "idx": 30,
+            "version": "7",
+            "when": 1785447295689,
+            "tag": "0030_soft_vermin",
+            "breakpoints": true
         }
     ]
 }

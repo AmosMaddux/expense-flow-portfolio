@@ -1,5 +1,12 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+    type MouseEvent,
+    type ReactNode,
+} from "react";
 
 import {
     AuthRequestError,
@@ -26,6 +33,8 @@ type RoleLanding = {
     label: string;
     path: string;
 };
+
+const mobileNavigationMediaQuery = "(max-width: 760px)";
 
 const roleLandings: Record<Role, RoleLanding> = {
     "Finance Admin": {
@@ -186,12 +195,20 @@ export function AppShell({
     const [browserPath, setBrowserPath] = useState(
         () => window.location.pathname,
     );
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isMobileNavigation, setIsMobileNavigation] = useState(() =>
+        getMediaQueryMatches(mobileNavigationMediaQuery),
+    );
     const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+    const sidebarRef = useRef<HTMLElement | null>(null);
+    const sidebarCloseButtonRef = useRef<HTMLButtonElement | null>(null);
     const visibleNavigationItems = getNavigationItemsForRoles(signedInRoles);
     const landing = roleLandings[signedInRole];
     const currentBrowserPath = currentPath ?? browserPath;
     const activeNavigationPath =
         currentBrowserPath === "/" ? landing.path : currentBrowserPath;
+    const isMobileNavigationOpen = isSidebarOpen && isMobileNavigation;
 
     useEffect(() => {
         if (currentPath !== undefined) {
@@ -207,6 +224,102 @@ export function AppShell({
         return () =>
             window.removeEventListener("popstate", handleLocationChange);
     }, [currentPath]);
+
+    useEffect(() => {
+        const mediaQueryList = window.matchMedia?.(mobileNavigationMediaQuery);
+        if (mediaQueryList === undefined) {
+            return undefined;
+        }
+
+        const handleMediaQueryChange = (event: MediaQueryListEvent): void => {
+            setIsMobileNavigation(event.matches);
+        };
+
+        setIsMobileNavigation(mediaQueryList.matches);
+        mediaQueryList.addEventListener("change", handleMediaQueryChange);
+
+        return () =>
+            mediaQueryList.removeEventListener(
+                "change",
+                handleMediaQueryChange,
+            );
+    }, []);
+
+    useEffect(() => {
+        if (!isMobileNavigation && isSidebarOpen) {
+            setIsSidebarOpen(false);
+        }
+    }, [isMobileNavigation, isSidebarOpen]);
+
+    useEffect(() => {
+        if (!isMobileNavigationOpen) {
+            return undefined;
+        }
+
+        const previousBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        return () => {
+            document.body.style.overflow = previousBodyOverflow;
+        };
+    }, [isMobileNavigationOpen]);
+
+    useEffect(() => {
+        if (!isMobileNavigationOpen) {
+            return undefined;
+        }
+
+        sidebarCloseButtonRef.current?.focus();
+
+        const handleDocumentKeyDown = (
+            event: globalThis.KeyboardEvent,
+        ): void => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                closeSidebar();
+            }
+        };
+
+        document.addEventListener("keydown", handleDocumentKeyDown);
+
+        return () =>
+            document.removeEventListener("keydown", handleDocumentKeyDown);
+    }, [isMobileNavigationOpen]);
+
+    function closeSidebar(): void {
+        setIsSidebarOpen(false);
+        if (isMobileNavigationOpen) {
+            window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+        }
+    }
+
+    function handleSidebarKeyDown(event: KeyboardEvent<HTMLElement>): void {
+        if (event.key !== "Tab" || sidebarRef.current === null) {
+            return;
+        }
+
+        const focusableElements = Array.from(
+            sidebarRef.current.querySelectorAll<HTMLElement>(
+                'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+        ).filter((element) => !element.hasAttribute("disabled"));
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements.at(-1);
+        if (firstElement === undefined || lastElement === undefined) {
+            return;
+        }
+
+        if (event.shiftKey && document.activeElement === firstElement) {
+            event.preventDefault();
+            lastElement.focus();
+            return;
+        }
+
+        if (!event.shiftKey && document.activeElement === lastElement) {
+            event.preventDefault();
+            firstElement.focus();
+        }
+    }
 
     function handleSidebarNavigation(
         event: MouseEvent<HTMLAnchorElement>,
@@ -226,18 +339,51 @@ export function AppShell({
         event.preventDefault();
         window.history.pushState(null, "", path);
         setBrowserPath(path);
+        closeSidebar();
         // Notify router/history listeners because pushState does not emit popstate.
         window.dispatchEvent(new PopStateEvent("popstate"));
     }
 
     return (
         <div className="app-shell">
-            <aside className="sidebar" aria-label="Primary navigation">
-                <div className="sidebar__brand">
-                    <span className="sidebar__brand-mark" aria-hidden="true">
-                        EF
-                    </span>
-                    ExpenseFlow
+            {isMobileNavigationOpen ? (
+                <button
+                    aria-label="Close navigation overlay"
+                    className="sidebar-backdrop"
+                    onClick={closeSidebar}
+                    type="button"
+                />
+            ) : null}
+            <aside
+                aria-label="Primary navigation"
+                aria-modal={isMobileNavigationOpen ? true : undefined}
+                className={`sidebar${isSidebarOpen ? " sidebar--open" : ""}`}
+                id="primary-navigation"
+                onKeyDown={handleSidebarKeyDown}
+                ref={sidebarRef}
+                role={isMobileNavigationOpen ? "dialog" : undefined}
+            >
+                <div className="sidebar__header">
+                    <div className="sidebar__brand">
+                        <span
+                            className="sidebar__brand-mark"
+                            aria-hidden="true"
+                        >
+                            EF
+                        </span>
+                        ExpenseFlow
+                    </div>
+                    {isMobileNavigationOpen ? (
+                        <button
+                            aria-label="Close navigation"
+                            className="sidebar__close"
+                            onClick={closeSidebar}
+                            ref={sidebarCloseButtonRef}
+                            type="button"
+                        >
+                            <span aria-hidden="true">X</span>
+                        </button>
+                    ) : null}
                 </div>
                 <nav className="sidebar__nav" aria-label="Workspace sections">
                     {visibleNavigationItems.map((item) => (
@@ -259,11 +405,37 @@ export function AppShell({
                     ))}
                 </nav>
             </aside>
-            <div className="workspace">
+            <div
+                aria-hidden={isMobileNavigationOpen ? true : undefined}
+                className="workspace"
+            >
                 <header className="topbar">
-                    <div>
-                        <p className="topbar__eyebrow">{signedInRole}</p>
-                        <h1>{landing.label}</h1>
+                    <div className="topbar__heading">
+                        <button
+                            aria-controls="primary-navigation"
+                            aria-expanded={isMobileNavigationOpen}
+                            aria-label={
+                                isMobileNavigationOpen
+                                    ? "Close navigation"
+                                    : "Open navigation"
+                            }
+                            className="topbar__menu"
+                            onClick={() =>
+                                isMobileNavigationOpen
+                                    ? closeSidebar()
+                                    : setIsSidebarOpen(true)
+                            }
+                            ref={menuButtonRef}
+                            type="button"
+                        >
+                            <span aria-hidden="true" />
+                            <span aria-hidden="true" />
+                            <span aria-hidden="true" />
+                        </button>
+                        <div>
+                            <p className="topbar__eyebrow">{signedInRole}</p>
+                            <h1>{landing.label}</h1>
+                        </div>
                     </div>
                     {onLogout === undefined ? (
                         <div className="topbar__tenant">{signedInRole}</div>
@@ -310,4 +482,8 @@ export function AppShell({
  */
 export function RoutedWorkspaceOutlet(): JSX.Element {
     return <Outlet />;
+}
+
+function getMediaQueryMatches(query: string): boolean {
+    return window.matchMedia?.(query).matches ?? false;
 }

@@ -141,20 +141,30 @@ Open Approval Queue and select Expense Report
 explicitly synthetic receipt fixtures: two linked to line items and one
 unlinked receipt for the gallery's disabled state.
 
-### Inspect local stage-transition events
+### Consume local stage-transition events
 
 The Compose stack also starts LocalStack with an SNS topic named
 `expenseflow-stage-transitions-local` and a raw-delivery SQS subscription. Copy
 the stage-transition settings from `.env.example` into `.env`, restart the Core
 Case Service, and perform a successful Expense Report transition in the UI.
 
-Read the queued CloudEvent from another terminal:
+Start the standalone plain SQS consumer from another terminal:
+
+```sh
+npm run dev:events:consume
+```
+
+The consumer validates each CloudEvent, idempotently writes a
+`stage_transition_projection` row keyed by event ID, and deletes the SQS message
+only after that write succeeds. Stop it with `Ctrl+C`.
+
+To inspect a queued CloudEvent without deleting it, instead run:
 
 ```sh
 npm run dev:events:receive
 ```
 
-The command long-polls for up to ten seconds and prints the CloudEvent body plus
+The inspection command long-polls for up to ten seconds and prints the CloudEvent body plus
 its `correlationId` and `eventType` SNS message attributes. Receiving a message
 temporarily hides it but does not delete it, so it can appear again after the
 SQS visibility timeout. Use the UI to perform another successful transition

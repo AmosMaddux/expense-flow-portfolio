@@ -943,13 +943,28 @@ button:disabled {
 }
 
 .sidebar {
+    position: sticky;
+    top: 0;
     display: flex;
+    height: 100vh;
     flex-direction: column;
     gap: 28px;
+    overflow-y: auto;
     border-right: 1px solid #334e68;
     background: #102a43;
     color: #f0f4f8;
     padding: 24px 16px;
+}
+
+.sidebar-backdrop {
+    display: none;
+}
+
+.sidebar__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
 }
 
 .sidebar__brand {
@@ -958,6 +973,25 @@ button:disabled {
     gap: 10px;
     font-size: 1.125rem;
     font-weight: 700;
+}
+
+.sidebar__close {
+    display: none;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(240 244 248 / 38%);
+    border-radius: 7px;
+    background: transparent;
+    color: #f0f4f8;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.sidebar__close:hover {
+    background: #243b53;
 }
 
 .sidebar__brand-mark {
@@ -1005,6 +1039,33 @@ button:disabled {
     border-bottom: 1px solid #d9e2ec;
     background: #fff;
     padding: 18px 28px;
+}
+
+.topbar__heading {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.topbar__menu {
+    display: none;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid #c4c6cd;
+    border-radius: 7px;
+    background: #fff;
+    padding: 6px;
+}
+
+.topbar__menu span {
+    display: block;
+    width: 16px;
+    height: 2px;
+    border-radius: 999px;
+    background: #303e51;
 }
 
 .topbar h1 {
@@ -1260,14 +1321,6 @@ button:disabled {
 }
 
 @media (max-width: 700px) {
-    .app-shell {
-        grid-template-columns: 1fr;
-    }
-
-    .sidebar {
-        position: static;
-    }
-
     .workspace__content,
     .mileage-form {
         padding: 20px;
@@ -2089,6 +2142,53 @@ button:disabled {
     padding: 18px 0 0;
 }
 
+.all-transactions-detail {
+    display: grid;
+    align-items: start;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+}
+
+.all-transactions-detail__stepper {
+    align-self: stretch;
+}
+
+.all-transactions-detail__panel {
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 16px;
+}
+
+.all-transactions-detail__panel dl {
+    display: grid;
+    gap: 14px;
+    margin: 0;
+}
+
+.all-transactions-detail__panel div {
+    display: grid;
+    gap: 6px;
+}
+
+.all-transactions-detail__panel dt {
+    color: #52606d;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.all-transactions-detail__panel dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: #102a43;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
 @media (max-width: 760px) {
     .auth-card {
         padding: 24px 20px;
@@ -2103,17 +2203,65 @@ button:disabled {
     }
 
     .app-shell {
-        grid-template-columns: 1fr;
+        display: block;
     }
 
     .sidebar {
-        border-right: 0;
-        border-bottom: 1px solid #334e68;
+        position: fixed;
+        z-index: 90;
+        inset: 0 auto 0 0;
+        width: min(82vw, 280px);
+        max-width: calc(100vw - 48px);
+        height: auto;
+        overflow-y: auto;
+        border-right: 1px solid #334e68;
+        border-bottom: 0;
+        box-shadow: 18px 0 48px rgb(16 42 67 / 24%);
+        opacity: 0;
+        transform: translateX(-100%);
+        transition:
+            transform 160ms ease,
+            opacity 160ms ease,
+            visibility 0s linear 160ms;
+        visibility: hidden;
+    }
+
+    .sidebar--open {
+        opacity: 1;
+        transform: translateX(0);
+        transition:
+            transform 160ms ease,
+            opacity 160ms ease,
+            visibility 0s;
+        visibility: visible;
+    }
+
+    .sidebar__close {
+        display: inline-flex;
+    }
+
+    .sidebar-backdrop {
+        position: fixed;
+        z-index: 80;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgb(16 42 67 / 48%);
+        padding: 0;
     }
 
     .topbar {
-        align-items: flex-start;
+        align-items: stretch;
         flex-direction: column;
+        padding: 16px 20px;
+    }
+
+    .topbar__heading {
+        align-items: flex-start;
+    }
+
+    .topbar__menu {
+        display: inline-grid;
     }
 
     .topbar__tenant {
@@ -2154,6 +2302,10 @@ button:disabled {
 
     .all-transactions-table {
         overflow-x: auto;
+    }
+
+    .all-transactions-detail {
+        grid-template-columns: 1fr;
     }
 
     .finance-dashboard__header,
