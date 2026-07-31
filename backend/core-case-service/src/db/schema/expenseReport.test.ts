@@ -16,6 +16,7 @@ import {
     priorityLevels,
     receiptMetadata,
     stageTransition,
+    stageTransitionOutbox,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -36,6 +37,22 @@ const requiredStageTransitionColumnNames = [
     "actor",
     "reason",
     "occurred_at",
+];
+
+const requiredStageTransitionOutboxColumnNames = [
+    "stage_transition_id",
+    "expense_report_id",
+    "tenant_id",
+    "correlation_id",
+    "from_stage",
+    "to_stage",
+    "occurred_at",
+    "attempt_count",
+    "next_attempt_at",
+    "locked_until",
+    "lock_id",
+    "published_at",
+    "dead_lettered_at",
 ];
 
 const requiredLineItemColumnNames = [
@@ -374,6 +391,72 @@ void describe("auditEntry schema", () => {
         );
         expect(migrationSql).toContain(
             'before update or delete on "audit_entry"',
+        );
+    });
+});
+
+void describe("stageTransitionOutbox schema", () => {
+    void test("defines the durable stage-transition outbox table", () => {
+        const tableConfig = getTableConfig(stageTransitionOutbox);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(stageTransitionOutbox)).toEqual(
+            "stage_transition_outbox",
+        );
+
+        for (const columnName of requiredStageTransitionOutboxColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        for (const columnName of [
+            "stage_transition_id",
+            "expense_report_id",
+            "tenant_id",
+            "correlation_id",
+            "from_stage",
+            "to_stage",
+            "occurred_at",
+            "attempt_count",
+            "next_attempt_at",
+        ]) {
+            const column = tableConfig.columns.find(
+                (tableColumn) => tableColumn.name === columnName,
+            );
+
+            expect(column).toBeDefined();
+
+            if (column !== undefined) {
+                expect(column.notNull).toBeTruthy();
+            }
+        }
+    });
+
+    void test("keeps outbox rows tenant-scoped, deduplicated, and dispatchable", () => {
+        const tableConfig = getTableConfig(stageTransitionOutbox);
+
+        expect(
+            tableConfig.checks.map((constraint) => constraint.name).sort(),
+        ).toEqual([
+            "stage_transition_outbox_attempt_count_check",
+            "stage_transition_outbox_changed_stage_check",
+            "stage_transition_outbox_from_stage_check",
+            "stage_transition_outbox_lock_check",
+            "stage_transition_outbox_to_stage_check",
+        ]);
+
+        expect(
+            tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
+        ).toEqual([
+            "stage_transition_outbox_transition_unique_idx",
+            "stage_transition_outbox_dispatch_idx",
+        ]);
+
+        const foreignKeyNames = tableConfig.foreignKeys.map(
+            (foreignKeyConfig) => foreignKeyConfig.reference().name,
+        );
+
+        expect(foreignKeyNames).toContain(
+            "stage_transition_outbox_expense_report_tenant_fk",
         );
     });
 });

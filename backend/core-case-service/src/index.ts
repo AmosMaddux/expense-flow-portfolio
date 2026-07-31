@@ -1,5 +1,6 @@
 import { app } from "./app.js";
 import { applyPendingCoreCaseMigrations } from "./db/migrations.js";
+import { startStageTransitionOutboxDispatcher } from "./events/stageTransitionOutboxDispatcher.js";
 
 export {
     readCaseQueueReportsForStage,
@@ -16,6 +17,10 @@ const PORT = process.env.PORT ?? 3000;
 async function startCoreCaseService(): Promise<void> {
     if (process.env.AUTO_APPLY_MIGRATIONS === "true") {
         await applyPendingCoreCaseMigrations();
+    }
+
+    if (process.env.STAGE_TRANSITION_SNS_TOPIC_ARN !== undefined) {
+        startStageTransitionOutboxDispatcher();
     }
 
     app.listen(PORT, () => {

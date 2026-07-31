@@ -4,9 +4,11 @@ import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    TransitionExpenseReportWorkflowInboundRequestSchema,
     type CreateExpenseReportRequest,
     type ExpenseReportResponse,
     type GetExpenseReportRequest,
+    type TransitionExpenseReportWorkflowRequest,
 } from "./expenseReportDto.js";
 
 const validCreateExpenseReportRequest = {
@@ -114,6 +116,48 @@ void describe("GetExpenseReportInboundRequestSchema", () => {
         expect(() =>
             GetExpenseReportInboundRequestSchema.parse({
                 id: "expense-report-one",
+            }),
+        ).toThrow();
+    });
+});
+
+void describe("TransitionExpenseReportWorkflowInboundRequestSchema", () => {
+    void test("parses the fields needed to request a workflow transition", () => {
+        const parsed: TransitionExpenseReportWorkflowRequest =
+            TransitionExpenseReportWorkflowInboundRequestSchema.parse({
+                tenantId: "10000000-0000-4000-8000-000000000100",
+                actor: "20000000-0000-4000-8000-000000000001",
+                toStage: "Submitted",
+                reason: "employee submitted report",
+                correlationId: "40000000-0000-4000-8000-000000000001",
+            });
+
+        expect(parsed).toStrictEqual({
+            tenantId: "10000000-0000-4000-8000-000000000100",
+            actor: "20000000-0000-4000-8000-000000000001",
+            toStage: "Submitted",
+            reason: "employee submitted report",
+            correlationId: "40000000-0000-4000-8000-000000000001",
+        });
+    });
+
+    void test("rejects a transition request without tenant scope", () => {
+        expect(() =>
+            TransitionExpenseReportWorkflowInboundRequestSchema.parse({
+                actor: "20000000-0000-4000-8000-000000000001",
+                toStage: "Submitted",
+                reason: "employee submitted report",
+            }),
+        ).toThrow();
+    });
+
+    void test("rejects unknown workflow stages", () => {
+        expect(() =>
+            TransitionExpenseReportWorkflowInboundRequestSchema.parse({
+                tenantId: "10000000-0000-4000-8000-000000000100",
+                actor: "20000000-0000-4000-8000-000000000001",
+                toStage: "Overdue",
+                reason: "employee submitted report",
             }),
         ).toThrow();
     });

@@ -118,6 +118,39 @@
                     }
                 },
                 "required": ["type", "title", "status", "detail", "instance"]
+            },
+            "TransitionExpenseReportRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "actor": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "toStage": {
+                        "type": "string",
+                        "enum": [
+                            "Drafted",
+                            "Submitted",
+                            "Manager Approval",
+                            "AP Review",
+                            "Paid",
+                            "Reconciled"
+                        ]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "correlationId": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["tenantId", "actor", "toStage", "reason"]
             }
         },
         "parameters": {}
@@ -199,6 +232,85 @@
                     },
                     "404": {
                         "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/expense-reports/{id}/transitions": {
+            "post": {
+                "summary": "Transition an Expense Report",
+                "description": "Moves an Expense Report to the next workflow stage and records the outbound stage-transition event intent in the outbox table.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TransitionExpenseReportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report transitioned.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed transition request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Invalid workflow transition.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

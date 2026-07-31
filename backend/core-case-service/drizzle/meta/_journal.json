@@ -64,6 +64,13 @@
             "when": 1783449600000,
             "tag": "0008_initial_drafted_transition",
             "breakpoints": true
+        },
+        {
+            "idx": 9,
+            "version": "7",
+            "when": 1783460000000,
+            "tag": "0009_stage_transition_outbox",
+            "breakpoints": true
         }
     ]
 }

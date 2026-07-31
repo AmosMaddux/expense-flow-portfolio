@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
     CreateExpenseReportInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
+    TransitionExpenseReportWorkflowInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 
 const problemJsonSchema = z.object({
@@ -34,6 +35,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportResponse = registry.register(
         "ExpenseReportResponse",
         ExpenseReportOutboundResponseSchema,
+    );
+    const transitionExpenseReportRequest = registry.register(
+        "TransitionExpenseReportRequest",
+        TransitionExpenseReportWorkflowInboundRequestSchema,
     );
     const problemJson = registry.register("ProblemJson", problemJsonSchema);
 
@@ -85,6 +90,39 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             404: problemJsonResponse("Expense Report not found."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/expense-reports/{id}/transitions",
+        summary: "Transition an Expense Report",
+        description:
+            "Moves an Expense Report to the next workflow stage and records the outbound stage-transition event intent in the outbox table.",
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: transitionExpenseReportRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report transitioned.",
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed transition request."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse("Invalid workflow transition."),
             500: problemJsonResponse("Unexpected server error."),
         },
     });
