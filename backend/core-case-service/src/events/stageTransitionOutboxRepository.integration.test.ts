@@ -38,13 +38,14 @@ afterAll(async () => {
 });
 
 void describe("stageTransitionOutboxRepository", () => {
-    void test("reports stale completion when the claimed lock no longer matches", async () => {
+    void test("reports stale completion after an expired lease is reclaimed", async () => {
         const tenantId = randomUUID();
         const reportId = randomUUID();
         const ownerId = randomUUID();
         const transitionId = randomUUID();
         const eventId = randomUUID();
         const claimTime = new Date("2026-07-29T18:00:00.000Z");
+        const reclaimTime = new Date("2026-07-29T18:00:31.000Z");
 
         await seedOutboxRow({
             eventId,
@@ -68,26 +69,41 @@ void describe("stageTransitionOutboxRepository", () => {
             throw new Error("Expected an outbox event to be claimed.");
         }
 
+        const [reclaimedEvent] = await claimStageTransitionOutboxEvents({
+            eventId,
+            leaseMilliseconds: 30_000,
+            limit: 1,
+            maxAttempts: 10,
+            now: reclaimTime,
+        });
+
+        expect(reclaimedEvent).toBeDefined();
+
+        if (reclaimedEvent === undefined) {
+            throw new Error("Expected an expired outbox lease to be reclaimed.");
+        }
+
         const staleCompletion = await markStageTransitionOutboxEventPublished(
-            { ...claimedEvent, lockId: randomUUID() },
-            new Date("2026-07-29T18:00:01.000Z"),
+            claimedEvent,
+            new Date("2026-07-29T18:00:32.000Z"),
         );
         const validCompletion = await markStageTransitionOutboxEventPublished(
-            claimedEvent,
-            new Date("2026-07-29T18:00:02.000Z"),
+            reclaimedEvent,
+            new Date("2026-07-29T18:00:33.000Z"),
         );
 
         expect(staleCompletion).toBe(false);
         expect(validCompletion).toBe(true);
     });
 
-    void test("reports stale failure completion when the claimed lock no longer matches", async () => {
+    void test("reports stale failure completion after an expired lease is reclaimed", async () => {
         const tenantId = randomUUID();
         const reportId = randomUUID();
         const ownerId = randomUUID();
         const transitionId = randomUUID();
         const eventId = randomUUID();
         const claimTime = new Date("2026-07-29T19:00:00.000Z");
+        const reclaimTime = new Date("2026-07-29T19:00:31.000Z");
 
         await seedOutboxRow({
             eventId,
@@ -111,13 +127,27 @@ void describe("stageTransitionOutboxRepository", () => {
             throw new Error("Expected an outbox event to be claimed.");
         }
 
+        const [reclaimedEvent] = await claimStageTransitionOutboxEvents({
+            eventId,
+            leaseMilliseconds: 30_000,
+            limit: 1,
+            maxAttempts: 10,
+            now: reclaimTime,
+        });
+
+        expect(reclaimedEvent).toBeDefined();
+
+        if (reclaimedEvent === undefined) {
+            throw new Error("Expected an expired outbox lease to be reclaimed.");
+        }
+
         const staleCompletion = await markStageTransitionOutboxEventFailed(
-            { ...claimedEvent, lockId: randomUUID() },
-            new Date("2026-07-29T19:00:02.000Z"),
+            claimedEvent,
+            new Date("2026-07-29T19:00:32.000Z"),
         );
         const validCompletion = await markStageTransitionOutboxEventFailed(
-            claimedEvent,
-            new Date("2026-07-29T19:00:03.000Z"),
+            reclaimedEvent,
+            new Date("2026-07-29T19:00:33.000Z"),
         );
 
         expect(staleCompletion).toBe(false);
