@@ -2,16 +2,10 @@ name: ExpenseFlow E2E
 
 on:
     pull_request:
-        paths:
-            - "backend/**"
-            - "frontend/**"
     push:
         branches:
             - development
             - main
-        paths:
-            - "backend/**"
-            - "frontend/**"
 
 jobs:
     ui-quality-gate:
@@ -70,7 +64,7 @@ jobs:
                       test-results/
                       .lighthouseci/
                   if-no-files-found: ignore
-                  retention-days: 1
+                  retention-days: 14
 
             - name: Stop E2E services
               if: always()
