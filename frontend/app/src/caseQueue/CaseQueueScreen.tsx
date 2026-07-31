@@ -15,7 +15,7 @@ import {
     type QueryClient,
     type QueryKey,
 } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import { useSession } from "../auth";
@@ -138,6 +138,10 @@ type TransitionMutationVariables = {
     expenseReportId: string;
     toStage: ExpenseReportStage;
     reason: string;
+};
+type ReceiptObjectPreview = {
+    contentType: string;
+    objectUrl: string;
 };
 type QueueSnapshot = Array<[QueryKey, ApprovalQueueLineItem[] | undefined]>;
 
@@ -1311,11 +1315,7 @@ function ReceiptGallery({
                                         className="receipt-gallery__preview"
                                         aria-hidden="true"
                                     >
-                                        <span className="receipt-gallery__paper">
-                                            <span />
-                                            <span />
-                                            <span />
-                                        </span>
+                                        <ReceiptPreview receipt={receipt} />
                                         <span className="receipt-gallery__filename">
                                             {receipt.filename ?? "Receipt file"}
                                         </span>
@@ -1349,6 +1349,141 @@ function ReceiptGallery({
             )}
         </section>
     );
+}
+
+function ReceiptPreview({
+    receipt,
+}: {
+    receipt: ApprovalQueueReceipt;
+}): JSX.Element {
+    const session = useSession();
+    const [preview, setPreview] = useState<ReceiptObjectPreview | null>(null);
+    const [previewFailed, setPreviewFailed] = useState(false);
+
+    useEffect(() => {
+        if (
+            !isPreviewableReceiptContentType(receipt.contentType) ||
+            typeof URL.createObjectURL !== "function"
+        ) {
+            setPreview(null);
+            setPreviewFailed(false);
+            return undefined;
+        }
+
+        const abortController = new AbortController();
+        let objectUrl: string | null = null;
+
+        setPreview(null);
+        setPreviewFailed(false);
+
+        async function loadReceiptPreview(): Promise<void> {
+            try {
+                const response = await session.authenticatedFetch(
+                    receipt.previewUrl,
+                    {
+                        signal: abortController.signal,
+                    },
+                );
+
+                if (!response.ok) {
+                    throw new Error("Receipt preview request failed.");
+                }
+
+                const blob = await response.blob();
+                if (abortController.signal.aborted) {
+                    return;
+                }
+
+                objectUrl = URL.createObjectURL(blob);
+                setPreview({
+                    contentType: blob.type || (receipt.contentType ?? ""),
+                    objectUrl,
+                });
+            } catch {
+                if (!abortController.signal.aborted) {
+                    setPreviewFailed(true);
+                }
+            }
+        }
+
+        void loadReceiptPreview();
+
+        return () => {
+            abortController.abort();
+            if (
+                objectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [receipt.contentType, receipt.previewUrl, session]);
+
+    if (preview !== null) {
+        if (isImageReceiptContentType(preview.contentType)) {
+            return (
+                <img
+                    alt=""
+                    className="receipt-gallery__preview-media"
+                    src={preview.objectUrl}
+                />
+            );
+        }
+
+        if (isPdfReceiptContentType(preview.contentType)) {
+            return (
+                <object
+                    aria-label={`${receipt.filename ?? "Receipt file"} preview`}
+                    className="receipt-gallery__preview-media"
+                    data={preview.objectUrl}
+                    tabIndex={-1}
+                    type="application/pdf"
+                >
+                    <ReceiptPlaceholder />
+                </object>
+            );
+        }
+    }
+
+    return (
+        <>
+            <ReceiptPlaceholder />
+            {previewFailed ? (
+                <span className="receipt-gallery__preview-status">
+                    Preview unavailable
+                </span>
+            ) : null}
+        </>
+    );
+}
+
+function ReceiptPlaceholder(): JSX.Element {
+    return (
+        <span className="receipt-gallery__paper">
+            <span />
+            <span />
+            <span />
+        </span>
+    );
+}
+
+function isPreviewableReceiptContentType(contentType: string | null): boolean {
+    return (
+        isImageReceiptContentType(contentType) ||
+        isPdfReceiptContentType(contentType)
+    );
+}
+
+function isImageReceiptContentType(contentType: string | null): boolean {
+    return (
+        contentType === "image/png" ||
+        contentType === "image/jpeg" ||
+        contentType === "image/webp"
+    );
+}
+
+function isPdfReceiptContentType(contentType: string | null): boolean {
+    return contentType === "application/pdf";
 }
 
 function collectReportReceipts(

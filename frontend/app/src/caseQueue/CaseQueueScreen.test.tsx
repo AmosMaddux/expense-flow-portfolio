@@ -8,7 +8,15 @@ import {
     within,
 } from "@testing-library/react";
 import axe from "axe-core";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import {
+    afterAll,
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    test,
+    vi,
+} from "vitest";
 
 import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
@@ -17,6 +25,14 @@ import { CaseQueueScreen, type ApprovalQueueLineItem } from "./CaseQueueScreen";
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
+const originalCreateObjectUrl = Object.getOwnPropertyDescriptor(
+    URL,
+    "createObjectURL",
+);
+const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(
+    URL,
+    "revokeObjectURL",
+);
 
 function getCheckboxByLabel(label: string): HTMLInputElement {
     const element = screen.getByLabelText(label);
@@ -210,6 +226,13 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+function createReceiptContentResponse(contentType: string): Response {
+    return new Response("Synthetic Receipt Fixture preview bytes", {
+        headers: { "Content-Type": contentType },
+        status: 200,
+    });
+}
+
 function createProblemResponse(detail: string): Response {
     return createJsonResponse(
         {
@@ -269,9 +292,62 @@ function getBodyRows(): HTMLElement[] {
     return screen.getAllByRole("row").slice(1);
 }
 
+function installReceiptObjectUrlMocks(urls: string[]): {
+    createObjectURL: ReturnType<typeof vi.fn>;
+} {
+    const createObjectURL = vi.fn(() => urls.shift() ?? "blob:receipt-preview");
+
+    Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: vi.fn(),
+    });
+
+    return {
+        createObjectURL,
+    };
+}
+
+function restoreOriginalObjectUrlDescriptors(): void {
+    if (originalCreateObjectUrl === undefined) {
+        Reflect.deleteProperty(URL, "createObjectURL");
+    } else {
+        Object.defineProperty(URL, "createObjectURL", originalCreateObjectUrl);
+    }
+
+    if (originalRevokeObjectUrl === undefined) {
+        Reflect.deleteProperty(URL, "revokeObjectURL");
+    } else {
+        Object.defineProperty(URL, "revokeObjectURL", originalRevokeObjectUrl);
+    }
+}
+
+function disableReceiptObjectUrls(): void {
+    Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: undefined,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: undefined,
+    });
+}
+
+beforeEach(() => {
+    disableReceiptObjectUrls();
+});
+
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    disableReceiptObjectUrls();
+});
+
+afterAll(() => {
+    restoreOriginalObjectUrlDescriptors();
 });
 
 describe("CaseQueueScreen", () => {
@@ -584,6 +660,85 @@ describe("CaseQueueScreen", () => {
         expect(axeResults.violations).toHaveLength(0);
     });
 
+    test("renders PDF and image receipt previews from authenticated receipt content", async () => {
+        const objectUrlMocks = installReceiptObjectUrlMocks([
+            "blob:synthetic-hotel-preview",
+            "blob:synthetic-rail-preview",
+        ]);
+        const reportId = lineItems[0].expenseReportId;
+        const previewableItems: ApprovalQueueLineItem[] = [
+            {
+                ...lineItems[0],
+                currentStage: "AP Review",
+                receipts: [
+                    {
+                        ...lineItems[0].receipts[0],
+                        filename: "synthetic-hotel-receipt.pdf",
+                        contentType: "application/pdf",
+                    },
+                ],
+            },
+            {
+                ...lineItems[0],
+                id: "b550b912-86dc-46a1-8154-83d340f17f7b",
+                expenseReportId: reportId,
+                merchant: "Metro Rail",
+                amount: 38.5,
+                glCode: "6220",
+                currentStage: "AP Review",
+                receipts: [
+                    {
+                        id: "81000000-0000-4000-8000-000000000002",
+                        lineItemId: "b550b912-86dc-46a1-8154-83d340f17f7b",
+                        merchant: "Metro Rail",
+                        receiptDate: "2026-07-22",
+                        amount: 38.5,
+                        filename: "synthetic-rail-receipt.png",
+                        contentType: "image/png",
+                        previewUrl: `/v1/expense-reports/${reportId}/receipts/81000000-0000-4000-8000-000000000002/content`,
+                    },
+                ],
+                mileageEntries: [],
+            },
+        ];
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(previewableItems))
+            .mockResolvedValueOnce(
+                createReceiptContentResponse("application/pdf"),
+            )
+            .mockResolvedValueOnce(createReceiptContentResponse("image/png"));
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+
+        await waitFor(() =>
+            expect(objectUrlMocks.createObjectURL).toHaveBeenCalledTimes(2),
+        );
+
+        const pdfPreview = document.querySelector(
+            'object.receipt-gallery__preview-media[data="blob:synthetic-hotel-preview"]',
+        );
+        const imagePreview = document.querySelector(
+            'img.receipt-gallery__preview-media[src="blob:synthetic-rail-preview"]',
+        );
+
+        expect(pdfPreview).toBeTruthy();
+        expect(imagePreview).toBeTruthy();
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            lineItems[0].receipts[0]?.previewUrl,
+        );
+        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
+            `/v1/expense-reports/${reportId}/receipts/81000000-0000-4000-8000-000000000002/content`,
+        );
+    });
+
     test("selecting a receipt focuses and highlights its linked line item", async () => {
         const scrollIntoView = vi.fn();
         const originalScrollIntoView = Object.getOwnPropertyDescriptor(
@@ -625,7 +780,7 @@ describe("CaseQueueScreen", () => {
         expect(document.activeElement).toBe(reviewRow);
         expect(scrollIntoView).toHaveBeenCalled();
         if (originalScrollIntoView === undefined) {
-            delete Element.prototype.scrollIntoView;
+            Reflect.deleteProperty(Element.prototype, "scrollIntoView");
         } else {
             Object.defineProperty(
                 Element.prototype,
