@@ -4155,6 +4155,17 @@
                     {
                         "schema": {
                             "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report settlements."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report settlements.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "format": "uuid",
                             "description": "End-to-end request correlation identifier. The service generates one when omitted."
                         },

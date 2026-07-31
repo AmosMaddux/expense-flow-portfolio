@@ -20,6 +20,8 @@ import {
     type AuditEntry,
     expenseReport,
     type ExpenseReport,
+    expenseReportSettlement,
+    type ExpenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
@@ -71,9 +73,26 @@ export type SettlementSagaAuditRequest = {
 };
 
 export type SettlementSagaCompensationResult =
-    | { kind: "compensated" }
+    | { kind: "compensated"; eventId: string }
     | { kind: "already_prior_stage" }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementClaimResult =
+    | { kind: "issue_payment"; settlement: ExpenseReportSettlement }
+    | { kind: "reuse_payment"; settlement: ExpenseReportSettlement }
+    | {
+          kind: "already_reconciled";
+          settlement: ExpenseReportSettlement;
+          report: ExpenseReport;
+      }
+    | { kind: "in_progress"; settlement: ExpenseReportSettlement }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementPaymentRecordResult =
+    | { kind: "recorded"; settlement: ExpenseReportSettlement }
+    | { kind: "already_recorded"; settlement: ExpenseReportSettlement }
     | { kind: "not_found" };
 
 type ClearExpenseReportFlagsResult =
@@ -2118,7 +2137,15 @@ export async function transitionExpenseReportStage(
             isSendBackTransition(request) ? request.reason : undefined,
         );
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
-            ...request,
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: request.fromStage,
+            toStage: request.toStage,
+            reason: request.reason,
+            ...(request.idempotencyKey === undefined
+                ? {}
+                : { idempotencyKey: request.idempotencyKey }),
             correlationId: request.correlationId ?? randomUUID(),
             eventId: request.eventId ?? randomUUID(),
             occurredAt: request.occurredAt ?? new Date(),
@@ -2159,6 +2186,209 @@ export async function insertSettlementSagaAuditEntry(
 }
 
 /**
+ * Claims or recovers the durable settlement record before any payment side effect runs.
+ */
+export async function claimExpenseReportSettlement(request: {
+    tenantId: string;
+    id: string;
+    idempotencyKey: string;
+    correlationId: string;
+}): Promise<SettlementClaimResult> {
+    return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const existingSettlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const existingSettlement = existingSettlements[0];
+
+        if (existingSettlement !== undefined) {
+            if (
+                existingSettlement.status === "reconciled" &&
+                report.currentStage === "Reconciled"
+            ) {
+                return {
+                    kind: "already_reconciled",
+                    settlement: existingSettlement,
+                    report,
+                };
+            }
+
+            if (
+                existingSettlement.status === "issuing" ||
+                existingSettlement.paymentId === null
+            ) {
+                return {
+                    kind: "in_progress",
+                    settlement: existingSettlement,
+                };
+            }
+
+            return {
+                kind: "reuse_payment",
+                settlement: existingSettlement,
+            };
+        }
+
+        if (report.currentStage !== "AP Review") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage as ExpenseReportStage,
+            };
+        }
+
+        const insertedSettlements = await transaction
+            .insert(expenseReportSettlement)
+            .values({
+                tenantId: request.tenantId,
+                expenseReportId: request.id,
+                idempotencyKey: request.idempotencyKey,
+                correlationId: request.correlationId,
+            })
+            .returning();
+        const settlement = insertedSettlements[0];
+        if (settlement === undefined) {
+            throw new Error("Unable to claim Expense Report settlement.");
+        }
+
+        return { kind: "issue_payment", settlement };
+    });
+}
+
+/**
+ * Persists the payment stub reference for a previously claimed settlement.
+ */
+export async function recordExpenseReportSettlementPayment(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    idempotencyKey: string;
+    paymentId: string;
+}): Promise<SettlementPaymentRecordResult> {
+    return db.transaction(async (transaction) => {
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(
+                        expenseReportSettlement.idempotencyKey,
+                        request.idempotencyKey,
+                    ),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+        if (settlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (settlement.paymentId !== null) {
+            return { kind: "already_recorded", settlement };
+        }
+
+        const updatedSettlements = await transaction
+            .update(expenseReportSettlement)
+            .set({
+                paymentId: request.paymentId,
+                status: "issued",
+                updatedAt: new Date(),
+            })
+            .where(eq(expenseReportSettlement.id, settlement.id))
+            .returning();
+        const updatedSettlement = updatedSettlements[0];
+        if (updatedSettlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "payment_stub_issued",
+            stageBeforeAction: "AP Review",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: "Synthetic payment stub issued for settlement saga.",
+        });
+
+        return { kind: "recorded", settlement: updatedSettlement };
+    });
+}
+
+/**
+ * Marks the durable settlement record reconciled after both stage transitions commit.
+ */
+export async function markExpenseReportSettlementReconciled(request: {
+    tenantId: string;
+    id: string;
+    paymentId: string;
+}): Promise<boolean> {
+    const updatedSettlements = await db
+        .update(expenseReportSettlement)
+        .set({ status: "reconciled", updatedAt: new Date() })
+        .where(
+            and(
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                eq(expenseReportSettlement.paymentId, request.paymentId),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return updatedSettlements.length === 1;
+}
+
+/**
+ * Marks the durable settlement record compensated after the payment stub is reversed.
+ */
+export async function markExpenseReportSettlementCompensated(request: {
+    tenantId: string;
+    id: string;
+    paymentId: string;
+}): Promise<boolean> {
+    const updatedSettlements = await db
+        .update(expenseReportSettlement)
+        .set({ status: "compensated", updatedAt: new Date() })
+        .where(
+            and(
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                eq(expenseReportSettlement.paymentId, request.paymentId),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return updatedSettlements.length === 1;
+}
+
+/**
  * Restores a settlement saga from Paid to AP Review after a later saga step fails.
  */
 export async function compensatePaidSettlementStage(request: {
@@ -2166,6 +2396,9 @@ export async function compensatePaidSettlementStage(request: {
     id: string;
     actor: string;
     reason: string;
+    correlationId: string;
+    eventId: string;
+    occurredAt: Date;
 }): Promise<SettlementSagaCompensationResult> {
     return db.transaction(async (transaction) => {
         const report = await readCurrentReportForTransition(
@@ -2214,8 +2447,19 @@ export async function compensatePaidSettlementStage(request: {
             denialReason: null,
             outcomeReason: request.reason,
         });
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "AP Review",
+            reason: "settlement_saga_compensated",
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
 
-        return { kind: "compensated" };
+        return { kind: "compensated", eventId: request.eventId };
     });
 }
 

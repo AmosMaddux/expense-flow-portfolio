@@ -211,6 +211,13 @@
             "when": 1785523200000,
             "tag": "0029_outbox_transition_ownership",
             "breakpoints": true
+        },
+        {
+            "idx": 30,
+            "version": "7",
+            "when": 1785511640626,
+            "tag": "0030_gorgeous_power_pack",
+            "breakpoints": true
         }
     ]
 }

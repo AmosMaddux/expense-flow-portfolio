@@ -137,6 +137,22 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
+    void test("documents Idempotency-Key as required for Expense Report settlement", () => {
+        const expenseReportSettlementPath =
+            document.paths?.["/v1/expense-reports/{id}/settlement"];
+        const idempotencyHeader =
+            expenseReportSettlementPath?.post?.parameters?.find(
+                (parameter) =>
+                    "name" in parameter && parameter.name === "Idempotency-Key",
+            );
+
+        expect(idempotencyHeader).toMatchObject({
+            in: "header",
+            name: "Idempotency-Key",
+            required: true,
+        });
+    });
+
     void test("documents correlation only on stage-transition request boundaries", () => {
         const createParameters =
             document.paths?.["/v1/expense-reports"]?.post?.parameters ?? [];

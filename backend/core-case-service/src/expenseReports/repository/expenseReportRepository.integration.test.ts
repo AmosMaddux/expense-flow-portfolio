@@ -10,6 +10,7 @@ import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
 import {
     auditEntry,
     expenseReport,
+    expenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
@@ -32,7 +33,9 @@ import { db } from "../../db/client.js";
 import {
     buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
+    claimExpenseReportSettlement,
     clearExpenseReportFlags,
+    compensatePaidSettlementStage,
     countOpenExpenseReportFlags,
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
@@ -1065,6 +1068,166 @@ void describe("expenseReportRepository", () => {
         expect(approvedAuditRows).toHaveLength(0);
         expect(attemptedTransitionRows).toHaveLength(0);
         expect(duplicateOutboxRows).toHaveLength(1);
+    });
+
+    void test("serializes concurrent settlement claims to one payment issuer", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000209";
+        const actorId = "20000000-0000-4000-8000-000000000209";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+
+        const [firstClaim, secondClaim] = await Promise.all([
+            claimExpenseReportSettlement({
+                tenantId,
+                id: report.id,
+                idempotencyKey: "settlement-claim-209-a",
+                correlationId: "70000000-0000-4000-8000-000000000209",
+            }),
+            claimExpenseReportSettlement({
+                tenantId,
+                id: report.id,
+                idempotencyKey: "settlement-claim-209-b",
+                correlationId: "70000000-0000-4000-8000-000000000210",
+            }),
+        ]);
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, report.id));
+
+        expect([firstClaim.kind, secondClaim.kind].sort()).toEqual([
+            "in_progress",
+            "issue_payment",
+        ]);
+        expect(settlementRows).toHaveLength(1);
+        expect(settlementRows[0]).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            status: "issuing",
+        });
+    });
+
+    void test("writes compensation as a first-class transition and outbox event after reconciliation failure", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000210";
+        const actorId = "20000000-0000-4000-8000-000000000210";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Paid" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+
+        const correlationId = "70000000-0000-4000-8000-000000000210";
+        const eventId = "71000000-0000-4000-8000-000000000210";
+        const occurredAt = new Date("2026-07-29T18:01:00.000Z");
+        const compensation = await compensatePaidSettlementStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            reason: "Settlement saga failed before reconciliation completed.",
+            correlationId,
+            eventId,
+            occurredAt,
+        });
+
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, report.id),
+                    eq(auditEntry.action, "settlement_saga_compensated"),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, report.id),
+                    eq(stageTransition.reason, "settlement_saga_compensated"),
+                ),
+            );
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.id, eventId));
+
+        expect(compensation).toEqual({ kind: "compensated", eventId });
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: report.id,
+                actorId,
+                stageBeforeAction: "Paid",
+                stageAfterProposedAction: "AP Review",
+                outcomeReason:
+                    "Settlement saga failed before reconciliation completed.",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: report.id,
+                actor: actorId,
+                fromStage: "Paid",
+                toStage: "AP Review",
+                reason: "settlement_saga_compensated",
+                occurredAt,
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                id: eventId,
+                tenantId,
+                expenseReportId: report.id,
+                correlationId,
+                fromStage: "Paid",
+                toStage: "AP Review",
+                occurredAt,
+                publishedAt: null,
+            }),
+        );
     });
 
     void test("clears line-item flags after review", async () => {

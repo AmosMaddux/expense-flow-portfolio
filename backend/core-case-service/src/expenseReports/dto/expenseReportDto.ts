@@ -434,6 +434,7 @@ export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     toStage: z.enum(approvedWorkflowStages),
     reason: z.string().trim().min(1),
     correlationId: z.uuid().optional(),
+    idempotencyKey: z.string().trim().min(1).max(128).optional(),
     eventId: z.uuid().optional(),
     occurredAt: z.date().optional(),
 });

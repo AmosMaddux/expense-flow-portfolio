@@ -1,6 +1,6 @@
 import { type Server } from "node:http";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { Express } from "express";
@@ -21,6 +21,7 @@ import {
     attachmentMetadata,
     auditEntry,
     expenseReport,
+    expenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
@@ -2733,6 +2734,258 @@ void describe("Expense Report routes", () => {
                 correlationId: financeCorrelationId,
             }),
         );
+    });
+
+    void test("settles an AP Review report idempotently and replays the original correlation", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000210";
+        const owner = "50000000-0000-4000-8000-000000000210";
+        const financeAdminId = "51000000-0000-4000-8000-000000000210";
+        const reportId = "60000000-0000-4000-8000-000000000210";
+        const correlationId = "70000000-0000-4000-8000-000000000210";
+        const replayCorrelationId = "70000000-0000-4000-8000-000000000211";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-settle-210",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify({
+                    reason: "synthetic settlement complete",
+                }),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-settle-210",
+                    "x-correlation-id": replayCorrelationId,
+                },
+                body: JSON.stringify({
+                    reason: "synthetic settlement complete",
+                }),
+            },
+        );
+        const replayBody = (await replayResponse.json()) as {
+            currentStage?: string;
+        };
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(replayResponse.status).toBe(200);
+        expect(response.headers.get("x-correlation-id")).toBe(correlationId);
+        expect(replayResponse.headers.get("x-correlation-id")).toBe(
+            correlationId,
+        );
+        expect(body.currentStage).toBe("Reconciled");
+        expect(replayBody.currentStage).toBe("Reconciled");
+        expect(settlementRows).toHaveLength(1);
+        expect(settlementRows[0]).toMatchObject({
+            tenantId,
+            expenseReportId: reportId,
+            idempotencyKey: "expense-settle-210",
+            correlationId,
+            status: "reconciled",
+        });
+        expect(settlementRows[0]?.paymentId).toMatch(/^synthetic-payment-/);
+        expect(outboxRows).toHaveLength(2);
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: reportId,
+                idempotencyKey: "expense-settle-210",
+                fromStage: "AP Review",
+                toStage: "Paid",
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: reportId,
+                idempotencyKey: "expense-settle-210",
+                fromStage: "Paid",
+                toStage: "Reconciled",
+            }),
+        );
+    });
+
+    void test("compensates with a first-class transition when settlement reconciliation fails", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000212";
+        const owner = "50000000-0000-4000-8000-000000000212";
+        const financeAdminId = "51000000-0000-4000-8000-000000000212";
+        const reportId = "60000000-0000-4000-8000-000000000212";
+        const correlationId = "70000000-0000-4000-8000-000000000212";
+        const triggerName = "fail_paid_reconciled_212";
+        const functionName = "fail_paid_reconciled_212_fn";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+        await db.execute(sql.raw(`
+CREATE OR REPLACE FUNCTION ${functionName}()
+RETURNS trigger AS $$
+BEGIN
+    IF NEW."from_stage" = 'Paid' AND NEW."to_stage" = 'Reconciled' THEN
+        RAISE EXCEPTION 'synthetic reconciliation transition failure';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER ${triggerName}
+BEFORE INSERT ON "stage_transition"
+FOR EACH ROW EXECUTE FUNCTION ${functionName}();
+`));
+
+        try {
+            const response = await requestApp(
+                `/v1/expense-reports/${reportId}/settlement`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            tenantId,
+                            financeAdminId,
+                            ["Finance Admin"],
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": "expense-settle-212",
+                        "x-correlation-id": correlationId,
+                    },
+                    body: JSON.stringify({}),
+                },
+            );
+            const [persistedReport] = await db
+                .select()
+                .from(expenseReport)
+                .where(eq(expenseReport.id, reportId));
+            const auditRows = await db
+                .select()
+                .from(auditEntry)
+                .where(eq(auditEntry.expenseReportId, reportId));
+            const transitionRows = await db
+                .select()
+                .from(stageTransition)
+                .where(eq(stageTransition.expenseReportId, reportId));
+            const outboxRows = await db
+                .select()
+                .from(stageTransitionOutbox)
+                .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+            const settlementRows = await db
+                .select()
+                .from(expenseReportSettlement)
+                .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+            expect(response.status).toBe(409);
+            expect(persistedReport?.currentStage).toBe("AP Review");
+            expect(settlementRows).toContainEqual(
+                expect.objectContaining({
+                    tenantId,
+                    expenseReportId: reportId,
+                    idempotencyKey: "expense-settle-212",
+                    status: "compensated",
+                }),
+            );
+            expect(auditRows).toContainEqual(
+                expect.objectContaining({
+                    action: "payment_stub_issued",
+                    stageBeforeAction: "AP Review",
+                    stageAfterProposedAction: "AP Review",
+                }),
+            );
+            expect(auditRows).toContainEqual(
+                expect.objectContaining({
+                    action: "settlement_saga_compensated",
+                    stageBeforeAction: "Paid",
+                    stageAfterProposedAction: "AP Review",
+                }),
+            );
+            expect(transitionRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "AP Review",
+                    toStage: "Paid",
+                    reason: "payment_stub_issued",
+                }),
+            );
+            expect(transitionRows).not.toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "Reconciled",
+                }),
+            );
+            expect(transitionRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "AP Review",
+                    reason: "settlement_saga_compensated",
+                }),
+            );
+            expect(outboxRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "AP Review",
+                    toStage: "Paid",
+                    correlationId,
+                }),
+            );
+            expect(outboxRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "AP Review",
+                    correlationId,
+                }),
+            );
+            expect(outboxRows).not.toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "Reconciled",
+                }),
+            );
+        } finally {
+            await db.execute(
+                sql.raw(
+                    `DROP TRIGGER IF EXISTS ${triggerName} ON "stage_transition"; DROP FUNCTION IF EXISTS ${functionName}();`,
+                ),
+            );
+        }
     });
 
     void test.each([

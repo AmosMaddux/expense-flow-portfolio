@@ -655,17 +655,40 @@ export async function postExpenseReportSettlement(
             req.body ?? {},
         );
         const correlationId = parseOrCreateCorrelationId(req);
-        res.set("X-Correlation-Id", correlationId);
-        const report = await settleExpenseReportWorkflow({
+        const idempotencyKey = parseIdempotencyKey(req);
+        const settleReport = async () =>
+            settleExpenseReportWorkflow({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+                roles: auth.roles,
+                reason: parsedRequest.reason,
+                correlationId,
+                idempotencyKey,
+            });
+        const requestHash = createIdempotencyRequestHash({
             id: parsedParams.id,
-            tenantId: auth.tenantId,
-            actorId: auth.userId,
-            roles: auth.roles,
-            reason: parsedRequest.reason,
-            correlationId,
+            ...parsedRequest,
         });
+        const result = await runIdempotentSubmission({
+            conflictMessage:
+                "An Expense Report settlement with this idempotency key is already in progress.",
+            idempotencyKey,
+            operation: async () => ({
+                correlationId,
+                report: await settleReport(),
+            }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            successStatusCode: 200,
+            tenantId: auth.tenantId,
+        });
+        const settlement = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
 
-        res.status(200).json(report);
+        res.set("X-Correlation-Id", settlement.correlationId);
+        res.status(result.statusCode).json(settlement.report);
     } catch (error: unknown) {
         next(error);
     }

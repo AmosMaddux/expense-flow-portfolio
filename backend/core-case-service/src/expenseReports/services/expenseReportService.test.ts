@@ -11,7 +11,10 @@ const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
-const insertSettlementSagaAuditEntryMock = vi.hoisted(() => vi.fn());
+const claimExpenseReportSettlementMock = vi.hoisted(() => vi.fn());
+const markExpenseReportSettlementCompensatedMock = vi.hoisted(() => vi.fn());
+const markExpenseReportSettlementReconciledMock = vi.hoisted(() => vi.fn());
+const recordExpenseReportSettlementPaymentMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
 const compensatePaidSettlementStageMock = vi.hoisted(() => vi.fn());
 const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
@@ -21,6 +24,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     buildSubmissionSourceFingerprint: vi.fn(),
     buildSubmissionSourceKeys: vi.fn(),
     clearExpenseReportFlags: vi.fn(),
+    claimExpenseReportSettlement: claimExpenseReportSettlementMock,
     compensatePaidSettlementStage: compensatePaidSettlementStageMock,
     countOpenExpenseReportFlags: vi.fn(),
     findApprovalQueueLineItems: vi.fn(),
@@ -32,8 +36,13 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     insertDeniedWorkflowTransitionAttempt: vi.fn(),
     insertDraftExpenseReport: vi.fn(),
     insertMileageEntry: insertMileageEntryMock,
-    insertSettlementSagaAuditEntry: insertSettlementSagaAuditEntryMock,
+    markExpenseReportSettlementCompensated:
+        markExpenseReportSettlementCompensatedMock,
+    markExpenseReportSettlementReconciled:
+        markExpenseReportSettlementReconciledMock,
     readDraftSubmissionSources: vi.fn(),
+    recordExpenseReportSettlementPayment:
+        recordExpenseReportSettlementPaymentMock,
     reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
     transitionExpenseReportStage: transitionExpenseReportStageMock,
@@ -64,7 +73,10 @@ beforeEach(() => {
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
     insertMileageEntryMock.mockReset();
-    insertSettlementSagaAuditEntryMock.mockReset();
+    claimExpenseReportSettlementMock.mockReset();
+    markExpenseReportSettlementCompensatedMock.mockReset();
+    markExpenseReportSettlementReconciledMock.mockReset();
+    recordExpenseReportSettlementPaymentMock.mockReset();
     transitionExpenseReportStageMock.mockReset();
     compensatePaidSettlementStageMock.mockReset();
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
@@ -242,13 +254,23 @@ void describe("Expense Report settlement saga", () => {
             .fn()
             .mockResolvedValue({ paymentId: "synthetic-payment-success" });
         const compensate = vi.fn().mockResolvedValue(undefined);
-        findExpenseReportByIdMock
-            .mockResolvedValueOnce(apReviewReport)
-            .mockResolvedValueOnce({
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                paymentId: null,
+            },
+        });
+        findExpenseReportByIdMock.mockResolvedValueOnce({
                 ...apReviewReport,
                 currentStage: "Reconciled",
             });
-        insertSettlementSagaAuditEntryMock.mockResolvedValue(undefined);
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-success",
+            },
+        });
+        markExpenseReportSettlementReconciledMock.mockResolvedValue(true);
         transitionExpenseReportStageMock.mockResolvedValue(true);
         invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
 
@@ -260,6 +282,7 @@ void describe("Expense Report settlement saga", () => {
                 roles: ["Finance Admin"],
                 reason: "Synthetic settlement complete.",
                 correlationId,
+                idempotencyKey: "settlement-success",
             },
             {
                 paymentStubIssuer: { issue, compensate },
@@ -301,14 +324,26 @@ void describe("Expense Report settlement saga", () => {
             .fn()
             .mockResolvedValue({ paymentId: "synthetic-payment-rollback" });
         const compensate = vi.fn().mockResolvedValue(undefined);
-        findExpenseReportByIdMock.mockResolvedValue(apReviewReport);
-        insertSettlementSagaAuditEntryMock.mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                paymentId: null,
+            },
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-rollback",
+            },
+        });
         transitionExpenseReportStageMock
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(false);
         compensatePaidSettlementStageMock.mockResolvedValue({
             kind: "compensated",
+            eventId: "80000000-0000-4000-8000-000000000811",
         });
+        markExpenseReportSettlementCompensatedMock.mockResolvedValue(true);
         invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
 
         await expect(
@@ -319,6 +354,7 @@ void describe("Expense Report settlement saga", () => {
                     actorId,
                     roles: ["Finance Admin"],
                     correlationId,
+                    idempotencyKey: "settlement-rollback",
                 },
                 {
                     paymentStubIssuer: { issue, compensate },
@@ -337,18 +373,22 @@ void describe("Expense Report settlement saga", () => {
             paymentId: "synthetic-payment-rollback",
             reason: "Settlement saga failed before reconciliation completed.",
         });
-        expect(compensatePaidSettlementStageMock).toHaveBeenCalledWith({
-            tenantId,
-            id: expenseReportId,
-            actor: actorId,
-            reason: "Settlement saga failed before reconciliation completed.",
-        });
-        expect(insertSettlementSagaAuditEntryMock).toHaveBeenCalledWith(
+        expect(compensatePaidSettlementStageMock).toHaveBeenCalledWith(
             expect.objectContaining({
-                action: "payment_stub_compensated",
-                currentStage: "AP Review",
+                tenantId,
+                id: expenseReportId,
+                actor: actorId,
+                correlationId,
+                reason: "Settlement saga failed before reconciliation completed.",
+                eventId: expect.any(String),
+                occurredAt: expect.any(Date),
             }),
         );
+        expect(markExpenseReportSettlementCompensatedMock).toHaveBeenCalledWith({
+            tenantId,
+            id: expenseReportId,
+            paymentId: "synthetic-payment-rollback",
+        });
     });
 });
 
