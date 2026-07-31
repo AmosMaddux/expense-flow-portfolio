@@ -1674,7 +1674,7 @@ button:disabled {
 .receipt-gallery__grid {
     display: grid;
     gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .receipt-gallery__list {
@@ -1708,9 +1708,7 @@ button:disabled {
 }
 
 .receipt-gallery__item--list {
-    grid-template-columns: 88px minmax(0, 1fr);
     align-items: center;
-    padding: 10px 10px 0;
 }
 
 .receipt-gallery__select {
@@ -1725,8 +1723,7 @@ button:disabled {
     text-align: left;
 }
 
-.receipt-gallery__select:focus-visible,
-.receipt-gallery__open:focus-visible {
+.receipt-gallery__select:focus-visible {
     outline: 3px solid #9fb3c8;
     outline-offset: 3px;
 }
@@ -1737,93 +1734,13 @@ button:disabled {
 }
 
 .receipt-gallery__item--list .receipt-gallery__select {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: 88px minmax(0, 1fr);
-    gap: 12px;
-}
-
-.receipt-gallery__preview {
-    display: grid;
-    position: relative;
-    aspect-ratio: 3 / 4;
-    min-height: 180px;
-    place-items: center;
-    overflow: hidden;
-    border-radius: 8px 8px 0 0;
-    background: #e6e8ea;
-}
-
-.receipt-gallery__item--list .receipt-gallery__preview {
-    min-height: 108px;
-    border-radius: 6px;
-}
-
-.receipt-gallery__paper {
-    display: grid;
-    width: 58%;
-    min-width: 58px;
-    gap: 10px;
-    border: 1px solid #bcccdc;
-    border-radius: 6px;
-    background: #ffffff;
-    padding: 20px 14px;
-    box-shadow: 0 10px 22px rgb(15 23 42 / 12%);
-}
-
-.receipt-gallery__paper span {
     display: block;
-    height: 6px;
-    border-radius: 999px;
-    background: #d9e2ec;
-}
-
-.receipt-gallery__paper span:nth-child(2) {
-    width: 72%;
-}
-
-.receipt-gallery__paper span:nth-child(3) {
-    width: 48%;
-}
-
-.receipt-gallery__preview-media {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: #ffffff;
-    object-fit: cover;
-    pointer-events: none;
-}
-
-.receipt-gallery__preview-status {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    left: 10px;
-    border-radius: 999px;
-    background: rgb(16 42 67 / 78%);
-    color: #ffffff;
-    font-size: 0.72rem;
-    font-weight: 700;
-    padding: 6px 8px;
-    text-align: center;
 }
 
 .receipt-gallery__filename {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
     overflow: hidden;
-    background: linear-gradient(
-        to top,
-        rgb(16 42 67 / 82%),
-        rgb(16 42 67 / 18%)
-    );
-    color: #ffffff;
     font-size: 0.7rem;
     font-weight: 700;
-    padding: 20px 10px 8px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1832,7 +1749,7 @@ button:disabled {
     display: grid;
     min-width: 0;
     gap: 4px;
-    padding: 0 12px 14px;
+    padding: 14px 12px;
 }
 
 .receipt-gallery__item--list .receipt-gallery__meta {
@@ -1849,31 +1766,6 @@ button:disabled {
 .receipt-gallery__meta small {
     color: #52606d;
     font-size: 0.8rem;
-}
-
-.receipt-gallery__open {
-    display: inline-flex;
-    width: fit-content;
-    min-height: 32px;
-    align-items: center;
-    margin: 0 12px 12px;
-    border: 1px solid #bcccdc;
-    border-radius: 6px;
-    background: #f0f4f8;
-    color: #243b53;
-    font-size: 0.8rem;
-    font-weight: 700;
-    padding: 6px 10px;
-    text-decoration: none;
-}
-
-.receipt-gallery__item--list .receipt-gallery__open {
-    grid-column: 2;
-    margin: 8px 0 10px;
-}
-
-.receipt-gallery__open:hover {
-    background: #d9e2ec;
 }
 
 .case-queue-support {

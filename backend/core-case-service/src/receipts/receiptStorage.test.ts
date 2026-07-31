@@ -1,5 +1,4 @@
 import {
-    GetObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
     type S3Client,
@@ -36,30 +35,6 @@ function createClient(
 }
 
 void describe("receipt storage", () => {
-    void test("reads receipt bytes from the configured object key", async () => {
-        const bytes = new TextEncoder().encode("synthetic receipt");
-        const client = createClient(() =>
-            Promise.resolve({
-                Body: {
-                    transformToByteArray: () => Promise.resolve(bytes),
-                },
-            }),
-        );
-        const storage = createS3ReceiptStorage(client, storageConfig);
-
-        await expect(storage.get(expectedObjectKey)).resolves.toEqual(bytes);
-
-        const command = vi.mocked(client.send).mock.calls[0]?.[0];
-        expect(command).toBeInstanceOf(GetObjectCommand);
-        if (!(command instanceof GetObjectCommand)) {
-            throw new Error("Expected a GetObjectCommand");
-        }
-        expect(command.input).toMatchObject({
-            Bucket: "synthetic-receipts",
-            Key: expectedObjectKey,
-        });
-    });
-
     void test("uploads receipt bytes under a tenant-scoped object key", async () => {
         const client = createClient(() => Promise.resolve({}));
         const storage = createS3ReceiptStorage(client, storageConfig);
@@ -124,16 +99,5 @@ void describe("receipt storage", () => {
                 new TextEncoder().encode("synthetic receipt"),
             ),
         ).rejects.toThrow(BadGatewayError);
-    });
-
-    void test("maps object-storage read failures to a safe gateway error", async () => {
-        const client = createClient(() =>
-            Promise.reject(new Error("synthetic storage failure")),
-        );
-        const storage = createS3ReceiptStorage(client, storageConfig);
-
-        await expect(storage.get(expectedObjectKey)).rejects.toThrow(
-            BadGatewayError,
-        );
     });
 });

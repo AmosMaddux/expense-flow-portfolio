@@ -421,10 +421,6 @@
                                     },
                                     "contentType": {
                                         "type": ["string", "null"]
-                                    },
-                                    "previewUrl": {
-                                        "type": "string",
-                                        "minLength": 1
                                     }
                                 },
                                 "required": [
@@ -434,8 +430,7 @@
                                     "receiptDate",
                                     "amount",
                                     "filename",
-                                    "contentType",
-                                    "previewUrl"
+                                    "contentType"
                                 ]
                             }
                         }
@@ -606,10 +601,6 @@
                                 },
                                 "contentType": {
                                     "type": ["string", "null"]
-                                },
-                                "previewUrl": {
-                                    "type": "string",
-                                    "minLength": 1
                                 }
                             },
                             "required": [
@@ -619,8 +610,7 @@
                                 "receiptDate",
                                 "amount",
                                 "filename",
-                                "contentType",
-                                "previewUrl"
+                                "contentType"
                             ]
                         }
                     }
@@ -1821,135 +1811,6 @@
                     },
                     "502": {
                         "description": "Receipt storage rejected the upload.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/expense-reports/{id}/receipts/{receiptId}/content": {
-            "get": {
-                "summary": "Read receipt content for internal review",
-                "description": "Streams tenant-scoped receipt bytes for Department Manager and Finance Admin report review without exposing receipt storage object keys.",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "id",
-                        "in": "path"
-                    },
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "receiptId",
-                        "in": "path"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Receipt content found.",
-                        "headers": {
-                            "RateLimit-Limit": {
-                                "$ref": "#/components/headers/RateLimitLimit"
-                            },
-                            "RateLimit-Remaining": {
-                                "$ref": "#/components/headers/RateLimitRemaining"
-                            },
-                            "RateLimit-Reset": {
-                                "$ref": "#/components/headers/RateLimitReset"
-                            },
-                            "X-RateLimit-Cost": {
-                                "$ref": "#/components/headers/RateLimitCost"
-                            }
-                        },
-                        "content": {
-                            "application/pdf": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            },
-                            "image/png": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            },
-                            "image/jpeg": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            },
-                            "image/webp": {
-                                "schema": {
-                                    "type": "string",
-                                    "format": "binary"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Malformed receipt content request.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Valid access token required.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Internal receipt review access required.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Receipt not found.",
-                        "content": {
-                            "application/problem+json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ProblemJson"
-                                }
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimitExceeded"
-                    },
-                    "502": {
-                        "description": "Receipt storage unavailable.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

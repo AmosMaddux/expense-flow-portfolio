@@ -988,7 +988,6 @@ void describe("expenseReportRepository", () => {
             amount: 242.3,
             filename: "synthetic-hotel.pdf",
             contentType: "application/pdf",
-            previewUrl: `/v1/expense-reports/${report.id}/receipts/${hotelReceiptId}/content`,
         });
         expect(typeof taxiReceipt?.id).toBe("string");
         expect(taxiReceipt).toMatchObject({
@@ -998,7 +997,6 @@ void describe("expenseReportRepository", () => {
             amount: 38.1,
             filename: "synthetic-taxi.jpg",
             contentType: "image/jpeg",
-            previewUrl: `/v1/expense-reports/${report.id}/receipts/${taxiReceiptId}/content`,
         });
         expect(JSON.stringify(reportRow)).not.toContain("objectKey");
         expect(crossTenantRows).toHaveLength(1);
@@ -1096,7 +1094,6 @@ void describe("expenseReportRepository", () => {
                 merchant: "Synthetic Conference Center",
                 filename: "synthetic-conference.pdf",
                 contentType: "application/pdf",
-                previewUrl: `/v1/expense-reports/${report.id}/receipts/${receiptId}/content`,
             }),
         ]);
     });
@@ -1188,7 +1185,6 @@ void describe("expenseReportRepository", () => {
                 merchant: "Synthetic Supplier",
                 filename: "synthetic-supplier.png",
                 contentType: "image/png",
-                previewUrl: `/v1/expense-reports/${report.id}/receipts/${receiptId}/content`,
             }),
         ]);
     });
