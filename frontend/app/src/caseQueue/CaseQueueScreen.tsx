@@ -101,6 +101,7 @@ type ApprovalQueueReviewRow =
           lineItem: ApprovalQueueLineItem;
       };
 type FlagFilter = "all" | "flagged" | "clear";
+type ReportDetailTab = "line-items" | "policy-checks";
 type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
 type LineItemMutationVariables = {
     lineItem: ApprovalQueueLineItem;
@@ -946,12 +947,21 @@ function ApprovalQueueReviewDialog({
         deductible: boolean,
     ) => void;
 }): JSX.Element {
+    const [activeTab, setActiveTab] = useState<ReportDetailTab>("line-items");
     const reportLineItem = lineItems[0];
     const canSendBackReport =
+        reportLineItem.currentStage === "Manager Approval";
+    const canReviewLineItems =
+        reportLineItem.currentStage === "Manager Approval";
+    const canClearPolicyChecks =
         reportLineItem.currentStage === "Manager Approval";
     const reviewRows = useMemo(
         () => buildApprovalQueueReviewRows(lineItems),
         [lineItems],
+    );
+    const policyChecks = useMemo(
+        () => reviewRows.filter((reviewRow) => reviewRow.amount > 500),
+        [reviewRows],
     );
     const areAllReviewRowsReviewed = reviewRows.every(
         (reviewRow) => reviewRow.reviewAction !== null,
@@ -1011,120 +1021,240 @@ function ApprovalQueueReviewDialog({
                         <strong>{formatMileageDistance(mileageTotal)}</strong>
                     </span>
                 </div>
-                <div className="case-queue-dialog__table-wrap">
-                    <table aria-label="Report review line items">
-                        <thead>
-                            <tr>
-                                <th scope="col">Merchant</th>
-                                <th scope="col">Amount</th>
-                                <th scope="col">Mileage</th>
-                                <th scope="col">GL Code</th>
-                                <th scope="col">Flag</th>
-                                <th scope="col">Deductible</th>
-                                <th scope="col">Review</th>
-                                <th scope="col">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {reviewRows.map((reviewRow) => (
-                                <tr key={reviewRow.id}>
-                                    <td>{reviewRow.merchant}</td>
-                                    <td>{formatCurrency(reviewRow.amount)}</td>
-                                    <td>
-                                        {formatMileageDistance(
-                                            reviewRow.mileage,
-                                        )}
-                                    </td>
-                                    <td>{reviewRow.glCode}</td>
-                                    <td>
-                                        {reviewRow.flaggedLineItem ? (
-                                            <Badge tone="warning">
-                                                Over $500
-                                            </Badge>
-                                        ) : (
-                                            <Badge tone="success">Clear</Badge>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <input
-                                            aria-label={`Mark ${reviewRow.merchant} as deductible`}
-                                            checked={reviewRow.deductible}
-                                            disabled={
-                                                isActionPending ||
-                                                reportLineItem.currentStage !==
-                                                    "AP Review"
-                                            }
-                                            type="checkbox"
-                                            onChange={(event) =>
-                                                onToggleDeductibility(
-                                                    reviewRow.lineItem,
-                                                    reviewRow.type,
-                                                    reviewRow.id,
-                                                    event.currentTarget.checked,
-                                                )
-                                            }
-                                        />
-                                    </td>
-                                    <td>
-                                        {getReviewActionLabel(
-                                            reviewRow.reviewAction,
-                                        )}
-                                    </td>
-                                    <td>
-                                        <div className="case-queue-dialog__actions">
-                                            <button
-                                                className="button button--secondary button--compact"
-                                                disabled={isActionPending}
-                                                type="button"
-                                                onClick={() =>
-                                                    onReviewLineItem(
-                                                        reviewRow.lineItem,
-                                                        reviewRow.type,
-                                                        reviewRow.id,
-                                                        "approve",
-                                                    )
-                                                }
-                                            >
-                                                Approve
-                                            </button>
-                                            <button
-                                                className="button button--secondary button--compact"
-                                                disabled={isActionPending}
-                                                type="button"
-                                                onClick={() =>
-                                                    onReviewLineItem(
-                                                        reviewRow.lineItem,
-                                                        reviewRow.type,
-                                                        reviewRow.id,
-                                                        "reject",
-                                                    )
-                                                }
-                                            >
-                                                Reject
-                                            </button>
-                                            <button
-                                                className="button button--secondary button--compact"
+                <div
+                    aria-label="Report detail tabs"
+                    className="case-queue-dialog__tabs"
+                    role="tablist"
+                >
+                    <button
+                        aria-controls="report-line-items-panel"
+                        aria-selected={activeTab === "line-items"}
+                        id="report-line-items-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("line-items")}
+                    >
+                        Line Items
+                    </button>
+                    <button
+                        aria-controls="report-policy-checks-panel"
+                        aria-selected={activeTab === "policy-checks"}
+                        id="report-policy-checks-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("policy-checks")}
+                    >
+                        Policy Checks
+                    </button>
+                </div>
+                {activeTab === "line-items" ? (
+                    <div
+                        aria-labelledby="report-line-items-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-line-items-panel"
+                        role="tabpanel"
+                    >
+                        <table aria-label="Report review line items">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Merchant</th>
+                                    <th scope="col">Amount</th>
+                                    <th scope="col">Mileage</th>
+                                    <th scope="col">GL Code</th>
+                                    <th scope="col">Flag</th>
+                                    <th scope="col">Deductible</th>
+                                    <th scope="col">Review</th>
+                                    <th scope="col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reviewRows.map((reviewRow) => (
+                                    <tr key={reviewRow.id}>
+                                        <td>{reviewRow.merchant}</td>
+                                        <td>
+                                            {formatCurrency(reviewRow.amount)}
+                                        </td>
+                                        <td>
+                                            {formatMileageDistance(
+                                                reviewRow.mileage,
+                                            )}
+                                        </td>
+                                        <td>{reviewRow.glCode}</td>
+                                        <td>
+                                            {reviewRow.flaggedLineItem ? (
+                                                <Badge tone="warning">
+                                                    Over $500
+                                                </Badge>
+                                            ) : (
+                                                <Badge tone="success">
+                                                    Clear
+                                                </Badge>
+                                            )}
+                                        </td>
+                                        <td>
+                                            <input
+                                                aria-label={`Mark ${reviewRow.merchant} as deductible`}
+                                                checked={reviewRow.deductible}
                                                 disabled={
                                                     isActionPending ||
-                                                    !reviewRow.flaggedLineItem
+                                                    reportLineItem.currentStage !==
+                                                        "AP Review"
                                                 }
-                                                type="button"
-                                                onClick={() =>
-                                                    onClearFlag(
+                                                type="checkbox"
+                                                onChange={(event) =>
+                                                    onToggleDeductibility(
                                                         reviewRow.lineItem,
+                                                        reviewRow.type,
                                                         reviewRow.id,
+                                                        event.currentTarget
+                                                            .checked,
                                                     )
                                                 }
-                                            >
-                                                Clear flag
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                            />
+                                        </td>
+                                        <td>
+                                            {getReviewActionLabel(
+                                                reviewRow.reviewAction,
+                                            )}
+                                        </td>
+                                        <td>
+                                            <div className="case-queue-dialog__actions">
+                                                <button
+                                                    className="button button--secondary button--compact"
+                                                    disabled={
+                                                        isActionPending ||
+                                                        !canReviewLineItems
+                                                    }
+                                                    type="button"
+                                                    onClick={() =>
+                                                        onReviewLineItem(
+                                                            reviewRow.lineItem,
+                                                            reviewRow.type,
+                                                            reviewRow.id,
+                                                            "approve",
+                                                        )
+                                                    }
+                                                >
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    className="button button--secondary button--compact"
+                                                    disabled={
+                                                        isActionPending ||
+                                                        !canReviewLineItems
+                                                    }
+                                                    type="button"
+                                                    onClick={() =>
+                                                        onReviewLineItem(
+                                                            reviewRow.lineItem,
+                                                            reviewRow.type,
+                                                            reviewRow.id,
+                                                            "reject",
+                                                        )
+                                                    }
+                                                >
+                                                    Reject
+                                                </button>
+                                                <button
+                                                    className="button button--secondary button--compact"
+                                                    disabled={
+                                                        isActionPending ||
+                                                        !canClearPolicyChecks ||
+                                                        !reviewRow.flaggedLineItem
+                                                    }
+                                                    type="button"
+                                                    onClick={() =>
+                                                        onClearFlag(
+                                                            reviewRow.lineItem,
+                                                            reviewRow.id,
+                                                        )
+                                                    }
+                                                >
+                                                    Clear flag
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div
+                        aria-labelledby="report-policy-checks-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-policy-checks-panel"
+                        role="tabpanel"
+                    >
+                        {policyChecks.length === 0 ? (
+                            <div
+                                className="case-queue-dialog__empty-tab"
+                                role="status"
+                            >
+                                No $500 policy checks apply to this report.
+                            </div>
+                        ) : (
+                            <table aria-label="$500 policy checks">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Merchant</th>
+                                        <th scope="col">Amount</th>
+                                        <th scope="col">GL Code</th>
+                                        <th scope="col">Check</th>
+                                        <th scope="col">State</th>
+                                        <th scope="col">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {policyChecks.map((policyCheck) => (
+                                        <tr key={policyCheck.id}>
+                                            <th scope="row">
+                                                {policyCheck.merchant}
+                                            </th>
+                                            <td>
+                                                {formatCurrency(
+                                                    policyCheck.amount,
+                                                )}
+                                            </td>
+                                            <td>{policyCheck.glCode}</td>
+                                            <td>Amount over $500</td>
+                                            <td>
+                                                {policyCheck.flaggedLineItem ? (
+                                                    <Badge tone="warning">
+                                                        Uncleared
+                                                    </Badge>
+                                                ) : (
+                                                    <Badge tone="success">
+                                                        Cleared
+                                                    </Badge>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <button
+                                                    className="button button--secondary button--compact"
+                                                    disabled={
+                                                        isActionPending ||
+                                                        !canClearPolicyChecks ||
+                                                        !policyCheck.flaggedLineItem
+                                                    }
+                                                    type="button"
+                                                    onClick={() =>
+                                                        onClearFlag(
+                                                            policyCheck.lineItem,
+                                                            policyCheck.id,
+                                                        )
+                                                    }
+                                                >
+                                                    Clear flag
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                )}
                 <footer className="case-queue-dialog__footer">
                     <button
                         className="button button--secondary button--compact"

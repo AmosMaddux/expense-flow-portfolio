@@ -588,6 +588,102 @@ describe("CaseQueueScreen", () => {
         expect(screen.getAllByText("33.20 miles")).toHaveLength(2);
     });
 
+    test("shows coded line items and durable $500 policy-check states in separate tabs", async () => {
+        const clearedThresholdItem: ApprovalQueueLineItem = {
+            ...lineItems[0],
+            flaggedLineItem: false,
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([clearedThresholdItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        expect(
+            within(dialog).getByRole("tab", {
+                name: "Line Items",
+                selected: true,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 - 6240 Clear/i,
+            }),
+        ).toBeTruthy();
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+
+        expect(
+            within(dialog).getByRole("table", { name: "$500 policy checks" }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 6240 Amount over \$500 Cleared/i,
+            }),
+        ).toBeTruthy();
+    });
+
+    test("makes both detail tabs read-only outside role-editable stages", async () => {
+        const paidItem: ApprovalQueueLineItem = {
+            ...lineItems[2],
+            currentStage: "Paid",
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([paidItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        const lineItemRow = within(dialog).getByRole("row", {
+            name: /Zenith Air/i,
+        });
+
+        expect(
+            within(lineItemRow)
+                .getByRole("button", { name: "Approve" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+        expect(
+            within(lineItemRow)
+                .getByRole("button", { name: "Reject" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+        expect(
+            within(lineItemRow).getByRole("checkbox").hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+
+        expect(
+            within(dialog)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
     test("pulls a Submitted report into Manager Approval when a manager opens review", async () => {
         const fetchImplementation = vi
             .fn<typeof fetch>()
