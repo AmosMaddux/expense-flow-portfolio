@@ -7,6 +7,7 @@ import {
     waitFor,
     within,
 } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -57,6 +58,17 @@ const lineItems: ApprovalQueueLineItem[] = [
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 18.5,
+        receipts: [
+            {
+                id: "81000000-0000-4000-8000-000000000001",
+                lineItemId: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+                merchant: "Northstar Hotels",
+                receiptDate: "2026-07-21",
+                amount: 742.18,
+                filename: "northstar-hotel.pdf",
+                contentType: "application/pdf",
+            },
+        ],
         mileageEntries: [
             {
                 id: "f7b2017a-7d30-4d80-a360-53d00f387111",
@@ -88,6 +100,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
+        receipts: [],
         mileageEntries: [],
     },
     {
@@ -111,6 +124,7 @@ const lineItems: ApprovalQueueLineItem[] = [
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
+        receipts: [],
         mileageEntries: [],
     },
 ];
@@ -125,6 +139,17 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
         flaggedLineItem: false,
         policyChecks: [],
         reportTotalMileage: 24.6,
+        receipts: [
+            {
+                id: "81000000-0000-4000-8000-000000000005",
+                lineItemId: "72000000-0000-4000-8000-000000000005",
+                merchant: "United Air",
+                receiptDate: "2026-07-22",
+                amount: 428.5,
+                filename: "united-air.pdf",
+                contentType: "application/pdf",
+            },
+        ],
         mileageEntries: [
             {
                 id: "73000000-0000-4000-8000-000000000005",
@@ -142,6 +167,52 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
         ],
     },
     lineItems[1],
+];
+const linkedReceiptReportReceipts = [
+    {
+        id: "81000000-0000-4000-8000-000000000071",
+        lineItemId: "72000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        receiptDate: "2026-07-24",
+        amount: 312.44,
+        filename: "harbor-hotel.pdf",
+        contentType: "application/pdf",
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000072",
+        lineItemId: "72000000-0000-4000-8000-000000000072",
+        merchant: "Central Parking",
+        receiptDate: "2026-07-25",
+        amount: 28.75,
+        filename: "central-parking.pdf",
+        contentType: "application/pdf",
+    },
+] satisfies ApprovalQueueLineItem["receipts"];
+const linkedReceiptReportItems: ApprovalQueueLineItem[] = [
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000071",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        amount: 312.44,
+        glCode: "6200",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000072",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Central Parking",
+        amount: 28.75,
+        glCode: "6000",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
 ];
 const seededZenithReportItems: ApprovalQueueLineItem[] = [
     {
@@ -628,6 +699,156 @@ describe("CaseQueueScreen", () => {
         expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
+    test("renders receipt metadata in the report review gallery", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+
+        expect(
+            screen.getByRole("heading", { name: "Receipt Attachments (1)" }),
+        ).toBeTruthy();
+        expect(screen.getByText("northstar-hotel.pdf")).toBeTruthy();
+        expect(screen.getAllByText("Northstar Hotels").length).toBeGreaterThan(
+            0,
+        );
+        expect(screen.getByText("Jul 21, 2026")).toBeTruthy();
+        expect(screen.getAllByText("$742.18").length).toBeGreaterThan(0);
+        expect(
+            screen.getByText("application/pdf / Linked to Northstar Hotels"),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole("link", { name: "Open receipt" }),
+        ).toBeNull();
+        expect(document.querySelector(".receipt-gallery__preview")).toBeNull();
+        const axeResults = await axe.run(
+            screen.getByRole("dialog", { name: "Report d104c9ca" }),
+        );
+        expect(axeResults.violations).toHaveLength(0);
+    });
+
+    test("selecting a receipt focuses and highlights its linked line item in a multi-line report", async () => {
+        const scrollIntoView = vi.fn();
+        const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+            Element.prototype,
+            "scrollIntoView",
+        );
+        const requestAnimationFrame = vi
+            .spyOn(window, "requestAnimationFrame")
+            .mockImplementation((callback) => {
+                callback(0);
+                return 0;
+        });
+        Element.prototype.scrollIntoView = scrollIntoView;
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(linkedReceiptReportItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        fireEvent.click(
+            screen.getByRole("button", {
+                name: /Central Parking receipt for \$28\.75/i,
+            }),
+        );
+
+        const reviewTable = screen.getByRole("table", {
+            name: "Report review line items",
+        });
+        const firstReviewRow = within(reviewTable).getByRole("row", {
+            name: /Harbor Hotel/i,
+        });
+        const secondReviewRow = within(reviewTable).getByRole("row", {
+            name: /Central Parking/i,
+        });
+        expect(secondReviewRow.className).toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(firstReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(document.activeElement).toBe(secondReviewRow);
+        expect(scrollIntoView).toHaveBeenCalled();
+        if (originalScrollIntoView === undefined) {
+            Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+        } else {
+            Object.defineProperty(
+                Element.prototype,
+                "scrollIntoView",
+                originalScrollIntoView,
+            );
+        }
+        requestAnimationFrame.mockRestore();
+    });
+
+    test("renders empty and unlinked receipt gallery states", async () => {
+        const unlinkedReceiptItems: ApprovalQueueLineItem[] = [
+            {
+                ...lineItems[2],
+                receipts: [
+                    {
+                        id: "81000000-0000-4000-8000-000000000099",
+                        lineItemId: null,
+                        merchant: "Zenith Air",
+                        receiptDate: "2026-07-20",
+                        amount: 512,
+                        filename: "zenith-unlinked.pdf",
+                        contentType: "application/pdf",
+                    },
+                ],
+            },
+        ];
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(createJsonResponse(unlinkedReceiptItems));
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+        expect(screen.getByText("No receipts uploaded")).toBeTruthy();
+
+        cleanup();
+        renderCaseQueueScreen(fetchImplementation);
+
+        const unlinkedZenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(unlinkedZenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const receiptButton = screen.getByRole("button", {
+            name: /Unlinked receipt/i,
+        });
+        expect(receiptButton).toHaveProperty("disabled", true);
+        expect(
+            screen.getByText("application/pdf / Unlinked receipt"),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole("link", { name: "Open receipt" }),
+        ).toBeNull();
+    });
+
     test("opens one report with a separate expense row and mileage row for review", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(multiLineReportItems)),
@@ -674,7 +895,7 @@ describe("CaseQueueScreen", () => {
                 name: "Clear flag",
             }),
         ).toBeTruthy();
-        expect(screen.getAllByText("$428.50")).toHaveLength(3);
+        expect(screen.getAllByText("$428.50")).toHaveLength(4);
         expect(screen.getAllByText("24.60 miles")).toHaveLength(3);
     });
 

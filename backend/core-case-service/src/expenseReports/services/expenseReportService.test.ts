@@ -404,6 +404,7 @@ void describe("Expense Report source deductibility service", () => {
                 canAdvance: false,
                 reportTotalMileage: 0,
                 mileageEntries: [],
+                receipts: [],
             },
         });
 

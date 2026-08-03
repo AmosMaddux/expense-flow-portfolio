@@ -118,6 +118,29 @@ npm start
 The mapping initializer waits for the Core Case migrations and is idempotent, so
 these commands are safe to run again after switching branches.
 
+### Seed synthetic demo data
+
+After creating `.env`, generating local JWT keys, and starting the shared local
+dependencies, seed the local demo workspace with synthetic accounts,
+transactions, GL mappings, and a receipt-gallery Expense Report:
+
+```sh
+npm run dev:demo:seed
+```
+
+Sign in as the synthetic Department Manager to inspect the receipt gallery:
+
+```text
+Email: manager@example.invalid
+Password: expenseflow-local-dev-only
+MFA: npm run dev:auth:code -- manager
+```
+
+Open Approval Queue and select Expense Report
+`73000000-0000-4000-8000-000000000001`. The AP Review dialog includes three
+explicitly synthetic receipt fixtures: two linked to line items and one
+unlinked receipt for the gallery's disabled state.
+
 ### Consume local stage-transition events
 
 The Compose stack also starts LocalStack with an SNS topic named

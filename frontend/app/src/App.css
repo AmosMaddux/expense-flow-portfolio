@@ -1713,11 +1713,146 @@ button:disabled {
     border-bottom: 0;
 }
 
+.case-queue-dialog tbody tr:focus-visible {
+    outline: 3px solid #9fb3c8;
+    outline-offset: -3px;
+}
+
+.case-queue-dialog__row--active {
+    background: #e6f0ff;
+    box-shadow: inset 4px 0 0 #0b5fff;
+}
+
 .case-queue-dialog__actions {
     display: flex;
     max-width: 260px;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.receipt-gallery {
+    display: grid;
+    gap: 16px;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 20px;
+}
+
+.receipt-gallery__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.receipt-gallery__header h4 {
+    margin: 0;
+    color: #102a43;
+    font-size: 1rem;
+}
+
+.receipt-gallery__view-toggle {
+    display: flex;
+    gap: 8px;
+}
+
+.receipt-gallery__grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.receipt-gallery__list {
+    display: grid;
+    gap: 10px;
+}
+
+.receipt-gallery__item {
+    display: grid;
+    min-width: 0;
+    gap: 0;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #ffffff;
+    color: inherit;
+    transition:
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        transform 160ms ease;
+}
+
+.receipt-gallery__item:hover {
+    border-color: #0b5fff;
+    box-shadow: 0 10px 24px rgb(15 23 42 / 9%);
+    transform: translateY(-1px);
+}
+
+.receipt-gallery__item--active {
+    border-color: #0b5fff;
+    box-shadow: 0 0 0 3px #d9e8ff;
+}
+
+.receipt-gallery__item--list {
+    align-items: center;
+}
+
+.receipt-gallery__select {
+    display: grid;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+    text-align: left;
+}
+
+.receipt-gallery__select:focus-visible {
+    outline: 3px solid #9fb3c8;
+    outline-offset: 3px;
+}
+
+.receipt-gallery__select:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+}
+
+.receipt-gallery__item--list .receipt-gallery__select {
+    display: block;
+}
+
+.receipt-gallery__filename {
+    overflow: hidden;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.receipt-gallery__meta {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    padding: 14px 12px;
+}
+
+.receipt-gallery__item--list .receipt-gallery__meta {
+    padding: 0;
+}
+
+.receipt-gallery__meta strong {
+    overflow-wrap: anywhere;
+    color: #102a43;
+    font-size: 0.9rem;
+}
+
+.receipt-gallery__meta span,
+.receipt-gallery__meta small {
+    color: #52606d;
+    font-size: 0.8rem;
 }
 
 .case-queue-support {

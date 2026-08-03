@@ -134,6 +134,45 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
+    void test("documents Approval Queue receipt amount as a nonnegative number", () => {
+        type ReceiptAmountSchemaContainer = {
+            properties?: {
+                receipts?: {
+                    items?: {
+                        properties?: {
+                            amount?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        type ReceiptAmountListSchemaContainer = {
+            items?: ReceiptAmountSchemaContainer;
+        };
+        const lineItemResponse = JSON.parse(
+            JSON.stringify(
+                document.components?.schemas?.ApprovalQueueLineItemResponse,
+            ),
+        ) as ReceiptAmountSchemaContainer;
+        const lineItemListResponse = JSON.parse(
+            JSON.stringify(
+                document.components?.schemas?.ApprovalQueueLineItemListResponse,
+            ),
+        ) as ReceiptAmountListSchemaContainer;
+        const expectedAmountSchema = {
+            type: "number",
+            minimum: 0,
+        };
+
+        expect(
+            lineItemResponse.properties?.receipts?.items?.properties?.amount,
+        ).toStrictEqual(expectedAmountSchema);
+        expect(
+            lineItemListResponse.items?.properties?.receipts?.items?.properties
+                ?.amount,
+        ).toStrictEqual(expectedAmountSchema);
+    });
+
     void test("documents correlation only on stage-transition request boundaries", () => {
         const createParameters =
             document.paths?.["/v1/expense-reports"]?.post?.parameters ?? [];
@@ -515,6 +554,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(sourceParamsSchema)).toContain("line_item");
         expect(JSON.stringify(sourceParamsSchema)).toContain("mileage");
         expect(JSON.stringify(responseSchema)).toContain("canAdvance");
+        expect(JSON.stringify(responseSchema)).toContain("receipts");
+        expect(JSON.stringify(responseSchema)).toContain("lineItemId");
+        expect(JSON.stringify(responseSchema)).not.toContain("blobReference");
     });
 
     void test("documents reusable tenant rate-limit headers and 429 responses", () => {
