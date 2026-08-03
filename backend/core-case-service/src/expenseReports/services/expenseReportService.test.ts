@@ -375,6 +375,62 @@ void describe("Expense Report settlement saga", () => {
         expect(dispatch).toHaveBeenCalledTimes(2);
     });
 
+    void test("does not compensate when final reconciliation succeeds but cache invalidation fails", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        const issue = vi.fn().mockResolvedValue({
+            paymentId: "synthetic-payment-cache-failure",
+        });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        findExpenseReportByIdMock.mockResolvedValueOnce({
+            ...apReviewReport,
+            currentStage: "Reconciled",
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-cache-failure",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValue(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error("synthetic cache failure"));
+
+        const report = await settleExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Finance Admin"],
+                reason: "Synthetic settlement complete.",
+                correlationId,
+                idempotencyKey: "settlement-cache-failure",
+            },
+            {
+                paymentStubIssuer: { issue, compensate },
+                stageTransitionOutboxDispatcher: { dispatch },
+            },
+        );
+
+        expect(report.currentStage).toBe("Reconciled");
+        expect(compensate).not.toHaveBeenCalled();
+        expect(compensatePaidSettlementStageMock).not.toHaveBeenCalled();
+        expect(
+            markExpenseReportSettlementCompensatedMock,
+        ).not.toHaveBeenCalled();
+        expect(dispatch).toHaveBeenCalledTimes(2);
+    });
+
     void test("compensates the payment stub and Paid stage when reconciliation fails", async () => {
         const dispatch = vi.fn().mockResolvedValue(undefined);
         const issue = vi
@@ -439,8 +495,8 @@ void describe("Expense Report settlement saga", () => {
                 actor: actorId,
                 correlationId,
                 reason: "Settlement saga failed before reconciliation completed.",
-                eventId: expect.any(String),
-                occurredAt: expect.any(Date),
+                eventId: expect.any(String) as string,
+                occurredAt: expect.any(Date) as Date,
             }),
         );
         expect(markExpenseReportSettlementCompensatedMock).toHaveBeenCalledWith(

@@ -1145,7 +1145,7 @@ async function runFinalSettlementTransition(request: {
         );
     }
 
-    await invalidateCachedCaseQueueStageRollups(request.tenantId);
+    await invalidateCachedCaseQueueStageRollupsBestEffort(request.tenantId);
     await dispatchOutboxEvent(outboxEventId, request.dependencies);
 }
 
@@ -1258,6 +1258,16 @@ async function dispatchOutboxEvent(
         await dependencies.stageTransitionOutboxDispatcher.dispatch(eventId);
     } catch {
         // The durable outbox retry loop handles dispatch failures after the state change commits.
+    }
+}
+
+async function invalidateCachedCaseQueueStageRollupsBestEffort(
+    tenantId: string,
+): Promise<void> {
+    try {
+        await invalidateCachedCaseQueueStageRollups(tenantId);
+    } catch {
+        // Reconciliation is already durable; cache refresh must not trigger payment compensation.
     }
 }
 /**
