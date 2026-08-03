@@ -80,6 +80,8 @@ import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRep
 
 const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
+const transitionExpenseReportRouteLogName =
+    "POST /v1/expense-reports/:id/transitions";
 
 /**
  * Handles reads for the signed-in employee's own submission list.
@@ -616,11 +618,14 @@ export async function postExpenseReportTransition(
     res: Response,
     next: NextFunction,
 ): Promise<void> {
+    let parsedExpenseReportId: string | undefined;
+
     try {
         const auth = requireAuthContext(req);
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
+        parsedExpenseReportId = parsedParams.id;
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
         const correlationId = parseOrCreateCorrelationId(req);
@@ -635,8 +640,25 @@ export async function postExpenseReportTransition(
             correlationId,
         });
 
+        logExpenseReportAuditSuccess({
+            action: "workflow_transition_applied",
+            actorId: auth.userId,
+            expenseReportId: parsedParams.id,
+            currentStage: report.currentStage,
+            route: transitionExpenseReportRouteLogName,
+            tenantId: auth.tenantId,
+            toStage: parsedRequest.toStage,
+        });
         res.status(200).json(report);
     } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "workflow_transition_applied",
+            actorId: req.auth?.userId,
+            error,
+            expenseReportId: parsedExpenseReportId,
+            route: transitionExpenseReportRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
         next(error);
     }
 }

@@ -5848,6 +5848,83 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         expect(auditBody[0]).not.toHaveProperty("paymentReference");
     });
 
+    void test("shows a submitted case change in the audit table and Audit Trail API", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000127";
+        const owner = "50000000-0000-4000-8000-000000000031";
+        const financeAdminId = "50000000-0000-4000-8000-000000000032";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-127-create",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-14" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const submitResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/submit`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-127-submit",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, created.id),
+                ),
+            );
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const auditBody = (await auditResponse.json()) as Array<{
+            action?: string;
+            stageBeforeAction?: string;
+            stageAfterProposedAction?: string;
+        }>;
+
+        expect(submitResponse.status).toBe(201);
+        expect(auditRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Drafted",
+                    stageAfterProposedAction: "Submitted",
+                }),
+            ]),
+        );
+        expect(auditResponse.status).toBe(200);
+        expect(auditBody).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Drafted",
+                    stageAfterProposedAction: "Submitted",
+                }),
+            ]),
+        );
+    });
+
     void test("lets a Department Manager read audit entries for an Expense Report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000123";
         const owner = "50000000-0000-4000-8000-000000000019";
