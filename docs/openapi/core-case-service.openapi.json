@@ -449,7 +449,7 @@
                                         "format": "date"
                                     },
                                     "amount": {
-                                        "type": ["number", "null"],
+                                        "type": "number",
                                         "minimum": 0
                                     },
                                     "filename": {
@@ -629,7 +629,7 @@
                                     "format": "date"
                                 },
                                 "amount": {
-                                    "type": ["number", "null"],
+                                    "type": "number",
                                     "minimum": 0
                                 },
                                 "filename": {

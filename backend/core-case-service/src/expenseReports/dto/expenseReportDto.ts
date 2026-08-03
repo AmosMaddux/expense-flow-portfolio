@@ -631,7 +631,10 @@ export const ApprovalQueueReceiptOutboundResponseSchema = z.object({
     lineItemId: z.uuid().nullable(),
     merchant: z.string().min(1),
     receiptDate: z.iso.date(),
-    amount: z.coerce.number().nonnegative(),
+    amount: z.coerce.number().nonnegative().openapi({
+        type: "number",
+        minimum: 0,
+    }),
     filename: z.string().nullable(),
     contentType: z.string().nullable(),
 });
