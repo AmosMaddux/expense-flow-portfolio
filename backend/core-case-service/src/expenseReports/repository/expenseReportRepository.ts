@@ -112,6 +112,8 @@ type ApprovalQueueLineItemRow = {
     mileageDistance?: string;
     currentStage: string;
     flaggedLineItem: boolean;
+    flagCode: string | null;
+    flagMessage: string | null;
     reviewAction: "approve" | "reject" | null;
     deductible: boolean;
     submissionId: string;
@@ -131,6 +133,8 @@ type ApprovalQueueMileageEntryRow = {
     glCode: string | null;
     currentStage: string;
     flaggedLineItem: boolean;
+    flagCode: string | null;
+    flagMessage: string | null;
     reviewAction: "approve" | "reject" | null;
     deductible: boolean;
     submissionId: string;
@@ -369,6 +373,8 @@ export async function findApprovalQueueLineItems(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -1652,8 +1658,6 @@ export async function clearExpenseReportFlags(request: {
             .update(glCodingResult)
             .set({
                 flaggedLineItem: false,
-                flagCode: null,
-                flagMessage: null,
             })
             .where(
                 and(
@@ -2366,6 +2370,8 @@ async function readFirstApprovalQueueLineItemInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2418,6 +2424,8 @@ async function readApprovalQueueLineItemInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2496,6 +2504,8 @@ async function findApprovalQueueMileageEntries(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2552,6 +2562,8 @@ async function readApprovalQueueMileageEntriesInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2684,6 +2696,8 @@ function toMileageOnlyApprovalQueueLineItemRow(
         mileageDistance: row.distance,
         currentStage: row.currentStage,
         flaggedLineItem: row.flaggedLineItem,
+        flagCode: row.flagCode,
+        flagMessage: row.flagMessage,
         reviewAction: row.reviewAction,
         deductible: row.deductible,
         submissionId: row.submissionId,
@@ -2720,6 +2734,7 @@ function toApprovalQueueLineItemResponse(
         glCode: row.glCode ?? "Unmapped",
         currentStage: row.currentStage as ExpenseReportStage,
         flaggedLineItem: row.flaggedLineItem,
+        policyChecks: toPolicyChecks(row),
         reviewAction: row.reviewAction,
         deductible: row.deductible,
         canAdvance:
@@ -2769,9 +2784,29 @@ function toApprovalQueueMileageEntryResponse(
         amount: Number(row.amount ?? 0),
         glCode: row.glCode ?? "Unmapped",
         flaggedLineItem: row.flaggedLineItem,
+        policyChecks: toPolicyChecks(row),
         reviewAction: row.reviewAction,
         deductible: row.deductible,
     };
+}
+
+function toPolicyChecks(
+    row: Pick<
+        ApprovalQueueLineItemRow | ApprovalQueueMileageEntryRow,
+        "flagCode" | "flagMessage" | "flaggedLineItem"
+    >,
+): ApprovalQueueLineItemResponse["policyChecks"] {
+    if (row.flagCode === null || row.flagMessage === null) {
+        return [];
+    }
+
+    return [
+        {
+            code: row.flagCode,
+            message: row.flagMessage,
+            state: row.flaggedLineItem ? "uncleared" : "cleared",
+        },
+    ];
 }
 
 async function readLatestSubmissionId(

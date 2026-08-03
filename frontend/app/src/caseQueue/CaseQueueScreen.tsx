@@ -30,6 +30,12 @@ import {
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
+const policyCheckSchema = z.object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    state: z.enum(["cleared", "uncleared"]),
+});
+
 const approvalQueueMileageEntrySchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),
@@ -39,6 +45,7 @@ const approvalQueueMileageEntrySchema = z.object({
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(policyCheckSchema),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
     deductible: z.boolean(),
 });
@@ -53,6 +60,7 @@ const approvalQueueLineItemSchema = z.object({
     glCode: z.string().min(1),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(policyCheckSchema),
     reviewAction: z.enum(["approve", "reject"]).nullable(),
     deductible: z.boolean(),
     canAdvance: z.boolean(),
@@ -65,6 +73,34 @@ export const approvalQueueLineItemListSchema = z.array(
 );
 
 export type ApprovalQueueLineItem = z.infer<typeof approvalQueueLineItemSchema>;
+
+export type ReviewDialogPermissions = {
+    canAdvanceReport: boolean;
+    canClearPolicyChecks: boolean;
+    canEditDeductibility: boolean;
+    canReviewLineItems: boolean;
+    canSendBackReport: boolean;
+};
+
+/**
+ * Resolves report-detail edit permissions from the authenticated capability and workflow stage.
+ */
+export function getReviewDialogPermissions(
+    canManageReviewWorkflow: boolean,
+    currentStage: ExpenseReportStage,
+): ReviewDialogPermissions {
+    const canEditManagerApproval =
+        canManageReviewWorkflow && currentStage === "Manager Approval";
+
+    return {
+        canAdvanceReport: canEditManagerApproval,
+        canClearPolicyChecks: canEditManagerApproval,
+        canEditDeductibility:
+            canManageReviewWorkflow && currentStage === "AP Review",
+        canReviewLineItems: canEditManagerApproval,
+        canSendBackReport: canEditManagerApproval,
+    };
+}
 
 type ApprovalQueueReportRow = {
     expenseReportId: string;
@@ -84,6 +120,7 @@ type ApprovalQueueReviewRow =
           mileage: number;
           glCode: string;
           flaggedLineItem: boolean;
+          policyChecks: z.infer<typeof policyCheckSchema>[];
           reviewAction: ApprovalQueueLineItem["reviewAction"];
           deductible: boolean;
           lineItem: ApprovalQueueLineItem;
@@ -96,6 +133,7 @@ type ApprovalQueueReviewRow =
           mileage: number;
           glCode: string;
           flaggedLineItem: boolean;
+          policyChecks: z.infer<typeof policyCheckSchema>[];
           reviewAction: ApprovalQueueLineItem["reviewAction"];
           deductible: boolean;
           lineItem: ApprovalQueueLineItem;
@@ -302,7 +340,13 @@ export function CaseQueueScreen(): JSX.Element {
                             ? {
                                   ...lineItem,
                                   ...(variables.sourceId === lineItem.id
-                                      ? { flaggedLineItem: false }
+                                      ? {
+                                            flaggedLineItem: false,
+                                            policyChecks:
+                                                markPolicyChecksCleared(
+                                                    lineItem.policyChecks,
+                                                ),
+                                        }
                                       : {}),
                                   mileageEntries: lineItem.mileageEntries.map(
                                       (entry) =>
@@ -310,6 +354,10 @@ export function CaseQueueScreen(): JSX.Element {
                                               ? {
                                                     ...entry,
                                                     flaggedLineItem: false,
+                                                    policyChecks:
+                                                        markPolicyChecksCleared(
+                                                            entry.policyChecks,
+                                                        ),
                                                 }
                                               : entry,
                                   ),
@@ -454,7 +502,7 @@ export function CaseQueueScreen(): JSX.Element {
         clearFlagMutation.isPending ||
         deductibilityMutation.isPending ||
         transitionMutation.isPending;
-    const canPullSubmittedReportIntoReview =
+    const canManageReviewWorkflow =
         session.user?.roles.some(
             (role) => role === "Department Manager" || role === "Finance Admin",
         ) ?? false;
@@ -469,7 +517,7 @@ export function CaseQueueScreen(): JSX.Element {
         setSelectedReportId(report.expenseReportId);
 
         if (
-            canPullSubmittedReportIntoReview &&
+            canManageReviewWorkflow &&
             firstLineItem.currentStage === "Submitted"
         ) {
             transitionMutation.mutate({
@@ -519,6 +567,7 @@ export function CaseQueueScreen(): JSX.Element {
                     {selectedReportId === null ||
                     selectedReportLineItems.length === 0 ? null : (
                         <ApprovalQueueReviewDialog
+                            canManageReviewWorkflow={canManageReviewWorkflow}
                             isActionPending={isActionPending}
                             lineItems={selectedReportLineItems}
                             onAdvanceReport={(lineItem) =>
@@ -919,6 +968,7 @@ function ApprovalQueueLineItemTable({
 }
 
 function ApprovalQueueReviewDialog({
+    canManageReviewWorkflow,
     isActionPending,
     lineItems,
     onAdvanceReport,
@@ -928,6 +978,7 @@ function ApprovalQueueReviewDialog({
     onSendBackReport,
     onToggleDeductibility,
 }: {
+    canManageReviewWorkflow: boolean;
     isActionPending: boolean;
     lineItems: ApprovalQueueLineItem[];
     onAdvanceReport: (lineItem: ApprovalQueueLineItem) => void;
@@ -949,18 +1000,28 @@ function ApprovalQueueReviewDialog({
 }): JSX.Element {
     const [activeTab, setActiveTab] = useState<ReportDetailTab>("line-items");
     const reportLineItem = lineItems[0];
-    const canSendBackReport =
-        reportLineItem.currentStage === "Manager Approval";
-    const canReviewLineItems =
-        reportLineItem.currentStage === "Manager Approval";
-    const canClearPolicyChecks =
-        reportLineItem.currentStage === "Manager Approval";
+    const {
+        canAdvanceReport,
+        canClearPolicyChecks,
+        canEditDeductibility,
+        canReviewLineItems,
+        canSendBackReport,
+    } = getReviewDialogPermissions(
+        canManageReviewWorkflow,
+        reportLineItem.currentStage,
+    );
     const reviewRows = useMemo(
         () => buildApprovalQueueReviewRows(lineItems),
         [lineItems],
     );
     const policyChecks = useMemo(
-        () => reviewRows.filter((reviewRow) => reviewRow.amount > 500),
+        () =>
+            reviewRows.flatMap((reviewRow) =>
+                reviewRow.policyChecks.map((policyCheck) => ({
+                    policyCheck,
+                    reviewRow,
+                })),
+            ),
         [reviewRows],
     );
     const areAllReviewRowsReviewed = reviewRows.every(
@@ -1097,8 +1158,7 @@ function ApprovalQueueReviewDialog({
                                                 checked={reviewRow.deductible}
                                                 disabled={
                                                     isActionPending ||
-                                                    reportLineItem.currentStage !==
-                                                        "AP Review"
+                                                    !canEditDeductibility
                                                 }
                                                 type="checkbox"
                                                 onChange={(event) =>
@@ -1191,10 +1251,10 @@ function ApprovalQueueReviewDialog({
                                 className="case-queue-dialog__empty-tab"
                                 role="status"
                             >
-                                No $500 policy checks apply to this report.
+                                No policy checks apply to this report.
                             </div>
                         ) : (
-                            <table aria-label="$500 policy checks">
+                            <table aria-label="Policy checks">
                                 <thead>
                                     <tr>
                                         <th scope="col">Merchant</th>
@@ -1206,50 +1266,56 @@ function ApprovalQueueReviewDialog({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {policyChecks.map((policyCheck) => (
-                                        <tr key={policyCheck.id}>
-                                            <th scope="row">
-                                                {policyCheck.merchant}
-                                            </th>
-                                            <td>
-                                                {formatCurrency(
-                                                    policyCheck.amount,
-                                                )}
-                                            </td>
-                                            <td>{policyCheck.glCode}</td>
-                                            <td>Amount over $500</td>
-                                            <td>
-                                                {policyCheck.flaggedLineItem ? (
-                                                    <Badge tone="warning">
-                                                        Uncleared
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge tone="success">
-                                                        Cleared
-                                                    </Badge>
-                                                )}
-                                            </td>
-                                            <td>
-                                                <button
-                                                    className="button button--secondary button--compact"
-                                                    disabled={
-                                                        isActionPending ||
-                                                        !canClearPolicyChecks ||
-                                                        !policyCheck.flaggedLineItem
-                                                    }
-                                                    type="button"
-                                                    onClick={() =>
-                                                        onClearFlag(
-                                                            policyCheck.lineItem,
-                                                            policyCheck.id,
-                                                        )
-                                                    }
-                                                >
-                                                    Clear flag
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {policyChecks.map(
+                                        ({ policyCheck, reviewRow }) => (
+                                            <tr
+                                                key={`${reviewRow.id}:${policyCheck.code}`}
+                                            >
+                                                <th scope="row">
+                                                    {reviewRow.merchant}
+                                                </th>
+                                                <td>
+                                                    {formatCurrency(
+                                                        reviewRow.amount,
+                                                    )}
+                                                </td>
+                                                <td>{reviewRow.glCode}</td>
+                                                <td>{policyCheck.message}</td>
+                                                <td>
+                                                    {policyCheck.state ===
+                                                    "uncleared" ? (
+                                                        <Badge tone="warning">
+                                                            Uncleared
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge tone="success">
+                                                            Cleared
+                                                        </Badge>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <button
+                                                        className="button button--secondary button--compact"
+                                                        disabled={
+                                                            isActionPending ||
+                                                            !canClearPolicyChecks ||
+                                                            policyCheck.state !==
+                                                                "uncleared"
+                                                        }
+                                                        type="button"
+                                                        onClick={() =>
+                                                            onClearFlag(
+                                                                reviewRow.lineItem,
+                                                                reviewRow.id,
+                                                            )
+                                                        }
+                                                    >
+                                                        Clear flag
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ),
+                                    )}
                                 </tbody>
                             </table>
                         )}
@@ -1260,6 +1326,7 @@ function ApprovalQueueReviewDialog({
                         className="button button--secondary button--compact"
                         disabled={
                             isActionPending ||
+                            !canAdvanceReport ||
                             !reportLineItem.canAdvance ||
                             !areAllReviewRowsReviewed
                         }
@@ -1331,6 +1398,7 @@ function buildApprovalQueueReviewRows(
             lineItem.sourceType === "mileage" ? lineItem.reportTotalMileage : 0,
         glCode: lineItem.glCode,
         flaggedLineItem: lineItem.flaggedLineItem,
+        policyChecks: lineItem.policyChecks,
         reviewAction: lineItem.reviewAction,
         deductible: lineItem.deductible,
         lineItem,
@@ -1351,6 +1419,7 @@ function buildApprovalQueueReviewRows(
                 mileage: mileageEntry.distance,
                 glCode: mileageEntry.glCode,
                 flaggedLineItem: mileageEntry.flaggedLineItem,
+                policyChecks: mileageEntry.policyChecks,
                 reviewAction: mileageEntry.reviewAction,
                 deductible: mileageEntry.deductible,
                 lineItem,
@@ -1562,6 +1631,7 @@ function replaceQueueLineItem(
                                   ...entry,
                                   flaggedLineItem:
                                       updatedLineItem.flaggedLineItem,
+                                  policyChecks: updatedLineItem.policyChecks,
                                   reviewAction: updatedLineItem.reviewAction,
                                   deductible: updatedLineItem.deductible,
                               }
@@ -1571,6 +1641,15 @@ function replaceQueueLineItem(
             }),
         ),
     );
+}
+
+function markPolicyChecksCleared(
+    policyChecks: z.infer<typeof policyCheckSchema>[],
+): z.infer<typeof policyCheckSchema>[] {
+    return policyChecks.map((policyCheck) => ({
+        ...policyCheck,
+        state: "cleared",
+    }));
 }
 
 function updateQueueReportStage(
