@@ -470,7 +470,6 @@ describe("AllTransactionsScreen", () => {
             body: "Synthetic dispute comment from finance.",
             createdAt: "2026-07-22T14:00:00.000Z",
         };
-        let hasPostedComment = false;
         const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
             const requestUrl = readRequestInput(input);
 
@@ -494,7 +493,6 @@ describe("AllTransactionsScreen", () => {
             }
 
             if (requestUrl.includes("/comments") && init?.method === "POST") {
-                hasPostedComment = true;
                 return Promise.resolve(
                     createJsonResponse(createdComment, { status: 201 }),
                 );
@@ -511,7 +509,6 @@ describe("AllTransactionsScreen", () => {
                             body: "Synthetic employee dispute.",
                             createdAt: "2026-07-22T13:00:00.000Z",
                         },
-                        ...(hasPostedComment ? [createdComment] : []),
                     ]),
                 );
             }
@@ -532,6 +529,16 @@ describe("AllTransactionsScreen", () => {
         const dialog = await screen.findByRole("dialog", {
             name: /Expense Report 60000000/i,
         });
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/audit-entries"),
+            ),
+        ).toBe(false);
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/comments"),
+            ),
+        ).toBe(false);
 
         fireEvent.click(
             await within(dialog).findByRole("tab", { name: "Audit Trail" }),
@@ -568,6 +575,14 @@ describe("AllTransactionsScreen", () => {
                 "Synthetic dispute comment from finance.",
             ),
         ).toBeTruthy();
+        expect(
+            fetchImplementation.mock.calls.filter(([input, init]) => {
+                const requestUrl = readRequestInput(input);
+                return (
+                    requestUrl.includes("/comments") && init?.method !== "POST"
+                );
+            }),
+        ).toHaveLength(1);
     });
 
     test("prevents blank comment submissions in the Comments tab", async () => {

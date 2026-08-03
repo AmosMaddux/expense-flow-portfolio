@@ -11,7 +11,7 @@ const findCaseCommentsByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
-const insertCaseCommentMock = vi.hoisted(() => vi.fn());
+const insertCaseCommentForExpenseReportMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
 const abandonUnpaidExpenseReportSettlementClaimMock = vi.hoisted(() => vi.fn());
 const claimExpenseReportSettlementMock = vi.hoisted(() => vi.fn());
@@ -45,7 +45,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     insertDeniedSubmissionAuditEntry: vi.fn(),
     insertDeniedWorkflowTransitionAttempt:
         insertDeniedWorkflowTransitionAttemptMock,
-    insertCaseComment: insertCaseCommentMock,
+    insertCaseCommentForExpenseReport: insertCaseCommentForExpenseReportMock,
     insertDraftExpenseReport: vi.fn(),
     insertMileageEntry: insertMileageEntryMock,
     markExpenseReportSettlementCompensated:
@@ -90,7 +90,7 @@ beforeEach(() => {
     findCurrentDraftExpenseReportMock.mockReset();
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
-    insertCaseCommentMock.mockReset();
+    insertCaseCommentForExpenseReportMock.mockReset();
     insertMileageEntryMock.mockReset();
     abandonUnpaidExpenseReportSettlementClaimMock.mockReset();
     claimExpenseReportSettlementMock.mockReset();
@@ -985,11 +985,7 @@ void describe("Expense Report service comment responses", () => {
     });
 
     void test("creates a scoped comment with the authenticated author", async () => {
-        findExpenseReportByIdMock.mockResolvedValue({
-            id: expenseReportId,
-            tenantId,
-        });
-        insertCaseCommentMock.mockImplementation((comment) =>
+        insertCaseCommentForExpenseReportMock.mockImplementation((comment) =>
             Promise.resolve({
                 ...comment,
                 createdAt: new Date("2026-08-01T12:00:00.000Z"),
@@ -1003,13 +999,14 @@ void describe("Expense Report service comment responses", () => {
             body: "Synthetic dispute note.",
         });
 
-        expect(insertCaseCommentMock).toHaveBeenCalledWith(
+        expect(insertCaseCommentForExpenseReportMock).toHaveBeenCalledWith(
             expect.objectContaining({
                 tenantId,
                 expenseReportId,
                 authorId: actorId,
                 body: "Synthetic dispute note.",
             }),
+            undefined,
         );
         expect(comment).toMatchObject({
             tenantId,
@@ -1017,6 +1014,30 @@ void describe("Expense Report service comment responses", () => {
             authorId: actorId,
             body: "Synthetic dispute note.",
         });
+    });
+
+    void test("creates Employee comments with owner scope enforced by the write", async () => {
+        insertCaseCommentForExpenseReportMock.mockResolvedValue(undefined);
+
+        await expect(
+            createExpenseReportComment({
+                id: expenseReportId,
+                tenantId,
+                authorId: actorId,
+                ownerId: actorId,
+                body: "Synthetic dispute note.",
+            }),
+        ).rejects.toBeInstanceOf(NotFoundError);
+        expect(insertCaseCommentForExpenseReportMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId,
+                authorId: actorId,
+                body: "Synthetic dispute note.",
+            }),
+            actorId,
+        );
+        expect(findExpenseReportByIdMock).not.toHaveBeenCalled();
     });
 });
 

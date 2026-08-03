@@ -7,6 +7,7 @@ const password =
     process.env.EXPENSEFLOW_E2E_PASSWORD ?? "expenseflow-e2e-local-only";
 const employeeEmail = "employee.e2e@example.test";
 const managerEmail = "manager.e2e@example.test";
+const financeEmail = "finance.e2e@example.test";
 
 test.describe.configure({ mode: "serial" });
 
@@ -16,6 +17,7 @@ test("employee submits an expense report and manager approves it", async ({
     const merchant = `E2E Travel ${randomUUID().slice(0, 8)}`;
     const employeeContext = await browser.newContext();
     const managerContext = await browser.newContext();
+    const financeContext = await browser.newContext();
     let freshManagerContext;
     let managerTotpCode;
 
@@ -128,10 +130,41 @@ test("employee submits an expense report and manager approves it", async ({
         });
         await expect(persistedManagerRow).toBeVisible();
         await expect(persistedManagerRow).toContainText("AP Review");
+
+        const financePage = await financeContext.newPage();
+        await login(financePage, "finance", financeEmail);
+        await expect(
+            financePage.getByRole("heading", { name: "Finance Dashboard" }),
+        ).toBeVisible();
+        await financePage
+            .getByRole("link", { name: "All Transactions" })
+            .click();
+        await expect(
+            financePage.getByRole("heading", { name: "All Transactions" }),
+        ).toBeVisible();
+        const financeTransactionRow = financePage.getByRole("row", {
+            name: new RegExp(escapeRegExp(merchant)),
+        });
+        await expect(financeTransactionRow).toBeVisible();
+        await financeTransactionRow
+            .getByRole("button", { name: "Review" })
+            .click();
+        const financeDialog = financePage.getByRole("dialog", {
+            name: `Expense Report ${reportId.slice(0, 8).toUpperCase()}`,
+        });
+        await expect(financeDialog).toBeVisible();
+        await financeDialog.getByRole("tab", { name: "Audit Trail" }).click();
+        await expect(
+            financeDialog.getByText("Transition Approved"),
+        ).toHaveCount(3);
+        await expect(financeDialog).toContainText("Submitted");
+        await expect(financeDialog).toContainText("Manager Approval");
+        await expect(financeDialog).toContainText("AP Review");
     } finally {
         await Promise.all([
             employeeContext.close(),
             managerContext.close(),
+            financeContext.close(),
             freshManagerContext?.close(),
         ]);
     }

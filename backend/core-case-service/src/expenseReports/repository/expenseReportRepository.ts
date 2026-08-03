@@ -3757,15 +3757,40 @@ export async function findCaseCommentsByExpenseReportId(
 /**
  * Appends a comment to an Expense Report within a tenant boundary.
  */
-export async function insertCaseComment(
+export async function insertCaseCommentForExpenseReport(
     comment: NewCaseComment,
-): Promise<CaseComment> {
-    const inserted = await db.insert(caseComment).values(comment).returning();
-    const created = inserted[0];
+    ownerId?: string,
+): Promise<CaseComment | undefined> {
+    return db.transaction(async (transaction) => {
+        const reportRows = await transaction
+            .select({ id: expenseReport.id })
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, comment.tenantId),
+                    eq(expenseReport.id, comment.expenseReportId),
+                    ...(ownerId === undefined
+                        ? []
+                        : [eq(expenseReport.owner, ownerId)]),
+                ),
+            )
+            .for("update");
+        const report = reportRows[0];
 
-    if (created === undefined) {
-        throw new Error("Unable to create Expense Report comment.");
-    }
+        if (report === undefined) {
+            return undefined;
+        }
 
-    return created;
+        const inserted = await transaction
+            .insert(caseComment)
+            .values(comment)
+            .returning();
+        const created = inserted[0];
+
+        if (created === undefined) {
+            throw new Error("Unable to create Expense Report comment.");
+        }
+
+        return created;
+    });
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
 
 import { and, eq, sql } from "drizzle-orm";
@@ -5849,30 +5850,44 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
     });
 
     void test("shows a submitted case change in the audit table and Audit Trail API", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000127";
-        const owner = "50000000-0000-4000-8000-000000000031";
-        const financeAdminId = "50000000-0000-4000-8000-000000000032";
-        const createResponse = await requestApp("/v1/expense-reports", {
-            method: "POST",
-            headers: {
-                authorization: authorizationHeader(tenantId, owner),
-                "content-type": "application/json",
-                "idempotency-key": "expense-submit-127-create",
-            },
-            body: JSON.stringify({ owner, dueDate: "2026-08-14" }),
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-14",
+            currentStage: "Submitted",
         });
-        const created = (await createResponse.json()) as { id: string };
+        await db.insert(lineItem).values({
+            id: randomUUID(),
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Audit Trail Rail",
+            expenseDate: "2026-08-01",
+            category: "Travel",
+            amount: "42.25",
+            currency: "USD",
+        });
 
-        const submitResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/submit`,
+        const transitionResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
             {
                 method: "POST",
                 headers: {
-                    authorization: authorizationHeader(tenantId, owner),
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-127-submit",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "Synthetic audit trail transition.",
+                }),
             },
         );
 
@@ -5882,11 +5897,11 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             .where(
                 and(
                     eq(auditEntry.tenantId, tenantId),
-                    eq(auditEntry.expenseReportId, created.id),
+                    eq(auditEntry.expenseReportId, reportId),
                 ),
             );
         const auditResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/audit-entries`,
+            `/v1/expense-reports/${reportId}/audit-entries`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -5903,13 +5918,13 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             stageAfterProposedAction?: string;
         }>;
 
-        expect(submitResponse.status).toBe(201);
+        expect(transitionResponse.status).toBe(200);
         expect(auditRows).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     action: "transition_approved",
-                    stageBeforeAction: "Drafted",
-                    stageAfterProposedAction: "Submitted",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Manager Approval",
                 }),
             ]),
         );
@@ -5918,8 +5933,8 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             expect.arrayContaining([
                 expect.objectContaining({
                     action: "transition_approved",
-                    stageBeforeAction: "Drafted",
-                    stageAfterProposedAction: "Submitted",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Manager Approval",
                 }),
             ]),
         );
@@ -6035,22 +6050,20 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
     });
 
     void test("lets a Finance Admin create and read comments for an Expense Report", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000124";
-        const owner = "50000000-0000-4000-8000-000000000025";
-        const financeAdminId = "50000000-0000-4000-8000-000000000026";
-        const createResponse = await requestApp("/v1/expense-reports", {
-            method: "POST",
-            headers: {
-                authorization: authorizationHeader(tenantId, owner),
-                "content-type": "application/json",
-                "idempotency-key": "expense-submit-124",
-            },
-            body: JSON.stringify({ owner, dueDate: "2026-08-11" }),
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-11",
+            currentStage: "Submitted",
         });
-        const created = (await createResponse.json()) as { id: string };
 
         const commentResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/comments`,
+            `/v1/expense-reports/${reportId}/comments`,
             {
                 method: "POST",
                 headers: {
@@ -6074,7 +6087,7 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         };
 
         const listResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/comments`,
+            `/v1/expense-reports/${reportId}/comments`,
             {
                 headers: {
                     authorization: authorizationHeader(
@@ -6092,7 +6105,7 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         expect(commentResponse.status).toBe(201);
         expect(commentBody).toMatchObject({
             tenantId,
-            expenseReportId: created.id,
+            expenseReportId: reportId,
             authorId: financeAdminId,
             body: "Synthetic finance dispute comment.",
         });
@@ -6105,22 +6118,20 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
     });
 
     void test("lets Employees comment only on their own Expense Reports", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000125";
-        const owner = "50000000-0000-4000-8000-000000000027";
-        const otherEmployee = "50000000-0000-4000-8000-000000000028";
-        const createResponse = await requestApp("/v1/expense-reports", {
-            method: "POST",
-            headers: {
-                authorization: authorizationHeader(tenantId, owner),
-                "content-type": "application/json",
-                "idempotency-key": "expense-submit-125",
-            },
-            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const otherEmployee = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Submitted",
         });
-        const created = (await createResponse.json()) as { id: string };
 
         const ownCommentResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/comments`,
+            `/v1/expense-reports/${reportId}/comments`,
             {
                 method: "POST",
                 headers: {
@@ -6133,7 +6144,7 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             },
         );
         const otherEmployeeResponse = await requestApp(
-            `/v1/expense-reports/${created.id}/comments`,
+            `/v1/expense-reports/${reportId}/comments`,
             {
                 headers: {
                     authorization: authorizationHeader(tenantId, otherEmployee),
@@ -6143,6 +6154,36 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
 
         expect(ownCommentResponse.status).toBe(201);
         expect(otherEmployeeResponse.status).toBe(404);
+    });
+
+    void test("rejects Employee comment creation on another owner's Expense Report", async () => {
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const otherEmployee = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Submitted",
+        });
+
+        const otherEmployeeCreateResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherEmployee),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic cross-owner comment attempt.",
+                }),
+            },
+        );
+
+        expect(otherEmployeeCreateResponse.status).toBe(404);
     });
 
     void test("rejects blank comment requests before writing a comment", async () => {

@@ -181,9 +181,12 @@ export function useExpenseReportReviewDetail(expenseReportId: string | null) {
 /**
  * Fetches append-only Audit Trail entries for the selected Expense Report.
  */
-export function useExpenseReportAuditEntries(expenseReportId: string | null) {
+export function useExpenseReportAuditEntries(
+    expenseReportId: string | null,
+    enabled = true,
+) {
     return useExpenseFlowQuery<AuditEntry[]>({
-        enabled: expenseReportId !== null,
+        enabled: enabled && expenseReportId !== null,
         input:
             expenseReportId === null
                 ? "/v1/expense-reports/00000000-0000-4000-8000-000000000000/audit-entries"
@@ -198,9 +201,12 @@ export function useExpenseReportAuditEntries(expenseReportId: string | null) {
 /**
  * Fetches case comments for the selected Expense Report.
  */
-export function useExpenseReportComments(expenseReportId: string | null) {
+export function useExpenseReportComments(
+    expenseReportId: string | null,
+    enabled = true,
+) {
     return useExpenseFlowQuery<CaseComment[]>({
-        enabled: expenseReportId !== null,
+        enabled: enabled && expenseReportId !== null,
         input:
             expenseReportId === null
                 ? "/v1/expense-reports/00000000-0000-4000-8000-000000000000/comments"
@@ -241,12 +247,6 @@ export function AllTransactionsScreen(): JSX.Element {
         [transactions],
     );
     const selectedReportQuery = useExpenseReportReviewDetail(
-        selectedExpenseReportId,
-    );
-    const selectedReportAuditQuery = useExpenseReportAuditEntries(
-        selectedExpenseReportId,
-    );
-    const selectedReportCommentsQuery = useExpenseReportComments(
         selectedExpenseReportId,
     );
 
@@ -400,8 +400,6 @@ export function AllTransactionsScreen(): JSX.Element {
                         ) : null}
                         {selectedExpenseReportId !== null ? (
                             <TransactionReviewDialog
-                                auditQuery={selectedReportAuditQuery}
-                                commentsQuery={selectedReportCommentsQuery}
                                 onClose={() => setSelectedExpenseReportId(null)}
                                 query={selectedReportQuery}
                                 reportId={selectedExpenseReportId}
@@ -625,14 +623,10 @@ function AllTransactionsTable({
 }
 
 function TransactionReviewDialog({
-    auditQuery,
-    commentsQuery,
     onClose,
     query,
     reportId,
 }: {
-    auditQuery: UseQueryResult<AuditEntry[], Error>;
-    commentsQuery: UseQueryResult<CaseComment[], Error>;
     onClose: () => void;
     query: UseQueryResult<ExpenseReportReviewDetail, Error>;
     reportId: string;
@@ -643,6 +637,14 @@ function TransactionReviewDialog({
     const [activeTab, setActiveTab] = useState<CaseDetailTab>("line-items");
     const [commentBody, setCommentBody] = useState("");
     const [commentError, setCommentError] = useState<string | null>(null);
+    const auditQuery = useExpenseReportAuditEntries(
+        reportId,
+        activeTab === "audit-trail",
+    );
+    const commentsQuery = useExpenseReportComments(
+        reportId,
+        activeTab === "comments",
+    );
     const commentMutation = useMutation({
         mutationFn: async (body: string) => {
             const requestBody = createCaseCommentRequestSchema.parse({ body });
@@ -674,13 +676,13 @@ function TransactionReviewDialog({
                             "expense-report-comments",
                         ) && cachedQuery.queryKey.includes(reportId),
                 },
-                (current = []) => [...current, comment],
+                (current = []) =>
+                    current.some(
+                        (cachedComment) => cachedComment.id === comment.id,
+                    )
+                        ? current
+                        : [...current, comment],
             );
-            void queryClient.invalidateQueries({
-                predicate: (cachedQuery) =>
-                    cachedQuery.queryKey.includes("expense-report-comments") &&
-                    cachedQuery.queryKey.includes(reportId),
-            });
         },
     });
 

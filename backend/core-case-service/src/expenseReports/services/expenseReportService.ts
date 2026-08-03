@@ -34,7 +34,7 @@ import {
     markExpenseReportSettlementCompensated,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
-    insertCaseComment,
+    insertCaseCommentForExpenseReport,
     insertMileageEntry,
     insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
@@ -1359,23 +1359,20 @@ export async function createExpenseReportComment(
             ownerId?: string;
         },
 ): Promise<CaseCommentResponse> {
-    const report = await findExpenseReportById(
-        request.tenantId,
-        request.id,
+    const comment = await insertCaseCommentForExpenseReport(
+        {
+            id: randomUUID(),
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            authorId: request.authorId,
+            body: request.body,
+        },
         request.ownerId,
     );
 
-    if (report === undefined) {
+    if (comment === undefined) {
         throw new NotFoundError("Expense Report not found.");
     }
-
-    const comment = await insertCaseComment({
-        id: randomUUID(),
-        tenantId: request.tenantId,
-        expenseReportId: request.id,
-        authorId: request.authorId,
-        body: request.body,
-    });
 
     return toCaseCommentResponse(comment);
 }

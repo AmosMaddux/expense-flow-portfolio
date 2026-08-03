@@ -30,7 +30,7 @@ type E2eDatabase = NodePgDatabase<typeof schema>;
 type E2eTransaction = Parameters<Parameters<E2eDatabase["transaction"]>[0]>[0];
 
 const e2eCommandSchema = z.enum(["reset", "code", "verify"]);
-const e2eAccountNameSchema = z.enum(["employee", "manager"]);
+const e2eAccountNameSchema = z.enum(["employee", "manager", "finance"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
 const e2eDatabaseName = "expenseflow_core_case";
 const e2eDatabaseMarkerName = "pg_database description";
@@ -46,6 +46,11 @@ const e2eAccounts = {
         userId: "81000000-0000-4000-8000-000000000003",
         email: "manager.e2e@example.test",
         role: "Department Manager",
+    },
+    finance: {
+        userId: "81000000-0000-4000-8000-000000000004",
+        email: "finance.e2e@example.test",
+        role: "Finance Admin",
     },
 } as const;
 const e2eGlMappings = [
@@ -119,7 +124,8 @@ async function resetE2eTestData(): Promise<void> {
                 `tenant: ${e2eTenantId}`,
                 `employee: ${e2eAccounts.employee.email}`,
                 `manager: ${e2eAccounts.manager.email}`,
-                "roles: Employee, Department Manager",
+                `finance: ${e2eAccounts.finance.email}`,
+                "roles: Employee, Department Manager, Finance Admin",
                 "GL mappings: Travel, Meals, Lodging",
                 "",
             ].join("\n"),
