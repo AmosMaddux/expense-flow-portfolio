@@ -2732,16 +2732,6 @@ function toLatestApprovalQueueLineItems(
                 row.submissionId &&
             !reportsWithLineItems.has(row.expenseReportId),
     );
-    const reportsWithIncludedReceipts = new Set<string>();
-    const readReportReceiptsOnce = (expenseReportId: string) => {
-        if (reportsWithIncludedReceipts.has(expenseReportId)) {
-            return [];
-        }
-
-        reportsWithIncludedReceipts.add(expenseReportId);
-        return receiptsByReport.get(expenseReportId) ?? [];
-    };
-
     return [
         ...latestLineItemRows.map((row) =>
             toApprovalQueueLineItemResponse(
@@ -2749,7 +2739,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 mileageEntriesByReport.get(row.expenseReportId) ?? [],
-                readReportReceiptsOnce(row.expenseReportId),
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
         ...mileageOnlyRows.map((row) =>
@@ -2758,7 +2748,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 [],
-                readReportReceiptsOnce(row.expenseReportId),
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
     ].filter(

@@ -255,6 +255,8 @@ async function seedReceiptGalleryReport(
     ownerId: string,
     receiptObjects: ReceiptFixtureObject[],
 ): Promise<void> {
+    await assertReceiptGallerySeedTenant(transaction, tenantId);
+
     await transaction
         .insert(expenseReport)
         .values({
@@ -520,6 +522,53 @@ async function seedReceiptGalleryReport(
             },
         ])
         .onConflictDoNothing();
+}
+
+async function assertReceiptGallerySeedTenant(
+    transaction: LocalDemoTransaction,
+    tenantId: string,
+): Promise<void> {
+    const fixedDemoRows = [
+        ...(await transaction
+            .select({
+                id: expenseReport.id,
+                tenantId: expenseReport.tenantId,
+            })
+            .from(expenseReport)
+            .where(eq(expenseReport.id, demoReportId))),
+        ...(await transaction
+            .select({
+                id: lineItem.id,
+                tenantId: lineItem.tenantId,
+            })
+            .from(lineItem)
+            .where(inArray(lineItem.id, [hotelLineItemId, railLineItemId]))),
+        ...(await transaction
+            .select({
+                id: glCodingResult.id,
+                tenantId: glCodingResult.tenantId,
+            })
+            .from(glCodingResult)
+            .where(
+                inArray(glCodingResult.id, [
+                    "73000000-0000-4000-8000-000000000061",
+                    "73000000-0000-4000-8000-000000000062",
+                ]),
+            )),
+    ];
+    const crossTenantRow = fixedDemoRows.find(
+        (row) => row.tenantId !== tenantId,
+    );
+
+    if (crossTenantRow !== undefined) {
+        throw new Error(
+            [
+                "Local demo seed cannot move fixed receipt-gallery demo rows across tenants.",
+                `row ${crossTenantRow.id} already belongs to tenant ${crossTenantRow.tenantId}, not ${tenantId}.`,
+                "Reset local demo data or rerun the seed with the existing tenant.",
+            ].join(" "),
+        );
+    }
 }
 
 type ReceiptFixtureObject = (typeof receiptFixtures)[number] & {

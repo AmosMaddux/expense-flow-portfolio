@@ -141,6 +141,52 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
     },
     lineItems[1],
 ];
+const linkedReceiptReportReceipts = [
+    {
+        id: "81000000-0000-4000-8000-000000000071",
+        lineItemId: "72000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        receiptDate: "2026-07-24",
+        amount: 312.44,
+        filename: "harbor-hotel.pdf",
+        contentType: "application/pdf",
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000072",
+        lineItemId: "72000000-0000-4000-8000-000000000072",
+        merchant: "Central Parking",
+        receiptDate: "2026-07-25",
+        amount: 28.75,
+        filename: "central-parking.pdf",
+        contentType: "application/pdf",
+    },
+] satisfies ApprovalQueueLineItem["receipts"];
+const linkedReceiptReportItems: ApprovalQueueLineItem[] = [
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000071",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        amount: 312.44,
+        glCode: "6200",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000072",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Central Parking",
+        amount: 28.75,
+        glCode: "6000",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
+];
 const seededZenithReportItems: ApprovalQueueLineItem[] = [
     {
         ...lineItems[2],
@@ -577,7 +623,7 @@ describe("CaseQueueScreen", () => {
         expect(axeResults.violations).toHaveLength(0);
     });
 
-    test("selecting a receipt focuses and highlights its linked line item", async () => {
+    test("selecting a receipt focuses and highlights its linked line item in a multi-line report", async () => {
         const scrollIntoView = vi.fn();
         const originalScrollIntoView = Object.getOwnPropertyDescriptor(
             Element.prototype,
@@ -588,34 +634,42 @@ describe("CaseQueueScreen", () => {
             .mockImplementation((callback) => {
                 callback(0);
                 return 0;
-            });
+        });
         Element.prototype.scrollIntoView = scrollIntoView;
         const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(lineItems)),
+            Promise.resolve(createJsonResponse(linkedReceiptReportItems)),
         );
 
         renderCaseQueueScreen(fetchImplementation);
 
-        const northstarRow = await screen.findByRole("row", {
+        const reportRow = await screen.findByRole("row", {
             name: /Employee 0191/i,
         });
         fireEvent.click(
-            within(northstarRow).getByRole("button", { name: "Review" }),
+            within(reportRow).getByRole("button", { name: "Review" }),
         );
         fireEvent.click(
             screen.getByRole("button", {
-                name: /Northstar Hotels receipt for \$742\.18/i,
+                name: /Central Parking receipt for \$28\.75/i,
             }),
         );
 
         const reviewTable = screen.getByRole("table", {
             name: "Report review line items",
         });
-        const reviewRow = within(reviewTable).getByRole("row", {
-            name: /Northstar Hotels/i,
+        const firstReviewRow = within(reviewTable).getByRole("row", {
+            name: /Harbor Hotel/i,
         });
-        expect(reviewRow.className).toContain("case-queue-dialog__row--active");
-        expect(document.activeElement).toBe(reviewRow);
+        const secondReviewRow = within(reviewTable).getByRole("row", {
+            name: /Central Parking/i,
+        });
+        expect(secondReviewRow.className).toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(firstReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(document.activeElement).toBe(secondReviewRow);
         expect(scrollIntoView).toHaveBeenCalled();
         if (originalScrollIntoView === undefined) {
             Reflect.deleteProperty(Element.prototype, "scrollIntoView");

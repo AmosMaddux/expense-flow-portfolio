@@ -833,6 +833,7 @@ void describe("expenseReportRepository", () => {
         }
 
         const hotelReceiptId = randomUUID();
+        const parkingReceiptId = randomUUID();
         const taxiReceiptId = randomUUID();
         await db.insert(receiptMetadata).values([
             {
@@ -846,6 +847,20 @@ void describe("expenseReportRepository", () => {
                 blobReference: {
                     objectKey: "synthetic/object-key",
                     filename: "synthetic-hotel.pdf",
+                    contentType: "application/pdf",
+                },
+            },
+            {
+                id: parkingReceiptId,
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId: secondLineItemId,
+                merchant: "Synthetic Parking",
+                receiptDate: "2026-07-21",
+                amount: "24.00",
+                blobReference: {
+                    objectKey: "synthetic/parking-object-key",
+                    filename: "synthetic-parking.pdf",
                     contentType: "application/pdf",
                 },
             },
@@ -970,16 +985,26 @@ void describe("expenseReportRepository", () => {
         const hotelReceipt = reportRow?.receipts.find(
             (receipt) => receipt.merchant === "Synthetic Hotel",
         );
+        const parkingReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Parking",
+        );
         const taxiReceipt = reportRow?.receipts.find(
             (receipt) => receipt.merchant === "Synthetic Taxi",
         );
 
-        expect(reportRow?.receipts).toHaveLength(2);
-        expect(
-            reportRows
-                .flatMap((row) => row.receipts)
-                .map((receipt) => receipt.id),
-        ).toHaveLength(2);
+        expect(reportRows).toHaveLength(2);
+        expect(reportRow?.receipts).toHaveLength(3);
+        for (const row of reportRows) {
+            const receiptIds = row.receipts.map((receipt) => receipt.id);
+            expect(receiptIds).toHaveLength(3);
+            expect(receiptIds).toEqual(
+                expect.arrayContaining([
+                    hotelReceiptId,
+                    parkingReceiptId,
+                    taxiReceiptId,
+                ]),
+            );
+        }
         expect(typeof hotelReceipt?.id).toBe("string");
         expect(hotelReceipt).toMatchObject({
             lineItemId,
@@ -987,6 +1012,15 @@ void describe("expenseReportRepository", () => {
             receiptDate: "2026-07-21",
             amount: 242.3,
             filename: "synthetic-hotel.pdf",
+            contentType: "application/pdf",
+        });
+        expect(typeof parkingReceipt?.id).toBe("string");
+        expect(parkingReceipt).toMatchObject({
+            lineItemId: secondLineItemId,
+            merchant: "Synthetic Parking",
+            receiptDate: "2026-07-21",
+            amount: 24,
+            filename: "synthetic-parking.pdf",
             contentType: "application/pdf",
         });
         expect(typeof taxiReceipt?.id).toBe("string");
