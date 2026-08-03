@@ -8,10 +8,12 @@ import type {
 import { IdempotencyRequestMismatchError } from "./idempotencyStore.js";
 
 type RunIdempotentSubmissionRequest<TBody> = {
+    conflictMessage?: string;
     idempotencyKey: string;
     operation: () => Promise<TBody>;
     requestHash: string;
     store: IdempotencyStore;
+    successStatusCode?: number;
     tenantId: string;
 };
 
@@ -23,10 +25,12 @@ export type IdempotentSubmissionRunResult = IdempotencyResult & {
  * Replays completed submissions and serializes first writers per tenant key.
  */
 export async function runIdempotentSubmission<TBody>({
+    conflictMessage = "A submission with this idempotency key is already in progress.",
     idempotencyKey,
     operation,
     requestHash,
     store,
+    successStatusCode = 201,
     tenantId,
 }: RunIdempotentSubmissionRequest<TBody>): Promise<IdempotentSubmissionRunResult> {
     const cached = await getResultForRequest(
@@ -51,9 +55,7 @@ export async function runIdempotentSubmission<TBody>({
             return { ...completed, replayed: true };
         }
 
-        throw new ConflictError(
-            "A submission with this idempotency key is already in progress.",
-        );
+        throw new ConflictError(conflictMessage);
     }
 
     try {
@@ -68,7 +70,7 @@ export async function runIdempotentSubmission<TBody>({
         }
 
         const body = toJsonSafeBody(await operation());
-        const result = { body, statusCode: 201 };
+        const result = { body, statusCode: successStatusCode };
 
         await store.saveResult(tenantId, idempotencyKey, requestHash, result);
 

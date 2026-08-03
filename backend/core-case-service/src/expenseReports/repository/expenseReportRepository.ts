@@ -20,6 +20,8 @@ import {
     type AuditEntry,
     expenseReport,
     type ExpenseReport,
+    expenseReportSettlement,
+    type ExpenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
@@ -57,6 +59,33 @@ type StageTransitionEventContext = {
     idempotencyKey?: string;
     occurredAt: Date;
 };
+
+export type SettlementSagaCompensationResult =
+    | { kind: "compensated"; eventId: string }
+    | { kind: "already_prior_stage" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementClaimResult =
+    | { kind: "issue_payment"; settlement: ExpenseReportSettlement }
+    | { kind: "reuse_payment"; settlement: ExpenseReportSettlement }
+    | {
+          kind: "already_reconciled";
+          settlement: ExpenseReportSettlement;
+          report: ExpenseReport;
+      }
+    | { kind: "in_progress"; settlement: ExpenseReportSettlement }
+    | { kind: "terminal_compensated"; settlement: ExpenseReportSettlement }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementPaymentRecordResult =
+    | { kind: "recorded"; settlement: ExpenseReportSettlement }
+    | { kind: "already_recorded"; settlement: ExpenseReportSettlement }
+    | { kind: "not_found" };
+
+export type AbandonSettlementClaimResult =
+    { kind: "abandoned" } | { kind: "not_abandoned" };
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -2139,13 +2168,584 @@ export async function transitionExpenseReportStage(
             isSendBackTransition(request) ? request.reason : undefined,
         );
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
-            ...request,
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: request.fromStage,
+            toStage: request.toStage,
+            reason: request.reason,
+            ...(request.idempotencyKey === undefined
+                ? {}
+                : { idempotencyKey: request.idempotencyKey }),
             correlationId: request.correlationId ?? randomUUID(),
             eventId: request.eventId ?? randomUUID(),
             occurredAt: request.occurredAt ?? new Date(),
         });
 
         return true;
+    });
+}
+
+/**
+ * Claims or recovers the durable settlement record before any payment side effect runs.
+ */
+export async function claimExpenseReportSettlement(request: {
+    tenantId: string;
+    id: string;
+    idempotencyKey: string;
+    correlationId: string;
+}): Promise<SettlementClaimResult> {
+    return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const existingSettlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const existingSettlement = existingSettlements[0];
+
+        if (existingSettlement !== undefined) {
+            if (
+                existingSettlement.status === "reconciled" &&
+                report.currentStage === "Reconciled"
+            ) {
+                return {
+                    kind: "already_reconciled",
+                    settlement: existingSettlement,
+                    report,
+                };
+            }
+
+            if (
+                existingSettlement.status === "issuing" ||
+                existingSettlement.paymentId === null
+            ) {
+                return {
+                    kind: "in_progress",
+                    settlement: existingSettlement,
+                };
+            }
+
+            if (existingSettlement.status === "compensated") {
+                return {
+                    kind: "terminal_compensated",
+                    settlement: existingSettlement,
+                };
+            }
+
+            return {
+                kind: "reuse_payment",
+                settlement: existingSettlement,
+            };
+        }
+
+        if (report.currentStage !== "AP Review") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage as ExpenseReportStage,
+            };
+        }
+
+        const insertedSettlements = await transaction
+            .insert(expenseReportSettlement)
+            .values({
+                tenantId: request.tenantId,
+                expenseReportId: request.id,
+                idempotencyKey: request.idempotencyKey,
+                correlationId: request.correlationId,
+            })
+            .returning();
+        const settlement = insertedSettlements[0];
+        if (settlement === undefined) {
+            throw new Error("Unable to claim Expense Report settlement.");
+        }
+
+        return { kind: "issue_payment", settlement };
+    });
+}
+
+/**
+ * Persists the payment stub reference for a previously claimed settlement.
+ */
+export async function recordExpenseReportSettlementPayment(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    idempotencyKey: string;
+    paymentId: string;
+}): Promise<SettlementPaymentRecordResult> {
+    return db.transaction(async (transaction) => {
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(
+                        expenseReportSettlement.idempotencyKey,
+                        request.idempotencyKey,
+                    ),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+        if (settlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (settlement.paymentId !== null) {
+            return { kind: "already_recorded", settlement };
+        }
+
+        const updatedSettlements = await transaction
+            .update(expenseReportSettlement)
+            .set({
+                paymentId: request.paymentId,
+                status: "issued",
+                updatedAt: new Date(),
+            })
+            .where(eq(expenseReportSettlement.id, settlement.id))
+            .returning();
+        const updatedSettlement = updatedSettlements[0];
+        if (updatedSettlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "payment_stub_issued",
+            stageBeforeAction: "AP Review",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: "Synthetic payment stub issued for settlement saga.",
+        });
+
+        return { kind: "recorded", settlement: updatedSettlement };
+    });
+}
+
+/**
+ * Commits the settlement-owned AP Review to Paid transition for an issued payment.
+ */
+export async function transitionIssuedExpenseReportSettlementToPaid(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    settlementId: string;
+    paymentId: string;
+    reason: string;
+    correlationId: string;
+    idempotencyKey: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+        const currentStage = report?.currentStage;
+
+        const transitionRequest: TransitionExpenseReportStageRequest = {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: request.reason,
+            correlationId: request.correlationId,
+            idempotencyKey: request.idempotencyKey,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        };
+
+        if (currentStage === undefined) {
+            return false;
+        }
+
+        if (currentStage !== "AP Review") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.id, request.settlementId),
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+
+        if (settlement?.status !== "issued") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                "Expense Report settlement must be issued before payment-stage transition.",
+            );
+
+            return false;
+        }
+
+        const transitionedReports = await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "Paid",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "AP Review"),
+                ),
+            )
+            .returning({ id: expenseReport.id });
+
+        if (transitionedReports.length === 0) {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        await writeTransitionAuditEntry(
+            transaction,
+            transitionRequest,
+            currentStage,
+            "transition_approved",
+        );
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: request.reason,
+            idempotencyKey: request.idempotencyKey,
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return true;
+    });
+}
+
+/**
+ * Releases an unpaid settlement claim after payment issuance fails before any payment reference exists.
+ */
+export async function abandonUnpaidExpenseReportSettlementClaim(request: {
+    tenantId: string;
+    id: string;
+    settlementId: string;
+}): Promise<AbandonSettlementClaimResult> {
+    const abandonedSettlements = await db
+        .delete(expenseReportSettlement)
+        .where(
+            and(
+                eq(expenseReportSettlement.id, request.settlementId),
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                eq(expenseReportSettlement.status, "issuing"),
+                isNull(expenseReportSettlement.paymentId),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return abandonedSettlements.length === 1
+        ? { kind: "abandoned" }
+        : { kind: "not_abandoned" };
+}
+
+/**
+ * Commits the final settlement state with the Paid to Reconciled transition.
+ */
+export async function reconcileExpenseReportSettlementStage(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    paymentId: string;
+    reason: string;
+    correlationId: string;
+    idempotencyKey: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+        const currentStage = report?.currentStage;
+
+        if (currentStage === undefined) {
+            return false;
+        }
+
+        const transitionRequest: TransitionExpenseReportStageRequest = {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "Reconciled",
+            reason: request.reason,
+            correlationId: request.correlationId,
+            idempotencyKey: request.idempotencyKey,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        };
+
+        if (currentStage !== "Paid") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+
+        if (settlement?.status !== "issued") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                "Expense Report settlement must be issued before reconciliation.",
+            );
+
+            return false;
+        }
+
+        const transitionedReports = await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "Reconciled",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "Paid"),
+                ),
+            )
+            .returning({ id: expenseReport.id });
+
+        if (transitionedReports.length === 0) {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const updatedSettlements = await transaction
+            .update(expenseReportSettlement)
+            .set({ status: "reconciled", updatedAt: new Date() })
+            .where(eq(expenseReportSettlement.id, settlement.id))
+            .returning({ id: expenseReportSettlement.id });
+
+        if (updatedSettlements.length !== 1) {
+            throw new Error("Unable to reconcile Expense Report settlement.");
+        }
+
+        await writeTransitionAuditEntry(
+            transaction,
+            transitionRequest,
+            currentStage,
+            "transition_approved",
+        );
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "Reconciled",
+            reason: request.reason,
+            idempotencyKey: request.idempotencyKey,
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return true;
+    });
+}
+
+/**
+ * Marks the durable settlement record compensated after the payment stub is reversed.
+ */
+export async function markExpenseReportSettlementCompensated(request: {
+    tenantId: string;
+    id: string;
+    settlementId: string;
+    paymentId: string;
+}): Promise<boolean> {
+    const updatedSettlements = await db
+        .update(expenseReportSettlement)
+        .set({
+            paymentId: request.paymentId,
+            status: "compensated",
+            updatedAt: new Date(),
+        })
+        .where(
+            and(
+                eq(expenseReportSettlement.id, request.settlementId),
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                inArray(expenseReportSettlement.status, ["issuing", "issued"]),
+                or(
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                    and(
+                        eq(expenseReportSettlement.status, "issuing"),
+                        isNull(expenseReportSettlement.paymentId),
+                    ),
+                ),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return updatedSettlements.length === 1;
+}
+
+/**
+ * Restores a settlement saga from Paid to AP Review after a later saga step fails.
+ */
+export async function compensatePaidSettlementStage(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    reason: string;
+    correlationId: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<SettlementSagaCompensationResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage === "AP Review") {
+            return { kind: "already_prior_stage" };
+        }
+
+        if (report.currentStage !== "Paid") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "AP Review",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "Paid"),
+                ),
+            );
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "settlement_saga_compensated",
+            stageBeforeAction: "Paid",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: request.reason,
+        });
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "AP Review",
+            reason: "settlement_saga_compensated",
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return { kind: "compensated", eventId: request.eventId };
     });
 }
 
@@ -2998,6 +3598,14 @@ function isSendBackTransition(
 function isValidTransitionEdge(
     request: TransitionExpenseReportStageRequest,
 ): boolean {
+    if (request.fromStage === "AP Review" && request.toStage === "Paid") {
+        return false;
+    }
+
+    if (request.fromStage === "Paid" && request.toStage === "Reconciled") {
+        return false;
+    }
+
     return isExpenseReportWorkflowEdge(request.fromStage, request.toStage);
 }
 
@@ -3006,6 +3614,13 @@ function buildTransitionDenialReason(
     currentStage: ExpenseReportStage,
 ): string {
     if (!isValidTransitionEdge(request)) {
+        if (
+            (request.fromStage === "AP Review" && request.toStage === "Paid") ||
+            (request.fromStage === "Paid" && request.toStage === "Reconciled")
+        ) {
+            return "Settlement-owned transition must use the settlement route.";
+        }
+
         return `Invalid transition from ${request.fromStage} to ${request.toStage}.`;
     }
 

@@ -39,6 +39,12 @@ export const approvedAttachmentContentTypes = [
 
 export const glCodingSourceTypes = ["line_item", "mileage"] as const;
 export const lineItemReviewActions = ["approve", "reject"] as const;
+export const expenseReportSettlementStatuses = [
+    "issuing",
+    "issued",
+    "compensated",
+    "reconciled",
+] as const;
 
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
@@ -65,6 +71,9 @@ const glCodingSourceTypeCheckSql =
     buildStaticStringInListSql(glCodingSourceTypes);
 const lineItemReviewActionCheckSql = buildStaticStringInListSql(
     lineItemReviewActions,
+);
+const expenseReportSettlementStatusCheckSql = buildStaticStringInListSql(
+    expenseReportSettlementStatuses,
 );
 
 export const expenseReport = pgTable(
@@ -223,6 +232,7 @@ export const stageTransition = pgTable(
                 or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'AP Review')
                 or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Paid')
                 or (${table.fromStage} = 'Paid' and ${table.toStage} = 'Reconciled')
+                or (${table.fromStage} = 'Paid' and ${table.toStage} = 'AP Review' and ${table.reason} = 'settlement_saga_compensated')
                 or (${table.fromStage} = 'Manager Approval' and ${table.toStage} = 'Drafted')
                 or (${table.fromStage} = 'AP Review' and ${table.toStage} = 'Drafted')
                 or (${table.fromStage} = ${table.toStage} and ${table.reason} like 'transition_denied:%')
@@ -235,6 +245,12 @@ export const stageTransition = pgTable(
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
         index("stage_transition_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+        // Outbox rows reference this key so transition, tenant, and report ownership stay inseparable.
+        uniqueIndex("stage_transition_tenant_report_id_unique_idx").on(
+            table.id,
             table.tenantId,
             table.expenseReportId,
         ),
@@ -300,6 +316,20 @@ export const stageTransitionOutbox = pgTable(
             columns: [table.tenantId, table.expenseReportId],
             foreignColumns: [expenseReport.tenantId, expenseReport.id],
         }),
+        foreignKey({
+            name: "stage_transition_outbox_transition_tenant_report_fk",
+            // Transition ownership is checked as a unit so outbox events cannot mix tenants or reports.
+            columns: [
+                table.stageTransitionId,
+                table.tenantId,
+                table.expenseReportId,
+            ],
+            foreignColumns: [
+                stageTransition.id,
+                stageTransition.tenantId,
+                stageTransition.expenseReportId,
+            ],
+        }),
         uniqueIndex("stage_transition_outbox_transition_unique_idx").on(
             table.stageTransitionId,
         ),
@@ -322,6 +352,61 @@ export type StageTransitionOutbox = InferSelectModel<
 >;
 export type NewStageTransitionOutbox = InferInsertModel<
     typeof stageTransitionOutbox
+>;
+
+export const expenseReportSettlement = pgTable(
+    "expense_report_settlement",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        idempotencyKey: text("idempotency_key").notNull(),
+        correlationId: uuid("correlation_id").notNull(),
+        paymentId: text("payment_id"),
+        status: text("status").notNull().default("issuing"),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "expense_report_settlement_status_check",
+            sql`${table.status} in (${expenseReportSettlementStatusCheckSql})`,
+        ),
+        check(
+            "expense_report_settlement_payment_id_check",
+            sql`(${table.status} = 'issuing' and ${table.paymentId} is null) or (${table.status} <> 'issuing' and nullif(btrim(${table.paymentId}), '') is not null)`,
+        ),
+        foreignKey({
+            name: "expense_report_settlement_report_tenant_fk",
+            // The settlement record belongs to exactly one tenant-scoped Expense Report.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        uniqueIndex("expense_report_settlement_report_unique_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+        ),
+        uniqueIndex("expense_report_settlement_idempotency_unique_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.idempotencyKey,
+        ),
+        index("expense_report_settlement_tenant_status_idx").on(
+            table.tenantId,
+            table.status,
+        ),
+    ],
+);
+
+export type ExpenseReportSettlement = InferSelectModel<
+    typeof expenseReportSettlement
+>;
+export type NewExpenseReportSettlement = InferInsertModel<
+    typeof expenseReportSettlement
 >;
 
 export const stageTransitionProjection = pgTable(
