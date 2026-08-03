@@ -409,6 +409,71 @@ export type NewExpenseReportSettlement = InferInsertModel<
     typeof expenseReportSettlement
 >;
 
+export const stageTransitionProjection = pgTable(
+    "stage_transition_projection",
+    {
+        eventId: uuid("event_id").primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        expenseReportId: uuid("expense_report_id").notNull(),
+        correlationId: uuid("correlation_id").notNull(),
+        previousStage: text("previous_stage").notNull(),
+        currentStage: text("current_stage").notNull(),
+        transitionedAt: timestamp("transitioned_at", {
+            withTimezone: true,
+        }).notNull(),
+        projectedAt: timestamp("projected_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "stage_transition_projection_previous_stage_check",
+            sql`${table.previousStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_projection_current_stage_check",
+            sql`${table.currentStage} in (${approvedWorkflowStageCheckSql})`,
+        ),
+        check(
+            "stage_transition_projection_changed_stage_check",
+            sql`${table.previousStage} <> ${table.currentStage}`,
+        ),
+        check(
+            "stage_transition_projection_valid_edge_check",
+            sql`(
+                (${table.previousStage} = 'Drafted' and ${table.currentStage} = 'Submitted')
+                or (${table.previousStage} = 'Submitted' and ${table.currentStage} = 'Manager Approval')
+                or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'AP Review')
+                or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Paid')
+                or (${table.previousStage} = 'Paid' and ${table.currentStage} = 'Reconciled')
+                or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'Drafted')
+                or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Drafted')
+            )`,
+        ),
+        foreignKey({
+            name: "stage_transition_projection_expense_report_tenant_fk",
+            // The projection must never associate an Expense Report with a different tenant.
+            columns: [table.tenantId, table.expenseReportId],
+            foreignColumns: [expenseReport.tenantId, expenseReport.id],
+        }),
+        index("stage_transition_projection_tenant_report_idx").on(
+            table.tenantId,
+            table.expenseReportId,
+            table.transitionedAt,
+        ),
+        index("stage_transition_projection_correlation_idx").on(
+            table.correlationId,
+        ),
+    ],
+);
+
+export type StageTransitionProjection = InferSelectModel<
+    typeof stageTransitionProjection
+>;
+export type NewStageTransitionProjection = InferInsertModel<
+    typeof stageTransitionProjection
+>;
+
 export const lineItem = pgTable(
     "line_item",
     {

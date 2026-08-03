@@ -14,3 +14,12 @@ export {
     type PublishStageTransitionRequest,
     type StageTransitionEventPublisher,
 } from "./stageTransitionEventPublisher.js";
+export {
+    processStageTransitionEvent,
+    processStageTransitionEventBody,
+} from "./stageTransitionEventProcessor.js";
+export {
+    pollStageTransitionQueueOnce,
+    runStageTransitionSqsConsumer,
+    type StageTransitionSqsPollResult,
+} from "./stageTransitionSqsConsumer.js";

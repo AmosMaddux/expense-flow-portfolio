@@ -17,6 +17,8 @@ ALTER TABLE "expense_report_settlement" ADD CONSTRAINT "expense_report_settlemen
 CREATE UNIQUE INDEX "expense_report_settlement_report_unique_idx" ON "expense_report_settlement" USING btree ("tenant_id","expense_report_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "expense_report_settlement_idempotency_unique_idx" ON "expense_report_settlement" USING btree ("tenant_id","expense_report_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "expense_report_settlement_tenant_status_idx" ON "expense_report_settlement" USING btree ("tenant_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "stage_transition_tenant_report_id_unique_idx" ON "stage_transition" USING btree ("id","tenant_id","expense_report_id");--> statement-breakpoint
+ALTER TABLE "stage_transition_outbox" ADD CONSTRAINT "stage_transition_outbox_transition_tenant_report_fk" FOREIGN KEY ("stage_transition_id","tenant_id","expense_report_id") REFERENCES "public"."stage_transition"("id","tenant_id","expense_report_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stage_transition" ADD CONSTRAINT "stage_transition_valid_edge_check" CHECK ((
                 ("stage_transition"."from_stage" = 'Drafted' and "stage_transition"."to_stage" = 'Drafted' and "stage_transition"."reason" = 'report_created')
                 or ("stage_transition"."from_stage" = 'Drafted' and "stage_transition"."to_stage" = 'Submitted')

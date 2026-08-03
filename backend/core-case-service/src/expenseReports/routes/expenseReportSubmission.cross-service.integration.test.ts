@@ -498,8 +498,9 @@ void describe("Expense Report submission across Core Case and GL-coding services
         expect(clearBody.clearedFlagCount).toBe(1);
         expect(codingRowsAfterFirstClear[0]).toMatchObject({
             flaggedLineItem: false,
-            flagCode: null,
-            flagMessage: null,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
         });
         expect(otherTenantCodingRowsAfterFirstClear[0]).toMatchObject({
             flaggedLineItem: true,

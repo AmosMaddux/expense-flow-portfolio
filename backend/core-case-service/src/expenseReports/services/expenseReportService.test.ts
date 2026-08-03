@@ -947,11 +947,13 @@ void describe("Expense Report source deductibility service", () => {
                 glCode: "6000",
                 currentStage: "AP Review",
                 flaggedLineItem: false,
+                policyChecks: [],
                 reviewAction: "approve",
                 deductible: true,
                 canAdvance: false,
                 reportTotalMileage: 0,
                 mileageEntries: [],
+                receipts: [],
             },
         });
 

@@ -3738,6 +3738,11 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             employee?: string;
             id?: string;
             mileageEntries?: unknown[];
+            policyChecks?: Array<{
+                code?: string;
+                message?: string;
+                state?: string;
+            }>;
             reportTotalMileage?: number;
             reviewAction?: string;
         }>;
@@ -3747,6 +3752,14 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             expect.objectContaining({
                 employee: owner,
                 id: lineItemId,
+                policyChecks: [
+                    {
+                        code: "line_item_over_threshold",
+                        message:
+                            "Line item amount is above the MVP manual review threshold.",
+                        state: "uncleared",
+                    },
+                ],
                 reportTotalMileage: 18.5,
                 mileageEntries: [
                     expect.objectContaining({

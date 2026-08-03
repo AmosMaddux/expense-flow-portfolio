@@ -620,6 +620,12 @@ export const MySubmissionDetailSchema = z.object({
         }),
     ),
 });
+const PolicyCheckOutboundResponseSchema = z.object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    state: z.enum(["cleared", "uncleared"]),
+});
+
 export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),
@@ -629,8 +635,22 @@ export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(PolicyCheckOutboundResponseSchema),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     deductible: z.boolean(),
+});
+
+export const ApprovalQueueReceiptOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    lineItemId: z.uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative().openapi({
+        type: "number",
+        minimum: 0,
+    }),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
 });
 
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
@@ -643,11 +663,13 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     glCode: z.string().min(1),
     currentStage: z.enum(approvedWorkflowStages),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(PolicyCheckOutboundResponseSchema),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     deductible: z.boolean(),
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
+    receipts: z.array(ApprovalQueueReceiptOutboundResponseSchema),
 });
 
 export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(

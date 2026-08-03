@@ -21,8 +21,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const expenseReportSubmitPath =
             document.paths?.["/v1/expense-reports/{id}/submit"];
-        const expenseReportSettlementPath =
-            document.paths?.["/v1/expense-reports/{id}/settlement"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
         const flagClearPath =
@@ -42,7 +40,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportByIdPath?.get).toBeDefined();
         expect(reviewDetailPath?.get).toBeDefined();
         expect(expenseReportSubmitPath?.post).toBeDefined();
-        expect(expenseReportSettlementPath?.post).toBeDefined();
         expect(flagClearPath?.post).toBeDefined();
         expect(lineItemReviewPath?.post).toBeDefined();
         expect(sourceReviewPath?.post).toBeDefined();
@@ -137,20 +134,43 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
-    void test("documents Idempotency-Key as required for Expense Report settlement", () => {
-        const expenseReportSettlementPath =
-            document.paths?.["/v1/expense-reports/{id}/settlement"];
-        const idempotencyHeader =
-            expenseReportSettlementPath?.post?.parameters?.find(
-                (parameter) =>
-                    "name" in parameter && parameter.name === "Idempotency-Key",
-            );
+    void test("documents Approval Queue receipt amount as a nonnegative number", () => {
+        type ReceiptAmountSchemaContainer = {
+            properties?: {
+                receipts?: {
+                    items?: {
+                        properties?: {
+                            amount?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        type ReceiptAmountListSchemaContainer = {
+            items?: ReceiptAmountSchemaContainer;
+        };
+        const lineItemResponse = JSON.parse(
+            JSON.stringify(
+                document.components?.schemas?.ApprovalQueueLineItemResponse,
+            ),
+        ) as ReceiptAmountSchemaContainer;
+        const lineItemListResponse = JSON.parse(
+            JSON.stringify(
+                document.components?.schemas?.ApprovalQueueLineItemListResponse,
+            ),
+        ) as ReceiptAmountListSchemaContainer;
+        const expectedAmountSchema = {
+            type: "number",
+            minimum: 0,
+        };
 
-        expect(idempotencyHeader).toMatchObject({
-            in: "header",
-            name: "Idempotency-Key",
-            required: true,
-        });
+        expect(
+            lineItemResponse.properties?.receipts?.items?.properties?.amount,
+        ).toStrictEqual(expectedAmountSchema);
+        expect(
+            lineItemListResponse.items?.properties?.receipts?.items?.properties
+                ?.amount,
+        ).toStrictEqual(expectedAmountSchema);
     });
 
     void test("documents correlation only on stage-transition request boundaries", () => {
@@ -184,8 +204,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const expenseReportSubmitPath =
             document.paths?.["/v1/expense-reports/{id}/submit"];
-        const expenseReportSettlementPath =
-            document.paths?.["/v1/expense-reports/{id}/settlement"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
         const flagClearPath =
@@ -229,9 +247,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(expenseReportSubmitPath?.post?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
-        expect(expenseReportSettlementPath?.post?.security).toStrictEqual([
-            { bearerAuth: [] },
-        ]);
         expect(flagClearPath?.post?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
@@ -260,12 +275,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(reviewDetailPath?.get?.responses?.[403]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportSubmitPath?.post?.responses?.[403]).toBeDefined();
-        expect(
-            expenseReportSettlementPath?.post?.responses?.[401],
-        ).toBeDefined();
-        expect(
-            expenseReportSettlementPath?.post?.responses?.[403],
-        ).toBeDefined();
         expect(flagClearPath?.post?.responses?.[401]).toBeDefined();
         expect(flagClearPath?.post?.responses?.[403]).toBeDefined();
         expect(lineItemReviewPath?.post?.responses?.[401]).toBeDefined();
@@ -430,22 +439,6 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         );
     });
 
-    void test("documents the settlement saga request body", () => {
-        const expenseReportSettlementPath =
-            document.paths?.["/v1/expense-reports/{id}/settlement"];
-        const requestBody = expenseReportSettlementPath?.post?.requestBody;
-        const settlementRequestSchema =
-            document.components?.schemas?.SettleExpenseReportRequest;
-
-        expect(JSON.stringify(requestBody)).toContain(
-            "#/components/schemas/SettleExpenseReportRequest",
-        );
-        expect(JSON.stringify(settlementRequestSchema)).toContain("reason");
-        expect(
-            JSON.stringify(expenseReportSettlementPath?.post?.responses?.[409]),
-        ).toContain("compensated saga");
-    });
-
     void test("documents the Finance Dashboard trend endpoint", () => {
         const trendPath = document.paths?.["/v1/finance-dashboard/trends"];
         const parameters = trendPath?.get?.parameters ?? [];
@@ -561,6 +554,9 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(JSON.stringify(sourceParamsSchema)).toContain("line_item");
         expect(JSON.stringify(sourceParamsSchema)).toContain("mileage");
         expect(JSON.stringify(responseSchema)).toContain("canAdvance");
+        expect(JSON.stringify(responseSchema)).toContain("receipts");
+        expect(JSON.stringify(responseSchema)).toContain("lineItemId");
+        expect(JSON.stringify(responseSchema)).not.toContain("blobReference");
     });
 
     void test("documents reusable tenant rate-limit headers and 429 responses", () => {

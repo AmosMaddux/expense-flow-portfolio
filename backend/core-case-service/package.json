@@ -6,6 +6,8 @@
     "type": "module",
     "scripts": {
         "build": "tsc --build",
+        "dev:demo:seed": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localDemoSeed.js",
+        "dev:events:consume": "npm run build --workspaces=false && node --env-file=../../.env dist/events/stageTransitionSqsConsumerMain.js",
         "start": "npm run build --workspaces=false && node --env-file=../../.env dist/index.js",
         "db:generate": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs generate --config=drizzle.config.ts",
         "db:migrate": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs migrate --config=drizzle.config.ts",
@@ -26,6 +28,7 @@
         "@aws-sdk/client-dynamodb": "^3.1089.0",
         "@aws-sdk/client-s3": "^3.1095.0",
         "@aws-sdk/client-sns": "^3.1097.0",
+        "@aws-sdk/client-sqs": "3.1097.0",
         "@aws-sdk/lib-dynamodb": "^3.1089.0",
         "@scalar/express-api-reference": "^0.8.13",
         "argon2": "^0.44.0",
