@@ -355,6 +355,27 @@
                         "flaggedLineItem": {
                             "type": "boolean"
                         },
+                        "policyChecks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "message": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "enum": ["cleared", "uncleared"]
+                                    }
+                                },
+                                "required": ["code", "message", "state"]
+                            }
+                        },
                         "reviewAction": {
                             "type": ["string", "null"],
                             "enum": ["approve", "reject", null]
@@ -405,6 +426,34 @@
                                     "flaggedLineItem": {
                                         "type": "boolean"
                                     },
+                                    "policyChecks": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "code": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "cleared",
+                                                        "uncleared"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "code",
+                                                "message",
+                                                "state"
+                                            ]
+                                        }
+                                    },
                                     "reviewAction": {
                                         "type": ["string", "null"],
                                         "enum": ["approve", "reject", null]
@@ -422,6 +471,7 @@
                                     "amount",
                                     "glCode",
                                     "flaggedLineItem",
+                                    "policyChecks",
                                     "reviewAction",
                                     "deductible"
                                 ]
@@ -481,6 +531,7 @@
                         "glCode",
                         "currentStage",
                         "flaggedLineItem",
+                        "policyChecks",
                         "reviewAction",
                         "deductible",
                         "canAdvance",
@@ -535,6 +586,27 @@
                     "flaggedLineItem": {
                         "type": "boolean"
                     },
+                    "policyChecks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "state": {
+                                    "type": "string",
+                                    "enum": ["cleared", "uncleared"]
+                                }
+                            },
+                            "required": ["code", "message", "state"]
+                        }
+                    },
                     "reviewAction": {
                         "type": ["string", "null"],
                         "enum": ["approve", "reject", null]
@@ -585,6 +657,27 @@
                                 "flaggedLineItem": {
                                     "type": "boolean"
                                 },
+                                "policyChecks": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "code": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            },
+                                            "message": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            },
+                                            "state": {
+                                                "type": "string",
+                                                "enum": ["cleared", "uncleared"]
+                                            }
+                                        },
+                                        "required": ["code", "message", "state"]
+                                    }
+                                },
                                 "reviewAction": {
                                     "type": ["string", "null"],
                                     "enum": ["approve", "reject", null]
@@ -602,6 +695,7 @@
                                 "amount",
                                 "glCode",
                                 "flaggedLineItem",
+                                "policyChecks",
                                 "reviewAction",
                                 "deductible"
                             ]
@@ -661,6 +755,7 @@
                     "glCode",
                     "currentStage",
                     "flaggedLineItem",
+                    "policyChecks",
                     "reviewAction",
                     "deductible",
                     "canAdvance",

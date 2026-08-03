@@ -1649,10 +1649,44 @@ button:disabled {
     font-size: 1rem;
 }
 
+.case-queue-dialog__tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #bcccdc;
+}
+
+.case-queue-dialog__tabs button {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: #52606d;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    padding: 10px 16px;
+}
+
+.case-queue-dialog__tabs button[aria-selected="true"] {
+    border-bottom-color: #334e68;
+    color: #102a43;
+}
+
+.case-queue-dialog__tabs button:focus-visible {
+    border-radius: 4px;
+    outline: 3px solid rgba(51, 78, 104, 0.24);
+    outline-offset: 2px;
+}
+
 .case-queue-dialog__table-wrap {
     overflow-x: auto;
     border: 1px solid #d9e2ec;
     border-radius: 8px;
+}
+
+.case-queue-dialog__empty-tab {
+    color: #52606d;
+    padding: 24px;
+    text-align: center;
 }
 
 .case-queue-dialog table {

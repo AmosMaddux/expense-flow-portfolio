@@ -1434,8 +1434,9 @@ void describe("expenseReportRepository", () => {
         expect(afterCount).toBe(0);
         expect(codingRows[0]).toMatchObject({
             flaggedLineItem: false,
-            flagCode: null,
-            flagMessage: null,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
         });
         expect(auditRows).toContainEqual(
             expect.objectContaining({
