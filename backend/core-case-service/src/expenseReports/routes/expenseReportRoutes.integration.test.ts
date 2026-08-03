@@ -21,6 +21,7 @@ import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js"
 import {
     attachmentMetadata,
     auditEntry,
+    caseComment,
     expenseReport,
     expenseReportSettlement,
     glCodingResult,
@@ -6114,6 +6115,69 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             expect.objectContaining({
                 body: "Synthetic finance dispute comment.",
             }),
+        ]);
+    });
+
+    void test("does not read or create comments for another tenant's Expense Report", async () => {
+        const tenantId = randomUUID();
+        const otherTenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const otherTenantFinanceAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-11",
+            currentStage: "Submitted",
+        });
+        await db.insert(caseComment).values({
+            id: randomUUID(),
+            tenantId,
+            expenseReportId: reportId,
+            authorId: financeAdminId,
+            body: "Synthetic tenant-scoped finance comment.",
+        });
+
+        const crossTenantReadResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        otherTenantFinanceAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const crossTenantCreateResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        otherTenantFinanceAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic cross-tenant comment attempt.",
+                }),
+            },
+        );
+        const persistedComments = await db
+            .select({ id: caseComment.id, tenantId: caseComment.tenantId })
+            .from(caseComment)
+            .where(eq(caseComment.expenseReportId, reportId));
+
+        expect(crossTenantReadResponse.status).toBe(404);
+        expect(crossTenantCreateResponse.status).toBe(404);
+        expect(persistedComments).toEqual([
+            expect.objectContaining({ tenantId }),
         ]);
     });
 

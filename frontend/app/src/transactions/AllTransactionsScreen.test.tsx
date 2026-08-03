@@ -89,6 +89,18 @@ function readRequestInput(input: RequestInfo | URL): string {
     return "";
 }
 
+function createDeferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+} {
+    let resolvePromise: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+
+    return { promise, resolve: resolvePromise };
+}
+
 function createTransactionPage(
     items: AllTransaction[],
     nextCursor: string | null = null,
@@ -583,6 +595,89 @@ describe("AllTransactionsScreen", () => {
                 );
             }),
         ).toHaveLength(1);
+    });
+
+    test("keeps a posted comment visible when the initial comments query resolves later", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000192",
+            expenseReportId: "60000000-0000-4000-8000-000000000192",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const initialCommentsResponse = createDeferred<Response>();
+        const createdComment = {
+            id: "70000000-0000-4000-8000-000000000192",
+            tenantId,
+            expenseReportId: transaction.expenseReportId,
+            authorId: userId,
+            body: "Synthetic finance comment before stale GET.",
+            createdAt: "2026-07-22T14:00:00.000Z",
+        };
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const requestUrl = readRequestInput(input);
+
+            if (requestUrl.includes("/comments") && init?.method === "POST") {
+                return Promise.resolve(
+                    createJsonResponse(createdComment, { status: 201 }),
+                );
+            }
+
+            if (requestUrl.includes("/comments")) {
+                return initialCommentsResponse.promise;
+            }
+
+            return Promise.resolve(
+                requestUrl.includes("/review-detail")
+                    ? createJsonResponse(createReportDetail(transaction))
+                    : createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const row = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(within(row).getByRole("button", { name: "Review" }));
+        const dialog = await screen.findByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+        fireEvent.click(
+            await within(dialog).findByRole("tab", { name: "Comments" }),
+        );
+        fireEvent.change(within(dialog).getByLabelText("Comment"), {
+            target: { value: "Synthetic finance comment before stale GET." },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+
+        expect(
+            await within(dialog).findByText(
+                "Synthetic finance comment before stale GET.",
+            ),
+        ).toBeTruthy();
+
+        initialCommentsResponse.resolve(createJsonResponse([]));
+        await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+        });
+
+        await waitFor(() =>
+            expect(
+                within(dialog).getByText(
+                    "Synthetic finance comment before stale GET.",
+                ),
+            ).toBeTruthy(),
+        );
     });
 
     test("prevents blank comment submissions in the Comments tab", async () => {

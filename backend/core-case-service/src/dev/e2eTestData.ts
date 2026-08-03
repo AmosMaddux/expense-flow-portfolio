@@ -177,12 +177,24 @@ async function verifyE2eTestData(): Promise<void> {
                 .from(expenseReport)
                 .where(eq(expenseReport.tenantId, e2eTenantId)),
         ]);
+        const seededUsersByEmail = new Map(
+            users.map((seededUser) => [seededUser.email, seededUser]),
+        );
+        const seededRolesByUserId = new Map(
+            roles.map((seededRole) => [seededRole.userId, seededRole.name]),
+        );
+        const financeAccount = seededUsersByEmail.get(
+            e2eAccounts.finance.email,
+        );
 
         if (
-            users.length !== 2 ||
-            roles.length !== 2 ||
+            users.length !== 3 ||
+            roles.length !== 3 ||
             mappings.length !== e2eGlMappings.length ||
-            reports.length !== 0
+            reports.length !== 0 ||
+            financeAccount === undefined ||
+            seededRolesByUserId.get(financeAccount.id) !==
+                e2eAccounts.finance.role
         ) {
             throw new Error(
                 `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}.`,
@@ -190,7 +202,7 @@ async function verifyE2eTestData(): Promise<void> {
         }
 
         process.stdout.write(
-            "Synthetic E2E data verification passed: 2 users, 2 roles, 3 GL mappings, 0 reports.\n",
+            "Synthetic E2E data verification passed: 3 users, 3 roles, 3 GL mappings, 0 reports.\n",
         );
     } finally {
         await pool.end();

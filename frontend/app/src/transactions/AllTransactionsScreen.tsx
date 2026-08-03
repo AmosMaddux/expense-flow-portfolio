@@ -645,6 +645,11 @@ function TransactionReviewDialog({
         reportId,
         activeTab === "comments",
     );
+    const commentsQueryFilter = {
+        predicate: (cachedQuery: { queryKey: readonly unknown[] }) =>
+            cachedQuery.queryKey.includes("expense-report-comments") &&
+            cachedQuery.queryKey.includes(reportId),
+    };
     const commentMutation = useMutation({
         mutationFn: async (body: string) => {
             const requestBody = createCaseCommentRequestSchema.parse({ body });
@@ -663,6 +668,9 @@ function TransactionReviewDialog({
 
             return caseCommentSchema.parse(await response.json());
         },
+        onMutate: async () => {
+            await queryClient.cancelQueries(commentsQueryFilter);
+        },
         onError: (error) => {
             setCommentError(getReportDetailErrorMessage(error));
         },
@@ -670,12 +678,7 @@ function TransactionReviewDialog({
             setCommentBody("");
             setCommentError(null);
             queryClient.setQueriesData<CaseComment[]>(
-                {
-                    predicate: (cachedQuery) =>
-                        cachedQuery.queryKey.includes(
-                            "expense-report-comments",
-                        ) && cachedQuery.queryKey.includes(reportId),
-                },
+                commentsQueryFilter,
                 (current = []) =>
                     current.some(
                         (cachedComment) => cachedComment.id === comment.id,
