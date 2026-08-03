@@ -6,7 +6,10 @@ import {
     EinValidationRequestSchema,
 } from "./tinEinValidationAcl.js";
 import { createSoapTinEinValidationClient } from "./tinEinValidationClient.js";
-import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
+import {
+    TinEinValidationServiceError,
+    TinEinValidationUnavailableError,
+} from "./tinEinValidationErrors.js";
 
 const config: TinEinValidationConfig = {
     TIN_EIN_VALIDATION_WSDL_URL: "https://tin-ein.example.test/validation?wsdl",
@@ -125,7 +128,7 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
                 validateTinEin: vi
                     .fn()
                     .mockRejectedValue(
-                        new TinEinValidationServiceError(
+                        new TinEinValidationUnavailableError(
                             "The TIN/EIN validation service request timed out.",
                         ),
                     ),
@@ -157,6 +160,53 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
         });
     });
 
+    void test("surfaces contract service errors instead of treating them as outages", async () => {
+        const acl = createEinValidationAcl({
+            tinEinValidationClient: {
+                validateTinEin: vi
+                    .fn()
+                    .mockRejectedValue(
+                        new TinEinValidationServiceError(
+                            "The TIN/EIN validation service returned an unknown match code.",
+                        ),
+                    ),
+            },
+        });
+
+        await expect(acl.validateEin(request)).rejects.toMatchObject({
+            name: "TinEinValidationServiceError",
+            message:
+                "The TIN/EIN validation service returned an unknown match code.",
+        });
+    });
+
+    void test("surfaces malformed SOAP contract failures through the ACL boundary", async () => {
+        const soapClient: Record<string, unknown> = {
+            ValidateSyntheticTinEinAsync: vi.fn(() =>
+                Promise.resolve([
+                    {
+                        ValidateSyntheticTinEinResult: {
+                            TINType: "EIN",
+                        },
+                    },
+                ]),
+            ),
+            GetSyntheticTaxpayerStatusAsync: vi.fn(),
+        };
+        const acl = createEinValidationAcl({
+            tinEinValidationClient: createSoapTinEinValidationClient(config, {
+                soapModule: {
+                    createClientAsync: vi.fn(() => Promise.resolve(soapClient)),
+                },
+            }),
+        });
+
+        await expect(acl.validateEin(request)).rejects.toMatchObject({
+            name: "TinEinValidationServiceError",
+            message:
+                "The TIN/EIN validation service response did not include a validity result.",
+        });
+    });
     void test("does not hide dependency programming errors as service outages", async () => {
         const acl = createEinValidationAcl({
             tinEinValidationClient: {

@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import type { TinEinValidationConfig } from "../config/tinEinValidationConfig.js";
 import { loadDefaultTinEinValidationConfig } from "../config/tinEinValidationConfig.js";
-import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
+import {
+    TinEinValidationServiceError,
+    TinEinValidationUnavailableError,
+} from "./tinEinValidationErrors.js";
 
 type CircuitBreaker<TArgs extends unknown[], TResult> = {
     fire: (...args: TArgs) => Promise<TResult>;
@@ -236,12 +239,16 @@ export function createSoapTinEinValidationClient(
                     throw error;
                 }
 
-                throw new TinEinValidationServiceError(
-                    failureMessageFor(error),
-                    {
-                        cause: error,
-                    },
-                );
+                const message = failureMessageFor(error);
+                const ErrorConstructor = isCircuitBreakerAvailabilityError(
+                    error,
+                )
+                    ? TinEinValidationUnavailableError
+                    : TinEinValidationServiceError;
+
+                throw new ErrorConstructor(message, {
+                    cause: error,
+                });
             }
         },
     };
@@ -331,11 +338,35 @@ async function invokeSoapMethod(
             operationOptions,
         );
     } catch (error: unknown) {
+        if (isTransportError(error)) {
+            throw new TinEinValidationUnavailableError(
+                "The TIN/EIN validation service could not be reached.",
+                { cause: error },
+            );
+        }
+
         throw new TinEinValidationServiceError(
-            "The TIN/EIN validation service could not be reached.",
+            "The TIN/EIN validation service returned a SOAP fault.",
             { cause: error },
         );
     }
+}
+
+function isTransportError(error: unknown): boolean {
+    return (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        typeof error.code === "string" &&
+        [
+            "ECONNABORTED",
+            "ECONNREFUSED",
+            "ECONNRESET",
+            "EHOSTUNREACH",
+            "ENETUNREACH",
+            "ETIMEDOUT",
+        ].includes(error.code)
+    );
 }
 
 function containsControlCharacter(value: string): boolean {
@@ -514,7 +545,18 @@ async function addTaxpayerStatusIfAvailable(
         throw error;
     }
 
-    return addTaxpayerStatus(validation, statusResponse);
+    try {
+        return addTaxpayerStatus(validation, statusResponse);
+    } catch (error: unknown) {
+        if (
+            error instanceof TinEinValidationServiceError ||
+            error instanceof z.ZodError
+        ) {
+            return validation;
+        }
+
+        throw error;
+    }
 }
 
 function addTaxpayerStatus(
@@ -581,7 +623,7 @@ function parseLegacyMmddyyyy(value: string): string {
 function toTivsIdentifierType(
     identifierType: TinEinValidationRequest["identifierType"],
 ): "EIN" | "SSN" {
-    return identifierType === "EIN" ? "EIN" : "SSN";
+    return identifierType;
 }
 
 function readOptionalMatchCode(
@@ -644,6 +686,12 @@ function readOptionalString(
     return undefined;
 }
 
+function isCircuitBreakerAvailabilityError(error: unknown): boolean {
+    return (
+        isRecord(error) &&
+        (error.code === "EOPENBREAKER" || error.code === "ETIMEDOUT")
+    );
+}
 function failureMessageFor(error: unknown): string {
     if (isRecord(error) && error.code === "EOPENBREAKER") {
         return "The TIN/EIN validation circuit breaker is open.";

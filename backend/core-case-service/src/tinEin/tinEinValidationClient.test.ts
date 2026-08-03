@@ -5,7 +5,10 @@ import {
     createSoapTinEinValidationClient,
     TinEinValidationRequestSchema,
 } from "./tinEinValidationClient.js";
-import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
+import {
+    TinEinValidationServiceError,
+    TinEinValidationUnavailableError,
+} from "./tinEinValidationErrors.js";
 
 const config: TinEinValidationConfig = {
     TIN_EIN_VALIDATION_WSDL_URL: "https://tin-ein.example.test/tivs?wsdl",
@@ -163,6 +166,23 @@ void describe("SOAP TIN/EIN validation client", () => {
             );
         }
     });
+    void test("rejects unknown TIVS match codes", async () => {
+        const client = createSoapTinEinValidationClient(config, {
+            createValidationServiceInvoker: () =>
+                Promise.resolve({
+                    verifyTaxpayer: vi.fn().mockResolvedValue({
+                        MatchCode: "9",
+                        TINType: "EIN",
+                    }),
+                }),
+        });
+
+        await expect(client.validateTinEin(request)).rejects.toMatchObject({
+            name: "TinEinValidationServiceError",
+            message:
+                "The TIN/EIN validation service returned an unknown match code.",
+        });
+    });
     void test("normalizes numeric TIVS match codes", async () => {
         const client = createSoapTinEinValidationClient(config, {
             createValidationServiceInvoker: () =>
@@ -248,7 +268,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                     getTaxpayerStatus: vi
                         .fn()
                         .mockRejectedValue(
-                            new TinEinValidationServiceError(
+                            new TinEinValidationUnavailableError(
                                 "Synthetic status outage.",
                             ),
                         ),
@@ -457,13 +477,58 @@ void describe("SOAP TIN/EIN validation client", () => {
                 }),
         });
 
-        await expect(client.validateTinEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message:
-                "The TIN/EIN validation service returned an invalid status date.",
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
         });
     });
 
+    void test("wraps SOAP transport failures as unavailable service errors", async () => {
+        const transportError = Object.assign(
+            new Error("Synthetic socket reset."),
+            { code: "ECONNRESET" },
+        );
+        const soapClient = {
+            setEndpoint: vi.fn(),
+            setSecurity: vi.fn(),
+            VerifyTaxpayerAsync: vi.fn().mockRejectedValue(transportError),
+            GetTaxpayerStatusAsync: vi.fn(),
+        };
+        const client = createSoapTinEinValidationClient(config, {
+            soapModule: {
+                createClientAsync: vi.fn(() => Promise.resolve(soapClient)),
+                WSSecurity: vi.fn(),
+            },
+        });
+
+        const validation = client.validateTinEin(request);
+        await expect(validation).rejects.toBeInstanceOf(
+            TinEinValidationUnavailableError,
+        );
+        await expect(validation).rejects.toThrow(
+            "The TIN/EIN validation service could not be reached.",
+        );
+    });
+    void test("preserves confirmed validation when taxpayer status is incomplete", async () => {
+        const client = createSoapTinEinValidationClient(config, {
+            createValidationServiceInvoker: () =>
+                Promise.resolve({
+                    verifyTaxpayer: vi.fn().mockResolvedValue({
+                        MatchCode: "0",
+                        VerifiedName: "Synthetic Expense Vendor LLC",
+                        TINType: "EIN",
+                    }),
+                    getTaxpayerStatus: vi.fn().mockResolvedValue({
+                        Standing: "ACTIVE",
+                    }),
+                }),
+        });
+
+        await expect(client.validateTinEin(request)).resolves.toStrictEqual({
+            isValid: true,
+            normalizedLegalName: "Synthetic Expense Vendor LLC",
+        });
+    });
     void test("wraps downstream failures in the TIN/EIN service error", async () => {
         const client = createSoapTinEinValidationClient(config, {
             createValidationServiceInvoker: () =>
@@ -474,13 +539,16 @@ void describe("SOAP TIN/EIN validation client", () => {
                 }),
         });
 
-        await expect(client.validateTinEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message: "The TIN/EIN validation service request failed.",
-        });
+        const validation = client.validateTinEin(request);
+        await expect(validation).rejects.toBeInstanceOf(
+            TinEinValidationServiceError,
+        );
+        await expect(validation).rejects.toThrow(
+            "The TIN/EIN validation service request failed.",
+        );
     });
 
-    void test("wraps circuit breaker timeouts in the TIN/EIN service error", async () => {
+    void test("wraps circuit breaker timeouts as unavailable service errors", async () => {
         const client = createSoapTinEinValidationClient(
             {
                 ...config,
@@ -508,10 +576,13 @@ void describe("SOAP TIN/EIN validation client", () => {
             },
         );
 
-        await expect(client.validateTinEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message: "The TIN/EIN validation service request timed out.",
-        });
+        const validation = client.validateTinEin(request);
+        await expect(validation).rejects.toBeInstanceOf(
+            TinEinValidationUnavailableError,
+        );
+        await expect(validation).rejects.toThrow(
+            "The TIN/EIN validation service request timed out.",
+        );
     });
 
     void test("fails fast through the circuit breaker after a downstream failure", async () => {
@@ -532,9 +603,13 @@ void describe("SOAP TIN/EIN validation client", () => {
         await expect(client.validateTinEin(request)).rejects.toBeInstanceOf(
             TinEinValidationServiceError,
         );
-        await expect(client.validateTinEin(request)).rejects.toMatchObject({
-            message: "The TIN/EIN validation circuit breaker is open.",
-        });
+        const openBreakerValidation = client.validateTinEin(request);
+        await expect(openBreakerValidation).rejects.toBeInstanceOf(
+            TinEinValidationUnavailableError,
+        );
+        await expect(openBreakerValidation).rejects.toThrow(
+            "The TIN/EIN validation circuit breaker is open.",
+        );
         expect(alwaysFails).toHaveBeenCalledTimes(1);
     });
 });

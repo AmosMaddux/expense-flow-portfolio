@@ -6,7 +6,10 @@ import {
     type TinEinValidationClient,
     type TinEinValidationResponse,
 } from "./tinEinValidationClient.js";
-import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
+import {
+    TinEinValidationServiceError,
+    TinEinValidationUnavailableError,
+} from "./tinEinValidationErrors.js";
 
 export const EinValidationRequestSchema = z
     .object({
@@ -95,7 +98,7 @@ export function createEinValidationAcl(
 function isServiceUnavailableError(
     error: unknown,
 ): error is TinEinValidationServiceError {
-    if (error instanceof TinEinValidationServiceError) {
+    if (error instanceof TinEinValidationUnavailableError) {
         return true;
     }
 
