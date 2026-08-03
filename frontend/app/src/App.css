@@ -2356,3 +2356,101 @@ button:disabled {
         flex: 1;
     }
 }
+
+.gl-mapping {
+    display: grid;
+    max-width: 1180px;
+    margin: 0 auto;
+    gap: 20px;
+}
+
+.gl-mapping__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.gl-mapping__header h2 {
+    margin: 4px 0 0;
+    color: #102a43;
+    font-size: 1.25rem;
+}
+
+.gl-mapping-table {
+    overflow-x: auto;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.gl-mapping-table table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.gl-mapping-table caption {
+    padding: 16px 20px 0;
+    color: #52606d;
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.gl-mapping-table th,
+.gl-mapping-table td {
+    border-bottom: 1px solid #d9e2ec;
+    padding: 16px 18px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.gl-mapping-table thead th {
+    background: #f0f4f8;
+    color: #52606d;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.gl-mapping-table tbody th {
+    color: #102a43;
+}
+
+.gl-mapping-table tbody tr:last-child th,
+.gl-mapping-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.gl-mapping-table select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #243b53;
+    padding: 0 10px;
+}
+
+.gl-mapping-table__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.gl-mapping__error {
+    margin: 0;
+    border: 1px solid #f29b9b;
+    border-radius: 8px;
+    background: #ffeeee;
+    color: #8a1c1c;
+    padding: 12px 14px;
+}
+
+@media (max-width: 700px) {
+    .gl-mapping__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

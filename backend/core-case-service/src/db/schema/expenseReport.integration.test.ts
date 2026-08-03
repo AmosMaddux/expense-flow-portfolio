@@ -16,6 +16,7 @@ import {
     lineItem,
     glCode,
     glMapping,
+    referenceDataAuditEntry,
     caseComment,
     attachmentMetadata,
     receiptMetadata,
@@ -31,6 +32,7 @@ const requiredTables = [
     getTableConfig(lineItem),
     getTableConfig(glCode),
     getTableConfig(glMapping),
+    getTableConfig(referenceDataAuditEntry),
     getTableConfig(caseComment),
     getTableConfig(attachmentMetadata),
     getTableConfig(receiptMetadata),
@@ -274,6 +276,60 @@ $$;
         }
     });
 });
+
+void describe("reference data audit entry PostgreSQL constraints", () => {
+    void test("prevents reference data audit entry updates and deletes in PostgreSQL", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000d01";
+        const actorId = "00000000-0000-4000-8000-000000000d02";
+        const entityId = "00000000-0000-4000-8000-000000000d03";
+        const auditEntryId = "00000000-0000-4000-8000-000000000d04";
+        const client = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+
+        try {
+            await client.connect();
+            await client.query("BEGIN");
+            await client.query(
+                `INSERT INTO "reference_data_audit_entry" ("id", "tenant_id", "actor_id", "entity_type", "entity_id", "action", "before", "after")
+                 VALUES ($1, $2, $3, 'gl_mapping', $4, 'gl_mapping_updated', '{"category":"Travel"}', '{"category":"Meals"}')`,
+                [auditEntryId, tenantId, actorId, entityId],
+            );
+
+            await client.query(`
+DO $$
+BEGIN
+    UPDATE "reference_data_audit_entry" SET "action" = 'gl_mapping_updated' WHERE "id" = '${auditEntryId}';
+    RAISE EXCEPTION 'expected reference_data_audit_entry update to fail';
+EXCEPTION
+    WHEN others THEN
+        IF SQLERRM <> 'reference_data_audit_entry rows are append-only' THEN
+            RAISE;
+        END IF;
+END;
+$$;
+`);
+
+            await client.query(`
+DO $$
+BEGIN
+    DELETE FROM "reference_data_audit_entry" WHERE "id" = '${auditEntryId}';
+    RAISE EXCEPTION 'expected reference_data_audit_entry delete to fail';
+EXCEPTION
+    WHEN others THEN
+        IF SQLERRM <> 'reference_data_audit_entry rows are append-only' THEN
+            RAISE;
+        END IF;
+END;
+$$;
+`);
+            await client.query("ROLLBACK");
+        } finally {
+            await client.end().catch(() => undefined);
+        }
+    });
+});
+
 void describe("case comment and attachment PostgreSQL constraints", () => {
     void test("enforces mutation triggers and attachment deletes in PostgreSQL", async () => {
         const tenantId = "00000000-0000-0000-0000-000000000083";

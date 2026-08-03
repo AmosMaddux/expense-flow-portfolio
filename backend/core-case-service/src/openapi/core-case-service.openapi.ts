@@ -41,6 +41,12 @@ import {
     UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
+    GlMappingPathParamsSchema,
+    GlMappingReferenceOutboundResponseSchema,
+    GlMappingOutboundResponseSchema,
+    UpdateGlMappingInboundRequestSchema,
+} from "../glMappings/glMappingDto.js";
+import {
     loginRequestSchema,
     loginResponseSchema,
 } from "../auth/login/loginService.js";
@@ -209,6 +215,22 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const allTransactionPage = registry.register(
         "AllTransactionPage",
         AllTransactionPageSchema,
+    );
+    const glMappingReferenceResponse = registry.register(
+        "GlMappingReferenceResponse",
+        GlMappingReferenceOutboundResponseSchema,
+    );
+    const glMappingResponse = registry.register(
+        "GlMappingResponse",
+        GlMappingOutboundResponseSchema,
+    );
+    const updateGlMappingRequest = registry.register(
+        "UpdateGlMappingRequest",
+        UpdateGlMappingInboundRequestSchema,
+    );
+    const glMappingPathParams = registry.register(
+        "GlMappingPathParams",
+        GlMappingPathParamsSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -642,6 +664,68 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    registry.registerPath({
+        method: "get",
+        path: "/v1/gl-mappings",
+        summary: "List GL Mapping reference data",
+        description:
+            "Loads tenant-scoped category account mappings from gl_mapping for internal Finance Admin and Department Manager workspaces.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "GL Mapping reference data found.",
+                content: {
+                    "application/json": {
+                        schema: glMappingReferenceResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "GL Mapping access is limited to internal roles.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "patch",
+        path: "/v1/gl-mappings/{id}",
+        summary: "Update a GL Mapping",
+        description:
+            "Allows Finance Admins to update one tenant-owned gl_mapping row and records a reference-data audit entry in the same transaction.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: glMappingPathParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: updateGlMappingRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "GL Mapping updated.",
+                content: {
+                    "application/json": {
+                        schema: glMappingResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed GL Mapping update request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "GL Mapping edits are limited to Finance Admins.",
+            ),
+            404: problemJsonResponse("GL Mapping or GL Code was not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
     registry.registerPath({
         method: "post",
         path: "/v1/auth/login",

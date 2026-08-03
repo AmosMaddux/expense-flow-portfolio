@@ -25,10 +25,12 @@ export type PaymentStubIssuer = {
  * Issues synthetic payment references until a real payment adapter is available.
  */
 export const syntheticPaymentStubIssuer: PaymentStubIssuer = {
-    async issue(): Promise<IssuedPaymentStub> {
-        return { paymentId: `synthetic-payment-${randomUUID()}` };
+    issue(): Promise<IssuedPaymentStub> {
+        return Promise.resolve({
+            paymentId: `synthetic-payment-${randomUUID()}`,
+        });
     },
-    async compensate(): Promise<void> {
+    compensate(): Promise<void> {
         return Promise.resolve();
     },
 };
