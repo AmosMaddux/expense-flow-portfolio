@@ -227,21 +227,21 @@ function FinanceDashboardTrendChart({
 
     useEffect(() => {
         const canvas = canvasRef.current;
+        const registeredChart =
+            canvas === null ? null : (Chart.getChart(canvas) ?? null);
 
-        chartRef.current?.destroy();
+        registeredChart?.destroy();
+        if (chartRef.current !== null && chartRef.current !== registeredChart) {
+            chartRef.current.destroy();
+        }
         chartRef.current = null;
 
-        if (canvas === null || !hasTrendData) {
+        const context = canvas?.getContext("2d") ?? null;
+
+        if (context === null || !hasTrendData) {
             return;
         }
 
-        const context = canvas.getContext("2d");
-
-        if (context === null) {
-            return;
-        }
-
-        Chart.getChart(canvas)?.destroy();
         const chart = new Chart(context, buildTrendChartConfig(points, metric));
         chartRef.current = chart;
 
