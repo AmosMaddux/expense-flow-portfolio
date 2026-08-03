@@ -2650,6 +2650,97 @@ void describe("Expense Report routes", () => {
         expect(outboxRows).toHaveLength(0);
     });
 
+    void test("rejects settlement-owned edges on the generic transition route", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000235";
+        const owner = "50000000-0000-4000-8000-000000000235";
+        const financeAdminId = "52000000-0000-4000-8000-000000000235";
+        const reportId = "60000000-0000-4000-8000-000000000235";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-15",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Paid",
+                    reason: "synthetic generic payment attempt",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, tenantId),
+                    eq(expenseReportSettlement.expenseReportId, reportId),
+                ),
+            );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, reportId),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, reportId),
+                ),
+            );
+
+        expect(response.status).toBe(409);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_denied",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "Paid",
+                denialReason:
+                    "Settlement-owned transition must use the settlement route.",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "AP Review",
+                toStage: "AP Review",
+                reason: "transition_denied: Settlement-owned transition must use the settlement route.",
+            }),
+        );
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
+    });
+
     void test("allows Department Manager and Finance Admin workflow transitions", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000151";
         const owner = "50000000-0000-4000-8000-000000000151";
@@ -2861,7 +2952,8 @@ void describe("Expense Report routes", () => {
             dueDate: "2026-08-18",
             currentStage: "AP Review",
         });
-        await db.execute(sql.raw(`
+        await db.execute(
+            sql.raw(`
 CREATE OR REPLACE FUNCTION ${functionName}()
 RETURNS trigger AS $$
 BEGIN
@@ -2874,7 +2966,8 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER ${triggerName}
 BEFORE INSERT ON "stage_transition"
 FOR EACH ROW EXECUTE FUNCTION ${functionName}();
-`));
+`),
+        );
 
         try {
             const response = await requestApp(

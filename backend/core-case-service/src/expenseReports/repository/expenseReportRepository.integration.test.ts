@@ -31,6 +31,7 @@ vi.mock("../../db/client.js", () => {
 
 import { db } from "../../db/client.js";
 import {
+    abandonUnpaidExpenseReportSettlementClaim,
     buildSubmissionSourceFingerprint,
     buildSubmissionSourceKeys,
     claimExpenseReportSettlement,
@@ -43,7 +44,10 @@ import {
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
     insertDraftExpenseReport,
+    markExpenseReportSettlementCompensated,
+    reconcileExpenseReportSettlementStage,
     submitDraftExpenseReport,
+    transitionIssuedExpenseReportSettlementToPaid,
     transitionExpenseReportStage,
 } from "./expenseReportRepository.js";
 
@@ -1121,6 +1125,424 @@ void describe("expenseReportRepository", () => {
             expenseReportId: report.id,
             status: "issuing",
         });
+    });
+
+    void test("denies settlement-owned transitions through the generic repository transition even with the saga reason", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000215";
+        const actorId = "20000000-0000-4000-8000-000000000215";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+
+        const transitioned = await transitionExpenseReportStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: "payment_stub_issued",
+        });
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, report.id),
+                ),
+            );
+
+        expect(transitioned).toBe(false);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "AP Review",
+                toStage: "AP Review",
+                reason: "transition_denied: Settlement-owned transition must use the settlement route.",
+            }),
+        );
+    });
+
+    void test("transitions an issued settlement to Paid through the settlement-only repository path", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000216";
+        const actorId = "20000000-0000-4000-8000-000000000216";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const [settlement] = await db
+            .insert(expenseReportSettlement)
+            .values({
+                tenantId,
+                expenseReportId: report.id,
+                idempotencyKey: "settlement-claim-216",
+                correlationId: "70000000-0000-4000-8000-000000000216",
+                paymentId: "synthetic-payment-issued-to-paid",
+                status: "issued",
+            })
+            .returning();
+
+        if (settlement === undefined) {
+            throw new Error("Expected Expense Report settlement to be created");
+        }
+
+        const eventId = "71000000-0000-4000-8000-000000000216";
+        const occurredAt = new Date("2026-07-29T18:01:00.000Z");
+        const didTransition =
+            await transitionIssuedExpenseReportSettlementToPaid({
+                tenantId,
+                id: report.id,
+                actor: actorId,
+                settlementId: settlement.id,
+                paymentId: "synthetic-payment-issued-to-paid",
+                reason: "payment_stub_issued",
+                correlationId: "70000000-0000-4000-8000-000000000216",
+                idempotencyKey: "settlement-claim-216",
+                eventId,
+                occurredAt,
+            });
+
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, report.id),
+                    eq(stageTransition.reason, "payment_stub_issued"),
+                ),
+            );
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.id, eventId));
+
+        expect(didTransition).toBe(true);
+        expect(persistedReport?.currentStage).toBe("Paid");
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: report.id,
+                actor: actorId,
+                fromStage: "AP Review",
+                toStage: "Paid",
+                reason: "payment_stub_issued",
+                occurredAt,
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                id: eventId,
+                tenantId,
+                expenseReportId: report.id,
+                fromStage: "AP Review",
+                toStage: "Paid",
+                occurredAt,
+                publishedAt: null,
+            }),
+        );
+    });
+
+    void test("treats compensated settlements as terminal instead of reusable", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000211";
+        const actorId = "20000000-0000-4000-8000-000000000211";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        await db.insert(expenseReportSettlement).values({
+            tenantId,
+            expenseReportId: report.id,
+            idempotencyKey: "settlement-claim-211-original",
+            correlationId: "70000000-0000-4000-8000-000000000211",
+            paymentId: "synthetic-payment-compensated",
+            status: "compensated",
+        });
+
+        const claim = await claimExpenseReportSettlement({
+            tenantId,
+            id: report.id,
+            idempotencyKey: "settlement-claim-211-retry",
+            correlationId: "70000000-0000-4000-8000-000000000212",
+        });
+
+        expect(claim).toMatchObject({
+            kind: "terminal_compensated",
+            settlement: {
+                tenantId,
+                expenseReportId: report.id,
+                paymentId: "synthetic-payment-compensated",
+                status: "compensated",
+            },
+        });
+    });
+
+    void test("abandons unpaid issuing settlement claims so payment issuance can retry", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000213";
+        const actorId = "20000000-0000-4000-8000-000000000213";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const claim = await claimExpenseReportSettlement({
+            tenantId,
+            id: report.id,
+            idempotencyKey: "settlement-claim-213-original",
+            correlationId: "70000000-0000-4000-8000-000000000213",
+        });
+
+        if (claim.kind !== "issue_payment") {
+            throw new Error("Expected settlement claim to issue payment.");
+        }
+
+        const abandon = await abandonUnpaidExpenseReportSettlementClaim({
+            tenantId,
+            id: report.id,
+            settlementId: claim.settlement.id,
+        });
+        const retryClaim = await claimExpenseReportSettlement({
+            tenantId,
+            id: report.id,
+            idempotencyKey: "settlement-claim-213-retry",
+            correlationId: "70000000-0000-4000-8000-000000000214",
+        });
+
+        expect(abandon).toEqual({ kind: "abandoned" });
+        expect(retryClaim.kind).toBe("issue_payment");
+    });
+
+    void test("marks issuing settlement rows compensated with the reversed payment reference", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000214";
+        const actorId = "20000000-0000-4000-8000-000000000214";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const claim = await claimExpenseReportSettlement({
+            tenantId,
+            id: report.id,
+            idempotencyKey: "settlement-claim-214",
+            correlationId: "70000000-0000-4000-8000-000000000214",
+        });
+
+        if (claim.kind !== "issue_payment") {
+            throw new Error("Expected settlement claim to issue payment.");
+        }
+
+        const marked = await markExpenseReportSettlementCompensated({
+            tenantId,
+            id: report.id,
+            settlementId: claim.settlement.id,
+            paymentId: "synthetic-payment-reversed-before-record",
+        });
+        const [settlement] = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.id, claim.settlement.id));
+
+        expect(marked).toBe(true);
+        expect(settlement).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            paymentId: "synthetic-payment-reversed-before-record",
+            status: "compensated",
+        });
+    });
+
+    void test("reconciles the settlement atomically with the final stage transition", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000212";
+        const actorId = "20000000-0000-4000-8000-000000000212";
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Paid" })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        await db.insert(expenseReportSettlement).values({
+            tenantId,
+            expenseReportId: report.id,
+            idempotencyKey: "settlement-claim-212",
+            correlationId: "70000000-0000-4000-8000-000000000212",
+            paymentId: "synthetic-payment-issued",
+            status: "issued",
+        });
+
+        const eventId = "71000000-0000-4000-8000-000000000212";
+        const occurredAt = new Date("2026-07-29T18:02:00.000Z");
+        const didReconcile = await reconcileExpenseReportSettlementStage({
+            tenantId,
+            id: report.id,
+            actor: actorId,
+            paymentId: "synthetic-payment-issued",
+            reason: "Synthetic settlement complete.",
+            correlationId: "70000000-0000-4000-8000-000000000212",
+            idempotencyKey: "settlement-claim-212",
+            eventId,
+            occurredAt,
+        });
+
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, report.id),
+                ),
+            );
+        const [settlement] = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, tenantId),
+                    eq(expenseReportSettlement.expenseReportId, report.id),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, report.id),
+                    eq(
+                        stageTransition.reason,
+                        "Synthetic settlement complete.",
+                    ),
+                ),
+            );
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.id, eventId));
+
+        expect(didReconcile).toBe(true);
+        expect(persistedReport?.currentStage).toBe("Reconciled");
+        expect(settlement?.status).toBe("reconciled");
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: report.id,
+                actor: actorId,
+                fromStage: "Paid",
+                toStage: "Reconciled",
+                reason: "Synthetic settlement complete.",
+                occurredAt,
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                id: eventId,
+                tenantId,
+                expenseReportId: report.id,
+                fromStage: "Paid",
+                toStage: "Reconciled",
+                occurredAt,
+                publishedAt: null,
+            }),
+        );
     });
 
     void test("writes compensation as a first-class transition and outbox event after reconciliation failure", async () => {

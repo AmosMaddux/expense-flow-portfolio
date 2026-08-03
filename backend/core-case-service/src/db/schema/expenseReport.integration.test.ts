@@ -155,7 +155,7 @@ $$;
 });
 
 void describe("stage transition outbox ownership migration", () => {
-    void test("allows rollout with preexisting mismatched outbox rows while enforcing new writes", async () => {
+    void test("blocks rollout with preexisting mismatched outbox rows", async () => {
         const container = await new PostgreSqlContainer("postgres:17-alpine")
             .withDatabase("expenseflow_core_case_outbox_ownership")
             .withUsername("expenseflow")
@@ -170,9 +170,7 @@ void describe("stage transition outbox ownership migration", () => {
         const outboxReportId = "10000000-0000-4000-8000-000000000602";
         const ownerId = "20000000-0000-4000-8000-000000000601";
         const transitionId = "30000000-0000-4000-8000-000000000601";
-        const newTransitionId = "30000000-0000-4000-8000-000000000602";
         const existingOutboxId = "40000000-0000-4000-8000-000000000601";
-        const newOutboxId = "40000000-0000-4000-8000-000000000602";
 
         try {
             await client.connect();
@@ -198,33 +196,16 @@ void describe("stage transition outbox ownership migration", () => {
             await client.query(
                 `INSERT INTO "stage_transition_outbox" ("id", "stage_transition_id", "tenant_id", "expense_report_id", "correlation_id", "from_stage", "to_stage")
                  VALUES ($1, $2, $3, $4, gen_random_uuid(), 'Drafted', 'Submitted')`,
-                [existingOutboxId, transitionId, outboxTenantId, outboxReportId],
+                [
+                    existingOutboxId,
+                    transitionId,
+                    outboxTenantId,
+                    outboxReportId,
+                ],
             );
 
-            await applyMigrationRange(client, 29, 29);
-
-            const constraintState = await client.query(
-                `SELECT convalidated
-                 FROM pg_constraint
-                 WHERE conname = 'stage_transition_outbox_transition_tenant_report_fk'`,
-            );
-            expect(constraintState.rows[0]).toMatchObject({
-                convalidated: false,
-            });
-
-            await client.query(
-                `DO $$
-                 BEGIN
-                     INSERT INTO "stage_transition" ("id", "tenant_id", "expense_report_id", "actor", "from_stage", "to_stage", "reason")
-                     VALUES ('${newTransitionId}', '${transitionTenantId}', '${transitionReportId}', '${ownerId}', 'Submitted', 'Manager Approval', 'manager_review_started');
-                     INSERT INTO "stage_transition_outbox" ("id", "stage_transition_id", "tenant_id", "expense_report_id", "correlation_id", "from_stage", "to_stage")
-                     VALUES ('${newOutboxId}', '${newTransitionId}', '${outboxTenantId}', '${outboxReportId}', gen_random_uuid(), 'Submitted', 'Manager Approval');
-                     RAISE EXCEPTION 'expected mismatched outbox ownership to fail';
-                 EXCEPTION
-                     WHEN foreign_key_violation THEN
-                         NULL;
-                 END;
-                 $$;`,
+            await expect(applyMigrationRange(client, 29, 29)).rejects.toThrow(
+                "stage_transition_outbox contains rows whose stage_transition_id, tenant_id, and expense_report_id do not match stage_transition",
             );
         } finally {
             await client.end().catch(() => undefined);

@@ -27,10 +27,10 @@ import {
     findDraftExpenseContent,
     findExpenseReportById,
     findExpenseReportReviewDetail,
+    abandonUnpaidExpenseReportSettlementClaim,
     claimExpenseReportSettlement,
     compensatePaidSettlementStage,
     markExpenseReportSettlementCompensated,
-    markExpenseReportSettlementReconciled,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
     insertMileageEntry,
@@ -39,8 +39,10 @@ import {
     insertDeniedWorkflowTransitionAttempt,
     recordExpenseReportSettlementPayment,
     readDraftSubmissionSources,
+    reconcileExpenseReportSettlementStage,
     reviewExpenseReportLineItem as reviewExpenseReportLineItemInStore,
     submitDraftExpenseReport,
+    transitionIssuedExpenseReportSettlementToPaid,
     transitionExpenseReportStage as transitionExpenseReportStageInStore,
     updateExpenseReportSourceDeductibility as updateExpenseReportSourceDeductibilityInStore,
     updateDraftLineItem as updateDraftLineItemInStore,
@@ -881,6 +883,25 @@ export async function transitionExpenseReportWorkflow(
         throw new ForbiddenError();
     }
 
+    if (
+        isSettlementOwnedTransition(
+            report.currentStage as ExpenseReportStage,
+            request.toStage,
+        )
+    ) {
+        await insertDeniedWorkflowTransitionAttempt({
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actorId,
+            toStage: request.toStage,
+            denialReason:
+                "Settlement-owned transition must use the settlement route.",
+        });
+        throw new ConflictError(
+            "Expense Report settlement transitions must use the settlement route.",
+        );
+    }
+
     const outboxEventId = randomUUID();
     const didTransition = await transitionExpenseReportStageInStore({
         tenantId: request.tenantId,
@@ -955,6 +976,12 @@ export async function settleExpenseReportWorkflow(
         );
     }
 
+    if (settlementClaim.kind === "terminal_compensated") {
+        throw new ConflictError(
+            "Expense Report settlement was compensated and cannot be reused.",
+        );
+    }
+
     if (settlementClaim.kind === "invalid_stage") {
         throw new ConflictError(
             `Expense Report settlement can only start from AP Review; this report is in ${settlementClaim.currentStage}.`,
@@ -963,30 +990,41 @@ export async function settleExpenseReportWorkflow(
 
     const paymentIssuer =
         dependencies.paymentStubIssuer ?? syntheticPaymentStubIssuer;
-    const payment =
-        settlementClaim.kind === "reuse_payment"
-            ? { paymentId: settlementClaim.settlement.paymentId }
-            : await paymentIssuer.issue({
-                  tenantId: request.tenantId,
-                  expenseReportId: request.id,
-                  actorId: request.actorId,
-                  correlationId: request.correlationId,
-              });
-    if (payment.paymentId === null) {
-        throw new ConflictError(
-            "Expense Report settlement payment reference is not available.",
-        );
+    let paymentId: string | undefined;
+    if (
+        settlementClaim.kind === "reuse_payment" &&
+        typeof settlementClaim.settlement.paymentId === "string" &&
+        settlementClaim.settlement.paymentId.trim() !== ""
+    ) {
+        paymentId = settlementClaim.settlement.paymentId;
     }
     const sagaReason = request.reason ?? "Settlement saga completed.";
 
     try {
         if (settlementClaim.kind === "issue_payment") {
+            const payment = await paymentIssuer.issue({
+                tenantId: request.tenantId,
+                expenseReportId: request.id,
+                actorId: request.actorId,
+                correlationId: request.correlationId,
+            });
+            const issuedPaymentId: unknown = payment.paymentId;
+            if (
+                typeof issuedPaymentId !== "string" ||
+                issuedPaymentId.trim() === ""
+            ) {
+                throw new ConflictError(
+                    "Expense Report settlement payment reference is not available.",
+                );
+            }
+            paymentId = issuedPaymentId;
+
             const paymentRecord = await recordExpenseReportSettlementPayment({
                 tenantId: request.tenantId,
                 id: request.id,
                 actor: request.actorId,
                 idempotencyKey: request.idempotencyKey,
-                paymentId: payment.paymentId,
+                paymentId,
             });
             if (paymentRecord.kind === "not_found") {
                 throw new ConflictError(
@@ -995,42 +1033,59 @@ export async function settleExpenseReportWorkflow(
             }
         }
 
-        await runSettlementTransition({
+        if (paymentId === undefined) {
+            throw new ConflictError(
+                "Expense Report settlement payment reference is not available.",
+            );
+        }
+
+        await runIssuedSettlementTransition({
             tenantId: request.tenantId,
             id: request.id,
+            settlementId: settlementClaim.settlement.id,
             actorId: request.actorId,
-            fromStage: "AP Review",
-            toStage: "Paid",
+            paymentId,
             reason: "payment_stub_issued",
             correlationId: request.correlationId,
             idempotencyKey: request.idempotencyKey,
             dependencies,
         });
 
-        await runSettlementTransition({
+        await runFinalSettlementTransition({
             tenantId: request.tenantId,
             id: request.id,
             actorId: request.actorId,
-            fromStage: "Paid",
-            toStage: "Reconciled",
+            paymentId,
             reason: sagaReason,
             correlationId: request.correlationId,
             idempotencyKey: request.idempotencyKey,
             dependencies,
         });
-        await markExpenseReportSettlementReconciled({
-            tenantId: request.tenantId,
-            id: request.id,
-            paymentId: payment.paymentId,
-        });
     } catch (error: unknown) {
+        if (paymentId === undefined) {
+            const abandonResult =
+                await abandonUnpaidExpenseReportSettlementClaim({
+                    tenantId: request.tenantId,
+                    id: request.id,
+                    settlementId: settlementClaim.settlement.id,
+                });
+            if (abandonResult.kind !== "abandoned") {
+                throw new ConflictError(
+                    "Expense Report settlement payment failed and the unpaid claim could not be released.",
+                    { cause: error },
+                );
+            }
+            throw error;
+        }
+
         try {
             await compensateSettlementSaga({
                 tenantId: request.tenantId,
                 id: request.id,
+                settlementId: settlementClaim.settlement.id,
                 actorId: request.actorId,
                 correlationId: request.correlationId,
-                paymentId: payment.paymentId,
+                paymentId,
                 paymentIssuer,
                 dependencies,
             });
@@ -1038,16 +1093,12 @@ export async function settleExpenseReportWorkflow(
             console.error("Settlement saga failed during compensation.", {
                 compensationError,
                 error,
-                expenseReportId: request.id,
-                tenantId: request.tenantId,
+                phase: "settlement_compensation",
             });
             throw new ConflictError(
                 "Settlement saga failed and compensation could not complete.",
                 {
-                    cause: new AggregateError([
-                        error,
-                        compensationError,
-                    ]),
+                    cause: new AggregateError([error, compensationError]),
                 },
             );
         }
@@ -1065,24 +1116,22 @@ export async function settleExpenseReportWorkflow(
     return toExpenseReportResponse(reconciledReport);
 }
 
-async function runSettlementTransition(request: {
+async function runFinalSettlementTransition(request: {
     tenantId: string;
     id: string;
     actorId: string;
-    fromStage: ExpenseReportStage;
-    toStage: ExpenseReportStage;
+    paymentId: string;
     reason: string;
     correlationId: string;
-    idempotencyKey?: string;
+    idempotencyKey: string;
     dependencies: SettlementSagaDependencies;
 }): Promise<void> {
     const outboxEventId = randomUUID();
-    const didTransition = await transitionExpenseReportStageInStore({
+    const didTransition = await reconcileExpenseReportSettlementStage({
         tenantId: request.tenantId,
         id: request.id,
         actor: request.actorId,
-        fromStage: request.fromStage,
-        toStage: request.toStage,
+        paymentId: request.paymentId,
         reason: request.reason,
         correlationId: request.correlationId,
         idempotencyKey: request.idempotencyKey,
@@ -1092,7 +1141,42 @@ async function runSettlementTransition(request: {
 
     if (!didTransition) {
         throw new ConflictError(
-            `Expense Report cannot transition from ${request.fromStage} to ${request.toStage}.`,
+            "Expense Report cannot transition from Paid to Reconciled.",
+        );
+    }
+
+    await invalidateCachedCaseQueueStageRollups(request.tenantId);
+    await dispatchOutboxEvent(outboxEventId, request.dependencies);
+}
+
+async function runIssuedSettlementTransition(request: {
+    tenantId: string;
+    id: string;
+    settlementId: string;
+    actorId: string;
+    paymentId: string;
+    reason: string;
+    correlationId: string;
+    idempotencyKey: string;
+    dependencies: SettlementSagaDependencies;
+}): Promise<void> {
+    const outboxEventId = randomUUID();
+    const didTransition = await transitionIssuedExpenseReportSettlementToPaid({
+        tenantId: request.tenantId,
+        id: request.id,
+        settlementId: request.settlementId,
+        actor: request.actorId,
+        paymentId: request.paymentId,
+        reason: request.reason,
+        correlationId: request.correlationId,
+        idempotencyKey: request.idempotencyKey,
+        eventId: outboxEventId,
+        occurredAt: new Date(),
+    });
+
+    if (!didTransition) {
+        throw new ConflictError(
+            "Expense Report cannot transition from AP Review to Paid.",
         );
     }
 
@@ -1103,6 +1187,7 @@ async function runSettlementTransition(request: {
 async function compensateSettlementSaga(request: {
     tenantId: string;
     id: string;
+    settlementId: string;
     actorId: string;
     correlationId: string;
     paymentId: string;
@@ -1121,8 +1206,7 @@ async function compensateSettlementSaga(request: {
     } catch (error: unknown) {
         console.error("Settlement payment-stub compensation failed.", {
             error,
-            expenseReportId: request.id,
-            tenantId: request.tenantId,
+            phase: "payment_stub_compensation",
         });
         throw error;
     }
@@ -1146,11 +1230,17 @@ async function compensateSettlementSaga(request: {
         );
     }
 
-    await markExpenseReportSettlementCompensated({
+    const didMarkCompensated = await markExpenseReportSettlementCompensated({
         tenantId: request.tenantId,
         id: request.id,
+        settlementId: request.settlementId,
         paymentId: request.paymentId,
     });
+    if (!didMarkCompensated) {
+        throw new ConflictError(
+            "Settlement saga failed and compensation could not mark the payment reversed.",
+        );
+    }
     await dispatchOutboxEvent(compensationEventId, request.dependencies);
     await invalidateCachedCaseQueueStageRollups(request.tenantId);
 }
@@ -1215,6 +1305,16 @@ type ExpenseReportStage = ExpenseReportResponse["currentStage"];
 function canReviewWorkflow(roles: RoleName[]): boolean {
     return roles.some(
         (role) => role === "Department Manager" || role === "Finance Admin",
+    );
+}
+
+function isSettlementOwnedTransition(
+    fromStage: ExpenseReportStage,
+    toStage: ExpenseReportStage,
+): boolean {
+    return (
+        (fromStage === "AP Review" && toStage === "Paid") ||
+        (fromStage === "Paid" && toStage === "Reconciled")
     );
 }
 
