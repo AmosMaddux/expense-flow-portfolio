@@ -13,8 +13,11 @@ import {
     ApprovalQueueLineItemOutboundResponseSchema,
     AuditEntryListOutboundResponseSchema,
     AllTransactionPageSchema,
+    CaseCommentListOutboundResponseSchema,
+    CaseCommentOutboundResponseSchema,
     CaseQueueStageRollupListSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
+    CreateCaseCommentInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     DraftExpenseContentOutboundResponseSchema,
@@ -206,6 +209,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
         AuditEntryListOutboundResponseSchema,
+    );
+    const caseCommentResponse = registry.register(
+        "CaseCommentResponse",
+        CaseCommentOutboundResponseSchema,
+    );
+    const caseCommentListResponse = registry.register(
+        "CaseCommentListResponse",
+        CaseCommentListOutboundResponseSchema,
+    );
+    const createCaseCommentRequest = registry.register(
+        "CreateCaseCommentRequest",
+        CreateCaseCommentInboundRequestSchema,
     );
     const readAllTransactionsRequest = registry.register(
         "ReadAllTransactionsRequest",
@@ -1293,6 +1308,69 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/comments",
+        summary: "List Expense Report comments",
+        description:
+            "Loads tenant- and case-scoped comment thread entries for an Expense Report case.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Comments found for the Expense Report.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: caseCommentListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/comments",
+        summary: "Create Expense Report comment",
+        description:
+            "Appends a tenant- and case-scoped dispute or comment entry to an Expense Report case.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: createCaseCommentRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Comment created for the Expense Report.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: caseCommentResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed comment request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
     });

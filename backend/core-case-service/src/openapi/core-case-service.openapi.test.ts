@@ -23,6 +23,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const commentsPath =
+            document.paths?.["/v1/expense-reports/{id}/comments"];
         const flagClearPath =
             document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const transactionsPath = document.paths?.["/v1/transactions"];
@@ -44,6 +46,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(lineItemReviewPath?.post).toBeDefined();
         expect(sourceReviewPath?.post).toBeDefined();
         expect(auditEntriesPath?.get).toBeDefined();
+        expect(commentsPath?.get).toBeDefined();
+        expect(commentsPath?.post).toBeDefined();
         expect(transactionsPath?.get).toBeDefined();
     });
 
@@ -206,6 +210,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const commentsPath =
+            document.paths?.["/v1/expense-reports/{id}/comments"];
         const flagClearPath =
             document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const transactionsPath = document.paths?.["/v1/transactions"];
@@ -267,6 +273,10 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(auditEntriesPath?.get?.security).toStrictEqual([
             { bearerAuth: [] },
         ]);
+        expect(commentsPath?.get?.security).toStrictEqual([{ bearerAuth: [] }]);
+        expect(commentsPath?.post?.security).toStrictEqual([
+            { bearerAuth: [] },
+        ]);
         expect(expenseReportsPath?.post?.responses?.[401]).toBeDefined();
         expect(expenseReportsPath?.post?.responses?.[403]).toBeDefined();
         expect(expenseReportByIdPath?.get?.responses?.[401]).toBeDefined();
@@ -283,6 +293,10 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(sourceReviewPath?.post?.responses?.[403]).toBeDefined();
         expect(auditEntriesPath?.get?.responses?.[401]).toBeDefined();
         expect(auditEntriesPath?.get?.responses?.[403]).toBeDefined();
+        expect(commentsPath?.get?.responses?.[401]).toBeDefined();
+        expect(commentsPath?.get?.responses?.[403]).toBeDefined();
+        expect(commentsPath?.post?.responses?.[401]).toBeDefined();
+        expect(commentsPath?.post?.responses?.[403]).toBeDefined();
     });
 
     void test("documents the GET id path parameter as a required UUID", () => {
@@ -292,6 +306,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/review-detail"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const commentsPath =
+            document.paths?.["/v1/expense-reports/{id}/comments"];
         const flagClearPath =
             document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const lineItemReviewPath =
@@ -305,6 +321,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         const parameter = expenseReportByIdPath?.get?.parameters?.[0];
         const reviewDetailParameter = reviewDetailPath?.get?.parameters?.[0];
         const auditParameter = auditEntriesPath?.get?.parameters?.[0];
+        const commentsGetParameter = commentsPath?.get?.parameters?.[0];
+        const commentsPostParameter = commentsPath?.post?.parameters?.[0];
         const flagClearParameter = flagClearPath?.post?.parameters?.[0];
         const lineItemReviewParameters = lineItemReviewPath?.post?.parameters;
         const sourceReviewParameters = sourceReviewPath?.post?.parameters;
@@ -328,6 +346,24 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             },
         });
         expect(reviewDetailParameter).toMatchObject({
+            in: "path",
+            name: "id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
+        expect(commentsGetParameter).toMatchObject({
+            in: "path",
+            name: "id",
+            required: true,
+            schema: {
+                type: "string",
+                format: "uuid",
+            },
+        });
+        expect(commentsPostParameter).toMatchObject({
             in: "path",
             name: "id",
             required: true,
@@ -484,6 +520,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const commentsPath =
+            document.paths?.["/v1/expense-reports/{id}/comments"];
         const flagClearPath =
             document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const lineItemReviewPath =
@@ -507,6 +545,12 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(auditEntriesPath?.get?.responses?.[200]),
         ).toContain("#/components/schemas/AuditEntryListResponse");
+        expect(JSON.stringify(commentsPath?.get?.responses?.[200])).toContain(
+            "#/components/schemas/CaseCommentListResponse",
+        );
+        expect(JSON.stringify(commentsPath?.post?.responses?.[201])).toContain(
+            "#/components/schemas/CaseCommentResponse",
+        );
         expect(JSON.stringify(flagClearPath?.post?.responses?.[200])).toContain(
             "#/components/schemas/ClearExpenseReportFlagsResponse",
         );
@@ -586,6 +630,8 @@ void describe("coreCaseServiceOpenApiDocument", () => {
             document.paths?.["/v1/expense-reports/{id}/submit"];
         const auditEntriesPath =
             document.paths?.["/v1/expense-reports/{id}/audit-entries"];
+        const commentsPath =
+            document.paths?.["/v1/expense-reports/{id}/comments"];
         const flagClearPath =
             document.paths?.["/v1/expense-reports/{id}/flags/clear"];
         const transactionsPath = document.paths?.["/v1/transactions"];
@@ -646,6 +692,12 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         expect(
             JSON.stringify(auditEntriesPath?.get?.responses?.[404]),
         ).toContain("#/components/schemas/ProblemJson");
+        expect(JSON.stringify(commentsPath?.post?.responses?.[400])).toContain(
+            "#/components/schemas/ProblemJson",
+        );
+        expect(JSON.stringify(commentsPath?.post?.responses?.[404])).toContain(
+            "#/components/schemas/ProblemJson",
+        );
     });
 
     void test("documents active Expense Report endpoint behavior", () => {

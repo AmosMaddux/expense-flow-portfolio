@@ -709,6 +709,25 @@ export const AuditEntryListOutboundResponseSchema = z.array(
     AuditEntryOutboundResponseSchema,
 );
 
+export const CaseCommentOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    tenantId: z.uuid(),
+    expenseReportId: z.uuid(),
+    authorId: z.uuid(),
+    body: z.string().min(1),
+    createdAt: z.date(),
+});
+
+export const CaseCommentListOutboundResponseSchema = z.array(
+    CaseCommentOutboundResponseSchema,
+);
+
+export const CreateCaseCommentInboundRequestSchema = z
+    .object({
+        body: z.string().trim().min(1).max(5_000),
+    })
+    .strict();
+
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
@@ -806,6 +825,14 @@ export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
     AuditEntryListOutboundResponseSchema;
+
+export const caseCommentResponseSchema = CaseCommentOutboundResponseSchema;
+
+export const caseCommentListResponseSchema =
+    CaseCommentListOutboundResponseSchema;
+
+export const createCaseCommentRequestSchema =
+    CreateCaseCommentInboundRequestSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
@@ -981,4 +1008,12 @@ export type IdempotentSubmissionHeader = z.infer<
 
 export type AuditEntryResponse = z.infer<
     typeof AuditEntryOutboundResponseSchema
+>;
+
+export type CaseCommentResponse = z.infer<
+    typeof CaseCommentOutboundResponseSchema
+>;
+
+export type CreateCaseCommentRequest = z.infer<
+    typeof CreateCaseCommentInboundRequestSchema
 >;

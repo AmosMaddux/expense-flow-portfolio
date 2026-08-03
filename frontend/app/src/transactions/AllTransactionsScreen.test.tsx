@@ -271,14 +271,10 @@ describe("AllTransactionsScreen", () => {
         const fetchImplementation = vi
             .fn<typeof fetch>()
             .mockResolvedValueOnce(
-                createJsonResponse(
-                    createTransactionPage(originalTransactions),
-                ),
+                createJsonResponse(createTransactionPage(originalTransactions)),
             )
             .mockResolvedValueOnce(
-                createJsonResponse(
-                    createTransactionPage(updatedTransactions),
-                ),
+                createJsonResponse(createTransactionPage(updatedTransactions)),
             );
         const queryClient = createNoRetryQueryClient();
 
@@ -362,7 +358,7 @@ describe("AllTransactionsScreen", () => {
                 name: /Summit Air \$512\.09 - 6220 Over \$500 Rejected/i,
             }),
         ).toBeTruthy();
-        expect(fetchImplementation).toHaveBeenLastCalledWith(
+        expect(fetchImplementation).toHaveBeenCalledWith(
             "/v1/expense-reports/60000000-0000-4000-8000-000000000178/review-detail",
             expect.objectContaining({}),
         );
@@ -449,6 +445,193 @@ describe("AllTransactionsScreen", () => {
             }),
         ).toBeTruthy();
         expect(screen.getByText("Showing 1 line items")).toBeTruthy();
+    });
+
+    test("renders Audit Trail and Comments tabs and posts a comment", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000190",
+            expenseReportId: "60000000-0000-4000-8000-000000000190",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const createdComment = {
+            id: "70000000-0000-4000-8000-000000000190",
+            tenantId,
+            expenseReportId: transaction.expenseReportId,
+            authorId: userId,
+            body: "Synthetic dispute comment from finance.",
+            createdAt: "2026-07-22T14:00:00.000Z",
+        };
+        let hasPostedComment = false;
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const requestUrl = readRequestInput(input);
+
+            if (requestUrl.includes("/audit-entries")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "71000000-0000-4000-8000-000000000190",
+                            tenantId,
+                            expenseReportId: transaction.expenseReportId,
+                            actorId: userId,
+                            action: "transition_approved",
+                            stageBeforeAction: "Submitted",
+                            stageAfterProposedAction: "Manager Approval",
+                            denialReason: null,
+                            outcomeReason: null,
+                            createdAt: "2026-07-22T12:00:00.000Z",
+                        },
+                    ]),
+                );
+            }
+
+            if (requestUrl.includes("/comments") && init?.method === "POST") {
+                hasPostedComment = true;
+                return Promise.resolve(
+                    createJsonResponse(createdComment, { status: 201 }),
+                );
+            }
+
+            if (requestUrl.includes("/comments")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "72000000-0000-4000-8000-000000000190",
+                            tenantId,
+                            expenseReportId: transaction.expenseReportId,
+                            authorId: userId,
+                            body: "Synthetic employee dispute.",
+                            createdAt: "2026-07-22T13:00:00.000Z",
+                        },
+                        ...(hasPostedComment ? [createdComment] : []),
+                    ]),
+                );
+            }
+
+            return Promise.resolve(
+                requestUrl.includes("/review-detail")
+                    ? createJsonResponse(createReportDetail(transaction))
+                    : createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const row = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(within(row).getByRole("button", { name: "Review" }));
+        const dialog = await screen.findByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+
+        fireEvent.click(
+            await within(dialog).findByRole("tab", { name: "Audit Trail" }),
+        );
+        expect(
+            await within(dialog).findByText("Transition Approved"),
+        ).toBeTruthy();
+        expect(within(dialog).queryByRole("textbox")).toBeNull();
+
+        fireEvent.click(within(dialog).getByRole("tab", { name: "Comments" }));
+        expect(
+            await within(dialog).findByText("Synthetic employee dispute."),
+        ).toBeTruthy();
+        fireEvent.change(within(dialog).getByLabelText("Comment"), {
+            target: { value: "Synthetic dispute comment from finance." },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledWith(
+                `/v1/expense-reports/${transaction.expenseReportId}/comments`,
+                expect.objectContaining({
+                    body: JSON.stringify({
+                        body: "Synthetic dispute comment from finance.",
+                    }),
+                    method: "POST",
+                }),
+            ),
+        );
+        expect(
+            await within(dialog).findByText(
+                "Synthetic dispute comment from finance.",
+            ),
+        ).toBeTruthy();
+    });
+
+    test("prevents blank comment submissions in the Comments tab", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000191",
+            expenseReportId: "60000000-0000-4000-8000-000000000191",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            const requestUrl = readRequestInput(input);
+
+            if (requestUrl.includes("/audit-entries")) {
+                return Promise.resolve(createJsonResponse([]));
+            }
+
+            if (requestUrl.includes("/comments")) {
+                return Promise.resolve(createJsonResponse([]));
+            }
+
+            return Promise.resolve(
+                requestUrl.includes("/review-detail")
+                    ? createJsonResponse(createReportDetail(transaction))
+                    : createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const row = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(within(row).getByRole("button", { name: "Review" }));
+        const dialog = await screen.findByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+        fireEvent.click(
+            await within(dialog).findByRole("tab", { name: "Comments" }),
+        );
+        fireEvent.change(await within(dialog).findByLabelText("Comment"), {
+            target: { value: "   " },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+
+        expect(
+            await within(dialog).findByText("Enter a comment before posting."),
+        ).toBeTruthy();
+        expect(
+            fetchImplementation.mock.calls.filter(
+                ([input, init]) =>
+                    readRequestInput(input).includes("/comments") &&
+                    init?.method === "POST",
+            ),
+        ).toHaveLength(0);
     });
 
     test("keeps current rows when already-applied filters are applied again", async () => {

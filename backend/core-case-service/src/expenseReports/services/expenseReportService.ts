@@ -22,6 +22,7 @@ import {
     deleteDraftMileageEntry as deleteDraftMileageEntryInStore,
     findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
+    findCaseCommentsByExpenseReportId,
     findCommittedSubmissionByIdempotencyKey,
     findCurrentDraftExpenseReport,
     findDraftExpenseContent,
@@ -33,6 +34,7 @@ import {
     markExpenseReportSettlementCompensated,
     insertDraftExpenseReport,
     insertDraftExpenseContent,
+    insertCaseComment,
     insertMileageEntry,
     insertDeniedFlagClearAuditEntry,
     insertDeniedSubmissionAuditEntry,
@@ -52,6 +54,7 @@ import { invalidateCachedCaseQueueStageRollups } from "./caseQueueService.js";
 import {
     AddDraftExpenseContentOutboundResponseSchema,
     AuditEntryOutboundResponseSchema,
+    CaseCommentOutboundResponseSchema,
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
     MileageConfigOutboundResponseSchema,
@@ -60,9 +63,11 @@ import {
     type AddDraftExpenseContentRequest,
     type AddDraftExpenseContentResponse,
     type AuditEntryResponse,
+    type CaseCommentResponse,
     type ApprovalQueueLineItemResponse,
     type ClearExpenseReportFlagsRequest,
     type CreateExpenseReportRequest,
+    type CreateCaseCommentRequest,
     type CreateMileageEntryRequest,
     type DraftExpenseContentResponse,
     type ExpenseReportResponse,
@@ -1316,6 +1321,65 @@ export async function readExpenseReportAuditEntries(
     );
 }
 
+/**
+ * Reads tenant- and case-scoped comments for an Expense Report case.
+ */
+export async function readExpenseReportComments(
+    request: GetExpenseReportRequest & {
+        tenantId: string;
+        ownerId?: string;
+    },
+): Promise<CaseCommentResponse[]> {
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    const comments = await findCaseCommentsByExpenseReportId(
+        request.tenantId,
+        request.id,
+    );
+
+    return comments.map(toCaseCommentResponse);
+}
+
+/**
+ * Appends a tenant- and case-scoped comment to an Expense Report case.
+ */
+export async function createExpenseReportComment(
+    request: CreateCaseCommentRequest &
+        GetExpenseReportRequest & {
+            tenantId: string;
+            authorId: string;
+            ownerId?: string;
+        },
+): Promise<CaseCommentResponse> {
+    const report = await findExpenseReportById(
+        request.tenantId,
+        request.id,
+        request.ownerId,
+    );
+
+    if (report === undefined) {
+        throw new NotFoundError("Expense Report not found.");
+    }
+
+    const comment = await insertCaseComment({
+        id: randomUUID(),
+        tenantId: request.tenantId,
+        expenseReportId: request.id,
+        authorId: request.authorId,
+        body: request.body,
+    });
+
+    return toCaseCommentResponse(comment);
+}
+
 type ExpenseReportStage = ExpenseReportResponse["currentStage"];
 
 function canReviewWorkflow(roles: RoleName[]): boolean {
@@ -1332,6 +1396,24 @@ function isSettlementOwnedTransition(
         (fromStage === "AP Review" && toStage === "Paid") ||
         (fromStage === "Paid" && toStage === "Reconciled")
     );
+}
+
+function toCaseCommentResponse(comment: {
+    id: string;
+    tenantId: string;
+    expenseReportId: string;
+    authorId: string;
+    body: string;
+    createdAt: Date;
+}): CaseCommentResponse {
+    return CaseCommentOutboundResponseSchema.parse({
+        id: comment.id,
+        tenantId: comment.tenantId,
+        expenseReportId: comment.expenseReportId,
+        authorId: comment.authorId,
+        body: comment.body,
+        createdAt: comment.createdAt,
+    });
 }
 
 function toExpenseReportResponse(report: {

@@ -18,6 +18,8 @@ import {
     auditEntry,
     approvedWorkflowStages,
     type AuditEntry,
+    caseComment,
+    type CaseComment,
     expenseReport,
     type ExpenseReport,
     expenseReportSettlement,
@@ -26,6 +28,7 @@ import {
     lineItem,
     mileageEntry,
     type NewAuditEntry,
+    type NewCaseComment,
     type NewExpenseReport,
     type NewGlCodingResult,
     receiptMetadata,
@@ -3730,4 +3733,39 @@ export async function findAuditEntriesByExpenseReportId(
             ),
         )
         .orderBy(asc(auditEntry.sequence));
+}
+
+/**
+ * Reads append-only comments for an Expense Report within a tenant boundary.
+ */
+export async function findCaseCommentsByExpenseReportId(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<CaseComment[]> {
+    return db
+        .select()
+        .from(caseComment)
+        .where(
+            and(
+                eq(caseComment.tenantId, tenantId),
+                eq(caseComment.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(asc(caseComment.createdAt), asc(caseComment.id));
+}
+
+/**
+ * Appends a comment to an Expense Report within a tenant boundary.
+ */
+export async function insertCaseComment(
+    comment: NewCaseComment,
+): Promise<CaseComment> {
+    const inserted = await db.insert(caseComment).values(comment).returning();
+    const created = inserted[0];
+
+    if (created === undefined) {
+        throw new Error("Unable to create Expense Report comment.");
+    }
+
+    return created;
 }

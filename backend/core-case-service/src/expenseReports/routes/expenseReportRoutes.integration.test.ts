@@ -5956,6 +5956,157 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         expect(auditResponse.status).toBe(404);
         expect(body).toMatchObject({ title: "Not Found", status: 404 });
     });
+
+    void test("lets a Finance Admin create and read comments for an Expense Report", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000124";
+        const owner = "50000000-0000-4000-8000-000000000025";
+        const financeAdminId = "50000000-0000-4000-8000-000000000026";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-124",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-11" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const commentResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "  Synthetic finance dispute comment.  ",
+                }),
+            },
+        );
+        const commentBody = (await commentResponse.json()) as {
+            tenantId?: string;
+            expenseReportId?: string;
+            authorId?: string;
+            body?: string;
+        };
+
+        const listResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const comments = (await listResponse.json()) as Array<{
+            body?: string;
+        }>;
+
+        expect(commentResponse.status).toBe(201);
+        expect(commentBody).toMatchObject({
+            tenantId,
+            expenseReportId: created.id,
+            authorId: financeAdminId,
+            body: "Synthetic finance dispute comment.",
+        });
+        expect(listResponse.status).toBe(200);
+        expect(comments).toEqual([
+            expect.objectContaining({
+                body: "Synthetic finance dispute comment.",
+            }),
+        ]);
+    });
+
+    void test("lets Employees comment only on their own Expense Reports", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000125";
+        const owner = "50000000-0000-4000-8000-000000000027";
+        const otherEmployee = "50000000-0000-4000-8000-000000000028";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-125",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-12" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const ownCommentResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic employee dispute comment.",
+                }),
+            },
+        );
+        const otherEmployeeResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherEmployee),
+                },
+            },
+        );
+
+        expect(ownCommentResponse.status).toBe(201);
+        expect(otherEmployeeResponse.status).toBe(404);
+    });
+
+    void test("rejects blank comment requests before writing a comment", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000126";
+        const owner = "50000000-0000-4000-8000-000000000029";
+        const financeAdminId = "50000000-0000-4000-8000-000000000030";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-126",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-13" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const commentResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ body: "   " }),
+            },
+        );
+        const body = (await commentResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(commentResponse.status).toBe(400);
+        expect(body).toMatchObject({ title: "Bad Request", status: 400 });
+    });
+
     void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";

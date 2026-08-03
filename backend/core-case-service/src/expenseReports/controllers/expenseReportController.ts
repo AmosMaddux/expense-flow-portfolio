@@ -11,6 +11,7 @@ import {
 import {
     AddDraftExpenseContentInboundRequestSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
+    CreateCaseCommentInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     DraftExpenseSourceParamsSchema,
@@ -51,6 +52,7 @@ import {
 } from "../../logging/coreCaseLogger.js";
 import {
     addDraftExpenseContent,
+    createExpenseReportComment,
     clearExpenseReportFlags,
     addMileageEntry,
     createDraftExpenseReport,
@@ -61,6 +63,7 @@ import {
     readDraftExpenseContent,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    readExpenseReportComments,
     readExpenseReportReviewDetail,
     readMileageConfig,
     reviewExpenseReportLineItem,
@@ -993,6 +996,63 @@ export async function getExpenseReportAuditEntries(
             route: auditEntriesRouteLogName,
             tenantId: req.auth?.tenantId,
         });
+        next(error);
+    }
+}
+
+/**
+ * Handles comment thread reads for an Expense Report case.
+ */
+export async function getExpenseReportComments(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const comments = await readExpenseReportComments({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
+
+        res.status(200).json(comments);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles comment creation for an Expense Report case.
+ */
+export async function postExpenseReportComment(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = CreateCaseCommentInboundRequestSchema.parse(
+            req.body,
+        );
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const comment = await createExpenseReportComment({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            authorId: auth.userId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
+
+        res.status(201).json(comment);
+    } catch (error: unknown) {
         next(error);
     }
 }
