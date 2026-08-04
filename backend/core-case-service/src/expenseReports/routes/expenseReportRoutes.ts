@@ -1,5 +1,6 @@
 import { Router, raw } from "express";
 
+import { getPolicyReference } from "../../policyReference/policyReferenceController.js";
 import {
     deleteDraftLineItemEntry,
     deleteDraftMileageEntryRecord,
@@ -10,6 +11,7 @@ import {
     getDraftExpenseContent,
     getExpenseReportAuditEntries,
     getExpenseReportById,
+    getExpenseReportComments,
     getExpenseReportReviewDetail,
     getFinanceDashboardTrend,
     getMileageConfig,
@@ -24,6 +26,7 @@ import {
     postExpenseReportSubmission,
     postExpenseReportTransition,
     postExpenseReport,
+    postExpenseReportComment,
     postMileageEntry,
     patchDraftLineItem,
     patchDraftMileageEntry,
@@ -35,6 +38,7 @@ export const expenseReportRouter = Router();
 expenseReportRouter.get("/case-queue/line-items", getCaseQueueLineItems);
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
 expenseReportRouter.get("/finance-dashboard/trends", getFinanceDashboardTrend);
+expenseReportRouter.get("/policy-reference", getPolicyReference);
 expenseReportRouter.get("/transactions", getAllTransactions);
 expenseReportRouter.get("/expense-reports/my-submissions", getMySubmissions);
 expenseReportRouter.get(
@@ -111,6 +115,14 @@ expenseReportRouter.patch(
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",
     getExpenseReportAuditEntries,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/comments",
+    getExpenseReportComments,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/comments",
+    postExpenseReportComment,
 );
 expenseReportRouter.get(
     "/expense-reports/:id/review-detail",

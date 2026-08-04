@@ -25,6 +25,7 @@ import {
     lineItem,
     receiptMetadata,
     stageTransition,
+    tenantExpensePolicy,
 } from "../db/schema/index.js";
 import * as schema from "../db/schema/index.js";
 import {
@@ -51,6 +52,15 @@ const demoTransactionsSqlUrl = new URL(
     "../../../../scripts/seed-demo-transactions.sql",
     import.meta.url,
 );
+const syntheticExpensePolicyText = `ExpenseFlow Synthetic Tenant Expense Policy
+
+Reimbursable expenses must have a clear business purpose, a matching receipt when one is available, and manager approval before AP review.
+
+Meals are reimbursable when they support approved business travel or working sessions. Alcohol, entertainment upgrades, and personal purchases are not reimbursable.
+
+Travel and lodging must use reasonable economy options. Mileage is reimbursed at the configured ExpenseFlow mileage rate.
+
+Line items over $500 may require additional review before payment.`;
 
 const demoGlCodes = [
     {
@@ -163,6 +173,10 @@ export async function seedLocalDemoData(): Promise<void> {
             receiptObjects,
         );
         await database.transaction(async (transaction) => {
+            await seedTenantExpensePolicy(
+                transaction,
+                environment.VITE_TENANT_ID,
+            );
             await seedGlReferenceData(transaction, environment.VITE_TENANT_ID);
             await seedReceiptGalleryReport(
                 transaction,
@@ -247,6 +261,26 @@ async function seedGlReferenceData(
                 },
             });
     }
+}
+
+async function seedTenantExpensePolicy(
+    transaction: LocalDemoTransaction,
+    tenantId: string,
+): Promise<void> {
+    await transaction
+        .insert(tenantExpensePolicy)
+        .values({
+            tenantId,
+            policyText: syntheticExpensePolicyText,
+            updatedAt: seededAt,
+        })
+        .onConflictDoUpdate({
+            target: tenantExpensePolicy.tenantId,
+            set: {
+                policyText: syntheticExpensePolicyText,
+                updatedAt: seededAt,
+            },
+        });
 }
 
 async function seedReceiptGalleryReport(

@@ -474,6 +474,23 @@ export type NewStageTransitionProjection = InferInsertModel<
     typeof stageTransitionProjection
 >;
 
+export const tenantExpensePolicy = pgTable(
+    "tenant_expense_policy",
+    {
+        tenantId: uuid("tenant_id").primaryKey(),
+        policyText: text("policy_text").notNull(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "tenant_expense_policy_text_not_blank_check",
+            sql`nullif(btrim(${table.policyText}), '') is not null`,
+        ),
+    ],
+);
+
 export const lineItem = pgTable(
     "line_item",
     {
@@ -841,6 +858,10 @@ export const mileageEntry = pgTable(
 
 export type LineItem = InferSelectModel<typeof lineItem>;
 export type NewLineItem = InferInsertModel<typeof lineItem>;
+export type TenantExpensePolicy = InferSelectModel<typeof tenantExpensePolicy>;
+export type NewTenantExpensePolicy = InferInsertModel<
+    typeof tenantExpensePolicy
+>;
 export type GlCode = InferSelectModel<typeof glCode>;
 export type NewGlCode = InferInsertModel<typeof glCode>;
 export type GlMapping = InferSelectModel<typeof glMapping>;

@@ -6,4 +6,3 @@ coverage
 *.tsbuildinfo
 package-lock.json
 backend/core-case-service/drizzle/meta/*_snapshot.json
-

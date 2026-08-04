@@ -388,6 +388,14 @@ export const ReadAllTransactionsQuerySchema =
         },
     );
 
+export const ReadPolicyReferenceInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+    })
+    .strict();
+
+export const ReadPolicyReferenceQuerySchema = z.object({}).strict();
+
 export const ReadMySubmissionsInboundRequestSchema = z
     .object({
         tenantId: z.uuid(),
@@ -514,6 +522,13 @@ export const FinanceDashboardTrendPointSchema = z.object({
 export const FinanceDashboardTrendPointListSchema = z.array(
     FinanceDashboardTrendPointSchema,
 );
+
+export const PolicyReferenceOutboundResponseSchema = z.object({
+    policyText: z.string().refine((value) => value.trim().length > 0, {
+        message: "Policy text must not be blank.",
+    }),
+    updatedAt: z.iso.datetime({ offset: true }),
+});
 
 export const AllTransactionSchema = z.object({
     id: z.uuid(),
@@ -694,6 +709,25 @@ export const AuditEntryListOutboundResponseSchema = z.array(
     AuditEntryOutboundResponseSchema,
 );
 
+export const CaseCommentOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    tenantId: z.uuid(),
+    expenseReportId: z.uuid(),
+    authorId: z.uuid(),
+    body: z.string().min(1),
+    createdAt: z.date(),
+});
+
+export const CaseCommentListOutboundResponseSchema = z.array(
+    CaseCommentOutboundResponseSchema,
+);
+
+export const CreateCaseCommentInboundRequestSchema = z
+    .object({
+        body: z.string().trim().min(1).max(5_000),
+    })
+    .strict();
+
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
@@ -745,6 +779,11 @@ export const readAllTransactionsRequestSchema =
 
 export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
 
+export const readPolicyReferenceRequestSchema =
+    ReadPolicyReferenceInboundRequestSchema;
+
+export const readPolicyReferenceQuerySchema = ReadPolicyReferenceQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
@@ -760,6 +799,9 @@ export const financeDashboardTrendPointSchema =
 
 export const financeDashboardTrendPointListSchema =
     FinanceDashboardTrendPointListSchema;
+
+export const policyReferenceResponseSchema =
+    PolicyReferenceOutboundResponseSchema;
 
 export const allTransactionSchema = AllTransactionSchema;
 
@@ -783,6 +825,14 @@ export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
     AuditEntryListOutboundResponseSchema;
+
+export const caseCommentResponseSchema = CaseCommentOutboundResponseSchema;
+
+export const caseCommentListResponseSchema =
+    CaseCommentListOutboundResponseSchema;
+
+export const createCaseCommentRequestSchema =
+    CreateCaseCommentInboundRequestSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
@@ -900,6 +950,14 @@ export type ReadAllTransactionsQuery = z.infer<
     typeof ReadAllTransactionsQuerySchema
 >;
 
+export type ReadPolicyReferenceRequest = z.infer<
+    typeof ReadPolicyReferenceInboundRequestSchema
+>;
+
+export type ReadPolicyReferenceQuery = z.infer<
+    typeof ReadPolicyReferenceQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
@@ -912,6 +970,10 @@ export type FinanceDashboardTrendSpendBucket = z.infer<
 
 export type FinanceDashboardTrendPoint = z.infer<
     typeof FinanceDashboardTrendPointSchema
+>;
+
+export type PolicyReferenceResponse = z.infer<
+    typeof PolicyReferenceOutboundResponseSchema
 >;
 
 export type AllTransaction = z.infer<typeof AllTransactionSchema>;
@@ -946,4 +1008,12 @@ export type IdempotentSubmissionHeader = z.infer<
 
 export type AuditEntryResponse = z.infer<
     typeof AuditEntryOutboundResponseSchema
+>;
+
+export type CaseCommentResponse = z.infer<
+    typeof CaseCommentOutboundResponseSchema
+>;
+
+export type CreateCaseCommentRequest = z.infer<
+    typeof CreateCaseCommentInboundRequestSchema
 >;

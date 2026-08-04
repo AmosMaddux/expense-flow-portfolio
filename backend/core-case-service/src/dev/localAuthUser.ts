@@ -21,6 +21,7 @@ import {
 } from "../db/schema/identityAuth.js";
 import {
     auditEntry,
+    caseComment,
     expenseReport,
     lineItem,
     stageTransition,
@@ -308,6 +309,28 @@ async function seedOverdueEmployeeSubmission(
                 updatedAt: seededAt,
             },
         });
+
+    await transaction
+        .insert(caseComment)
+        .values([
+            {
+                id: "7a000000-0000-4000-8000-000000000009",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                authorId: ownerId,
+                body: "Synthetic employee dispute: receipt is available for finance review.",
+                createdAt: new Date("2026-06-22T13:00:00.000Z"),
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000010",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                authorId: "9f1b3f5c-1dc8-4f37-8a23-000000000003",
+                body: "Synthetic finance note: confirm policy treatment before reimbursement.",
+                createdAt: new Date("2026-06-22T14:00:00.000Z"),
+            },
+        ])
+        .onConflictDoNothing();
 }
 
 async function readCurrentLocalTotpCode(
