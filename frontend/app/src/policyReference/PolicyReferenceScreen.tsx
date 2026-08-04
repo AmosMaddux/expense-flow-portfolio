@@ -4,7 +4,9 @@ import { ErrorState, LoadingSkeleton } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
 const policyReferenceResponseSchema = z.object({
-    policyText: z.string().trim().min(1),
+    policyText: z.string().refine((value) => value.trim().length > 0, {
+        message: "Policy text must not be blank.",
+    }),
     updatedAt: z.string().datetime({ offset: true }),
 });
 

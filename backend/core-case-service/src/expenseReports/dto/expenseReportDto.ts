@@ -517,7 +517,9 @@ export const FinanceDashboardTrendPointListSchema = z.array(
 );
 
 export const PolicyReferenceOutboundResponseSchema = z.object({
-    policyText: z.string().trim().min(1),
+    policyText: z.string().refine((value) => value.trim().length > 0, {
+        message: "Policy text must not be blank.",
+    }),
     updatedAt: z.iso.datetime({ offset: true }),
 });
 

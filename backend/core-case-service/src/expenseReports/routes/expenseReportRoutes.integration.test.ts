@@ -277,11 +277,12 @@ void describe("Expense Report routes", () => {
         const tenantId = "40000000-0000-4000-8000-000000000931";
         const otherTenantId = "40000000-0000-4000-8000-000000000932";
         const managerId = "50000000-0000-4000-8000-000000000931";
+        const policyText =
+            "  Synthetic tenant policy: receipts are required for reimbursable lodging.\n\n    Preserve approved indentation.\n";
         await db.insert(tenantExpensePolicy).values([
             {
                 tenantId,
-                policyText:
-                    "Synthetic tenant policy: receipts are required for reimbursable lodging.",
+                policyText,
                 updatedAt: new Date("2026-07-24T12:00:00.000Z"),
             },
             {
@@ -305,8 +306,7 @@ void describe("Expense Report routes", () => {
 
         expect(response.status).toBe(200);
         expect(body).toEqual({
-            policyText:
-                "Synthetic tenant policy: receipts are required for reimbursable lodging.",
+            policyText,
             updatedAt: "2026-07-24T12:00:00.000Z",
         });
         expect(body.policyText).not.toContain("other tenant");

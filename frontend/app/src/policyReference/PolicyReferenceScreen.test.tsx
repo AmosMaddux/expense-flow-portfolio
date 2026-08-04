@@ -46,10 +46,12 @@ function createNoRetryQueryClient(): QueryClient {
     });
 }
 
-function renderPolicyReferenceScreen(fetchImplementation: typeof fetch): void {
+function renderPolicyReferenceScreen(
+    fetchImplementation: typeof fetch,
+): ReturnType<typeof render> {
     const queryClient = createNoRetryQueryClient();
 
-    render(
+    return render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
                 authClient={createAuthClientMock()}
@@ -70,17 +72,18 @@ afterEach(() => {
 
 describe("PolicyReferenceScreen", () => {
     test("renders tenant expense policy text as read-only content", async () => {
+        const policyText =
+            "  Synthetic Expense Policy\n\n    Receipts are required for reimbursable lodging.\n";
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 createJsonResponse({
-                    policyText:
-                        "Synthetic Expense Policy\n\nReceipts are required for reimbursable lodging.",
+                    policyText,
                     updatedAt: "2026-07-24T12:00:00.000Z",
                 }),
             ),
         );
 
-        renderPolicyReferenceScreen(fetchImplementation);
+        const { container } = renderPolicyReferenceScreen(fetchImplementation);
 
         expect(
             screen.getByRole("status", { name: "Loading Policy Reference" }),
@@ -89,6 +92,9 @@ describe("PolicyReferenceScreen", () => {
             screen.getByRole("heading", { name: "Policy Reference" }),
         ).toBeTruthy();
         expect(await screen.findByText(/Receipts are required/u)).toBeTruthy();
+        expect(
+            container.querySelector(".policy-reference__text")?.textContent,
+        ).toBe(policyText);
         expect(screen.queryByRole("textbox")).toBeNull();
         expect(screen.queryByRole("button")).toBeNull();
     });
