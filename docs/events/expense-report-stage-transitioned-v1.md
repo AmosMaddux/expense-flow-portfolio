@@ -27,12 +27,20 @@ The standalone consumer long-polls the queue configured by
 CloudEvent, then idempotently inserts a `stage_transition_projection` record
 keyed by the CloudEvent `id`. It deletes a message only after the projection
 write succeeds; malformed events and storage failures remain available for SQS
-retry.
+retry. The queue is configured with an SQS redrive policy so messages that keep
+failing consumer processing are moved to the stage-transition DLQ for inspection
+after the queue's `maxReceiveCount` is exceeded.
 
 Run the local consumer with:
 
 ```sh
 npm run dev:events:consume
+```
+
+Inspect locally redriven messages with:
+
+```sh
+./scripts/receive-local-stage-transition-dlq-event.sh
 ```
 
 The transport-independent `processStageTransitionEvent` function is the unit

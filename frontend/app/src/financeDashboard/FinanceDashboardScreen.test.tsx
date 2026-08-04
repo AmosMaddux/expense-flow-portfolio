@@ -423,6 +423,33 @@ describe("FinanceDashboardScreen", () => {
         expect(chart?.destroy).toHaveBeenCalledOnce();
     });
 
+    test("destroys a Chart.js-registered canvas instance before recreating the trend chart", async () => {
+        const staleChart = {
+            config: {},
+            destroy: vi.fn(),
+        };
+        registeredChartLookup.current = staleChart;
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+
+        expect(staleChart.destroy).toHaveBeenCalledOnce();
+        expect(chartConstructorMock).toHaveBeenCalledOnce();
+    });
+
     test("renders a chart empty state when KPI data exists but trend data is empty", async () => {
         const fetchImplementation = createTrendFetchImplementation([
             {
