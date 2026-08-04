@@ -225,6 +225,13 @@
       "when": 1785780023816,
       "tag": "0031_unique_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785804000000,
+      "tag": "0032_stage_transition_projection_compensation",
+      "breakpoints": true
     }
   ]
 }

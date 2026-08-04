@@ -32,6 +32,9 @@ queue_url="$(
         --query QueueUrl \
         --output text
 )"
+awslocal sqs set-queue-attributes \
+    --queue-url "$queue_url" \
+    --attributes "RedrivePolicy={\"deadLetterTargetArn\":\"$dlq_arn\",\"maxReceiveCount\":\"3\"}"
 queue_arn="$(
     awslocal sqs get-queue-attributes \
         --queue-url "$queue_url" \

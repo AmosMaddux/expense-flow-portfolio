@@ -2328,7 +2328,13 @@ export async function recordExpenseReportSettlementPayment(request: {
                 status: "issued",
                 updatedAt: new Date(),
             })
-            .where(eq(expenseReportSettlement.id, settlement.id))
+            .where(
+                and(
+                    eq(expenseReportSettlement.id, settlement.id),
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                ),
+            )
             .returning();
         const updatedSettlement = updatedSettlements[0];
         if (updatedSettlement === undefined) {
@@ -2608,7 +2614,13 @@ export async function reconcileExpenseReportSettlementStage(request: {
         const updatedSettlements = await transaction
             .update(expenseReportSettlement)
             .set({ status: "reconciled", updatedAt: new Date() })
-            .where(eq(expenseReportSettlement.id, settlement.id))
+            .where(
+                and(
+                    eq(expenseReportSettlement.id, settlement.id),
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                ),
+            )
             .returning({ id: expenseReportSettlement.id });
 
         if (updatedSettlements.length !== 1) {
