@@ -10,7 +10,7 @@ on:
 jobs:
     ui-quality-gate:
         name: UI quality gate
-        runs-on: blacksmith-2vcpu-ubuntu-2404
+        runs-on: self-hosted
         timeout-minutes: 35
 
         steps:
