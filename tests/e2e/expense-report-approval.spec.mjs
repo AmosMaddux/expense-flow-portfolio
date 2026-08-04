@@ -140,7 +140,10 @@ test("employee submits an expense report and manager approves it", async ({
             .getByRole("link", { name: "All Transactions" })
             .click();
         await expect(
-            financePage.getByRole("heading", { name: "All Transactions" }),
+            financePage.getByRole("heading", { name: "Transactions" }),
+        ).toBeVisible();
+        await expect(
+            financePage.getByRole("region", { name: "All Transactions list" }),
         ).toBeVisible();
         const financeTransactionRow = financePage.getByRole("row", {
             name: new RegExp(escapeRegExp(merchant)),
