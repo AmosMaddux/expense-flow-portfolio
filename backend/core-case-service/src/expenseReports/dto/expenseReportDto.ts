@@ -388,6 +388,14 @@ export const ReadAllTransactionsQuerySchema =
         },
     );
 
+export const ReadPolicyReferenceInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+    })
+    .strict();
+
+export const ReadPolicyReferenceQuerySchema = z.object({}).strict();
+
 export const ReadMySubmissionsInboundRequestSchema = z
     .object({
         tenantId: z.uuid(),
@@ -514,6 +522,13 @@ export const FinanceDashboardTrendPointSchema = z.object({
 export const FinanceDashboardTrendPointListSchema = z.array(
     FinanceDashboardTrendPointSchema,
 );
+
+export const PolicyReferenceOutboundResponseSchema = z.object({
+    policyText: z.string().refine((value) => value.trim().length > 0, {
+        message: "Policy text must not be blank.",
+    }),
+    updatedAt: z.iso.datetime({ offset: true }),
+});
 
 export const AllTransactionSchema = z.object({
     id: z.uuid(),
@@ -745,6 +760,11 @@ export const readAllTransactionsRequestSchema =
 
 export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
 
+export const readPolicyReferenceRequestSchema =
+    ReadPolicyReferenceInboundRequestSchema;
+
+export const readPolicyReferenceQuerySchema = ReadPolicyReferenceQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
@@ -760,6 +780,9 @@ export const financeDashboardTrendPointSchema =
 
 export const financeDashboardTrendPointListSchema =
     FinanceDashboardTrendPointListSchema;
+
+export const policyReferenceResponseSchema =
+    PolicyReferenceOutboundResponseSchema;
 
 export const allTransactionSchema = AllTransactionSchema;
 
@@ -900,6 +923,14 @@ export type ReadAllTransactionsQuery = z.infer<
     typeof ReadAllTransactionsQuerySchema
 >;
 
+export type ReadPolicyReferenceRequest = z.infer<
+    typeof ReadPolicyReferenceInboundRequestSchema
+>;
+
+export type ReadPolicyReferenceQuery = z.infer<
+    typeof ReadPolicyReferenceQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
@@ -912,6 +943,10 @@ export type FinanceDashboardTrendSpendBucket = z.infer<
 
 export type FinanceDashboardTrendPoint = z.infer<
     typeof FinanceDashboardTrendPointSchema
+>;
+
+export type PolicyReferenceResponse = z.infer<
+    typeof PolicyReferenceOutboundResponseSchema
 >;
 
 export type AllTransaction = z.infer<typeof AllTransactionSchema>;

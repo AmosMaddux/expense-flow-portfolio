@@ -25,6 +25,7 @@ import {
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
     MySubmissionPageSchema,
+    PolicyReferenceOutboundResponseSchema,
     ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReadFinanceDashboardTrendQuerySchema,
@@ -117,6 +118,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const mileageConfigResponse = registry.register(
         "MileageConfigResponse",
         MileageConfigOutboundResponseSchema,
+    );
+    const policyReferenceResponse = registry.register(
+        "PolicyReferenceResponse",
+        PolicyReferenceOutboundResponseSchema,
     );
     const receiptUploadMetadataRequest = registry.register(
         "ReceiptUploadMetadataRequest",
@@ -611,6 +616,33 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             403: problemJsonResponse(
                 "Finance Dashboard access is limited to Finance Admins.",
             ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/policy-reference",
+        summary: "Get Policy Reference",
+        description:
+            "Loads the authenticated tenant's read-only expense policy reference text for internal review workspaces.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Tenant expense policy found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: policyReferenceResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Policy Reference access is limited to internal roles.",
+            ),
+            404: problemJsonResponse("Expense policy not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },

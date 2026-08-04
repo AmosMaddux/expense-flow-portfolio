@@ -28,9 +28,11 @@ import {
     receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
+    tenantExpensePolicy,
     tenantRateLimitWindow,
     type RoleName,
 } from "../../db/schema/index.js";
+import { PolicyReferenceOutboundResponseSchema } from "../dto/expenseReportDto.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
@@ -270,6 +272,127 @@ void describe("Expense Report routes", () => {
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
         process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
         app = (await import("../../app.js")).app;
+    });
+
+    void test("returns the authenticated tenant's Policy Reference text to Department Managers", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000931";
+        const otherTenantId = "40000000-0000-4000-8000-000000000932";
+        const managerId = "50000000-0000-4000-8000-000000000931";
+        const policyText =
+            "  Synthetic tenant policy: receipts are required for reimbursable lodging.\n\n    Preserve approved indentation.\n";
+        await db.insert(tenantExpensePolicy).values([
+            {
+                tenantId,
+                policyText,
+                updatedAt: new Date("2026-07-24T12:00:00.000Z"),
+            },
+            {
+                tenantId: otherTenantId,
+                policyText:
+                    "Synthetic other tenant policy that must not be returned.",
+                updatedAt: new Date("2026-07-25T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = PolicyReferenceOutboundResponseSchema.parse(
+            await response.json(),
+        );
+
+        expect(response.status).toBe(200);
+        expect(body).toEqual({
+            policyText,
+            updatedAt: "2026-07-24T12:00:00.000Z",
+        });
+        expect(body.policyText).not.toContain("other tenant");
+    });
+
+    void test("returns Policy Reference text to Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000933";
+        const financeAdminId = "50000000-0000-4000-8000-000000000933";
+        await db.insert(tenantExpensePolicy).values({
+            tenantId,
+            policyText:
+                "Synthetic finance policy: business meals require a business purpose.",
+            updatedAt: new Date("2026-07-24T13:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = PolicyReferenceOutboundResponseSchema.parse(
+            await response.json(),
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.policyText).toContain("business meals");
+    });
+
+    void test("rejects Policy Reference reads for Employee and Admin roles", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000934";
+        const userId = "50000000-0000-4000-8000-000000000934";
+
+        for (const roleName of ["Employee", "Admin"] satisfies RoleName[]) {
+            const response = await requestApp("/v1/policy-reference", {
+                headers: {
+                    authorization: authorizationHeader(tenantId, userId, [
+                        roleName,
+                    ]),
+                },
+            });
+            const body = (await response.json()) as {
+                title?: string;
+                status?: number;
+            };
+
+            expect(response.status).toBe(403);
+            expect(body).toMatchObject({
+                title: "Forbidden",
+                status: 403,
+            });
+        }
+    });
+
+    void test("returns not found when the authenticated tenant has no Policy Reference text", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000935";
+        const managerId = "50000000-0000-4000-8000-000000000935";
+        await db.insert(tenantExpensePolicy).values({
+            tenantId: "40000000-0000-4000-8000-000000000936",
+            policyText:
+                "Synthetic policy for a different tenant that must stay isolated.",
+            updatedAt: new Date("2026-07-24T14:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Not Found",
+            status: 404,
+        });
     });
 
     void test("lists only the employee's reports with stable bounded pages", async () => {

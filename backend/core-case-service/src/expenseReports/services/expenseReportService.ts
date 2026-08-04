@@ -1102,7 +1102,13 @@ export async function settleExpenseReportWorkflow(
                 },
             );
         }
-        throw error;
+        if (error instanceof ConflictError) {
+            throw error;
+        }
+        throw new ConflictError(
+            "Expense Report settlement failed after payment issuance; compensation completed.",
+            { cause: error },
+        );
     }
 
     const reconciledReport = await findExpenseReportById(
