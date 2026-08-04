@@ -30,7 +30,7 @@ type E2eDatabase = NodePgDatabase<typeof schema>;
 type E2eTransaction = Parameters<Parameters<E2eDatabase["transaction"]>[0]>[0];
 
 const e2eCommandSchema = z.enum(["reset", "code", "verify"]);
-const e2eAccountNameSchema = z.enum(["employee", "manager"]);
+const e2eAccountNameSchema = z.enum(["employee", "manager", "finance"]);
 const e2eTenantId = "81000000-0000-4000-8000-000000000001";
 const e2eDatabaseName = "expenseflow_core_case";
 const e2eDatabaseMarkerName = "pg_database description";
@@ -46,6 +46,11 @@ const e2eAccounts = {
         userId: "81000000-0000-4000-8000-000000000003",
         email: "manager.e2e@example.test",
         role: "Department Manager",
+    },
+    finance: {
+        userId: "81000000-0000-4000-8000-000000000004",
+        email: "finance.e2e@example.test",
+        role: "Finance Admin",
     },
 } as const;
 const e2eGlMappings = [
@@ -119,7 +124,8 @@ async function resetE2eTestData(): Promise<void> {
                 `tenant: ${e2eTenantId}`,
                 `employee: ${e2eAccounts.employee.email}`,
                 `manager: ${e2eAccounts.manager.email}`,
-                "roles: Employee, Department Manager",
+                `finance: ${e2eAccounts.finance.email}`,
+                "roles: Employee, Department Manager, Finance Admin",
                 "GL mappings: Travel, Meals, Lodging",
                 "",
             ].join("\n"),
@@ -171,12 +177,24 @@ async function verifyE2eTestData(): Promise<void> {
                 .from(expenseReport)
                 .where(eq(expenseReport.tenantId, e2eTenantId)),
         ]);
+        const seededUsersByEmail = new Map(
+            users.map((seededUser) => [seededUser.email, seededUser]),
+        );
+        const seededRolesByUserId = new Map(
+            roles.map((seededRole) => [seededRole.userId, seededRole.name]),
+        );
+        const financeAccount = seededUsersByEmail.get(
+            e2eAccounts.finance.email,
+        );
 
         if (
-            users.length !== 2 ||
-            roles.length !== 2 ||
+            users.length !== 3 ||
+            roles.length !== 3 ||
             mappings.length !== e2eGlMappings.length ||
-            reports.length !== 0
+            reports.length !== 0 ||
+            financeAccount === undefined ||
+            seededRolesByUserId.get(financeAccount.id) !==
+                e2eAccounts.finance.role
         ) {
             throw new Error(
                 `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}.`,
@@ -184,7 +202,7 @@ async function verifyE2eTestData(): Promise<void> {
         }
 
         process.stdout.write(
-            "Synthetic E2E data verification passed: 2 users, 2 roles, 3 GL mappings, 0 reports.\n",
+            "Synthetic E2E data verification passed: 3 users, 3 roles, 3 GL mappings, 0 reports.\n",
         );
     } finally {
         await pool.end();

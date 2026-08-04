@@ -836,6 +836,83 @@
                     ]
                 }
             },
+            "CaseCommentListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "tenantId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "authorId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "body": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "tenantId",
+                        "expenseReportId",
+                        "authorId",
+                        "body",
+                        "createdAt"
+                    ]
+                }
+            },
+            "CaseCommentResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "authorId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "tenantId",
+                    "expenseReportId",
+                    "authorId",
+                    "body",
+                    "createdAt"
+                ]
+            },
             "CaseQueueStageRollupList": {
                 "type": "array",
                 "items": {
@@ -892,6 +969,18 @@
                     }
                 },
                 "required": ["clearedFlagCount"]
+            },
+            "CreateCaseCommentRequest": {
+                "type": "object",
+                "properties": {
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 5000
+                    }
+                },
+                "required": ["body"],
+                "additionalProperties": false
             },
             "CreateExpenseReportRequest": {
                 "type": "object",
@@ -5149,6 +5238,206 @@
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/comments": {
+            "get": {
+                "summary": "List Expense Report comments",
+                "description": "Loads tenant- and case-scoped comment thread entries for an Expense Report case.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Comments found for the Expense Report.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseCommentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create Expense Report comment",
+                "description": "Appends a tenant- and case-scoped dispute or comment entry to an Expense Report case.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateCaseCommentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Comment created for the Expense Report.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed comment request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
                     },
                     "500": {
                         "description": "Unexpected server error.",

@@ -36,6 +36,7 @@ import {
 const readCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 const readMySubmissionDetailMock = vi.hoisted(() => vi.fn());
 const readMySubmissionsMock = vi.hoisted(() => vi.fn());
+const transitionExpenseReportWorkflowMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/caseQueueService.js", () => ({
     readCachedCaseQueueStageRollups: readCachedCaseQueueStageRollupsMock,
@@ -46,6 +47,13 @@ vi.mock("../services/mySubmissionsService.js", () => ({
     readMySubmissions: readMySubmissionsMock,
 }));
 
+vi.mock("../services/expenseReportService.js", async (importOriginal) => ({
+    ...(await importOriginal<
+        typeof import("../services/expenseReportService.js")
+    >()),
+    transitionExpenseReportWorkflow: transitionExpenseReportWorkflowMock,
+}));
+
 import {
     getCaseQueueStageRollups,
     getExpenseReportById,
@@ -53,6 +61,7 @@ import {
     getMySubmissions,
     postExpenseReport,
     getExpenseReportAuditEntries,
+    postExpenseReportTransition,
 } from "./expenseReportController.js";
 
 void describe("Expense Report controller authorization", () => {
@@ -60,6 +69,7 @@ void describe("Expense Report controller authorization", () => {
         readCachedCaseQueueStageRollupsMock.mockReset();
         readMySubmissionDetailMock.mockReset();
         readMySubmissionsMock.mockReset();
+        transitionExpenseReportWorkflowMock.mockReset();
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
         idempotencyStoreMock.getResult.mockClear();
@@ -339,5 +349,79 @@ void describe("Expense Report controller authorization", () => {
         expect(json).toHaveBeenCalledWith(cachedBody);
         expect(logExpenseReportAuditSuccessMock).not.toHaveBeenCalled();
         expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
+    });
+
+    void test("logs successful workflow transitions without raw request data", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000704";
+        const actorId = "50000000-0000-4000-8000-000000000704";
+        const expenseReportId = "60000000-0000-4000-8000-000000000704";
+        const correlationId = "70000000-0000-4000-8000-000000000704";
+        transitionExpenseReportWorkflowMock.mockResolvedValue({
+            id: expenseReportId,
+            tenantId,
+            owner: actorId,
+            dueDate: "2026-08-01",
+            priority: "Normal",
+            currentStage: "Manager Approval",
+            onHold: false,
+            holdReason: null,
+            createdAt: new Date("2026-08-01T12:00:00.000Z"),
+            updatedAt: new Date("2026-08-01T12:00:00.000Z"),
+        });
+        const set = vi.fn();
+        const json = vi.fn();
+        const status = vi.fn(() => ({ json }));
+        const response = { set, status } as unknown as Response;
+        const request = {
+            auth: {
+                tenantId,
+                userId: actorId,
+                roles: ["Department Manager"],
+            },
+            body: {
+                toStage: "Manager Approval",
+                reason: "manager review started",
+            },
+            get: vi.fn((headerName: string) =>
+                headerName.toLowerCase() === "x-correlation-id"
+                    ? correlationId
+                    : undefined,
+            ),
+            originalUrl:
+                "/v1/expense-reports/60000000-0000-4000-8000-000000000704/transitions?paymentReference=synthetic-payment-reference",
+            params: { id: expenseReportId },
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await postExpenseReportTransition(request, response, next);
+
+        expect(transitionExpenseReportWorkflowMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actorId,
+                correlationId,
+                id: expenseReportId,
+                reason: "manager review started",
+                tenantId,
+                toStage: "Manager Approval",
+            }),
+        );
+        expect(logExpenseReportAuditSuccessMock).toHaveBeenCalledOnce();
+        const payload = logExpenseReportAuditSuccessMock.mock.calls[0]?.[0] as
+            Record<string, unknown> | undefined;
+        expect(payload).toMatchObject({
+            action: "workflow_transition_applied",
+            actorId,
+            currentStage: "Manager Approval",
+            expenseReportId,
+            route: "POST /v1/expense-reports/:id/transitions",
+            tenantId,
+            toStage: "Manager Approval",
+        });
+        expect(JSON.stringify(payload)).not.toContain(
+            "synthetic-payment-reference",
+        );
+        expect(set).toHaveBeenCalledWith("X-Correlation-Id", correlationId);
+        expect(status).toHaveBeenCalledWith(200);
+        expect(next).not.toHaveBeenCalled();
     });
 });

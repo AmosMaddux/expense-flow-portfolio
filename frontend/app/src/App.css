@@ -1770,6 +1770,118 @@ button:disabled {
     box-shadow: inset 4px 0 0 #0b5fff;
 }
 
+.case-detail-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-bottom: 1px solid #d9e2ec;
+}
+
+.case-detail-tabs__tab {
+    min-height: 38px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: #52606d;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    padding: 0 12px;
+}
+
+.case-detail-tabs__tab[aria-selected="true"] {
+    border-bottom-color: #303e51;
+    color: #102a43;
+}
+
+.case-detail-tabs__tab:focus-visible {
+    outline: 3px solid #9fb3c8;
+    outline-offset: 2px;
+}
+
+.case-detail-audit,
+.case-detail-comments__thread {
+    display: grid;
+    max-height: 360px;
+    gap: 12px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.case-detail-audit__entry,
+.case-detail-comments__thread li {
+    display: grid;
+    gap: 6px;
+    border-bottom: 1px solid #d9e2ec;
+    padding: 0 0 12px;
+}
+
+.case-detail-audit__entry:last-child,
+.case-detail-comments__thread li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.case-detail-audit__entry time,
+.case-detail-comments__thread time {
+    color: #52606d;
+    font-size: 0.78rem;
+}
+
+.case-detail-audit__entry strong,
+.case-detail-comments__thread strong {
+    color: #102a43;
+}
+
+.case-detail-audit__entry span,
+.case-detail-audit__entry small,
+.case-detail-audit__entry p,
+.case-detail-comments__thread p {
+    margin: 0;
+    color: #52606d;
+}
+
+.case-detail-comments {
+    display: grid;
+    gap: 18px;
+}
+
+.case-detail-comments__thread li > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.case-detail-comments__form {
+    display: grid;
+    gap: 12px;
+    border-top: 1px solid #d9e2ec;
+    padding-top: 16px;
+}
+
+.case-detail-comments__form label {
+    display: grid;
+    gap: 6px;
+    color: #52606d;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.case-detail-comments__form textarea {
+    width: 100%;
+    min-height: 112px;
+    resize: vertical;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    color: #243b53;
+    font: inherit;
+    padding: 10px 12px;
+}
+
 .case-queue-dialog__actions {
     display: flex;
     max-width: 260px;

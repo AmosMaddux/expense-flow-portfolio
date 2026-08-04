@@ -11,6 +11,7 @@ import {
     getDraftExpenseContent,
     getExpenseReportAuditEntries,
     getExpenseReportById,
+    getExpenseReportComments,
     getExpenseReportReviewDetail,
     getFinanceDashboardTrend,
     getMileageConfig,
@@ -25,6 +26,7 @@ import {
     postExpenseReportSubmission,
     postExpenseReportTransition,
     postExpenseReport,
+    postExpenseReportComment,
     postMileageEntry,
     patchDraftLineItem,
     patchDraftMileageEntry,
@@ -113,6 +115,14 @@ expenseReportRouter.patch(
 expenseReportRouter.get(
     "/expense-reports/:id/audit-entries",
     getExpenseReportAuditEntries,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/comments",
+    getExpenseReportComments,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/comments",
+    postExpenseReportComment,
 );
 expenseReportRouter.get(
     "/expense-reports/:id/review-detail",
