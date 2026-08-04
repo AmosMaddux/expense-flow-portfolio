@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { Express } from "express";
@@ -20,16 +21,20 @@ import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js"
 import {
     attachmentMetadata,
     auditEntry,
+    caseComment,
     expenseReport,
+    expenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
     receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
+    tenantExpensePolicy,
     tenantRateLimitWindow,
     type RoleName,
 } from "../../db/schema/index.js";
+import { PolicyReferenceOutboundResponseSchema } from "../dto/expenseReportDto.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
@@ -269,6 +274,127 @@ void describe("Expense Report routes", () => {
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
         process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
         app = (await import("../../app.js")).app;
+    });
+
+    void test("returns the authenticated tenant's Policy Reference text to Department Managers", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000931";
+        const otherTenantId = "40000000-0000-4000-8000-000000000932";
+        const managerId = "50000000-0000-4000-8000-000000000931";
+        const policyText =
+            "  Synthetic tenant policy: receipts are required for reimbursable lodging.\n\n    Preserve approved indentation.\n";
+        await db.insert(tenantExpensePolicy).values([
+            {
+                tenantId,
+                policyText,
+                updatedAt: new Date("2026-07-24T12:00:00.000Z"),
+            },
+            {
+                tenantId: otherTenantId,
+                policyText:
+                    "Synthetic other tenant policy that must not be returned.",
+                updatedAt: new Date("2026-07-25T12:00:00.000Z"),
+            },
+        ]);
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = PolicyReferenceOutboundResponseSchema.parse(
+            await response.json(),
+        );
+
+        expect(response.status).toBe(200);
+        expect(body).toEqual({
+            policyText,
+            updatedAt: "2026-07-24T12:00:00.000Z",
+        });
+        expect(body.policyText).not.toContain("other tenant");
+    });
+
+    void test("returns Policy Reference text to Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000933";
+        const financeAdminId = "50000000-0000-4000-8000-000000000933";
+        await db.insert(tenantExpensePolicy).values({
+            tenantId,
+            policyText:
+                "Synthetic finance policy: business meals require a business purpose.",
+            updatedAt: new Date("2026-07-24T13:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = PolicyReferenceOutboundResponseSchema.parse(
+            await response.json(),
+        );
+
+        expect(response.status).toBe(200);
+        expect(body.policyText).toContain("business meals");
+    });
+
+    void test("rejects Policy Reference reads for Employee and Admin roles", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000934";
+        const userId = "50000000-0000-4000-8000-000000000934";
+
+        for (const roleName of ["Employee", "Admin"] satisfies RoleName[]) {
+            const response = await requestApp("/v1/policy-reference", {
+                headers: {
+                    authorization: authorizationHeader(tenantId, userId, [
+                        roleName,
+                    ]),
+                },
+            });
+            const body = (await response.json()) as {
+                title?: string;
+                status?: number;
+            };
+
+            expect(response.status).toBe(403);
+            expect(body).toMatchObject({
+                title: "Forbidden",
+                status: 403,
+            });
+        }
+    });
+
+    void test("returns not found when the authenticated tenant has no Policy Reference text", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000935";
+        const managerId = "50000000-0000-4000-8000-000000000935";
+        await db.insert(tenantExpensePolicy).values({
+            tenantId: "40000000-0000-4000-8000-000000000936",
+            policyText:
+                "Synthetic policy for a different tenant that must stay isolated.",
+            updatedAt: new Date("2026-07-24T14:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/policy-reference", {
+            headers: {
+                authorization: authorizationHeader(tenantId, managerId, [
+                    "Department Manager",
+                ]),
+            },
+        });
+        const body = (await response.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(response.status).toBe(404);
+        expect(response.headers.get("content-type")).toContain(
+            "application/problem+json",
+        );
+        expect(body).toMatchObject({
+            title: "Not Found",
+            status: 404,
+        });
     });
 
     void test("lists only the employee's reports with stable bounded pages", async () => {
@@ -2649,6 +2775,97 @@ void describe("Expense Report routes", () => {
         expect(outboxRows).toHaveLength(0);
     });
 
+    void test("rejects settlement-owned edges on the generic transition route", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000235";
+        const owner = "50000000-0000-4000-8000-000000000235";
+        const financeAdminId = "52000000-0000-4000-8000-000000000235";
+        const reportId = "60000000-0000-4000-8000-000000000235";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-15",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Paid",
+                    reason: "synthetic generic payment attempt",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, tenantId),
+                    eq(expenseReportSettlement.expenseReportId, reportId),
+                ),
+            );
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, reportId),
+                ),
+            );
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(
+                and(
+                    eq(stageTransition.tenantId, tenantId),
+                    eq(stageTransition.expenseReportId, reportId),
+                ),
+            );
+
+        expect(response.status).toBe(409);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(auditRows).toContainEqual(
+            expect.objectContaining({
+                action: "transition_denied",
+                stageBeforeAction: "AP Review",
+                stageAfterProposedAction: "Paid",
+                denialReason:
+                    "Settlement-owned transition must use the settlement route.",
+            }),
+        );
+        expect(transitionRows).toContainEqual(
+            expect.objectContaining({
+                fromStage: "AP Review",
+                toStage: "AP Review",
+                reason: "transition_denied: Settlement-owned transition must use the settlement route.",
+            }),
+        );
+        expect(stageTransitionPublishMock).not.toHaveBeenCalled();
+    });
+
     void test("allows Department Manager and Finance Admin workflow transitions", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000151";
         const owner = "50000000-0000-4000-8000-000000000151";
@@ -2733,6 +2950,260 @@ void describe("Expense Report routes", () => {
                 correlationId: financeCorrelationId,
             }),
         );
+    });
+
+    void test("settles an AP Review report idempotently and replays the original correlation", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000210";
+        const owner = "50000000-0000-4000-8000-000000000210";
+        const financeAdminId = "51000000-0000-4000-8000-000000000210";
+        const reportId = "60000000-0000-4000-8000-000000000210";
+        const correlationId = "70000000-0000-4000-8000-000000000210";
+        const replayCorrelationId = "70000000-0000-4000-8000-000000000211";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-settle-210",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify({
+                    reason: "synthetic settlement complete",
+                }),
+            },
+        );
+        const body = (await response.json()) as { currentStage?: string };
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const replayResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-settle-210",
+                    "x-correlation-id": replayCorrelationId,
+                },
+                body: JSON.stringify({
+                    reason: "synthetic settlement complete",
+                }),
+            },
+        );
+        const replayBody = (await replayResponse.json()) as {
+            currentStage?: string;
+        };
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(replayResponse.status).toBe(200);
+        expect(response.headers.get("x-correlation-id")).toBe(correlationId);
+        expect(replayResponse.headers.get("x-correlation-id")).toBe(
+            correlationId,
+        );
+        expect(body.currentStage).toBe("Reconciled");
+        expect(replayBody.currentStage).toBe("Reconciled");
+        expect(settlementRows).toHaveLength(1);
+        expect(settlementRows[0]).toMatchObject({
+            tenantId,
+            expenseReportId: reportId,
+            idempotencyKey: "expense-settle-210",
+            correlationId,
+            status: "reconciled",
+        });
+        expect(settlementRows[0]?.paymentId).toMatch(/^synthetic-payment-/);
+        expect(outboxRows).toHaveLength(2);
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: reportId,
+                idempotencyKey: "expense-settle-210",
+                fromStage: "AP Review",
+                toStage: "Paid",
+            }),
+        );
+        expect(outboxRows).toContainEqual(
+            expect.objectContaining({
+                tenantId,
+                expenseReportId: reportId,
+                idempotencyKey: "expense-settle-210",
+                fromStage: "Paid",
+                toStage: "Reconciled",
+            }),
+        );
+    });
+
+    void test("compensates with a first-class transition when settlement reconciliation fails", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000212";
+        const owner = "50000000-0000-4000-8000-000000000212";
+        const financeAdminId = "51000000-0000-4000-8000-000000000212";
+        const reportId = "60000000-0000-4000-8000-000000000212";
+        const correlationId = "70000000-0000-4000-8000-000000000212";
+        const triggerName = "fail_paid_reconciled_212";
+        const functionName = "fail_paid_reconciled_212_fn";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+        await db.execute(
+            sql.raw(`
+CREATE OR REPLACE FUNCTION ${functionName}()
+RETURNS trigger AS $$
+BEGIN
+    IF NEW."from_stage" = 'Paid' AND NEW."to_stage" = 'Reconciled' THEN
+        RAISE EXCEPTION 'synthetic reconciliation transition failure';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER ${triggerName}
+BEFORE INSERT ON "stage_transition"
+FOR EACH ROW EXECUTE FUNCTION ${functionName}();
+`),
+        );
+
+        try {
+            const response = await requestApp(
+                `/v1/expense-reports/${reportId}/settlement`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            tenantId,
+                            financeAdminId,
+                            ["Finance Admin"],
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": "expense-settle-212",
+                        "x-correlation-id": correlationId,
+                    },
+                    body: JSON.stringify({}),
+                },
+            );
+            const [persistedReport] = await db
+                .select()
+                .from(expenseReport)
+                .where(eq(expenseReport.id, reportId));
+            const auditRows = await db
+                .select()
+                .from(auditEntry)
+                .where(eq(auditEntry.expenseReportId, reportId));
+            const transitionRows = await db
+                .select()
+                .from(stageTransition)
+                .where(eq(stageTransition.expenseReportId, reportId));
+            const outboxRows = await db
+                .select()
+                .from(stageTransitionOutbox)
+                .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+            const settlementRows = await db
+                .select()
+                .from(expenseReportSettlement)
+                .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+            expect(response.status).toBe(409);
+            expect(persistedReport?.currentStage).toBe("AP Review");
+            expect(settlementRows).toContainEqual(
+                expect.objectContaining({
+                    tenantId,
+                    expenseReportId: reportId,
+                    idempotencyKey: "expense-settle-212",
+                    status: "compensated",
+                }),
+            );
+            expect(auditRows).toContainEqual(
+                expect.objectContaining({
+                    action: "payment_stub_issued",
+                    stageBeforeAction: "AP Review",
+                    stageAfterProposedAction: "AP Review",
+                }),
+            );
+            expect(auditRows).toContainEqual(
+                expect.objectContaining({
+                    action: "settlement_saga_compensated",
+                    stageBeforeAction: "Paid",
+                    stageAfterProposedAction: "AP Review",
+                }),
+            );
+            expect(transitionRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "AP Review",
+                    toStage: "Paid",
+                    reason: "payment_stub_issued",
+                }),
+            );
+            expect(transitionRows).not.toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "Reconciled",
+                }),
+            );
+            expect(transitionRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "AP Review",
+                    reason: "settlement_saga_compensated",
+                }),
+            );
+            expect(outboxRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "AP Review",
+                    toStage: "Paid",
+                    correlationId,
+                }),
+            );
+            expect(outboxRows).toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "AP Review",
+                    correlationId,
+                }),
+            );
+            expect(outboxRows).not.toContainEqual(
+                expect.objectContaining({
+                    fromStage: "Paid",
+                    toStage: "Reconciled",
+                }),
+            );
+        } finally {
+            await db.execute(
+                sql.raw(
+                    `DROP TRIGGER IF EXISTS ${triggerName} ON "stage_transition"; DROP FUNCTION IF EXISTS ${functionName}();`,
+                ),
+            );
+        }
     });
 
     void test.each([
@@ -3392,6 +3863,11 @@ void describe("Expense Report routes", () => {
             employee?: string;
             id?: string;
             mileageEntries?: unknown[];
+            policyChecks?: Array<{
+                code?: string;
+                message?: string;
+                state?: string;
+            }>;
             reportTotalMileage?: number;
             reviewAction?: string;
         }>;
@@ -3401,6 +3877,14 @@ void describe("Expense Report routes", () => {
             expect.objectContaining({
                 employee: owner,
                 id: lineItemId,
+                policyChecks: [
+                    {
+                        code: "line_item_over_threshold",
+                        message:
+                            "Line item amount is above the MVP manual review threshold.",
+                        state: "uncleared",
+                    },
+                ],
                 reportTotalMileage: 18.5,
                 mileageEntries: [
                     expect.objectContaining({
@@ -5366,6 +5850,97 @@ void describe("Expense Report routes", () => {
         expect(auditBody[0]).not.toHaveProperty("paymentReference");
     });
 
+    void test("shows a submitted case change in the audit table and Audit Trail API", async () => {
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-14",
+            currentStage: "Submitted",
+        });
+        await db.insert(lineItem).values({
+            id: randomUUID(),
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Audit Trail Rail",
+            expenseDate: "2026-08-01",
+            category: "Travel",
+            amount: "42.25",
+            currency: "USD",
+        });
+
+        const transitionResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/transitions`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    toStage: "Manager Approval",
+                    reason: "Synthetic audit trail transition.",
+                }),
+            },
+        );
+
+        const auditRows = await db
+            .select()
+            .from(auditEntry)
+            .where(
+                and(
+                    eq(auditEntry.tenantId, tenantId),
+                    eq(auditEntry.expenseReportId, reportId),
+                ),
+            );
+        const auditResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/audit-entries`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const auditBody = (await auditResponse.json()) as Array<{
+            action?: string;
+            stageBeforeAction?: string;
+            stageAfterProposedAction?: string;
+        }>;
+
+        expect(transitionResponse.status).toBe(200);
+        expect(auditRows).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Manager Approval",
+                }),
+            ]),
+        );
+        expect(auditResponse.status).toBe(200);
+        expect(auditBody).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    action: "transition_approved",
+                    stageBeforeAction: "Submitted",
+                    stageAfterProposedAction: "Manager Approval",
+                }),
+            ]),
+        );
+    });
+
     void test("lets a Department Manager read audit entries for an Expense Report", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000123";
         const owner = "50000000-0000-4000-8000-000000000019";
@@ -5474,6 +6049,246 @@ void describe("Expense Report routes", () => {
         expect(auditResponse.status).toBe(404);
         expect(body).toMatchObject({ title: "Not Found", status: 404 });
     });
+
+    void test("lets a Finance Admin create and read comments for an Expense Report", async () => {
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-11",
+            currentStage: "Submitted",
+        });
+
+        const commentResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "  Synthetic finance dispute comment.  ",
+                }),
+            },
+        );
+        const commentBody = (await commentResponse.json()) as {
+            tenantId?: string;
+            expenseReportId?: string;
+            authorId?: string;
+            body?: string;
+        };
+
+        const listResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const comments = (await listResponse.json()) as Array<{
+            body?: string;
+        }>;
+
+        expect(commentResponse.status).toBe(201);
+        expect(commentBody).toMatchObject({
+            tenantId,
+            expenseReportId: reportId,
+            authorId: financeAdminId,
+            body: "Synthetic finance dispute comment.",
+        });
+        expect(listResponse.status).toBe(200);
+        expect(comments).toEqual([
+            expect.objectContaining({
+                body: "Synthetic finance dispute comment.",
+            }),
+        ]);
+    });
+
+    void test("does not read or create comments for another tenant's Expense Report", async () => {
+        const tenantId = randomUUID();
+        const otherTenantId = randomUUID();
+        const owner = randomUUID();
+        const financeAdminId = randomUUID();
+        const otherTenantFinanceAdminId = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-11",
+            currentStage: "Submitted",
+        });
+        await db.insert(caseComment).values({
+            id: randomUUID(),
+            tenantId,
+            expenseReportId: reportId,
+            authorId: financeAdminId,
+            body: "Synthetic tenant-scoped finance comment.",
+        });
+
+        const crossTenantReadResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        otherTenantFinanceAdminId,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const crossTenantCreateResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        otherTenantId,
+                        otherTenantFinanceAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic cross-tenant comment attempt.",
+                }),
+            },
+        );
+        const persistedComments = await db
+            .select({ id: caseComment.id, tenantId: caseComment.tenantId })
+            .from(caseComment)
+            .where(eq(caseComment.expenseReportId, reportId));
+
+        expect(crossTenantReadResponse.status).toBe(404);
+        expect(crossTenantCreateResponse.status).toBe(404);
+        expect(persistedComments).toEqual([
+            expect.objectContaining({ tenantId }),
+        ]);
+    });
+
+    void test("lets Employees comment only on their own Expense Reports", async () => {
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const otherEmployee = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Submitted",
+        });
+
+        const ownCommentResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic employee dispute comment.",
+                }),
+            },
+        );
+        const otherEmployeeResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherEmployee),
+                },
+            },
+        );
+
+        expect(ownCommentResponse.status).toBe(201);
+        expect(otherEmployeeResponse.status).toBe(404);
+    });
+
+    void test("rejects Employee comment creation on another owner's Expense Report", async () => {
+        const tenantId = randomUUID();
+        const owner = randomUUID();
+        const otherEmployee = randomUUID();
+        const reportId = randomUUID();
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Submitted",
+        });
+
+        const otherEmployeeCreateResponse = await requestApp(
+            `/v1/expense-reports/${reportId}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, otherEmployee),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    body: "Synthetic cross-owner comment attempt.",
+                }),
+            },
+        );
+
+        expect(otherEmployeeCreateResponse.status).toBe(404);
+    });
+
+    void test("rejects blank comment requests before writing a comment", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000126";
+        const owner = "50000000-0000-4000-8000-000000000029";
+        const financeAdminId = "50000000-0000-4000-8000-000000000030";
+        const createResponse = await requestApp("/v1/expense-reports", {
+            method: "POST",
+            headers: {
+                authorization: authorizationHeader(tenantId, owner),
+                "content-type": "application/json",
+                "idempotency-key": "expense-submit-126",
+            },
+            body: JSON.stringify({ owner, dueDate: "2026-08-13" }),
+        });
+        const created = (await createResponse.json()) as { id: string };
+
+        const commentResponse = await requestApp(
+            `/v1/expense-reports/${created.id}/comments`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({ body: "   " }),
+            },
+        );
+        const body = (await commentResponse.json()) as {
+            title?: string;
+            status?: number;
+        };
+
+        expect(commentResponse.status).toBe(400);
+        expect(body).toMatchObject({ title: "Bad Request", status: 400 });
+    });
+
     void test("reads an Expense Report by id", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000101";
         const owner = "50000000-0000-4000-8000-000000000002";

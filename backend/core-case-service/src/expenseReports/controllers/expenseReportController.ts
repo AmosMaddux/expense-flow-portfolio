@@ -11,6 +11,7 @@ import {
 import {
     AddDraftExpenseContentInboundRequestSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
+    CreateCaseCommentInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     DraftExpenseSourceParamsSchema,
@@ -25,6 +26,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
     SubmitExpenseReportOperationResultSchema,
@@ -50,6 +52,7 @@ import {
 } from "../../logging/coreCaseLogger.js";
 import {
     addDraftExpenseContent,
+    createExpenseReportComment,
     clearExpenseReportFlags,
     addMileageEntry,
     createDraftExpenseReport,
@@ -60,11 +63,13 @@ import {
     readDraftExpenseContent,
     readExpenseReport,
     readExpenseReportAuditEntries,
+    readExpenseReportComments,
     readExpenseReportReviewDetail,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
     submitExpenseReport,
+    settleExpenseReportWorkflow,
     transitionExpenseReportWorkflow,
     updateExpenseReportSourceDeductibility,
     updateDraftLineItem,
@@ -75,6 +80,8 @@ import { insertDeniedSubmissionAuditEntry } from "../repository/expenseReportRep
 
 const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
+const transitionExpenseReportRouteLogName =
+    "POST /v1/expense-reports/:id/transitions";
 
 /**
  * Handles reads for the signed-in employee's own submission list.
@@ -611,11 +618,14 @@ export async function postExpenseReportTransition(
     res: Response,
     next: NextFunction,
 ): Promise<void> {
+    let parsedExpenseReportId: string | undefined;
+
     try {
         const auth = requireAuthContext(req);
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
+        parsedExpenseReportId = parsedParams.id;
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
         const correlationId = parseOrCreateCorrelationId(req);
@@ -630,7 +640,80 @@ export async function postExpenseReportTransition(
             correlationId,
         });
 
+        logExpenseReportAuditSuccess({
+            action: "workflow_transition_applied",
+            actorId: auth.userId,
+            expenseReportId: parsedParams.id,
+            currentStage: report.currentStage,
+            route: transitionExpenseReportRouteLogName,
+            tenantId: auth.tenantId,
+            toStage: parsedRequest.toStage,
+        });
         res.status(200).json(report);
+    } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "workflow_transition_applied",
+            actorId: req.auth?.userId,
+            error,
+            expenseReportId: parsedExpenseReportId,
+            route: transitionExpenseReportRouteLogName,
+            tenantId: req.auth?.tenantId,
+        });
+        next(error);
+    }
+}
+
+/**
+ * Handles the Issue Payment stub then Reconciled settlement saga.
+ */
+export async function postExpenseReportSettlement(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = SettleExpenseReportInboundRequestSchema.parse(
+            req.body ?? {},
+        );
+        const correlationId = parseOrCreateCorrelationId(req);
+        const idempotencyKey = parseIdempotencyKey(req);
+        const settleReport = async () =>
+            settleExpenseReportWorkflow({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+                roles: auth.roles,
+                reason: parsedRequest.reason,
+                correlationId,
+                idempotencyKey,
+            });
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            conflictMessage:
+                "An Expense Report settlement with this idempotency key is already in progress.",
+            idempotencyKey,
+            operation: async () => ({
+                correlationId,
+                report: await settleReport(),
+            }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            successStatusCode: 200,
+            tenantId: auth.tenantId,
+        });
+        const settlement = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
+
+        res.set("X-Correlation-Id", settlement.correlationId);
+        res.status(result.statusCode).json(settlement.report);
     } catch (error: unknown) {
         next(error);
     }
@@ -935,6 +1018,63 @@ export async function getExpenseReportAuditEntries(
             route: auditEntriesRouteLogName,
             tenantId: req.auth?.tenantId,
         });
+        next(error);
+    }
+}
+
+/**
+ * Handles comment thread reads for an Expense Report case.
+ */
+export async function getExpenseReportComments(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const comments = await readExpenseReportComments({
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
+
+        res.status(200).json(comments);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles comment creation for an Expense Report case.
+ */
+export async function postExpenseReportComment(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = CreateCaseCommentInboundRequestSchema.parse(
+            req.body,
+        );
+        const ownerScope = getAuthorizedOwnerScope(auth);
+        const comment = await createExpenseReportComment({
+            ...parsedParams,
+            ...parsedRequest,
+            tenantId: auth.tenantId,
+            authorId: auth.userId,
+            ...(ownerScope === undefined ? {} : { ownerId: ownerScope }),
+        });
+
+        res.status(201).json(comment);
+    } catch (error: unknown) {
         next(error);
     }
 }

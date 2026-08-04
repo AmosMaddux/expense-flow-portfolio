@@ -13,8 +13,11 @@ import {
     ApprovalQueueLineItemOutboundResponseSchema,
     AuditEntryListOutboundResponseSchema,
     AllTransactionPageSchema,
+    CaseCommentListOutboundResponseSchema,
+    CaseCommentOutboundResponseSchema,
     CaseQueueStageRollupListSchema,
     ClearExpenseReportFlagsInboundRequestSchema,
+    CreateCaseCommentInboundRequestSchema,
     CreateExpenseReportInboundRequestSchema,
     CreateMileageEntryInboundRequestSchema,
     DraftExpenseContentOutboundResponseSchema,
@@ -25,6 +28,7 @@ import {
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
     MySubmissionPageSchema,
+    PolicyReferenceOutboundResponseSchema,
     ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReadFinanceDashboardTrendQuerySchema,
@@ -34,6 +38,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
@@ -117,6 +122,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "MileageConfigResponse",
         MileageConfigOutboundResponseSchema,
     );
+    const policyReferenceResponse = registry.register(
+        "PolicyReferenceResponse",
+        PolicyReferenceOutboundResponseSchema,
+    );
     const receiptUploadMetadataRequest = registry.register(
         "ReceiptUploadMetadataRequest",
         ReceiptUploadMetadataInboundRequestSchema,
@@ -132,6 +141,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const transitionExpenseReportWorkflowRequest = registry.register(
         "TransitionExpenseReportWorkflowRequest",
         TransitionExpenseReportWorkflowInboundRequestSchema,
+    );
+    const settleExpenseReportRequest = registry.register(
+        "SettleExpenseReportRequest",
+        SettleExpenseReportInboundRequestSchema,
     );
     const reviewExpenseReportLineItemRequest = registry.register(
         "ReviewExpenseReportLineItemRequest",
@@ -196,6 +209,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const auditEntryListResponse = registry.register(
         "AuditEntryListResponse",
         AuditEntryListOutboundResponseSchema,
+    );
+    const caseCommentResponse = registry.register(
+        "CaseCommentResponse",
+        CaseCommentOutboundResponseSchema,
+    );
+    const caseCommentListResponse = registry.register(
+        "CaseCommentListResponse",
+        CaseCommentListOutboundResponseSchema,
+    );
+    const createCaseCommentRequest = registry.register(
+        "CreateCaseCommentRequest",
+        CreateCaseCommentInboundRequestSchema,
     );
     const readAllTransactionsRequest = registry.register(
         "ReadAllTransactionsRequest",
@@ -613,6 +638,33 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "get",
+        path: "/v1/policy-reference",
+        summary: "Get Policy Reference",
+        description:
+            "Loads the authenticated tenant's read-only expense policy reference text for internal review workspaces.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Tenant expense policy found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: policyReferenceResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Policy Reference access is limited to internal roles.",
+            ),
+            404: problemJsonResponse("Expense policy not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
         path: "/v1/transactions",
         summary: "Get All Transactions",
         description:
@@ -1018,6 +1070,66 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
 
     registry.registerPath({
         method: "post",
+        path: "/v1/expense-reports/{id}/settlement",
+        summary: "Settle an Expense Report",
+        description:
+            "Coordinates the Issue Payment stub, Paid transition, and Reconciled transition as a compensating settlement saga.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).openapi({
+                    description:
+                        "Required tenant-scoped key used to replay completed Expense Report settlements.",
+                }),
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
+            }),
+            body: {
+                required: false,
+                content: {
+                    "application/json": {
+                        schema: settleExpenseReportRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report settled and reconciled.",
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by settlement saga events.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed settlement request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Settlement can only start from AP Review and must complete its compensated saga.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
         path: "/v1/expense-reports/{id}/line-items/{sourceId}/review",
         summary: "Review an Expense Report line item",
         description:
@@ -1196,6 +1308,69 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse("Authenticated role is not permitted."),
             404: problemJsonResponse("Expense Report not found."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports/{id}/comments",
+        summary: "List Expense Report comments",
+        description:
+            "Loads tenant- and case-scoped comment thread entries for an Expense Report case.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+        },
+        responses: {
+            200: {
+                description: "Comments found for the Expense Report.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: caseCommentListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/comments",
+        summary: "Create Expense Report comment",
+        description:
+            "Appends a tenant- and case-scoped dispute or comment entry to an Expense Report case.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: createCaseCommentRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Comment created for the Expense Report.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: caseCommentResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed comment request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
     });

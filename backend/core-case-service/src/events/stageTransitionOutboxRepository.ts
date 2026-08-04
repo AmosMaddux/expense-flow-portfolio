@@ -33,11 +33,11 @@ export type StageTransitionOutboxStore = {
         event: ClaimedStageTransitionOutboxEvent,
         nextAttemptAt: Date,
         deadLetteredAt?: Date,
-    ): Promise<void>;
+    ): Promise<boolean>;
     markPublished(
         event: ClaimedStageTransitionOutboxEvent,
         publishedAt: Date,
-    ): Promise<void>;
+    ): Promise<boolean>;
 };
 
 /**
@@ -106,8 +106,8 @@ export async function claimStageTransitionOutboxEvents(
 export async function markStageTransitionOutboxEventPublished(
     event: ClaimedStageTransitionOutboxEvent,
     publishedAt: Date,
-): Promise<void> {
-    await db
+): Promise<boolean> {
+    const updatedRows = await db
         .update(stageTransitionOutbox)
         .set({
             lockId: null,
@@ -120,7 +120,10 @@ export async function markStageTransitionOutboxEventPublished(
                 eq(stageTransitionOutbox.lockId, event.lockId),
                 isNull(stageTransitionOutbox.publishedAt),
             ),
-        );
+        )
+        .returning({ id: stageTransitionOutbox.id });
+
+    return updatedRows.length === 1;
 }
 
 /**
@@ -130,8 +133,8 @@ export async function markStageTransitionOutboxEventFailed(
     event: ClaimedStageTransitionOutboxEvent,
     nextAttemptAt: Date,
     deadLetteredAt?: Date,
-): Promise<void> {
-    await db
+): Promise<boolean> {
+    const updatedRows = await db
         .update(stageTransitionOutbox)
         .set({
             lockId: null,
@@ -145,7 +148,10 @@ export async function markStageTransitionOutboxEventFailed(
                 eq(stageTransitionOutbox.lockId, event.lockId),
                 isNull(stageTransitionOutbox.publishedAt),
             ),
-        );
+        )
+        .returning({ id: stageTransitionOutbox.id });
+
+    return updatedRows.length === 1;
 }
 
 export const defaultStageTransitionOutboxStore: StageTransitionOutboxStore = {

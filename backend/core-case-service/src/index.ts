@@ -22,8 +22,13 @@ export {
     EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE,
     ExpenseReportStageTransitionedCloudEventV1Schema,
     ExpenseReportStageTransitionedDataV1Schema,
+    pollStageTransitionQueueOnce,
+    processStageTransitionEvent,
+    processStageTransitionEventBody,
+    runStageTransitionSqsConsumer,
     type ExpenseReportStageTransitionedCloudEventV1,
     type ExpenseReportStageTransitionedDataV1,
+    type StageTransitionSqsPollResult,
 } from "./events/index.js";
 export {
     type CaseQueueStageRollup,

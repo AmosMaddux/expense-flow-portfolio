@@ -7,11 +7,21 @@ import {
     waitFor,
     within,
 } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
+import {
+    AuthProvider,
+    type AuthClient,
+    type AuthSession,
+    type Role,
+} from "../auth";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
-import { CaseQueueScreen, type ApprovalQueueLineItem } from "./CaseQueueScreen";
+import {
+    CaseQueueScreen,
+    getReviewDialogPermissions,
+    type ApprovalQueueLineItem,
+} from "./CaseQueueScreen";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
@@ -37,10 +47,28 @@ const lineItems: ApprovalQueueLineItem[] = [
         glCode: "6240",
         currentStage: "Manager Approval",
         flaggedLineItem: true,
+        policyChecks: [
+            {
+                code: "line_item_over_threshold",
+                message: "Amount over $500",
+                state: "uncleared",
+            },
+        ],
         reviewAction: null,
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 18.5,
+        receipts: [
+            {
+                id: "81000000-0000-4000-8000-000000000001",
+                lineItemId: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+                merchant: "Northstar Hotels",
+                receiptDate: "2026-07-21",
+                amount: 742.18,
+                filename: "northstar-hotel.pdf",
+                contentType: "application/pdf",
+            },
+        ],
         mileageEntries: [
             {
                 id: "f7b2017a-7d30-4d80-a360-53d00f387111",
@@ -51,6 +79,7 @@ const lineItems: ApprovalQueueLineItem[] = [
                 amount: 12.4,
                 glCode: "6250",
                 flaggedLineItem: false,
+                policyChecks: [],
                 reviewAction: null,
                 deductible: false,
             },
@@ -66,10 +95,12 @@ const lineItems: ApprovalQueueLineItem[] = [
         glCode: "6210",
         currentStage: "Submitted",
         flaggedLineItem: false,
+        policyChecks: [],
         reviewAction: null,
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
+        receipts: [],
         mileageEntries: [],
     },
     {
@@ -82,10 +113,18 @@ const lineItems: ApprovalQueueLineItem[] = [
         glCode: "6220",
         currentStage: "AP Review",
         flaggedLineItem: true,
+        policyChecks: [
+            {
+                code: "line_item_over_threshold",
+                message: "Amount over $500",
+                state: "uncleared",
+            },
+        ],
         reviewAction: "approve",
         deductible: false,
         canAdvance: false,
         reportTotalMileage: 0,
+        receipts: [],
         mileageEntries: [],
     },
 ];
@@ -98,7 +137,19 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
         amount: 428.5,
         glCode: "6220",
         flaggedLineItem: false,
+        policyChecks: [],
         reportTotalMileage: 24.6,
+        receipts: [
+            {
+                id: "81000000-0000-4000-8000-000000000005",
+                lineItemId: "72000000-0000-4000-8000-000000000005",
+                merchant: "United Air",
+                receiptDate: "2026-07-22",
+                amount: 428.5,
+                filename: "united-air.pdf",
+                contentType: "application/pdf",
+            },
+        ],
         mileageEntries: [
             {
                 id: "73000000-0000-4000-8000-000000000005",
@@ -109,12 +160,59 @@ const multiLineReportItems: ApprovalQueueLineItem[] = [
                 amount: 15.62,
                 glCode: "6250",
                 flaggedLineItem: false,
+                policyChecks: [],
                 reviewAction: null,
                 deductible: false,
             },
         ],
     },
     lineItems[1],
+];
+const linkedReceiptReportReceipts = [
+    {
+        id: "81000000-0000-4000-8000-000000000071",
+        lineItemId: "72000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        receiptDate: "2026-07-24",
+        amount: 312.44,
+        filename: "harbor-hotel.pdf",
+        contentType: "application/pdf",
+    },
+    {
+        id: "81000000-0000-4000-8000-000000000072",
+        lineItemId: "72000000-0000-4000-8000-000000000072",
+        merchant: "Central Parking",
+        receiptDate: "2026-07-25",
+        amount: 28.75,
+        filename: "central-parking.pdf",
+        contentType: "application/pdf",
+    },
+] satisfies ApprovalQueueLineItem["receipts"];
+const linkedReceiptReportItems: ApprovalQueueLineItem[] = [
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000071",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Harbor Hotel",
+        amount: 312.44,
+        glCode: "6200",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
+    {
+        ...lineItems[0],
+        id: "72000000-0000-4000-8000-000000000072",
+        expenseReportId: "71000000-0000-4000-8000-000000000071",
+        merchant: "Central Parking",
+        amount: 28.75,
+        glCode: "6000",
+        flaggedLineItem: false,
+        reportTotalMileage: 0,
+        receipts: linkedReceiptReportReceipts,
+        mileageEntries: [],
+    },
 ];
 const seededZenithReportItems: ApprovalQueueLineItem[] = [
     {
@@ -136,6 +234,7 @@ const seededZenithReportItems: ApprovalQueueLineItem[] = [
         glCode: "6260",
         currentStage: "Manager Approval",
         flaggedLineItem: false,
+        policyChecks: [],
         reportTotalMileage: 33.2,
     },
 ];
@@ -143,32 +242,42 @@ const reviewedFlaggedMileageItems: ApprovalQueueLineItem[] = [
     {
         ...lineItems[0],
         flaggedLineItem: false,
+        policyChecks: [],
         reviewAction: "approve",
         deductible: false,
         canAdvance: false,
         mileageEntries: lineItems[0].mileageEntries.map((entry) => ({
             ...entry,
             flaggedLineItem: true,
+            policyChecks: [
+                {
+                    code: "line_item_over_threshold",
+                    message: "Amount over $500",
+                    state: "uncleared",
+                },
+            ],
             reviewAction: "approve",
             deductible: false,
         })),
     },
 ];
 
-function createSession(): AuthSession {
+function createSession(roles: Role[] = ["Department Manager"]): AuthSession {
     return {
         tenantId,
         userId,
-        roles: ["Department Manager"],
+        roles,
         accessToken: "synthetic-access-token",
         accessTokenExpiresAt: new Date(baseTime + 5 * 60_000).toISOString(),
     };
 }
 
-function createAuthClientMock(): AuthClient {
+function createAuthClientMock(
+    roles: Role[] = ["Department Manager"],
+): AuthClient {
     return {
-        login: vi.fn(() => Promise.resolve(createSession())),
-        refresh: vi.fn(() => Promise.resolve(createSession())),
+        login: vi.fn(() => Promise.resolve(createSession(roles))),
+        refresh: vi.fn(() => Promise.resolve(createSession(roles))),
         logout: vi.fn(() => Promise.resolve()),
     };
 }
@@ -221,11 +330,12 @@ function createFastProductionRetryQueryClient(): QueryClient {
 function renderCaseQueueScreen(
     fetchImplementation: typeof fetch,
     queryClient = createNoRetryQueryClient(),
+    roles: Role[] = ["Department Manager"],
 ): void {
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
-                authClient={createAuthClientMock()}
+                authClient={createAuthClientMock(roles)}
                 clearCache={() => queryClient.clear()}
                 fetchImplementation={fetchImplementation}
                 now={() => baseTime}
@@ -246,6 +356,79 @@ afterEach(() => {
 });
 
 describe("CaseQueueScreen", () => {
+    test.each([
+        {
+            stage: "Drafted",
+            canReviewLineItems: false,
+            canClearPolicyChecks: false,
+            canEditDeductibility: false,
+        },
+        {
+            stage: "Submitted",
+            canReviewLineItems: false,
+            canClearPolicyChecks: false,
+            canEditDeductibility: false,
+        },
+        {
+            stage: "Manager Approval",
+            canReviewLineItems: true,
+            canClearPolicyChecks: true,
+            canEditDeductibility: false,
+        },
+        {
+            stage: "AP Review",
+            canReviewLineItems: false,
+            canClearPolicyChecks: false,
+            canEditDeductibility: true,
+        },
+        {
+            stage: "Paid",
+            canReviewLineItems: false,
+            canClearPolicyChecks: false,
+            canEditDeductibility: false,
+        },
+        {
+            stage: "Reconciled",
+            canReviewLineItems: false,
+            canClearPolicyChecks: false,
+            canEditDeductibility: false,
+        },
+    ] satisfies Array<{
+        stage: ApprovalQueueLineItem["currentStage"];
+        canReviewLineItems: boolean;
+        canClearPolicyChecks: boolean;
+        canEditDeductibility: boolean;
+    }>)(
+        "gates report-detail edits for the $stage stage",
+        ({
+            stage,
+            canReviewLineItems,
+            canClearPolicyChecks,
+            canEditDeductibility,
+        }) => {
+            expect(getReviewDialogPermissions(true, stage)).toEqual({
+                canAdvanceReport: stage === "Manager Approval",
+                canClearPolicyChecks,
+                canEditDeductibility,
+                canReviewLineItems,
+                canSendBackReport: stage === "Manager Approval",
+            });
+        },
+    );
+
+    test.each(["Manager Approval", "AP Review"] as const)(
+        "keeps %s report-detail edits disabled without review capability",
+        (stage) => {
+            expect(getReviewDialogPermissions(false, stage)).toEqual({
+                canAdvanceReport: false,
+                canClearPolicyChecks: false,
+                canEditDeductibility: false,
+                canReviewLineItems: false,
+                canSendBackReport: false,
+            });
+        },
+    );
+
     test("renders a loading skeleton while the Approval Queue fetch is pending", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(
             () => new Promise<Response>(() => undefined),
@@ -516,6 +699,156 @@ describe("CaseQueueScreen", () => {
         expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
+    test("renders receipt metadata in the report review gallery", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+
+        expect(
+            screen.getByRole("heading", { name: "Receipt Attachments (1)" }),
+        ).toBeTruthy();
+        expect(screen.getByText("northstar-hotel.pdf")).toBeTruthy();
+        expect(screen.getAllByText("Northstar Hotels").length).toBeGreaterThan(
+            0,
+        );
+        expect(screen.getByText("Jul 21, 2026")).toBeTruthy();
+        expect(screen.getAllByText("$742.18").length).toBeGreaterThan(0);
+        expect(
+            screen.getByText("application/pdf / Linked to Northstar Hotels"),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole("link", { name: "Open receipt" }),
+        ).toBeNull();
+        expect(document.querySelector(".receipt-gallery__preview")).toBeNull();
+        const axeResults = await axe.run(
+            screen.getByRole("dialog", { name: "Report d104c9ca" }),
+        );
+        expect(axeResults.violations).toHaveLength(0);
+    });
+
+    test("selecting a receipt focuses and highlights its linked line item in a multi-line report", async () => {
+        const scrollIntoView = vi.fn();
+        const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+            Element.prototype,
+            "scrollIntoView",
+        );
+        const requestAnimationFrame = vi
+            .spyOn(window, "requestAnimationFrame")
+            .mockImplementation((callback) => {
+                callback(0);
+                return 0;
+        });
+        Element.prototype.scrollIntoView = scrollIntoView;
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(linkedReceiptReportItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        fireEvent.click(
+            screen.getByRole("button", {
+                name: /Central Parking receipt for \$28\.75/i,
+            }),
+        );
+
+        const reviewTable = screen.getByRole("table", {
+            name: "Report review line items",
+        });
+        const firstReviewRow = within(reviewTable).getByRole("row", {
+            name: /Harbor Hotel/i,
+        });
+        const secondReviewRow = within(reviewTable).getByRole("row", {
+            name: /Central Parking/i,
+        });
+        expect(secondReviewRow.className).toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(firstReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(document.activeElement).toBe(secondReviewRow);
+        expect(scrollIntoView).toHaveBeenCalled();
+        if (originalScrollIntoView === undefined) {
+            Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+        } else {
+            Object.defineProperty(
+                Element.prototype,
+                "scrollIntoView",
+                originalScrollIntoView,
+            );
+        }
+        requestAnimationFrame.mockRestore();
+    });
+
+    test("renders empty and unlinked receipt gallery states", async () => {
+        const unlinkedReceiptItems: ApprovalQueueLineItem[] = [
+            {
+                ...lineItems[2],
+                receipts: [
+                    {
+                        id: "81000000-0000-4000-8000-000000000099",
+                        lineItemId: null,
+                        merchant: "Zenith Air",
+                        receiptDate: "2026-07-20",
+                        amount: 512,
+                        filename: "zenith-unlinked.pdf",
+                        contentType: "application/pdf",
+                    },
+                ],
+            },
+        ];
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockResolvedValueOnce(createJsonResponse(unlinkedReceiptItems));
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+        expect(screen.getByText("No receipts uploaded")).toBeTruthy();
+
+        cleanup();
+        renderCaseQueueScreen(fetchImplementation);
+
+        const unlinkedZenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(unlinkedZenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const receiptButton = screen.getByRole("button", {
+            name: /Unlinked receipt/i,
+        });
+        expect(receiptButton).toHaveProperty("disabled", true);
+        expect(
+            screen.getByText("application/pdf / Unlinked receipt"),
+        ).toBeTruthy();
+        expect(
+            screen.queryByRole("link", { name: "Open receipt" }),
+        ).toBeNull();
+    });
+
     test("opens one report with a separate expense row and mileage row for review", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(multiLineReportItems)),
@@ -562,7 +895,7 @@ describe("CaseQueueScreen", () => {
                 name: "Clear flag",
             }),
         ).toBeTruthy();
-        expect(screen.getAllByText("$428.50")).toHaveLength(3);
+        expect(screen.getAllByText("$428.50")).toHaveLength(4);
         expect(screen.getAllByText("24.60 miles")).toHaveLength(3);
     });
 
@@ -586,6 +919,319 @@ describe("CaseQueueScreen", () => {
 
         expect(screen.getAllByText("$556.90")).toHaveLength(2);
         expect(screen.getAllByText("33.20 miles")).toHaveLength(2);
+    });
+
+    test("shows coded line items and durable $500 policy-check states in separate tabs", async () => {
+        const clearedThresholdItem: ApprovalQueueLineItem = {
+            ...lineItems[0],
+            flaggedLineItem: false,
+            policyChecks: lineItems[0].policyChecks.map((policyCheck) => ({
+                ...policyCheck,
+                state: "cleared",
+            })),
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([clearedThresholdItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        expect(
+            within(dialog).getByRole("tab", {
+                name: "Line Items",
+                selected: true,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 - 6240 Clear/i,
+            }),
+        ).toBeTruthy();
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+
+        expect(
+            within(dialog).getByRole("table", { name: "Policy checks" }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 6240 Amount over \$500 Cleared/i,
+            }),
+        ).toBeTruthy();
+    });
+
+    test("renders policy checks reported by the BFF without reconstructing amount rules", async () => {
+        const nonAmountPolicyItem: ApprovalQueueLineItem = {
+            ...lineItems[0],
+            amount: 400,
+            policyChecks: [
+                {
+                    code: "receipt_manual_review",
+                    message: "Receipt requires manual review",
+                    state: "uncleared",
+                },
+            ],
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([nonAmountPolicyItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$400\.00 6240 Receipt requires manual review Uncleared/i,
+            }),
+        ).toBeTruthy();
+    });
+
+    test("clears a line-item policy check from the Policy Checks tab", async () => {
+        let resolveClearResponse: (response: Response) => void = () =>
+            undefined;
+        const clearResponse = new Promise<Response>((resolve) => {
+            resolveClearResponse = resolve;
+        });
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse(lineItems))
+            .mockReturnValueOnce(clearResponse);
+        const promptSpy = vi
+            .spyOn(window, "prompt")
+            .mockReturnValue("  reviewed policy detail  ");
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+        const policyCheckRow = within(dialog).getByRole("row", {
+            name: /Northstar Hotels.*Amount over \$500.*Uncleared/i,
+        });
+
+        fireEvent.click(
+            within(policyCheckRow).getByRole("button", {
+                name: "Clear flag",
+            }),
+        );
+
+        expect(promptSpy).toHaveBeenCalledWith(
+            "Reason for clearing this flag",
+            "reviewed receipt detail",
+        );
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(2),
+        );
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/flags/clear",
+        );
+        const clearRequestBody = fetchImplementation.mock.calls[1]?.[1]?.body;
+        expect(typeof clearRequestBody).toBe("string");
+        expect(JSON.parse(clearRequestBody as string)).toEqual({
+            sourceIds: ["a7a69670-b8ad-4850-9d55-4c15db31786f"],
+            reason: "reviewed policy detail",
+        });
+        expect(within(policyCheckRow).getByText("Cleared")).toBeTruthy();
+        expect(
+            within(policyCheckRow)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Line Items" }),
+        );
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 - 6240 Clear/i,
+            }),
+        ).toBeTruthy();
+
+        resolveClearResponse(createJsonResponse({ clearedFlagCount: 1 }));
+        await waitFor(() =>
+            expect(screen.queryByText("Clearing flag...")).toBeNull(),
+        );
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+        expect(
+            within(dialog)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
+    test("makes both detail tabs read-only outside role-editable stages", async () => {
+        const paidItem: ApprovalQueueLineItem = {
+            ...lineItems[2],
+            currentStage: "Paid",
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([paidItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        const lineItemRow = within(dialog).getByRole("row", {
+            name: /Zenith Air/i,
+        });
+
+        expect(
+            within(lineItemRow)
+                .getByRole("button", { name: "Approve" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+        expect(
+            within(lineItemRow)
+                .getByRole("button", { name: "Reject" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+        expect(
+            within(lineItemRow).getByRole("checkbox").hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+
+        expect(
+            within(dialog)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
+    test("keeps review controls read-only when the session lacks review capability", async () => {
+        const fullyReviewedItem: ApprovalQueueLineItem = {
+            ...lineItems[0],
+            canAdvance: true,
+            reviewAction: "approve",
+            mileageEntries: lineItems[0].mileageEntries.map((entry) => ({
+                ...entry,
+                reviewAction: "approve",
+            })),
+        };
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse([fullyReviewedItem])),
+        );
+
+        renderCaseQueueScreen(fetchImplementation, createNoRetryQueryClient(), [
+            "Employee",
+        ]);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        const lineItemRow = within(dialog).getByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+
+        for (const actionName of ["Approve", "Reject", "Clear flag"]) {
+            expect(
+                within(lineItemRow)
+                    .getByRole("button", { name: actionName })
+                    .hasAttribute("disabled"),
+            ).toBe(true);
+        }
+        expect(
+            within(dialog)
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+        expect(
+            within(dialog).queryByRole("button", {
+                name: "Reject / Send back to Drafted",
+            }),
+        ).toBeNull();
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+        expect(
+            within(dialog)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
+    test("allows a Finance Admin to use Manager Approval review controls", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation, createNoRetryQueryClient(), [
+            "Finance Admin",
+        ]);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        const lineItemRow = within(dialog).getByRole("row", {
+            name: /Northstar Hotels/i,
+        });
+
+        for (const actionName of ["Approve", "Reject", "Clear flag"]) {
+            expect(
+                within(lineItemRow)
+                    .getByRole("button", { name: actionName })
+                    .hasAttribute("disabled"),
+            ).toBe(false);
+        }
     });
 
     test("pulls a Submitted report into Manager Approval when a manager opens review", async () => {
@@ -684,6 +1330,12 @@ describe("CaseQueueScreen", () => {
                 createJsonResponse({
                     ...lineItems[0],
                     flaggedLineItem: false,
+                    policyChecks: lineItems[0].policyChecks.map(
+                        (policyCheck) => ({
+                            ...policyCheck,
+                            state: "cleared",
+                        }),
+                    ),
                     reviewAction: "approve",
                     deductible: false,
                     canAdvance: false,
@@ -693,6 +1345,12 @@ describe("CaseQueueScreen", () => {
                 createJsonResponse({
                     ...lineItems[0],
                     flaggedLineItem: false,
+                    policyChecks: lineItems[0].policyChecks.map(
+                        (policyCheck) => ({
+                            ...policyCheck,
+                            state: "cleared",
+                        }),
+                    ),
                     reviewAction: "approve",
                     deductible: false,
                     canAdvance: true,
@@ -807,7 +1465,7 @@ describe("CaseQueueScreen", () => {
         ).toBe(true);
     });
 
-    test("rolls back optimistic flag clearing in the popup when the API rejects the action", async () => {
+    test("rolls back Policy Checks tab flag clearing when the API rejects the action", async () => {
         let resolveClearResponse: (response: Response) => void = () =>
             undefined;
         const clearResponse = new Promise<Response>((resolve) => {
@@ -827,25 +1485,51 @@ describe("CaseQueueScreen", () => {
         fireEvent.click(
             within(northstarRow).getByRole("button", { name: "Review" }),
         );
-        const northstarReviewRow = screen.getByRole("row", {
-            name: /Northstar Hotels/i,
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
         });
         fireEvent.click(
-            within(northstarReviewRow).getByRole("button", {
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+        const policyCheckRow = within(dialog).getByRole("row", {
+            name: /Northstar Hotels.*Amount over \$500.*Uncleared/i,
+        });
+        fireEvent.click(
+            within(policyCheckRow).getByRole("button", {
                 name: "Clear flag",
             }),
         );
 
         await waitFor(() =>
-            expect(screen.getAllByText("Clear").length).toBeGreaterThan(0),
+            expect(within(policyCheckRow).getByText("Cleared")).toBeTruthy(),
         );
+        expect(
+            within(policyCheckRow)
+                .getByRole("button", { name: "Clear flag" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
 
         resolveClearResponse(createProblemResponse("Synthetic clear failure."));
 
         expect(
             await screen.findByText("Synthetic clear failure."),
         ).toBeTruthy();
-        expect(screen.getAllByText("Over $500").length).toBeGreaterThan(0);
+        expect(within(policyCheckRow).getByText("Uncleared")).toBeTruthy();
+        await waitFor(() =>
+            expect(
+                within(policyCheckRow)
+                    .getByRole("button", { name: "Clear flag" })
+                    .hasAttribute("disabled"),
+            ).toBe(false),
+        );
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Line Items" }),
+        );
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 - 6240 Over \$500/i,
+            }),
+        ).toBeTruthy();
         expect(
             screen
                 .getByRole("button", { name: "Advance" })
@@ -853,14 +1537,22 @@ describe("CaseQueueScreen", () => {
         ).toBe(true);
     });
 
-    test("clears a mileage flag from the popup with the mileage source id", async () => {
+    test("clears a mileage policy check from the Policy Checks tab with the mileage source id", async () => {
         const mileageFlaggedLineItems = [
             {
                 ...lineItems[0],
                 flaggedLineItem: false,
+                policyChecks: [],
                 mileageEntries: lineItems[0].mileageEntries.map((entry) => ({
                     ...entry,
                     flaggedLineItem: true,
+                    policyChecks: [
+                        {
+                            code: "line_item_over_threshold",
+                            message: "Amount over $500",
+                            state: "uncleared",
+                        },
+                    ],
                 })),
             },
         ];
@@ -878,11 +1570,17 @@ describe("CaseQueueScreen", () => {
         fireEvent.click(
             within(reportRow).getByRole("button", { name: "Review" }),
         );
-        const mileageReviewRow = screen.getByRole("row", {
-            name: /Office to client site/i,
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
         });
         fireEvent.click(
-            within(mileageReviewRow).getByRole("button", {
+            within(dialog).getByRole("tab", { name: "Policy Checks" }),
+        );
+        const mileagePolicyCheckRow = within(dialog).getByRole("row", {
+            name: /Office to client site.*Amount over \$500.*Uncleared/i,
+        });
+        fireEvent.click(
+            within(mileagePolicyCheckRow).getByRole("button", {
                 name: "Clear flag",
             }),
         );
@@ -1053,6 +1751,27 @@ describe("CaseQueueScreen", () => {
         expect(
             JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
         ).toEqual({ deductible: true });
+    });
+
+    test("keeps AP Review deductibility read-only without review capability", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(fetchImplementation, createNoRetryQueryClient(), [
+            "Employee",
+        ]);
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        expect(
+            getCheckboxByLabel("Mark Zenith Air as deductible").disabled,
+        ).toBe(true);
     });
 
     test("clears the manual deductibility checkbox during AP Review", async () => {

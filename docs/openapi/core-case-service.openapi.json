@@ -355,6 +355,27 @@
                         "flaggedLineItem": {
                             "type": "boolean"
                         },
+                        "policyChecks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "message": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "enum": ["cleared", "uncleared"]
+                                    }
+                                },
+                                "required": ["code", "message", "state"]
+                            }
+                        },
                         "reviewAction": {
                             "type": ["string", "null"],
                             "enum": ["approve", "reject", null]
@@ -405,6 +426,34 @@
                                     "flaggedLineItem": {
                                         "type": "boolean"
                                     },
+                                    "policyChecks": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "code": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "cleared",
+                                                        "uncleared"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "code",
+                                                "message",
+                                                "state"
+                                            ]
+                                        }
+                                    },
                                     "reviewAction": {
                                         "type": ["string", "null"],
                                         "enum": ["approve", "reject", null]
@@ -422,8 +471,52 @@
                                     "amount",
                                     "glCode",
                                     "flaggedLineItem",
+                                    "policyChecks",
                                     "reviewAction",
                                     "deductible"
+                                ]
+                            }
+                        },
+                        "receipts": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "lineItemId": {
+                                        "type": ["string", "null"],
+                                        "format": "uuid"
+                                    },
+                                    "merchant": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "receiptDate": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "minimum": 0
+                                    },
+                                    "filename": {
+                                        "type": ["string", "null"]
+                                    },
+                                    "contentType": {
+                                        "type": ["string", "null"]
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "lineItemId",
+                                    "merchant",
+                                    "receiptDate",
+                                    "amount",
+                                    "filename",
+                                    "contentType"
                                 ]
                             }
                         }
@@ -438,11 +531,13 @@
                         "glCode",
                         "currentStage",
                         "flaggedLineItem",
+                        "policyChecks",
                         "reviewAction",
                         "deductible",
                         "canAdvance",
                         "reportTotalMileage",
-                        "mileageEntries"
+                        "mileageEntries",
+                        "receipts"
                     ]
                 }
             },
@@ -490,6 +585,27 @@
                     },
                     "flaggedLineItem": {
                         "type": "boolean"
+                    },
+                    "policyChecks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "state": {
+                                    "type": "string",
+                                    "enum": ["cleared", "uncleared"]
+                                }
+                            },
+                            "required": ["code", "message", "state"]
+                        }
                     },
                     "reviewAction": {
                         "type": ["string", "null"],
@@ -541,6 +657,27 @@
                                 "flaggedLineItem": {
                                     "type": "boolean"
                                 },
+                                "policyChecks": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "code": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            },
+                                            "message": {
+                                                "type": "string",
+                                                "minLength": 1
+                                            },
+                                            "state": {
+                                                "type": "string",
+                                                "enum": ["cleared", "uncleared"]
+                                            }
+                                        },
+                                        "required": ["code", "message", "state"]
+                                    }
+                                },
                                 "reviewAction": {
                                     "type": ["string", "null"],
                                     "enum": ["approve", "reject", null]
@@ -558,8 +695,52 @@
                                 "amount",
                                 "glCode",
                                 "flaggedLineItem",
+                                "policyChecks",
                                 "reviewAction",
                                 "deductible"
+                            ]
+                        }
+                    },
+                    "receipts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "lineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "merchant": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "receiptDate": {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                "amount": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "filename": {
+                                    "type": ["string", "null"]
+                                },
+                                "contentType": {
+                                    "type": ["string", "null"]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "lineItemId",
+                                "merchant",
+                                "receiptDate",
+                                "amount",
+                                "filename",
+                                "contentType"
                             ]
                         }
                     }
@@ -574,11 +755,13 @@
                     "glCode",
                     "currentStage",
                     "flaggedLineItem",
+                    "policyChecks",
                     "reviewAction",
                     "deductible",
                     "canAdvance",
                     "reportTotalMileage",
-                    "mileageEntries"
+                    "mileageEntries",
+                    "receipts"
                 ]
             },
             "AuditEntryListResponse": {
@@ -653,6 +836,83 @@
                     ]
                 }
             },
+            "CaseCommentListResponse": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "tenantId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "expenseReportId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "authorId": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "body": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "tenantId",
+                        "expenseReportId",
+                        "authorId",
+                        "body",
+                        "createdAt"
+                    ]
+                }
+            },
+            "CaseCommentResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "expenseReportId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "authorId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "body": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "tenantId",
+                    "expenseReportId",
+                    "authorId",
+                    "body",
+                    "createdAt"
+                ]
+            },
             "CaseQueueStageRollupList": {
                 "type": "array",
                 "items": {
@@ -709,6 +969,18 @@
                     }
                 },
                 "required": ["clearedFlagCount"]
+            },
+            "CreateCaseCommentRequest": {
+                "type": "object",
+                "properties": {
+                    "body": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 5000
+                    }
+                },
+                "required": ["body"],
+                "additionalProperties": false
             },
             "CreateExpenseReportRequest": {
                 "type": "object",
@@ -1499,6 +1771,20 @@
                 },
                 "required": ["items", "nextCursor"]
             },
+            "PolicyReferenceResponse": {
+                "type": "object",
+                "properties": {
+                    "policyText": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": ["policyText", "updatedAt"]
+            },
             "ProblemJson": {
                 "type": "object",
                 "properties": {
@@ -1699,6 +1985,16 @@
                     }
                 },
                 "required": ["id", "sourceType", "sourceId"]
+            },
+            "SettleExpenseReportRequest": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "additionalProperties": false
             },
             "SubmitExpenseReportRequest": {
                 "type": "object",
@@ -3015,6 +3311,86 @@
                 }
             }
         },
+        "/v1/policy-reference": {
+            "get": {
+                "summary": "Get Policy Reference",
+                "description": "Loads the authenticated tenant's read-only expense policy reference text for internal review workspaces.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tenant expense policy found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PolicyReferenceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Policy Reference access is limited to internal roles.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense policy not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/transactions": {
             "get": {
                 "summary": "Get All Transactions",
@@ -4123,6 +4499,156 @@
                 }
             }
         },
+        "/v1/expense-reports/{id}/settlement": {
+            "post": {
+                "summary": "Settle an Expense Report",
+                "description": "Coordinates the Issue Payment stub, Paid transition, and Reconciled transition as a compensating settlement saga.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "Required tenant-scoped key used to replay completed Expense Report settlements."
+                        },
+                        "required": true,
+                        "description": "Required tenant-scoped key used to replay completed Expense Report settlements.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                        },
+                        "required": false,
+                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "name": "x-correlation-id",
+                        "in": "header"
+                    }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SettleExpenseReportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Expense Report settled and reconciled.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            },
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier carried by settlement saga events.",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed settlement request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Settlement can only start from AP Review and must complete its compensated saga.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/expense-reports/{id}/line-items/{sourceId}/review": {
             "post": {
                 "summary": "Review an Expense Report line item",
@@ -4712,6 +5238,206 @@
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/expense-reports/{id}/comments": {
+            "get": {
+                "summary": "List Expense Report comments",
+                "description": "Loads tenant- and case-scoped comment thread entries for an Expense Report case.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Comments found for the Expense Report.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseCommentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create Expense Report comment",
+                "description": "Appends a tenant- and case-scoped dispute or comment entry to an Expense Report case.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateCaseCommentRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Comment created for the Expense Report.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaseCommentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed comment request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated role is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
                     },
                     "500": {
                         "description": "Unexpected server error.",

@@ -230,6 +230,12 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     })
     .strict();
 
+export const SettleExpenseReportInboundRequestSchema = z
+    .object({
+        reason: z.string().trim().min(1).optional(),
+    })
+    .strict();
+
 export const StageTransitionCorrelationHeaderSchema = z
     .object({
         correlationId: z.uuid().optional(),
@@ -382,6 +388,14 @@ export const ReadAllTransactionsQuerySchema =
         },
     );
 
+export const ReadPolicyReferenceInboundRequestSchema = z
+    .object({
+        tenantId: z.uuid(),
+    })
+    .strict();
+
+export const ReadPolicyReferenceQuerySchema = z.object({}).strict();
+
 export const ReadMySubmissionsInboundRequestSchema = z
     .object({
         tenantId: z.uuid(),
@@ -428,6 +442,7 @@ export const TransitionExpenseReportStageInboundRequestSchema = z.object({
     toStage: z.enum(approvedWorkflowStages),
     reason: z.string().trim().min(1),
     correlationId: z.uuid().optional(),
+    idempotencyKey: z.string().trim().min(1).max(128).optional(),
     eventId: z.uuid().optional(),
     occurredAt: z.date().optional(),
 });
@@ -507,6 +522,13 @@ export const FinanceDashboardTrendPointSchema = z.object({
 export const FinanceDashboardTrendPointListSchema = z.array(
     FinanceDashboardTrendPointSchema,
 );
+
+export const PolicyReferenceOutboundResponseSchema = z.object({
+    policyText: z.string().refine((value) => value.trim().length > 0, {
+        message: "Policy text must not be blank.",
+    }),
+    updatedAt: z.iso.datetime({ offset: true }),
+});
 
 export const AllTransactionSchema = z.object({
     id: z.uuid(),
@@ -613,6 +635,12 @@ export const MySubmissionDetailSchema = z.object({
         }),
     ),
 });
+const PolicyCheckOutboundResponseSchema = z.object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+    state: z.enum(["cleared", "uncleared"]),
+});
+
 export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     id: z.uuid(),
     expenseReportId: z.uuid(),
@@ -622,8 +650,22 @@ export const ApprovalQueueMileageEntryOutboundResponseSchema = z.object({
     amount: z.coerce.number().nonnegative(),
     glCode: z.string().min(1),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(PolicyCheckOutboundResponseSchema),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     deductible: z.boolean(),
+});
+
+export const ApprovalQueueReceiptOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    lineItemId: z.uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative().openapi({
+        type: "number",
+        minimum: 0,
+    }),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
 });
 
 export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
@@ -636,11 +678,13 @@ export const ApprovalQueueLineItemOutboundResponseSchema = z.object({
     glCode: z.string().min(1),
     currentStage: z.enum(approvedWorkflowStages),
     flaggedLineItem: z.boolean(),
+    policyChecks: z.array(PolicyCheckOutboundResponseSchema),
     reviewAction: z.enum(lineItemReviewActions).nullable(),
     deductible: z.boolean(),
     canAdvance: z.boolean(),
     reportTotalMileage: z.coerce.number().nonnegative(),
     mileageEntries: z.array(ApprovalQueueMileageEntryOutboundResponseSchema),
+    receipts: z.array(ApprovalQueueReceiptOutboundResponseSchema),
 });
 
 export const ApprovalQueueLineItemListOutboundResponseSchema = z.array(
@@ -665,6 +709,25 @@ export const AuditEntryListOutboundResponseSchema = z.array(
     AuditEntryOutboundResponseSchema,
 );
 
+export const CaseCommentOutboundResponseSchema = z.object({
+    id: z.uuid(),
+    tenantId: z.uuid(),
+    expenseReportId: z.uuid(),
+    authorId: z.uuid(),
+    body: z.string().min(1),
+    createdAt: z.date(),
+});
+
+export const CaseCommentListOutboundResponseSchema = z.array(
+    CaseCommentOutboundResponseSchema,
+);
+
+export const CreateCaseCommentInboundRequestSchema = z
+    .object({
+        body: z.string().trim().min(1).max(5_000),
+    })
+    .strict();
+
 export const createExpenseReportRequestSchema =
     CreateExpenseReportInboundRequestSchema;
 
@@ -676,6 +739,9 @@ export const submitExpenseReportRequestSchema =
 
 export const transitionExpenseReportWorkflowRequestSchema =
     TransitionExpenseReportWorkflowInboundRequestSchema;
+
+export const settleExpenseReportRequestSchema =
+    SettleExpenseReportInboundRequestSchema;
 
 export const clearExpenseReportFlagsRequestSchema =
     ClearExpenseReportFlagsInboundRequestSchema;
@@ -713,6 +779,11 @@ export const readAllTransactionsRequestSchema =
 
 export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
 
+export const readPolicyReferenceRequestSchema =
+    ReadPolicyReferenceInboundRequestSchema;
+
+export const readPolicyReferenceQuerySchema = ReadPolicyReferenceQuerySchema;
+
 export const transitionExpenseReportStageRequestSchema =
     TransitionExpenseReportStageInboundRequestSchema;
 
@@ -728,6 +799,9 @@ export const financeDashboardTrendPointSchema =
 
 export const financeDashboardTrendPointListSchema =
     FinanceDashboardTrendPointListSchema;
+
+export const policyReferenceResponseSchema =
+    PolicyReferenceOutboundResponseSchema;
 
 export const allTransactionSchema = AllTransactionSchema;
 
@@ -751,6 +825,14 @@ export const auditEntryResponseSchema = AuditEntryOutboundResponseSchema;
 
 export const auditEntryListResponseSchema =
     AuditEntryListOutboundResponseSchema;
+
+export const caseCommentResponseSchema = CaseCommentOutboundResponseSchema;
+
+export const caseCommentListResponseSchema =
+    CaseCommentListOutboundResponseSchema;
+
+export const createCaseCommentRequestSchema =
+    CreateCaseCommentInboundRequestSchema;
 
 export type CreateExpenseReportRequest = z.infer<
     typeof CreateExpenseReportInboundRequestSchema
@@ -802,6 +884,10 @@ export type SubmitExpenseReportRequest = z.infer<
 
 export type TransitionExpenseReportWorkflowRequest = z.infer<
     typeof TransitionExpenseReportWorkflowInboundRequestSchema
+>;
+
+export type SettleExpenseReportRequest = z.infer<
+    typeof SettleExpenseReportInboundRequestSchema
 >;
 
 export type StageTransitionCorrelationHeader = z.infer<
@@ -864,6 +950,14 @@ export type ReadAllTransactionsQuery = z.infer<
     typeof ReadAllTransactionsQuerySchema
 >;
 
+export type ReadPolicyReferenceRequest = z.infer<
+    typeof ReadPolicyReferenceInboundRequestSchema
+>;
+
+export type ReadPolicyReferenceQuery = z.infer<
+    typeof ReadPolicyReferenceQuerySchema
+>;
+
 export type TransitionExpenseReportStageRequest = z.infer<
     typeof TransitionExpenseReportStageInboundRequestSchema
 >;
@@ -876,6 +970,10 @@ export type FinanceDashboardTrendSpendBucket = z.infer<
 
 export type FinanceDashboardTrendPoint = z.infer<
     typeof FinanceDashboardTrendPointSchema
+>;
+
+export type PolicyReferenceResponse = z.infer<
+    typeof PolicyReferenceOutboundResponseSchema
 >;
 
 export type AllTransaction = z.infer<typeof AllTransactionSchema>;
@@ -910,4 +1008,12 @@ export type IdempotentSubmissionHeader = z.infer<
 
 export type AuditEntryResponse = z.infer<
     typeof AuditEntryOutboundResponseSchema
+>;
+
+export type CaseCommentResponse = z.infer<
+    typeof CaseCommentOutboundResponseSchema
+>;
+
+export type CreateCaseCommentRequest = z.infer<
+    typeof CreateCaseCommentInboundRequestSchema
 >;

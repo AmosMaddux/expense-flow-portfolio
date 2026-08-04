@@ -20,6 +20,25 @@ bounded exponential backoff and marks an event dead-lettered after ten failed
 attempts. SNS/SQS delivery remains at-least-once, so consumers must deduplicate
 using the CloudEvent `id`.
 
+## Plain SQS projection consumer
+
+The standalone consumer long-polls the queue configured by
+`STAGE_TRANSITION_SQS_QUEUE_URL`. It validates the SQS message shape and complete
+CloudEvent, then idempotently inserts a `stage_transition_projection` record
+keyed by the CloudEvent `id`. It deletes a message only after the projection
+write succeeds; malformed events and storage failures remain available for SQS
+retry.
+
+Run the local consumer with:
+
+```sh
+npm run dev:events:consume
+```
+
+The transport-independent `processStageTransitionEvent` function is the unit
+intended to move behind an SQS-triggered Lambda in Sprint 5. The current
+long-poll loop is deliberately a plain service and is not a Lambda handler.
+
 ## Version identity
 
 - CloudEvents specification: `1.0`

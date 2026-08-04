@@ -18,12 +18,17 @@ import {
     auditEntry,
     approvedWorkflowStages,
     type AuditEntry,
+    caseComment,
+    type CaseComment,
     expenseReport,
     type ExpenseReport,
+    expenseReportSettlement,
+    type ExpenseReportSettlement,
     glCodingResult,
     lineItem,
     mileageEntry,
     type NewAuditEntry,
+    type NewCaseComment,
     type NewExpenseReport,
     type NewGlCodingResult,
     receiptMetadata,
@@ -57,6 +62,33 @@ type StageTransitionEventContext = {
     idempotencyKey?: string;
     occurredAt: Date;
 };
+
+export type SettlementSagaCompensationResult =
+    | { kind: "compensated"; eventId: string }
+    | { kind: "already_prior_stage" }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementClaimResult =
+    | { kind: "issue_payment"; settlement: ExpenseReportSettlement }
+    | { kind: "reuse_payment"; settlement: ExpenseReportSettlement }
+    | {
+          kind: "already_reconciled";
+          settlement: ExpenseReportSettlement;
+          report: ExpenseReport;
+      }
+    | { kind: "in_progress"; settlement: ExpenseReportSettlement }
+    | { kind: "terminal_compensated"; settlement: ExpenseReportSettlement }
+    | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
+    | { kind: "not_found" };
+
+export type SettlementPaymentRecordResult =
+    | { kind: "recorded"; settlement: ExpenseReportSettlement }
+    | { kind: "already_recorded"; settlement: ExpenseReportSettlement }
+    | { kind: "not_found" };
+
+export type AbandonSettlementClaimResult =
+    { kind: "abandoned" } | { kind: "not_abandoned" };
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -112,6 +144,8 @@ type ApprovalQueueLineItemRow = {
     mileageDistance?: string;
     currentStage: string;
     flaggedLineItem: boolean;
+    flagCode: string | null;
+    flagMessage: string | null;
     reviewAction: "approve" | "reject" | null;
     deductible: boolean;
     submissionId: string;
@@ -131,11 +165,23 @@ type ApprovalQueueMileageEntryRow = {
     glCode: string | null;
     currentStage: string;
     flaggedLineItem: boolean;
+    flagCode: string | null;
+    flagMessage: string | null;
     reviewAction: "approve" | "reject" | null;
     deductible: boolean;
     submissionId: string;
     codedAt: Date;
     codingResultId: string;
+};
+
+type ApprovalQueueReceiptRow = {
+    id: string;
+    expenseReportId: string;
+    lineItemId: string | null;
+    merchant: string;
+    receiptDate: string;
+    amount: string;
+    blobReference: unknown;
 };
 
 export type InsertMileageEntryResult =
@@ -369,6 +415,8 @@ export async function findApprovalQueueLineItems(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -409,8 +457,21 @@ export async function findApprovalQueueLineItems(
 
     const lineItemRows = rows as ApprovalQueueLineItemRow[];
     const mileageRows = await findApprovalQueueMileageEntries(tenantId);
+    const reportIds = [
+        ...new Set(
+            [...lineItemRows, ...mileageRows].map((row) => row.expenseReportId),
+        ),
+    ];
+    const receiptRows =
+        reportIds.length === 0
+            ? []
+            : await findApprovalQueueReceipts(tenantId, reportIds);
 
-    return toLatestApprovalQueueLineItems(lineItemRows, mileageRows);
+    return toLatestApprovalQueueLineItems(
+        lineItemRows,
+        mileageRows,
+        receiptRows,
+    );
 }
 
 /**
@@ -1652,8 +1713,6 @@ export async function clearExpenseReportFlags(request: {
             .update(glCodingResult)
             .set({
                 flaggedLineItem: false,
-                flagCode: null,
-                flagMessage: null,
             })
             .where(
                 and(
@@ -1800,6 +1859,11 @@ export async function reviewExpenseReportLineItem(request: {
                 request.expenseReportId,
                 latestSubmissionId,
             );
+        const receipts = await readApprovalQueueReceiptsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
         const lineItemRow =
             request.sourceType === "mileage"
                 ? ((await readFirstApprovalQueueLineItemInTransaction(
@@ -1839,6 +1903,7 @@ export async function reviewExpenseReportLineItem(request: {
                 openFlagCount,
                 unreviewedLineItemCount,
                 mileageEntries,
+                receipts,
             ),
         };
     });
@@ -1946,6 +2011,11 @@ export async function updateExpenseReportSourceDeductibility(request: {
                 request.expenseReportId,
                 latestSubmissionId,
             );
+        const receipts = await readApprovalQueueReceiptsInTransaction(
+            transaction,
+            request.tenantId,
+            request.expenseReportId,
+        );
         const lineItemRow =
             request.sourceType === "mileage"
                 ? ((await readFirstApprovalQueueLineItemInTransaction(
@@ -1986,6 +2056,7 @@ export async function updateExpenseReportSourceDeductibility(request: {
                 openFlagCount,
                 unreviewedLineItemCount,
                 lineItemRow.sourceType === "mileage" ? [] : mileageEntries,
+                receipts,
             ),
         };
     });
@@ -2100,13 +2171,584 @@ export async function transitionExpenseReportStage(
             isSendBackTransition(request) ? request.reason : undefined,
         );
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
-            ...request,
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: request.fromStage,
+            toStage: request.toStage,
+            reason: request.reason,
+            ...(request.idempotencyKey === undefined
+                ? {}
+                : { idempotencyKey: request.idempotencyKey }),
             correlationId: request.correlationId ?? randomUUID(),
             eventId: request.eventId ?? randomUUID(),
             occurredAt: request.occurredAt ?? new Date(),
         });
 
         return true;
+    });
+}
+
+/**
+ * Claims or recovers the durable settlement record before any payment side effect runs.
+ */
+export async function claimExpenseReportSettlement(request: {
+    tenantId: string;
+    id: string;
+    idempotencyKey: string;
+    correlationId: string;
+}): Promise<SettlementClaimResult> {
+    return db.transaction(async (transaction) => {
+        const reports = await transaction
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const report = reports[0];
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        const existingSettlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const existingSettlement = existingSettlements[0];
+
+        if (existingSettlement !== undefined) {
+            if (
+                existingSettlement.status === "reconciled" &&
+                report.currentStage === "Reconciled"
+            ) {
+                return {
+                    kind: "already_reconciled",
+                    settlement: existingSettlement,
+                    report,
+                };
+            }
+
+            if (
+                existingSettlement.status === "issuing" ||
+                existingSettlement.paymentId === null
+            ) {
+                return {
+                    kind: "in_progress",
+                    settlement: existingSettlement,
+                };
+            }
+
+            if (existingSettlement.status === "compensated") {
+                return {
+                    kind: "terminal_compensated",
+                    settlement: existingSettlement,
+                };
+            }
+
+            return {
+                kind: "reuse_payment",
+                settlement: existingSettlement,
+            };
+        }
+
+        if (report.currentStage !== "AP Review") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage as ExpenseReportStage,
+            };
+        }
+
+        const insertedSettlements = await transaction
+            .insert(expenseReportSettlement)
+            .values({
+                tenantId: request.tenantId,
+                expenseReportId: request.id,
+                idempotencyKey: request.idempotencyKey,
+                correlationId: request.correlationId,
+            })
+            .returning();
+        const settlement = insertedSettlements[0];
+        if (settlement === undefined) {
+            throw new Error("Unable to claim Expense Report settlement.");
+        }
+
+        return { kind: "issue_payment", settlement };
+    });
+}
+
+/**
+ * Persists the payment stub reference for a previously claimed settlement.
+ */
+export async function recordExpenseReportSettlementPayment(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    idempotencyKey: string;
+    paymentId: string;
+}): Promise<SettlementPaymentRecordResult> {
+    return db.transaction(async (transaction) => {
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(
+                        expenseReportSettlement.idempotencyKey,
+                        request.idempotencyKey,
+                    ),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+        if (settlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (settlement.paymentId !== null) {
+            return { kind: "already_recorded", settlement };
+        }
+
+        const updatedSettlements = await transaction
+            .update(expenseReportSettlement)
+            .set({
+                paymentId: request.paymentId,
+                status: "issued",
+                updatedAt: new Date(),
+            })
+            .where(eq(expenseReportSettlement.id, settlement.id))
+            .returning();
+        const updatedSettlement = updatedSettlements[0];
+        if (updatedSettlement === undefined) {
+            return { kind: "not_found" };
+        }
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "payment_stub_issued",
+            stageBeforeAction: "AP Review",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: "Synthetic payment stub issued for settlement saga.",
+        });
+
+        return { kind: "recorded", settlement: updatedSettlement };
+    });
+}
+
+/**
+ * Commits the settlement-owned AP Review to Paid transition for an issued payment.
+ */
+export async function transitionIssuedExpenseReportSettlementToPaid(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    settlementId: string;
+    paymentId: string;
+    reason: string;
+    correlationId: string;
+    idempotencyKey: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+        const currentStage = report?.currentStage;
+
+        const transitionRequest: TransitionExpenseReportStageRequest = {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: request.reason,
+            correlationId: request.correlationId,
+            idempotencyKey: request.idempotencyKey,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        };
+
+        if (currentStage === undefined) {
+            return false;
+        }
+
+        if (currentStage !== "AP Review") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.id, request.settlementId),
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+
+        if (settlement?.status !== "issued") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                "Expense Report settlement must be issued before payment-stage transition.",
+            );
+
+            return false;
+        }
+
+        const transitionedReports = await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "Paid",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "AP Review"),
+                ),
+            )
+            .returning({ id: expenseReport.id });
+
+        if (transitionedReports.length === 0) {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        await writeTransitionAuditEntry(
+            transaction,
+            transitionRequest,
+            currentStage,
+            "transition_approved",
+        );
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "AP Review",
+            toStage: "Paid",
+            reason: request.reason,
+            idempotencyKey: request.idempotencyKey,
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return true;
+    });
+}
+
+/**
+ * Releases an unpaid settlement claim after payment issuance fails before any payment reference exists.
+ */
+export async function abandonUnpaidExpenseReportSettlementClaim(request: {
+    tenantId: string;
+    id: string;
+    settlementId: string;
+}): Promise<AbandonSettlementClaimResult> {
+    const abandonedSettlements = await db
+        .delete(expenseReportSettlement)
+        .where(
+            and(
+                eq(expenseReportSettlement.id, request.settlementId),
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                eq(expenseReportSettlement.status, "issuing"),
+                isNull(expenseReportSettlement.paymentId),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return abandonedSettlements.length === 1
+        ? { kind: "abandoned" }
+        : { kind: "not_abandoned" };
+}
+
+/**
+ * Commits the final settlement state with the Paid to Reconciled transition.
+ */
+export async function reconcileExpenseReportSettlementStage(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    paymentId: string;
+    reason: string;
+    correlationId: string;
+    idempotencyKey: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<boolean> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+        const currentStage = report?.currentStage;
+
+        if (currentStage === undefined) {
+            return false;
+        }
+
+        const transitionRequest: TransitionExpenseReportStageRequest = {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "Reconciled",
+            reason: request.reason,
+            correlationId: request.correlationId,
+            idempotencyKey: request.idempotencyKey,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        };
+
+        if (currentStage !== "Paid") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const settlements = await transaction
+            .select()
+            .from(expenseReportSettlement)
+            .where(
+                and(
+                    eq(expenseReportSettlement.tenantId, request.tenantId),
+                    eq(expenseReportSettlement.expenseReportId, request.id),
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                ),
+            )
+            .limit(1)
+            .for("update");
+        const settlement = settlements[0];
+
+        if (settlement?.status !== "issued") {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                "Expense Report settlement must be issued before reconciliation.",
+            );
+
+            return false;
+        }
+
+        const transitionedReports = await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "Reconciled",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "Paid"),
+                ),
+            )
+            .returning({ id: expenseReport.id });
+
+        if (transitionedReports.length === 0) {
+            await writeDeniedTransitionLog(
+                transaction,
+                transitionRequest,
+                currentStage,
+                buildTransitionDenialReason(transitionRequest, currentStage),
+            );
+
+            return false;
+        }
+
+        const updatedSettlements = await transaction
+            .update(expenseReportSettlement)
+            .set({ status: "reconciled", updatedAt: new Date() })
+            .where(eq(expenseReportSettlement.id, settlement.id))
+            .returning({ id: expenseReportSettlement.id });
+
+        if (updatedSettlements.length !== 1) {
+            throw new Error("Unable to reconcile Expense Report settlement.");
+        }
+
+        await writeTransitionAuditEntry(
+            transaction,
+            transitionRequest,
+            currentStage,
+            "transition_approved",
+        );
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "Reconciled",
+            reason: request.reason,
+            idempotencyKey: request.idempotencyKey,
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return true;
+    });
+}
+
+/**
+ * Marks the durable settlement record compensated after the payment stub is reversed.
+ */
+export async function markExpenseReportSettlementCompensated(request: {
+    tenantId: string;
+    id: string;
+    settlementId: string;
+    paymentId: string;
+}): Promise<boolean> {
+    const updatedSettlements = await db
+        .update(expenseReportSettlement)
+        .set({
+            paymentId: request.paymentId,
+            status: "compensated",
+            updatedAt: new Date(),
+        })
+        .where(
+            and(
+                eq(expenseReportSettlement.id, request.settlementId),
+                eq(expenseReportSettlement.tenantId, request.tenantId),
+                eq(expenseReportSettlement.expenseReportId, request.id),
+                inArray(expenseReportSettlement.status, ["issuing", "issued"]),
+                or(
+                    eq(expenseReportSettlement.paymentId, request.paymentId),
+                    and(
+                        eq(expenseReportSettlement.status, "issuing"),
+                        isNull(expenseReportSettlement.paymentId),
+                    ),
+                ),
+            ),
+        )
+        .returning({ id: expenseReportSettlement.id });
+
+    return updatedSettlements.length === 1;
+}
+
+/**
+ * Restores a settlement saga from Paid to AP Review after a later saga step fails.
+ */
+export async function compensatePaidSettlementStage(request: {
+    tenantId: string;
+    id: string;
+    actor: string;
+    reason: string;
+    correlationId: string;
+    eventId: string;
+    occurredAt: Date;
+}): Promise<SettlementSagaCompensationResult> {
+    return db.transaction(async (transaction) => {
+        const report = await readCurrentReportForTransition(
+            transaction,
+            request.tenantId,
+            request.id,
+            true,
+        );
+
+        if (report === undefined) {
+            return { kind: "not_found" };
+        }
+
+        if (report.currentStage === "AP Review") {
+            return { kind: "already_prior_stage" };
+        }
+
+        if (report.currentStage !== "Paid") {
+            return {
+                kind: "invalid_stage",
+                currentStage: report.currentStage,
+            };
+        }
+
+        await transaction
+            .update(expenseReport)
+            .set({
+                currentStage: "AP Review",
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(expenseReport.tenantId, request.tenantId),
+                    eq(expenseReport.id, request.id),
+                    eq(expenseReport.currentStage, "Paid"),
+                ),
+            );
+
+        await appendAuditEntry(transaction, {
+            tenantId: request.tenantId,
+            expenseReportId: request.id,
+            actorId: request.actor,
+            action: "settlement_saga_compensated",
+            stageBeforeAction: "Paid",
+            stageAfterProposedAction: "AP Review",
+            denialReason: null,
+            outcomeReason: request.reason,
+        });
+        await writeSuccessfulStageTransitionAndOutbox(transaction, {
+            tenantId: request.tenantId,
+            id: request.id,
+            actor: request.actor,
+            fromStage: "Paid",
+            toStage: "AP Review",
+            reason: "settlement_saga_compensated",
+            correlationId: request.correlationId,
+            eventId: request.eventId,
+            occurredAt: request.occurredAt,
+        });
+
+        return { kind: "compensated", eventId: request.eventId };
     });
 }
 
@@ -2366,6 +3008,8 @@ async function readFirstApprovalQueueLineItemInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2418,6 +3062,8 @@ async function readApprovalQueueLineItemInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2496,6 +3142,8 @@ async function findApprovalQueueMileageEntries(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2533,6 +3181,32 @@ async function findApprovalQueueMileageEntries(
     return rows as ApprovalQueueMileageEntryRow[];
 }
 
+async function findApprovalQueueReceipts(
+    tenantId: string,
+    reportIds: string[],
+): Promise<ApprovalQueueReceiptRow[]> {
+    const rows = await db
+        .select({
+            id: receiptMetadata.id,
+            expenseReportId: receiptMetadata.expenseReportId,
+            lineItemId: receiptMetadata.lineItemId,
+            merchant: receiptMetadata.merchant,
+            receiptDate: receiptMetadata.receiptDate,
+            amount: receiptMetadata.amount,
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, tenantId),
+                inArray(receiptMetadata.expenseReportId, reportIds),
+            ),
+        )
+        .orderBy(asc(receiptMetadata.createdAt), asc(receiptMetadata.id));
+
+    return rows;
+}
+
 async function readApprovalQueueMileageEntriesInTransaction(
     transaction: TransactionContext,
     tenantId: string,
@@ -2552,6 +3226,8 @@ async function readApprovalQueueMileageEntriesInTransaction(
             glCode: glCodingResult.glAccountCode,
             currentStage: expenseReport.currentStage,
             flaggedLineItem: glCodingResult.flaggedLineItem,
+            flagCode: glCodingResult.flagCode,
+            flagMessage: glCodingResult.flagMessage,
             reviewAction: glCodingResult.lineItemReviewAction,
             deductible: glCodingResult.deductible,
             submissionId: glCodingResult.submissionId,
@@ -2586,9 +3262,37 @@ async function readApprovalQueueMileageEntriesInTransaction(
     return rows as ApprovalQueueMileageEntryRow[];
 }
 
+async function readApprovalQueueReceiptsInTransaction(
+    transaction: TransactionContext,
+    tenantId: string,
+    expenseReportId: string,
+): Promise<ApprovalQueueReceiptRow[]> {
+    const rows = await transaction
+        .select({
+            id: receiptMetadata.id,
+            expenseReportId: receiptMetadata.expenseReportId,
+            lineItemId: receiptMetadata.lineItemId,
+            merchant: receiptMetadata.merchant,
+            receiptDate: receiptMetadata.receiptDate,
+            amount: receiptMetadata.amount,
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, tenantId),
+                eq(receiptMetadata.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(asc(receiptMetadata.createdAt), asc(receiptMetadata.id));
+
+    return rows;
+}
+
 function toLatestApprovalQueueLineItems(
     rows: ApprovalQueueLineItemRow[],
     mileageRows: ApprovalQueueMileageEntryRow[],
+    receiptRows: ApprovalQueueReceiptRow[] = [],
 ): ApprovalQueueLineItemResponse[] {
     const latestSubmissionByReport = readLatestSubmissionByReport([
         ...rows,
@@ -2601,6 +3305,7 @@ function toLatestApprovalQueueLineItems(
                 row.submissionId,
         ),
     );
+    const receiptsByReport = groupApprovalQueueReceipts(receiptRows);
 
     const openFlagCounts = new Map<string, number>();
     const unreviewedLineItemCounts = new Map<string, number>();
@@ -2642,7 +3347,6 @@ function toLatestApprovalQueueLineItems(
                 row.submissionId &&
             !reportsWithLineItems.has(row.expenseReportId),
     );
-
     return [
         ...latestLineItemRows.map((row) =>
             toApprovalQueueLineItemResponse(
@@ -2650,6 +3354,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 mileageEntriesByReport.get(row.expenseReportId) ?? [],
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
         ...mileageOnlyRows.map((row) =>
@@ -2658,6 +3363,7 @@ function toLatestApprovalQueueLineItems(
                 openFlagCounts.get(row.expenseReportId) ?? 0,
                 unreviewedLineItemCounts.get(row.expenseReportId) ?? 0,
                 [],
+                receiptsByReport.get(row.expenseReportId) ?? [],
             ),
         ),
     ].filter(
@@ -2684,6 +3390,8 @@ function toMileageOnlyApprovalQueueLineItemRow(
         mileageDistance: row.distance,
         currentStage: row.currentStage,
         flaggedLineItem: row.flaggedLineItem,
+        flagCode: row.flagCode,
+        flagMessage: row.flagMessage,
         reviewAction: row.reviewAction,
         deductible: row.deductible,
         submissionId: row.submissionId,
@@ -2709,6 +3417,7 @@ function toApprovalQueueLineItemResponse(
     openFlagCount: number,
     unreviewedLineItemCount: number,
     mileageEntries: ApprovalQueueMileageEntryRow[] = [],
+    receipts: ApprovalQueueReceiptRow[] = [],
 ): ApprovalQueueLineItemResponse {
     return {
         id: row.id,
@@ -2720,6 +3429,7 @@ function toApprovalQueueLineItemResponse(
         glCode: row.glCode ?? "Unmapped",
         currentStage: row.currentStage as ExpenseReportStage,
         flaggedLineItem: row.flaggedLineItem,
+        policyChecks: toPolicyChecks(row),
         reviewAction: row.reviewAction,
         deductible: row.deductible,
         canAdvance:
@@ -2734,6 +3444,7 @@ function toApprovalQueueLineItemResponse(
                       0,
                   ),
         mileageEntries: mileageEntries.map(toApprovalQueueMileageEntryResponse),
+        receipts: receipts.map(toApprovalQueueReceiptResponse),
     };
 }
 
@@ -2757,6 +3468,21 @@ function groupApprovalQueueMileageEntries(
     return mileageEntriesByReport;
 }
 
+function groupApprovalQueueReceipts(
+    receiptRows: ApprovalQueueReceiptRow[],
+): Map<string, ApprovalQueueReceiptRow[]> {
+    const receiptsByReport = new Map<string, ApprovalQueueReceiptRow[]>();
+
+    for (const row of receiptRows) {
+        receiptsByReport.set(row.expenseReportId, [
+            ...(receiptsByReport.get(row.expenseReportId) ?? []),
+            row,
+        ]);
+    }
+
+    return receiptsByReport;
+}
+
 function toApprovalQueueMileageEntryResponse(
     row: ApprovalQueueMileageEntryRow,
 ) {
@@ -2769,9 +3495,59 @@ function toApprovalQueueMileageEntryResponse(
         amount: Number(row.amount ?? 0),
         glCode: row.glCode ?? "Unmapped",
         flaggedLineItem: row.flaggedLineItem,
+        policyChecks: toPolicyChecks(row),
         reviewAction: row.reviewAction,
         deductible: row.deductible,
     };
+}
+
+function toApprovalQueueReceiptResponse(row: ApprovalQueueReceiptRow) {
+    return {
+        id: row.id,
+        lineItemId: row.lineItemId,
+        merchant: row.merchant,
+        receiptDate: row.receiptDate,
+        amount: Number(row.amount),
+        filename: readReceiptBlobString(row.blobReference, "filename"),
+        contentType: readReceiptBlobString(row.blobReference, "contentType"),
+    };
+}
+
+function readReceiptBlobString(
+    blobReference: unknown,
+    key: "contentType" | "filename",
+): string | null {
+    if (
+        blobReference === null ||
+        typeof blobReference !== "object" ||
+        !(key in blobReference)
+    ) {
+        return null;
+    }
+
+    const metadata = blobReference as Record<string, unknown>;
+    const value = metadata[key];
+
+    return typeof value === "string" ? value : null;
+}
+
+function toPolicyChecks(
+    row: Pick<
+        ApprovalQueueLineItemRow | ApprovalQueueMileageEntryRow,
+        "flagCode" | "flagMessage" | "flaggedLineItem"
+    >,
+): ApprovalQueueLineItemResponse["policyChecks"] {
+    if (row.flagCode === null || row.flagMessage === null) {
+        return [];
+    }
+
+    return [
+        {
+            code: row.flagCode,
+            message: row.flagMessage,
+            state: row.flaggedLineItem ? "uncleared" : "cleared",
+        },
+    ];
 }
 
 async function readLatestSubmissionId(
@@ -2825,6 +3601,14 @@ function isSendBackTransition(
 function isValidTransitionEdge(
     request: TransitionExpenseReportStageRequest,
 ): boolean {
+    if (request.fromStage === "AP Review" && request.toStage === "Paid") {
+        return false;
+    }
+
+    if (request.fromStage === "Paid" && request.toStage === "Reconciled") {
+        return false;
+    }
+
     return isExpenseReportWorkflowEdge(request.fromStage, request.toStage);
 }
 
@@ -2833,6 +3617,13 @@ function buildTransitionDenialReason(
     currentStage: ExpenseReportStage,
 ): string {
     if (!isValidTransitionEdge(request)) {
+        if (
+            (request.fromStage === "AP Review" && request.toStage === "Paid") ||
+            (request.fromStage === "Paid" && request.toStage === "Reconciled")
+        ) {
+            return "Settlement-owned transition must use the settlement route.";
+        }
+
         return `Invalid transition from ${request.fromStage} to ${request.toStage}.`;
     }
 
@@ -2942,4 +3733,64 @@ export async function findAuditEntriesByExpenseReportId(
             ),
         )
         .orderBy(asc(auditEntry.sequence));
+}
+
+/**
+ * Reads append-only comments for an Expense Report within a tenant boundary.
+ */
+export async function findCaseCommentsByExpenseReportId(
+    tenantId: string,
+    expenseReportId: string,
+): Promise<CaseComment[]> {
+    return db
+        .select()
+        .from(caseComment)
+        .where(
+            and(
+                eq(caseComment.tenantId, tenantId),
+                eq(caseComment.expenseReportId, expenseReportId),
+            ),
+        )
+        .orderBy(asc(caseComment.createdAt), asc(caseComment.id));
+}
+
+/**
+ * Appends a comment to an Expense Report within a tenant boundary.
+ */
+export async function insertCaseCommentForExpenseReport(
+    comment: NewCaseComment,
+    ownerId?: string,
+): Promise<CaseComment | undefined> {
+    return db.transaction(async (transaction) => {
+        const reportRows = await transaction
+            .select({ id: expenseReport.id })
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, comment.tenantId),
+                    eq(expenseReport.id, comment.expenseReportId),
+                    ...(ownerId === undefined
+                        ? []
+                        : [eq(expenseReport.owner, ownerId)]),
+                ),
+            )
+            .for("update");
+        const report = reportRows[0];
+
+        if (report === undefined) {
+            return undefined;
+        }
+
+        const inserted = await transaction
+            .insert(caseComment)
+            .values(comment)
+            .returning();
+        const created = inserted[0];
+
+        if (created === undefined) {
+            throw new Error("Unable to create Expense Report comment.");
+        }
+
+        return created;
+    });
 }

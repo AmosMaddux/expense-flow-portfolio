@@ -12,6 +12,7 @@ import {
     auditEntry,
     stageTransition,
     stageTransitionOutbox,
+    stageTransitionProjection,
     lineItem,
     glCode,
     glMapping,
@@ -26,6 +27,7 @@ const requiredTables = [
     getTableConfig(auditEntry),
     getTableConfig(stageTransition),
     getTableConfig(stageTransitionOutbox),
+    getTableConfig(stageTransitionProjection),
     getTableConfig(lineItem),
     getTableConfig(glCode),
     getTableConfig(glMapping),
@@ -153,6 +155,67 @@ $$;
         }
     }, 240000);
 });
+
+void describe("stage transition outbox ownership migration", () => {
+    void test("blocks rollout with preexisting mismatched outbox rows", async () => {
+        const container = await new PostgreSqlContainer("postgres:17-alpine")
+            .withDatabase("expenseflow_core_case_outbox_ownership")
+            .withUsername("expenseflow")
+            .withPassword("expenseflow")
+            .start();
+        const client = new Client({
+            connectionString: container.getConnectionUri(),
+        });
+        const transitionTenantId = "00000000-0000-4000-8000-000000000601";
+        const outboxTenantId = "00000000-0000-4000-8000-000000000602";
+        const transitionReportId = "10000000-0000-4000-8000-000000000601";
+        const outboxReportId = "10000000-0000-4000-8000-000000000602";
+        const ownerId = "20000000-0000-4000-8000-000000000601";
+        const transitionId = "30000000-0000-4000-8000-000000000601";
+        const existingOutboxId = "40000000-0000-4000-8000-000000000601";
+
+        try {
+            await client.connect();
+            await applyMigrationRange(client, 0, 28);
+            await client.query(
+                `INSERT INTO "expense_report" ("id", "owner", "due_date", "tenant_id")
+                 VALUES
+                    ($1, $3, '2026-07-30', $4),
+                    ($2, $3, '2026-07-30', $5)`,
+                [
+                    transitionReportId,
+                    outboxReportId,
+                    ownerId,
+                    transitionTenantId,
+                    outboxTenantId,
+                ],
+            );
+            await client.query(
+                `INSERT INTO "stage_transition" ("id", "tenant_id", "expense_report_id", "actor", "from_stage", "to_stage", "reason")
+                 VALUES ($1, $2, $3, $4, 'Drafted', 'Submitted', 'employee_submitted')`,
+                [transitionId, transitionTenantId, transitionReportId, ownerId],
+            );
+            await client.query(
+                `INSERT INTO "stage_transition_outbox" ("id", "stage_transition_id", "tenant_id", "expense_report_id", "correlation_id", "from_stage", "to_stage")
+                 VALUES ($1, $2, $3, $4, gen_random_uuid(), 'Drafted', 'Submitted')`,
+                [
+                    existingOutboxId,
+                    transitionId,
+                    outboxTenantId,
+                    outboxReportId,
+                ],
+            );
+
+            await expect(applyMigrationRange(client, 29, 29)).rejects.toThrow(
+                "stage_transition_outbox contains rows whose stage_transition_id, tenant_id, and expense_report_id do not match stage_transition",
+            );
+        } finally {
+            await client.end().catch(() => undefined);
+            await container.stop().catch(() => undefined);
+        }
+    }, 240000);
+});
+
 void describe("audit entry PostgreSQL constraints", () => {
     void test("prevents audit entry updates and deletes in PostgreSQL", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000401";

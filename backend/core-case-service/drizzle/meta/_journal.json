@@ -204,6 +204,34 @@
             "when": 1785357547700,
             "tag": "0028_manual_deductibility",
             "breakpoints": true
+        },
+        {
+            "idx": 29,
+            "version": "7",
+            "when": 1785420189074,
+            "tag": "0029_sharp_whiplash",
+            "breakpoints": true
+        },
+        {
+            "idx": 30,
+            "version": "7",
+            "when": 1785447295689,
+            "tag": "0030_soft_vermin",
+            "breakpoints": true
+        },
+        {
+            "idx": 31,
+            "version": "7",
+            "when": 1785780023816,
+            "tag": "0031_unique_miracleman",
+            "breakpoints": true
+        },
+        {
+            "idx": 32,
+            "version": "7",
+            "when": 1785780023817,
+            "tag": "0032_magenta_sue_storm",
+            "breakpoints": true
         }
     ]
 }

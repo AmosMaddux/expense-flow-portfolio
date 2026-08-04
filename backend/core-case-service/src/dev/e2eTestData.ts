@@ -257,6 +257,15 @@ async function verifyE2eTestData(): Promise<void> {
                     )
                     .where(eq(lineItem.tenantId, e2eTenantId)),
             ]);
+        const seededUsersByEmail = new Map(
+            users.map((seededUser) => [seededUser.email, seededUser]),
+        );
+        const seededRolesByUserId = new Map(
+            roles.map((seededRole) => [seededRole.userId, seededRole.name]),
+        );
+        const financeAccount = seededUsersByEmail.get(
+            e2eAccounts.financeAdmin.email,
+        );
 
         if (
             users.length !== 3 ||
@@ -295,7 +304,10 @@ async function verifyE2eTestData(): Promise<void> {
                 e2eApprovalQueueLineItem.expenseReportId ||
             queueLineItems[0].merchant !== e2eApprovalQueueLineItem.merchant ||
             queueLineItems[0].amount !== e2eApprovalQueueLineItem.amount ||
-            queueLineItems[0].glAccountCode !== "6100-E2E"
+            queueLineItems[0].glAccountCode !== "6100-E2E" ||
+            financeAccount === undefined ||
+            seededRolesByUserId.get(financeAccount.id) !==
+                e2eAccounts.financeAdmin.role
         ) {
             throw new Error(
                 `Unexpected E2E seed counts: users=${users.length}, roles=${roles.length}, glMappings=${mappings.length}, reports=${reports.length}, canaryReports=${canaryReports.length}, queueLineItems=${queueLineItems.length}.`,

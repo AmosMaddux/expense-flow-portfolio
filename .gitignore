@@ -15,7 +15,7 @@ build/
 coverage/
 playwright-report/
 test-results/
-.lighthouseci/
+/.lighthouseci/
 
 # dotenv environment variable files
 .env

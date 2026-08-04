@@ -13,6 +13,7 @@ import {
     glCodingResult,
     lineItem,
     mileageEntry,
+    receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
 } from "../../db/schema/index.js";
@@ -34,14 +35,17 @@ import {
     buildSubmissionSourceKeys,
     clearExpenseReportFlags,
     countOpenExpenseReportFlags,
+    findApprovalQueueLineItems,
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
     findExpenseReportById,
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
     insertDraftExpenseReport,
+    reviewExpenseReportLineItem,
     submitDraftExpenseReport,
     transitionExpenseReportStage,
+    updateExpenseReportSourceDeductibility,
 } from "./expenseReportRepository.js";
 
 void describe("expenseReportRepository", () => {
@@ -780,6 +784,445 @@ void describe("expenseReportRepository", () => {
         });
     });
 
+    void test("returns tenant-scoped receipt metadata with Approval Queue line items", async () => {
+        const tenantId = randomUUID();
+        const otherTenantId = randomUUID();
+        const ownerId = randomUUID();
+        const report = await insertDraftExpenseReport(tenantId, {
+            ...buildNewExpenseReport(tenantId, ownerId),
+            id: randomUUID(),
+        });
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(eq(expenseReport.id, report.id));
+        const insertedLineItems = await db
+            .insert(lineItem)
+            .values([
+                {
+                    id: randomUUID(),
+                    tenantId,
+                    expenseReportId: report.id,
+                    merchant: "Synthetic Hotel",
+                    expenseDate: "2026-07-21",
+                    amount: "242.30",
+                    currency: "USD",
+                    category: "Travel",
+                },
+                {
+                    id: randomUUID(),
+                    tenantId,
+                    expenseReportId: report.id,
+                    merchant: "Synthetic Parking",
+                    expenseDate: "2026-07-21",
+                    amount: "24.00",
+                    currency: "USD",
+                    category: "Travel",
+                },
+            ])
+            .returning({ id: lineItem.id });
+        const lineItemId = insertedLineItems[0]?.id;
+        const secondLineItemId = insertedLineItems[1]?.id;
+        if (lineItemId === undefined || secondLineItemId === undefined) {
+            throw new Error("Expected line item to be created");
+        }
+
+        const hotelReceiptId = randomUUID();
+        const parkingReceiptId = randomUUID();
+        const taxiReceiptId = randomUUID();
+        await db.insert(receiptMetadata).values([
+            {
+                id: hotelReceiptId,
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId,
+                merchant: "Synthetic Hotel",
+                receiptDate: "2026-07-21",
+                amount: "242.30",
+                blobReference: {
+                    objectKey: "synthetic/object-key",
+                    filename: "synthetic-hotel.pdf",
+                    contentType: "application/pdf",
+                },
+            },
+            {
+                id: parkingReceiptId,
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId: secondLineItemId,
+                merchant: "Synthetic Parking",
+                receiptDate: "2026-07-21",
+                amount: "24.00",
+                blobReference: {
+                    objectKey: "synthetic/parking-object-key",
+                    filename: "synthetic-parking.pdf",
+                    contentType: "application/pdf",
+                },
+            },
+            {
+                id: taxiReceiptId,
+                tenantId,
+                expenseReportId: report.id,
+                lineItemId: null,
+                merchant: "Synthetic Taxi",
+                receiptDate: "2026-07-22",
+                amount: "38.10",
+                blobReference: {
+                    objectKey: "synthetic/unlinked-object-key",
+                    filename: "synthetic-taxi.jpg",
+                    contentType: "image/jpeg",
+                },
+            },
+        ]);
+        const submissionId = randomUUID();
+        await db.insert(glCodingResult).values([
+            {
+                id: randomUUID(),
+                submissionId,
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: lineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "242.30",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+            {
+                id: randomUUID(),
+                submissionId,
+                tenantId,
+                expenseReportId: report.id,
+                sourceType: "line_item",
+                sourceId: secondLineItemId,
+                category: "Travel",
+                mappingStatus: "mapped",
+                glAccountCode: "6000",
+                glAccountName: "Travel Expense",
+                amount: "24.00",
+                currency: "USD",
+                flaggedLineItem: false,
+            },
+        ]);
+
+        const otherReport = await insertDraftExpenseReport(otherTenantId, {
+            ...buildNewExpenseReport(otherTenantId, randomUUID()),
+            id: randomUUID(),
+        });
+
+        if (otherReport === undefined) {
+            throw new Error(
+                "Expected other tenant Expense Report to be created",
+            );
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(eq(expenseReport.id, otherReport.id));
+        const otherLineItems = await db
+            .insert(lineItem)
+            .values({
+                id: randomUUID(),
+                tenantId: otherTenantId,
+                expenseReportId: otherReport.id,
+                merchant: "Synthetic Other Hotel",
+                expenseDate: "2026-07-23",
+                amount: "310.00",
+                currency: "USD",
+                category: "Travel",
+            })
+            .returning({ id: lineItem.id });
+        const otherLineItemId = otherLineItems[0]?.id;
+        if (otherLineItemId === undefined) {
+            throw new Error("Expected other tenant line item to be created");
+        }
+
+        await db.insert(receiptMetadata).values({
+            id: randomUUID(),
+            tenantId: otherTenantId,
+            expenseReportId: otherReport.id,
+            lineItemId: otherLineItemId,
+            merchant: "Synthetic Other Hotel",
+            receiptDate: "2026-07-23",
+            amount: "310.00",
+            blobReference: {
+                objectKey: "synthetic/other-tenant-object-key",
+                filename: "synthetic-other-hotel.pdf",
+                contentType: "application/pdf",
+            },
+        });
+        await db.insert(glCodingResult).values({
+            id: randomUUID(),
+            submissionId: randomUUID(),
+            tenantId: otherTenantId,
+            expenseReportId: otherReport.id,
+            sourceType: "line_item",
+            sourceId: otherLineItemId,
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "310.00",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const rows = await findApprovalQueueLineItems(tenantId);
+        const crossTenantRows = await findApprovalQueueLineItems(otherTenantId);
+        const reportRow = rows.find((row) => row.expenseReportId === report.id);
+        const reportRows = rows.filter(
+            (row) => row.expenseReportId === report.id,
+        );
+        const hotelReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Hotel",
+        );
+        const parkingReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Parking",
+        );
+        const taxiReceipt = reportRow?.receipts.find(
+            (receipt) => receipt.merchant === "Synthetic Taxi",
+        );
+
+        expect(reportRows).toHaveLength(2);
+        expect(reportRow?.receipts).toHaveLength(3);
+        for (const row of reportRows) {
+            const receiptIds = row.receipts.map((receipt) => receipt.id);
+            expect(receiptIds).toHaveLength(3);
+            expect(receiptIds).toEqual(
+                expect.arrayContaining([
+                    hotelReceiptId,
+                    parkingReceiptId,
+                    taxiReceiptId,
+                ]),
+            );
+        }
+        expect(typeof hotelReceipt?.id).toBe("string");
+        expect(hotelReceipt).toMatchObject({
+            lineItemId,
+            merchant: "Synthetic Hotel",
+            receiptDate: "2026-07-21",
+            amount: 242.3,
+            filename: "synthetic-hotel.pdf",
+            contentType: "application/pdf",
+        });
+        expect(typeof parkingReceipt?.id).toBe("string");
+        expect(parkingReceipt).toMatchObject({
+            lineItemId: secondLineItemId,
+            merchant: "Synthetic Parking",
+            receiptDate: "2026-07-21",
+            amount: 24,
+            filename: "synthetic-parking.pdf",
+            contentType: "application/pdf",
+        });
+        expect(typeof taxiReceipt?.id).toBe("string");
+        expect(taxiReceipt).toMatchObject({
+            lineItemId: null,
+            merchant: "Synthetic Taxi",
+            receiptDate: "2026-07-22",
+            amount: 38.1,
+            filename: "synthetic-taxi.jpg",
+            contentType: "image/jpeg",
+        });
+        expect(JSON.stringify(reportRow)).not.toContain("objectKey");
+        expect(crossTenantRows).toHaveLength(1);
+        expect(crossTenantRows[0]?.expenseReportId).toBe(otherReport.id);
+        expect(crossTenantRows[0]?.receipts).toHaveLength(1);
+        expect(crossTenantRows[0]?.receipts[0]).toMatchObject({
+            merchant: "Synthetic Other Hotel",
+            lineItemId: otherLineItemId,
+        });
+    });
+
+    void test("preserves receipt metadata when a line item is reviewed", async () => {
+        const tenantId = randomUUID();
+        const actorId = randomUUID();
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "Manager Approval" })
+            .where(eq(expenseReport.id, report.id));
+        const insertedLineItems = await db
+            .insert(lineItem)
+            .values({
+                id: randomUUID(),
+                tenantId,
+                expenseReportId: report.id,
+                merchant: "Synthetic Conference Center",
+                expenseDate: "2026-07-24",
+                amount: "525.00",
+                currency: "USD",
+                category: "Meals",
+            })
+            .returning({ id: lineItem.id });
+        const lineItemId = insertedLineItems[0]?.id;
+        if (lineItemId === undefined) {
+            throw new Error("Expected line item to be created");
+        }
+
+        const receiptId = randomUUID();
+        await db.insert(receiptMetadata).values({
+            id: receiptId,
+            tenantId,
+            expenseReportId: report.id,
+            lineItemId,
+            merchant: "Synthetic Conference Center",
+            receiptDate: "2026-07-24",
+            amount: "525.00",
+            blobReference: {
+                objectKey: "synthetic/conference-receipt",
+                filename: "synthetic-conference.pdf",
+                contentType: "application/pdf",
+            },
+        });
+        await db.insert(glCodingResult).values({
+            id: randomUUID(),
+            submissionId: randomUUID(),
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Meals",
+            mappingStatus: "mapped",
+            glAccountCode: "6100",
+            glAccountName: "Meals Expense",
+            amount: "525.00",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const result = await reviewExpenseReportLineItem({
+            tenantId,
+            expenseReportId: report.id,
+            sourceId: lineItemId,
+            actorId,
+            action: "approve",
+        });
+
+        expect(result.kind).toBe("reviewed");
+        if (result.kind !== "reviewed") {
+            throw new Error("Expected line item review to be saved");
+        }
+
+        expect(result.lineItem.reviewAction).toBe("approve");
+        expect(result.lineItem.receipts).toEqual([
+            expect.objectContaining({
+                id: receiptId,
+                lineItemId,
+                merchant: "Synthetic Conference Center",
+                filename: "synthetic-conference.pdf",
+                contentType: "application/pdf",
+            }),
+        ]);
+    });
+
+    void test("preserves receipt metadata when AP deductibility is updated", async () => {
+        const tenantId = randomUUID();
+        const actorId = randomUUID();
+        const report = await insertDraftExpenseReport(
+            tenantId,
+            buildNewExpenseReport(tenantId, actorId),
+        );
+
+        if (report === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+
+        await db
+            .update(expenseReport)
+            .set({ currentStage: "AP Review" })
+            .where(eq(expenseReport.id, report.id));
+        const insertedLineItems = await db
+            .insert(lineItem)
+            .values({
+                id: randomUUID(),
+                tenantId,
+                expenseReportId: report.id,
+                merchant: "Synthetic Supplier",
+                expenseDate: "2026-07-25",
+                amount: "89.20",
+                currency: "USD",
+                category: "Office",
+            })
+            .returning({ id: lineItem.id });
+        const lineItemId = insertedLineItems[0]?.id;
+        if (lineItemId === undefined) {
+            throw new Error("Expected line item to be created");
+        }
+
+        const receiptId = randomUUID();
+        await db.insert(receiptMetadata).values({
+            id: receiptId,
+            tenantId,
+            expenseReportId: report.id,
+            lineItemId,
+            merchant: "Synthetic Supplier",
+            receiptDate: "2026-07-25",
+            amount: "89.20",
+            blobReference: {
+                objectKey: "synthetic/supplier-receipt",
+                filename: "synthetic-supplier.png",
+                contentType: "image/png",
+            },
+        });
+        await db.insert(glCodingResult).values({
+            id: randomUUID(),
+            submissionId: randomUUID(),
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            category: "Office",
+            mappingStatus: "mapped",
+            glAccountCode: "6200",
+            glAccountName: "Office Expense",
+            amount: "89.20",
+            currency: "USD",
+            flaggedLineItem: false,
+        });
+
+        const result = await updateExpenseReportSourceDeductibility({
+            tenantId,
+            expenseReportId: report.id,
+            sourceType: "line_item",
+            sourceId: lineItemId,
+            actorId,
+            deductible: true,
+        });
+
+        expect(result.kind).toBe("updated");
+        if (result.kind !== "updated") {
+            throw new Error("Expected source deductibility to be updated");
+        }
+
+        expect(result.lineItem.deductible).toBe(true);
+        expect(result.lineItem.receipts).toEqual([
+            expect.objectContaining({
+                id: receiptId,
+                lineItemId,
+                merchant: "Synthetic Supplier",
+                filename: "synthetic-supplier.png",
+                contentType: "image/png",
+            }),
+        ]);
+    });
+
     void test("writes audit and stage-transition rows for an approved transition", async () => {
         const targetTenantId = "00000000-0000-4000-8000-000000000196";
         const actorId = "20000000-0000-4000-8000-000000000196";
@@ -991,8 +1434,9 @@ void describe("expenseReportRepository", () => {
         expect(afterCount).toBe(0);
         expect(codingRows[0]).toMatchObject({
             flaggedLineItem: false,
-            flagCode: null,
-            flagMessage: null,
+            flagCode: "line_item_over_threshold",
+            flagMessage:
+                "Line item amount is above the MVP manual review threshold.",
         });
         expect(auditRows).toContainEqual(
             expect.objectContaining({

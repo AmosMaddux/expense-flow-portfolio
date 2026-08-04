@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { and, eq } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -19,6 +21,7 @@ import {
 } from "../db/schema/identityAuth.js";
 import {
     auditEntry,
+    caseComment,
     expenseReport,
     lineItem,
     stageTransition,
@@ -41,7 +44,7 @@ const localAuthCommandSchema = z.enum(["seed", "code"]);
 const totpPeriodSeconds = 30;
 const minimumUsefulCodeLifetimeSeconds = 10;
 
-type LocalAuthDatabase = NodePgDatabase<typeof schema>;
+export type LocalAuthDatabase = NodePgDatabase<typeof schema>;
 type LocalAuthTransaction = Parameters<
     Parameters<LocalAuthDatabase["transaction"]>[0]
 >[0];
@@ -160,6 +163,18 @@ async function seedLocalAuthAccount(
             );
         }
     });
+}
+
+/**
+ * Seeds every fixed synthetic identity used for local role testing.
+ */
+export async function seedLocalAuthAccounts(
+    database: LocalAuthDatabase,
+    environment: LocalAuthEnvironment,
+): Promise<void> {
+    for (const account of getLocalAuthAccounts()) {
+        await seedLocalAuthAccount(database, environment, account);
+    }
 }
 
 async function seedOverdueEmployeeSubmission(
@@ -294,6 +309,28 @@ async function seedOverdueEmployeeSubmission(
                 updatedAt: seededAt,
             },
         });
+
+    await transaction
+        .insert(caseComment)
+        .values([
+            {
+                id: "7a000000-0000-4000-8000-000000000009",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                authorId: ownerId,
+                body: "Synthetic employee dispute: receipt is available for finance review.",
+                createdAt: new Date("2026-06-22T13:00:00.000Z"),
+            },
+            {
+                id: "7a000000-0000-4000-8000-000000000010",
+                tenantId,
+                expenseReportId: overdueSubmissionId,
+                authorId: "9f1b3f5c-1dc8-4f37-8a23-000000000003",
+                body: "Synthetic finance note: confirm policy treatment before reimbursement.",
+                createdAt: new Date("2026-06-22T14:00:00.000Z"),
+            },
+        ])
+        .onConflictDoNothing();
 }
 
 async function readCurrentLocalTotpCode(
@@ -385,9 +422,7 @@ async function main(): Promise<void> {
             return;
         }
 
-        for (const account of getLocalAuthAccounts()) {
-            await seedLocalAuthAccount(database, environment, account);
-        }
+        await seedLocalAuthAccounts(database, environment);
 
         process.stdout.write(
             [
@@ -405,9 +440,11 @@ async function main(): Promise<void> {
     }
 }
 
-void main().catch(() => {
-    process.stderr.write(
-        "Unable to manage synthetic local auth accounts. Use only a loopback database and check local auth configuration.\n",
-    );
-    process.exitCode = 1;
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    void main().catch(() => {
+        process.stderr.write(
+            "Unable to manage synthetic local auth accounts. Use only a loopback database and check local auth configuration.\n",
+        );
+        process.exitCode = 1;
+    });
+}

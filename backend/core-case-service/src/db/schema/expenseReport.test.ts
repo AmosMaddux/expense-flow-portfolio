@@ -21,6 +21,8 @@ import {
     receiptMetadata,
     stageTransition,
     stageTransitionOutbox,
+    stageTransitionProjection,
+    tenantExpensePolicy,
 } from "./expenseReport.js";
 
 const requiredExpenseReportColumnNames = [
@@ -123,6 +125,12 @@ const auditEntryRequiredColumnNames = [
     "stage_after_proposed_action",
     "created_at",
     "sequence",
+];
+
+const tenantExpensePolicyRequiredColumnNames = [
+    "tenant_id",
+    "policy_text",
+    "updated_at",
 ];
 
 const coreCaseServiceDrizzleUrl = new URL("../../../drizzle/", import.meta.url);
@@ -751,6 +759,7 @@ void describe("stageTransition schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "stage_transition_tenant_report_idx",
+            "stage_transition_tenant_report_id_unique_idx",
             "stage_transition_tenant_occurred_at_idx",
         ]);
 
@@ -923,6 +932,55 @@ void describe("stageTransitionOutbox schema", () => {
         );
         expect(foreignKeyNames).toContain(
             "stage_transition_outbox_expense_report_tenant_fk",
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_outbox_transition_tenant_report_fk",
+        );
+    });
+});
+
+void describe("stageTransitionProjection schema", () => {
+    void test("defines an idempotent tenant-scoped event projection", () => {
+        const tableConfig = getTableConfig(stageTransitionProjection);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+        const indexNames = tableConfig.indexes.map(
+            (index) => index.config.name,
+        );
+        const checkNames = tableConfig.checks.map((check) => check.name);
+        const foreignKeyNames = tableConfig.foreignKeys.map((foreignKey) =>
+            foreignKey.getName(),
+        );
+
+        expect(getTableName(stageTransitionProjection)).toBe(
+            "stage_transition_projection",
+        );
+        expect(columnNames).toEqual(
+            expect.arrayContaining([
+                "event_id",
+                "tenant_id",
+                "expense_report_id",
+                "correlation_id",
+                "previous_stage",
+                "current_stage",
+                "transitioned_at",
+                "projected_at",
+            ]),
+        );
+        expect(
+            tableConfig.columns.find((column) => column.name === "event_id")
+                ?.primary,
+        ).toBe(true);
+        expect(indexNames).toEqual(
+            expect.arrayContaining([
+                "stage_transition_projection_tenant_report_idx",
+                "stage_transition_projection_correlation_idx",
+            ]),
+        );
+        expect(checkNames).toContain(
+            "stage_transition_projection_valid_edge_check",
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_projection_expense_report_tenant_fk",
         );
     });
 });
@@ -1146,6 +1204,32 @@ void describe("gl reference schema", () => {
                 name: "gl_mapping_gl_code_tenant_fk",
             },
         ]);
+    });
+
+    void test("defines tenant expense policies as tenant-scoped reference text", () => {
+        const tableConfig = getTableConfig(tenantExpensePolicy);
+        const columnNames = tableConfig.columns.map((column) => column.name);
+
+        expect(getTableName(tenantExpensePolicy)).toEqual(
+            "tenant_expense_policy",
+        );
+
+        for (const columnName of tenantExpensePolicyRequiredColumnNames) {
+            expect(columnNames).toContain(columnName);
+        }
+
+        const tenantId = tableConfig.columns.find(
+            (column) => column.name === "tenant_id",
+        );
+        const policyText = tableConfig.columns.find(
+            (column) => column.name === "policy_text",
+        );
+
+        expect(tenantId?.primary).toBeTruthy();
+        expect(policyText?.notNull).toBeTruthy();
+        expect(tableConfig.checks.map((check) => check.name)).toContain(
+            "tenant_expense_policy_text_not_blank_check",
+        );
     });
 
     void test("generates SQL for GL accounts and category mappings", async () => {
