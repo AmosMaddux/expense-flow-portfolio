@@ -11,12 +11,9 @@ import {
 } from "../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
 
-const testDatabase = vi.hoisted(
-    () =>
-        ({ client: undefined }) as {
-            client: Pool | undefined;
-        },
-);
+const testDatabase: { client: Pool | undefined } = vi.hoisted(() => ({
+    client: undefined,
+}));
 
 vi.mock("../db/client.js", () => {
     testDatabase.client = new Pool({
@@ -80,7 +77,9 @@ void describe("stageTransitionOutboxRepository", () => {
         expect(reclaimedEvent).toBeDefined();
 
         if (reclaimedEvent === undefined) {
-            throw new Error("Expected an expired outbox lease to be reclaimed.");
+            throw new Error(
+                "Expected an expired outbox lease to be reclaimed.",
+            );
         }
 
         const staleCompletion = await markStageTransitionOutboxEventPublished(
@@ -138,7 +137,9 @@ void describe("stageTransitionOutboxRepository", () => {
         expect(reclaimedEvent).toBeDefined();
 
         if (reclaimedEvent === undefined) {
-            throw new Error("Expected an expired outbox lease to be reclaimed.");
+            throw new Error(
+                "Expected an expired outbox lease to be reclaimed.",
+            );
         }
 
         const staleCompletion = await markStageTransitionOutboxEventFailed(
