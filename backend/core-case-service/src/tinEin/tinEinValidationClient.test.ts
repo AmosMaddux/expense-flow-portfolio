@@ -76,6 +76,7 @@ void describe("SOAP TIN/EIN validation client", () => {
             MatchCode: "0",
             VerifiedName: "Synthetic Expense Vendor LLC",
             TINType: "EIN",
+            ServiceReferenceId: "synthetic-reference-201",
         });
         const getTaxpayerStatus = vi.fn().mockResolvedValue({
             Standing: "ACTIVE",
@@ -92,6 +93,7 @@ void describe("SOAP TIN/EIN validation client", () => {
         await expect(client.validateTinEin(request)).resolves.toStrictEqual({
             isValid: true,
             normalizedLegalName: "Synthetic Expense Vendor LLC",
+            serviceReferenceId: "synthetic-reference-201",
             taxpayerStanding: "active",
             taxpayerStandingAsOfDate: "2026-07-30",
         });
@@ -154,6 +156,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                         verifyTaxpayer: vi.fn().mockResolvedValue({
                             MatchCode: matchCode,
                             TINType: "EIN",
+                            CorrelationId: `synthetic-reference-${matchCode}`,
                         }),
                     }),
             });
@@ -162,6 +165,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                 {
                     isValid: false,
                     rejectionReason,
+                    serviceReferenceId: `synthetic-reference-${matchCode}`,
                 },
             );
         }
@@ -212,6 +216,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                             MatchCode: "0",
                             VerifiedName: "Synthetic Expense Vendor LLC",
                             TINType: "EIN",
+                            ServiceReferenceId: "synthetic-reference-201",
                         },
                     },
                 ]),
@@ -233,6 +238,7 @@ void describe("SOAP TIN/EIN validation client", () => {
         await expect(client.validateTinEin(request)).resolves.toStrictEqual({
             isValid: true,
             normalizedLegalName: "Synthetic Expense Vendor LLC",
+            serviceReferenceId: "synthetic-reference-201",
         });
     });
 
@@ -296,6 +302,7 @@ void describe("SOAP TIN/EIN validation client", () => {
                             MatchCode: "0",
                             VerifiedName: "Synthetic Expense Vendor LLC",
                             TINType: "EIN",
+                            ServiceReferenceId: "synthetic-reference-201",
                         },
                     },
                 ]);
@@ -332,6 +339,7 @@ void describe("SOAP TIN/EIN validation client", () => {
         await expect(client.validateTinEin(request)).resolves.toStrictEqual({
             isValid: true,
             normalizedLegalName: "Synthetic Expense Vendor LLC",
+            serviceReferenceId: "synthetic-reference-201",
             taxpayerStanding: "active",
             taxpayerStandingAsOfDate: "2026-07-30",
         });
@@ -393,6 +401,26 @@ void describe("SOAP TIN/EIN validation client", () => {
         });
     });
 
+    void test("wraps SOAP client setup transport failures as unavailable", async () => {
+        const transportError = Object.assign(
+            new Error("Synthetic WSDL socket reset."),
+            { code: "ECONNRESET" },
+        );
+        const client = createSoapTinEinValidationClient(config, {
+            soapModule: {
+                createClientAsync: vi.fn().mockRejectedValue(transportError),
+                WSSecurity: vi.fn(),
+            },
+        });
+
+        const validation = client.validateTinEin(request);
+        await expect(validation).rejects.toBeInstanceOf(
+            TinEinValidationUnavailableError,
+        );
+        await expect(validation).rejects.toThrow(
+            "The TIN/EIN validation service could not be reached.",
+        );
+    });
     void test("retries SOAP invoker creation after a transient setup failure", async () => {
         const verifyTaxpayer = vi.fn().mockResolvedValue({
             MatchCode: "0",

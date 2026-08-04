@@ -160,6 +160,27 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
         });
     });
 
+    void test("handles SOAP client setup outages without crashing the submission flow", async () => {
+        const transportError = Object.assign(
+            new Error("Synthetic WSDL socket reset."),
+            { code: "ECONNRESET" },
+        );
+        const acl = createEinValidationAcl({
+            tinEinValidationClient: createSoapTinEinValidationClient(config, {
+                soapModule: {
+                    createClientAsync: vi
+                        .fn()
+                        .mockRejectedValue(transportError),
+                },
+            }),
+        });
+
+        await expect(acl.validateEin(request)).resolves.toStrictEqual({
+            status: "unreachable",
+            isValid: false,
+            rejectionReason: "EIN validation is temporarily unavailable.",
+        });
+    });
     void test("surfaces contract service errors instead of treating them as outages", async () => {
         const acl = createEinValidationAcl({
             tinEinValidationClient: {

@@ -186,6 +186,15 @@ export function createSoapTinEinValidationClient(
                 },
             ).catch((error: unknown) => {
                 invokerPromise = undefined;
+                if (error instanceof TinEinValidationServiceError) {
+                    throw error;
+                }
+                if (isTransportError(error)) {
+                    throw new TinEinValidationUnavailableError(
+                        "The TIN/EIN validation service could not be reached.",
+                        { cause: error },
+                    );
+                }
                 throw error;
             });
         }
@@ -261,11 +270,26 @@ async function createNodeSoapInvoker(
     soapModule?: SoapModule,
 ): Promise<ValidationServiceInvoker> {
     const soap = soapModule ?? (nodeRequire("soap") as SoapModule);
-    const soapClient = await soap.createClientAsync(wsdlUrl, {
-        ...(options.wsdl_options === undefined
-            ? {}
-            : { wsdl_options: options.wsdl_options }),
-    });
+    let soapClient: SoapClient;
+    try {
+        soapClient = await soap.createClientAsync(wsdlUrl, {
+            ...(options.wsdl_options === undefined
+                ? {}
+                : { wsdl_options: options.wsdl_options }),
+        });
+    } catch (error: unknown) {
+        if (isTransportError(error)) {
+            throw new TinEinValidationUnavailableError(
+                "The TIN/EIN validation service could not be reached.",
+                { cause: error },
+            );
+        }
+
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation SOAP client could not be created.",
+            { cause: error },
+        );
+    }
     configureSoapClient(soapClient, soap, options);
     const verifyMethod = readSoapMethod(soapClient, `${operationName}Async`);
     const statusMethod = options.statusEnrichmentEnabled
@@ -496,23 +520,31 @@ function toTivsValidationResponse(
     rawSoapResponse: Record<string, unknown>,
     matchCode: string,
 ): TinEinValidationResponse {
+    const serviceReferenceId = readOptionalString(rawSoapResponse, [
+        "ServiceReferenceId",
+        "serviceReferenceId",
+        "CorrelationId",
+        "correlationId",
+    ]);
+
     if (matchCode === "0") {
+        const normalizedLegalName = readOptionalString(rawSoapResponse, [
+            "VerifiedName",
+        ]);
+
         return TinEinValidationResponseSchema.parse({
             isValid: true,
-            ...(readOptionalString(rawSoapResponse, ["VerifiedName"]) ===
-            undefined
+            ...(normalizedLegalName === undefined
                 ? {}
-                : {
-                      normalizedLegalName: readOptionalString(rawSoapResponse, [
-                          "VerifiedName",
-                      ]),
-                  }),
+                : { normalizedLegalName }),
+            ...(serviceReferenceId === undefined ? {} : { serviceReferenceId }),
         });
     }
 
     return TinEinValidationResponseSchema.parse({
         isValid: false,
         rejectionReason: rejectionReasonForTivsMatchCode(matchCode),
+        ...(serviceReferenceId === undefined ? {} : { serviceReferenceId }),
     });
 }
 
