@@ -1,0 +1,64 @@
+erDiagram
+    %% Focused database view for the outbox series:
+    %% - SCRUM-131: durable stage_transition_outbox ownership around stage_transition.
+    %% - SCRUM-132: stage_transition_projection populated by the SQS consumer.
+
+    EXPENSE_REPORT {
+        uuid id PK
+        uuid tenant_id UK
+        text current_stage
+        boolean on_hold
+        text hold_reason
+        uuid owner
+        text priority
+        date due_date
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    STAGE_TRANSITION {
+        uuid id PK
+        uuid tenant_id FK
+        uuid expense_report_id FK
+        text from_stage
+        text to_stage
+        uuid actor
+        text reason
+        timestamptz occurred_at
+    }
+
+    STAGE_TRANSITION_OUTBOX {
+        uuid id PK
+        uuid stage_transition_id FK
+        uuid tenant_id FK
+        uuid expense_report_id FK
+        uuid correlation_id
+        text idempotency_key
+        text from_stage
+        text to_stage
+        timestamptz occurred_at
+        integer attempt_count
+        timestamptz next_attempt_at
+        timestamptz locked_until
+        uuid lock_id
+        timestamptz published_at
+        timestamptz dead_lettered_at
+    }
+
+    STAGE_TRANSITION_PROJECTION {
+        uuid event_id PK
+        uuid tenant_id FK
+        uuid expense_report_id FK
+        uuid correlation_id
+        text previous_stage
+        text current_stage
+        timestamptz transitioned_at
+        timestamptz projected_at
+    }
+
+    EXPENSE_REPORT ||--o{ STAGE_TRANSITION : "tenant_id + id"
+    EXPENSE_REPORT ||--o{ STAGE_TRANSITION_OUTBOX : "tenant_id + id"
+    EXPENSE_REPORT ||--o{ STAGE_TRANSITION_PROJECTION : "tenant_id + id"
+
+    STAGE_TRANSITION ||--o| STAGE_TRANSITION_OUTBOX : "id"
+    STAGE_TRANSITION ||--o| STAGE_TRANSITION_OUTBOX : "id + tenant_id + expense_report_id"

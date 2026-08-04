@@ -136,6 +136,87 @@ void describe("plain stage-transition SQS consumer", () => {
         expect(send).toHaveBeenCalledOnce();
     });
 
+    void test("redrives repeated consumer failures to the DLQ without changing case state", async () => {
+        const maxReceiveCount = 3;
+        const receiptHandle = "synthetic-receipt-handle";
+        const mainMessages = [
+            {
+                Body: JSON.stringify(syntheticEvent),
+                ReceiptHandle: receiptHandle,
+                receiveCount: 0,
+            },
+        ];
+        const dlqMessages: typeof mainMessages = [];
+        const send = vi.fn().mockImplementation((command) => {
+            if (command instanceof DeleteMessageCommand) {
+                mainMessages.splice(0, mainMessages.length);
+                return Promise.resolve({});
+            }
+
+            const message = mainMessages[0];
+            if (message === undefined) {
+                return Promise.resolve({ Messages: [] });
+            }
+
+            message.receiveCount += 1;
+            if (message.receiveCount > maxReceiveCount) {
+                dlqMessages.push(message);
+                mainMessages.splice(0, mainMessages.length);
+                return Promise.resolve({ Messages: [] });
+            }
+
+            return Promise.resolve({
+                Messages: [
+                    {
+                        Body: message.Body,
+                        ReceiptHandle: message.ReceiptHandle,
+                    },
+                ],
+            });
+        });
+        const caseState = {
+            currentStage: "Manager Approval",
+            projectionRows: 0,
+        };
+        const store = createStore();
+        store.project.mockRejectedValue(
+            new Error("synthetic projection failure"),
+        );
+        const logger = createLogger();
+
+        await pollStageTransitionQueueOnce({ send }, config, {
+            logger,
+            store,
+        });
+        await pollStageTransitionQueueOnce({ send }, config, {
+            logger,
+            store,
+        });
+        await pollStageTransitionQueueOnce({ send }, config, {
+            logger,
+            store,
+        });
+        await pollStageTransitionQueueOnce({ send }, config, {
+            logger,
+            store,
+        });
+
+        expect(dlqMessages).toHaveLength(1);
+        expect(dlqMessages[0]?.Body).toBe(JSON.stringify(syntheticEvent));
+        expect(caseState).toStrictEqual({
+            currentStage: "Manager Approval",
+            projectionRows: 0,
+        });
+        expect(store.project).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(logger.messageFailed).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(send.mock.calls).toHaveLength(maxReceiveCount + 1);
+        expect(
+            send.mock.calls.some(
+                ([command]) => command instanceof DeleteMessageCommand,
+            ),
+        ).toBe(false);
+    });
+
     void test("backs off and keeps polling after a receive failure", async () => {
         const shutdownController = new AbortController();
         const send = vi

@@ -1,4 +1,5 @@
 import {
+    BarController,
     BarElement,
     CategoryScale,
     Chart,
@@ -28,7 +29,14 @@ import {
     type FinanceDashboardTrendPoint,
 } from "./financeDashboardTrend";
 
-Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+Chart.register(
+    BarController,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Tooltip,
+    Legend,
+);
 
 export type FinanceDashboardScreenProps = {
     asOfDate?: string;
@@ -213,9 +221,20 @@ function FinanceDashboardTrendChart({
     useEffect(() => {
         const canvas = canvasRef.current;
         const context = canvas?.getContext("2d") ?? null;
+        const trackedChart = chartRef.current;
 
-        chartRef.current?.destroy();
+        trackedChart?.destroy();
         chartRef.current = null;
+
+        if (canvas !== null) {
+            const registeredChart = Chart.getChart(canvas);
+            if (
+                registeredChart !== undefined &&
+                registeredChart !== trackedChart
+            ) {
+                registeredChart.destroy();
+            }
+        }
 
         if (context === null || !hasTrendData) {
             return;

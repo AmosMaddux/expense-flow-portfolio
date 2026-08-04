@@ -19,23 +19,36 @@ type ChartInstanceMock = {
 };
 
 const chartInstances = vi.hoisted((): ChartInstanceMock[] => []);
+const registeredChartLookup = vi.hoisted(
+    (): { current: ChartInstanceMock | undefined } => ({ current: undefined }),
+);
 const chartConstructorMock = vi.hoisted(() =>
     vi.fn(function chartMock(_context: unknown, config: unknown) {
-        const instance = {
+        const instance: ChartInstanceMock = {
             config,
-            destroy: vi.fn(),
+            destroy: vi.fn(() => {
+                if (registeredChartLookup.current === instance) {
+                    registeredChartLookup.current = undefined;
+                }
+            }),
         };
         chartInstances.push(instance);
+        registeredChartLookup.current = instance;
 
         return instance;
     }),
 );
 const chartRegisterMock = vi.hoisted(() => vi.fn());
+const chartGetChartMock = vi.hoisted(() =>
+    vi.fn(() => registeredChartLookup.current),
+);
 
 vi.mock("chart.js", () => ({
+    BarController: {},
     BarElement: {},
     CategoryScale: {},
     Chart: Object.assign(chartConstructorMock, {
+        getChart: chartGetChartMock,
         register: chartRegisterMock,
     }),
     Legend: {},
@@ -170,7 +183,9 @@ function expectKpiCard(label: string, value: string, helper: string): void {
 
 beforeEach(() => {
     chartInstances.length = 0;
+    registeredChartLookup.current = undefined;
     chartConstructorMock.mockClear();
+    chartGetChartMock.mockClear();
     chartRegisterMock.mockClear();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
         {} as CanvasRenderingContext2D,
@@ -348,6 +363,33 @@ describe("FinanceDashboardScreen", () => {
         rendered.unmount();
 
         expect(chart?.destroy).toHaveBeenCalledOnce();
+    });
+
+    test("destroys a Chart.js-registered canvas instance before recreating the trend chart", async () => {
+        const staleChart = {
+            config: {},
+            destroy: vi.fn(),
+        };
+        registeredChartLookup.current = staleChart;
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+
+        expect(staleChart.destroy).toHaveBeenCalledOnce();
+        expect(chartConstructorMock).toHaveBeenCalledOnce();
     });
 
     test("renders a chart empty state when KPI data exists but trend data is empty", async () => {

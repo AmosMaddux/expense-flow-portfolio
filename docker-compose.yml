@@ -149,8 +149,8 @@ services:
         depends_on:
             - dynamodb
         environment:
-            AWS_ACCESS_KEY_ID: expenseflow-local
-            AWS_SECRET_ACCESS_KEY: expenseflow-local
+            AWS_ACCESS_KEY_ID: expenseflowlocal
+            AWS_SECRET_ACCESS_KEY: expenseflowlocaldevonly
             AWS_DEFAULT_REGION: us-east-1
         entrypoint: ["/bin/sh", "-c"]
         command:
