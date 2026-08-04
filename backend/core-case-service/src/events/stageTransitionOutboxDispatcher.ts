@@ -26,6 +26,18 @@ export type StageTransitionOutboxDispatcher = {
 };
 
 /**
+ * Signals that another dispatcher owns or completed the claimed outbox event.
+ */
+export class StageTransitionOutboxOwnershipLostError extends Error {
+    public constructor(eventId: string) {
+        super(
+            `Stage transition outbox event ${eventId} could not be completed because its claim is no longer current.`,
+        );
+        this.name = "StageTransitionOutboxOwnershipLostError";
+    }
+}
+
+/**
  * Dispatches a specific event immediately or a batch of due outbox events.
  */
 export async function dispatchStageTransitionOutboxEvents(
@@ -50,11 +62,23 @@ export async function dispatchStageTransitionOutboxEvents(
 /**
  * Starts the in-process retry dispatcher for pending stage-transition events.
  */
-export function startStageTransitionOutboxDispatcher(): () => void {
+export function startStageTransitionOutboxDispatcher(
+    dependencies: StageTransitionOutboxDispatcherDependencies = {},
+): () => void {
+    let isDispatching = false;
     const dispatchPending = () => {
-        void dispatchStageTransitionOutboxEvents().catch(() => {
-            // The next poll retries storage-level failures without failing the API process.
-        });
+        if (isDispatching) {
+            return;
+        }
+
+        isDispatching = true;
+        void dispatchStageTransitionOutboxEvents(undefined, dependencies)
+            .catch(() => {
+                // The next poll retries storage-level failures without failing the API process.
+            })
+            .finally(() => {
+                isDispatching = false;
+            });
     };
     const timer = setInterval(dispatchPending, defaultPollIntervalMilliseconds);
     timer.unref();
@@ -85,11 +109,10 @@ async function publishClaimedEvent(
             eventId: event.id,
             occurredAt: event.occurredAt,
         });
-        await store.markPublished(event, now());
     } catch {
         const failedAt = now();
         const isDeadLettered = event.attemptCount >= defaultMaxAttempts;
-        await store.markFailed(
+        const markedFailed = await store.markFailed(
             event,
             new Date(
                 failedAt.getTime() +
@@ -97,6 +120,15 @@ async function publishClaimedEvent(
             ),
             isDeadLettered ? failedAt : undefined,
         );
+        if (!markedFailed) {
+            throw new StageTransitionOutboxOwnershipLostError(event.id);
+        }
+        return;
+    }
+
+    const markedPublished = await store.markPublished(event, now());
+    if (!markedPublished) {
+        throw new StageTransitionOutboxOwnershipLostError(event.id);
     }
 }
 

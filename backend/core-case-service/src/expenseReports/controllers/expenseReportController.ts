@@ -25,6 +25,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
     SubmitExpenseReportOperationResultSchema,
@@ -65,6 +66,7 @@ import {
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
     submitExpenseReport,
+    settleExpenseReportWorkflow,
     transitionExpenseReportWorkflow,
     updateExpenseReportSourceDeductibility,
     updateDraftLineItem,
@@ -631,6 +633,62 @@ export async function postExpenseReportTransition(
         });
 
         res.status(200).json(report);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles the Issue Payment stub then Reconciled settlement saga.
+ */
+export async function postExpenseReportSettlement(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        const parsedRequest = SettleExpenseReportInboundRequestSchema.parse(
+            req.body ?? {},
+        );
+        const correlationId = parseOrCreateCorrelationId(req);
+        const idempotencyKey = parseIdempotencyKey(req);
+        const settleReport = async () =>
+            settleExpenseReportWorkflow({
+                id: parsedParams.id,
+                tenantId: auth.tenantId,
+                actorId: auth.userId,
+                roles: auth.roles,
+                reason: parsedRequest.reason,
+                correlationId,
+                idempotencyKey,
+            });
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
+        const result = await runIdempotentSubmission({
+            conflictMessage:
+                "An Expense Report settlement with this idempotency key is already in progress.",
+            idempotencyKey,
+            operation: async () => ({
+                correlationId,
+                report: await settleReport(),
+            }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            successStatusCode: 200,
+            tenantId: auth.tenantId,
+        });
+        const settlement = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
+
+        res.set("X-Correlation-Id", settlement.correlationId);
+        res.status(result.statusCode).json(settlement.report);
     } catch (error: unknown) {
         next(error);
     }

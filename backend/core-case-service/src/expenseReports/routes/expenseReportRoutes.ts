@@ -20,6 +20,7 @@ import {
     postExpenseReportFlagClear,
     postExpenseReportLineItemReview,
     postExpenseReportSourceReview,
+    postExpenseReportSettlement,
     postDraftExpenseContent,
     postExpenseReportSubmission,
     postExpenseReportTransition,
@@ -88,6 +89,10 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/transitions",
     postExpenseReportTransition,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/settlement",
+    postExpenseReportSettlement,
 );
 expenseReportRouter.post(
     "/expense-reports/:id/flags/clear",

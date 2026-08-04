@@ -11,14 +11,28 @@ const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
+const abandonUnpaidExpenseReportSettlementClaimMock = vi.hoisted(() => vi.fn());
+const claimExpenseReportSettlementMock = vi.hoisted(() => vi.fn());
+const markExpenseReportSettlementCompensatedMock = vi.hoisted(() => vi.fn());
+const reconcileExpenseReportSettlementStageMock = vi.hoisted(() => vi.fn());
+const recordExpenseReportSettlementPaymentMock = vi.hoisted(() => vi.fn());
+const transitionIssuedExpenseReportSettlementToPaidMock = vi.hoisted(() =>
+    vi.fn(),
+);
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
+const compensatePaidSettlementStageMock = vi.hoisted(() => vi.fn());
+const insertDeniedWorkflowTransitionAttemptMock = vi.hoisted(() => vi.fn());
 const invalidateCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 const updateExpenseReportSourceDeductibilityMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../repository/expenseReportRepository.js", () => ({
+    abandonUnpaidExpenseReportSettlementClaim:
+        abandonUnpaidExpenseReportSettlementClaimMock,
     buildSubmissionSourceFingerprint: vi.fn(),
     buildSubmissionSourceKeys: vi.fn(),
     clearExpenseReportFlags: vi.fn(),
+    claimExpenseReportSettlement: claimExpenseReportSettlementMock,
+    compensatePaidSettlementStage: compensatePaidSettlementStageMock,
     countOpenExpenseReportFlags: vi.fn(),
     findApprovalQueueLineItems: vi.fn(),
     findAuditEntriesByExpenseReportId: findAuditEntriesByExpenseReportIdMock,
@@ -26,12 +40,21 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     findExpenseReportById: findExpenseReportByIdMock,
     findExpenseReportReviewDetail: findExpenseReportReviewDetailMock,
     insertDeniedSubmissionAuditEntry: vi.fn(),
-    insertDeniedWorkflowTransitionAttempt: vi.fn(),
+    insertDeniedWorkflowTransitionAttempt:
+        insertDeniedWorkflowTransitionAttemptMock,
     insertDraftExpenseReport: vi.fn(),
     insertMileageEntry: insertMileageEntryMock,
+    markExpenseReportSettlementCompensated:
+        markExpenseReportSettlementCompensatedMock,
+    reconcileExpenseReportSettlementStage:
+        reconcileExpenseReportSettlementStageMock,
     readDraftSubmissionSources: vi.fn(),
+    recordExpenseReportSettlementPayment:
+        recordExpenseReportSettlementPaymentMock,
     reviewExpenseReportLineItem: vi.fn(),
     submitDraftExpenseReport: vi.fn(),
+    transitionIssuedExpenseReportSettlementToPaid:
+        transitionIssuedExpenseReportSettlementToPaidMock,
     transitionExpenseReportStage: transitionExpenseReportStageMock,
     updateExpenseReportSourceDeductibility:
         updateExpenseReportSourceDeductibilityMock,
@@ -48,6 +71,7 @@ import {
     readCurrentDraftExpenseReport,
     readExpenseReportAuditEntries,
     readExpenseReportReviewDetail,
+    settleExpenseReportWorkflow,
     transitionExpenseReportWorkflow,
 } from "./expenseReportService.js";
 
@@ -59,7 +83,15 @@ beforeEach(() => {
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
     insertMileageEntryMock.mockReset();
+    abandonUnpaidExpenseReportSettlementClaimMock.mockReset();
+    claimExpenseReportSettlementMock.mockReset();
+    markExpenseReportSettlementCompensatedMock.mockReset();
+    reconcileExpenseReportSettlementStageMock.mockReset();
+    recordExpenseReportSettlementPaymentMock.mockReset();
+    transitionIssuedExpenseReportSettlementToPaidMock.mockReset();
     transitionExpenseReportStageMock.mockReset();
+    compensatePaidSettlementStageMock.mockReset();
+    insertDeniedWorkflowTransitionAttemptMock.mockReset();
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
     updateExpenseReportSourceDeductibilityMock.mockReset();
 });
@@ -145,6 +177,34 @@ void describe("Expense Report stage-transition outbox dispatch", () => {
         expect(dispatch).not.toHaveBeenCalled();
     });
 
+    void test("does not dispatch when the transactional stage change rolls back", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        findExpenseReportByIdMock.mockResolvedValue(submittedReport);
+        transitionExpenseReportStageMock.mockRejectedValue(
+            new Error("synthetic transaction rollback"),
+        );
+
+        await expect(
+            transitionExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Department Manager"],
+                    toStage: "Manager Approval",
+                    reason: "Synthetic manager review started.",
+                    correlationId,
+                },
+                { stageTransitionOutboxDispatcher: { dispatch } },
+            ),
+        ).rejects.toThrow("synthetic transaction rollback");
+
+        expect(
+            invalidateCachedCaseQueueStageRollupsMock,
+        ).not.toHaveBeenCalled();
+        expect(dispatch).not.toHaveBeenCalled();
+    });
+
     void test("invalidates the cache and returns the committed transition when immediate dispatch fails", async () => {
         const dispatch = vi
             .fn()
@@ -180,6 +240,495 @@ void describe("Expense Report stage-transition outbox dispatch", () => {
             invalidateCachedCaseQueueStageRollupsMock.mock
                 .invocationCallOrder[0],
         ).toBeLessThan(dispatch.mock.invocationCallOrder[0] ?? 0);
+    });
+
+    void test("rejects settlement-owned edges from the generic workflow", async () => {
+        findExpenseReportByIdMock.mockResolvedValue({
+            ...submittedReport,
+            currentStage: "AP Review",
+        });
+
+        await expect(
+            transitionExpenseReportWorkflow({
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Finance Admin"],
+                toStage: "Paid",
+                reason: "Synthetic generic payment attempt.",
+                correlationId,
+            }),
+        ).rejects.toThrow(
+            "Expense Report settlement transitions must use the settlement route.",
+        );
+
+        expect(insertDeniedWorkflowTransitionAttemptMock).toHaveBeenCalledWith({
+            tenantId,
+            id: expenseReportId,
+            actor: actorId,
+            toStage: "Paid",
+            denialReason:
+                "Settlement-owned transition must use the settlement route.",
+        });
+        expect(transitionExpenseReportStageMock).not.toHaveBeenCalled();
+    });
+});
+
+void describe("Expense Report settlement saga", () => {
+    const tenantId = "40000000-0000-4000-8000-000000000811";
+    const actorId = "50000000-0000-4000-8000-000000000811";
+    const expenseReportId = "60000000-0000-4000-8000-000000000811";
+    const settlementId = "61000000-0000-4000-8000-000000000811";
+    const correlationId = "70000000-0000-4000-8000-000000000811";
+    const apReviewReport = {
+        id: expenseReportId,
+        tenantId,
+        owner: actorId,
+        dueDate: "2026-07-31",
+        priority: "Normal",
+        currentStage: "AP Review",
+        onHold: false,
+        holdReason: null,
+        createdAt: new Date("2026-07-20T12:00:00.000Z"),
+        updatedAt: new Date("2026-07-20T12:00:00.000Z"),
+    };
+
+    void test("issues a synthetic payment stub before moving to Paid and Reconciled", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        const issue = vi
+            .fn()
+            .mockResolvedValue({ paymentId: "synthetic-payment-success" });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        findExpenseReportByIdMock.mockResolvedValueOnce({
+            ...apReviewReport,
+            currentStage: "Reconciled",
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-success",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValue(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        const report = await settleExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Finance Admin"],
+                reason: "Synthetic settlement complete.",
+                correlationId,
+                idempotencyKey: "settlement-success",
+            },
+            {
+                paymentStubIssuer: { issue, compensate },
+                stageTransitionOutboxDispatcher: { dispatch },
+            },
+        );
+
+        expect(report.currentStage).toBe("Reconciled");
+        expect(issue).toHaveBeenCalledWith({
+            tenantId,
+            expenseReportId,
+            actorId,
+            correlationId,
+        });
+        expect(compensate).not.toHaveBeenCalled();
+        expect(transitionExpenseReportStageMock).not.toHaveBeenCalled();
+        expect(
+            transitionIssuedExpenseReportSettlementToPaidMock,
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actor: actorId,
+                correlationId,
+                id: expenseReportId,
+                idempotencyKey: "settlement-success",
+                paymentId: "synthetic-payment-success",
+                reason: "payment_stub_issued",
+                settlementId,
+                tenantId,
+            }),
+        );
+        expect(reconcileExpenseReportSettlementStageMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actor: actorId,
+                correlationId,
+                id: expenseReportId,
+                idempotencyKey: "settlement-success",
+                paymentId: "synthetic-payment-success",
+                reason: "Synthetic settlement complete.",
+                tenantId,
+            }),
+        );
+        expect(dispatch).toHaveBeenCalledTimes(2);
+    });
+
+    void test("does not compensate when final reconciliation succeeds but cache invalidation fails", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        const issue = vi.fn().mockResolvedValue({
+            paymentId: "synthetic-payment-cache-failure",
+        });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        findExpenseReportByIdMock.mockResolvedValueOnce({
+            ...apReviewReport,
+            currentStage: "Reconciled",
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-cache-failure",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValue(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new Error("synthetic cache failure"));
+
+        const report = await settleExpenseReportWorkflow(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Finance Admin"],
+                reason: "Synthetic settlement complete.",
+                correlationId,
+                idempotencyKey: "settlement-cache-failure",
+            },
+            {
+                paymentStubIssuer: { issue, compensate },
+                stageTransitionOutboxDispatcher: { dispatch },
+            },
+        );
+
+        expect(report.currentStage).toBe("Reconciled");
+        expect(compensate).not.toHaveBeenCalled();
+        expect(compensatePaidSettlementStageMock).not.toHaveBeenCalled();
+        expect(
+            markExpenseReportSettlementCompensatedMock,
+        ).not.toHaveBeenCalled();
+        expect(dispatch).toHaveBeenCalledTimes(2);
+    });
+
+    void test("compensates the payment stub and Paid stage when reconciliation fails", async () => {
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+        const issue = vi
+            .fn()
+            .mockResolvedValue({ paymentId: "synthetic-payment-rollback" });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-rollback",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValueOnce(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(false);
+        compensatePaidSettlementStageMock.mockResolvedValue({
+            kind: "compensated",
+            eventId: "80000000-0000-4000-8000-000000000811",
+        });
+        markExpenseReportSettlementCompensatedMock.mockResolvedValue(true);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        await expect(
+            settleExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Finance Admin"],
+                    correlationId,
+                    idempotencyKey: "settlement-rollback",
+                },
+                {
+                    paymentStubIssuer: { issue, compensate },
+                    stageTransitionOutboxDispatcher: { dispatch },
+                },
+            ),
+        ).rejects.toThrow(
+            "Expense Report cannot transition from Paid to Reconciled.",
+        );
+
+        expect(compensate).toHaveBeenCalledWith({
+            tenantId,
+            expenseReportId,
+            actorId,
+            correlationId,
+            paymentId: "synthetic-payment-rollback",
+            reason: "Settlement saga failed before reconciliation completed.",
+        });
+        expect(compensatePaidSettlementStageMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tenantId,
+                id: expenseReportId,
+                actor: actorId,
+                correlationId,
+                reason: "Settlement saga failed before reconciliation completed.",
+                eventId: expect.any(String) as string,
+                occurredAt: expect.any(Date) as Date,
+            }),
+        );
+        expect(markExpenseReportSettlementCompensatedMock).toHaveBeenCalledWith(
+            {
+                tenantId,
+                id: expenseReportId,
+                settlementId,
+                paymentId: "synthetic-payment-rollback",
+            },
+        );
+    });
+
+    void test("abandons the unpaid settlement claim when payment issuance fails", async () => {
+        const issue = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic issue failure"));
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        abandonUnpaidExpenseReportSettlementClaimMock.mockResolvedValue({
+            kind: "abandoned",
+        });
+
+        await expect(
+            settleExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Finance Admin"],
+                    correlationId,
+                    idempotencyKey: "settlement-issue-failure",
+                },
+                {
+                    paymentStubIssuer: { issue, compensate },
+                },
+            ),
+        ).rejects.toThrow("synthetic issue failure");
+
+        expect(
+            abandonUnpaidExpenseReportSettlementClaimMock,
+        ).toHaveBeenCalledWith({
+            tenantId,
+            id: expenseReportId,
+            settlementId,
+        });
+        expect(compensate).not.toHaveBeenCalled();
+    });
+
+    void test("reports cleanup failure when an unpaid settlement claim cannot be abandoned", async () => {
+        const issue = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic issue failure"));
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        abandonUnpaidExpenseReportSettlementClaimMock.mockResolvedValue({
+            kind: "not_abandoned",
+        });
+
+        await expect(
+            settleExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Finance Admin"],
+                    correlationId,
+                    idempotencyKey: "settlement-abandon-failure",
+                },
+                {
+                    paymentStubIssuer: { issue, compensate },
+                },
+            ),
+        ).rejects.toThrow(
+            "Expense Report settlement payment failed and the unpaid claim could not be released.",
+        );
+    });
+
+    void test("fails compensation when the settlement cannot be marked compensated", async () => {
+        const consoleError = vi
+            .spyOn(console, "error")
+            .mockImplementation(() => undefined);
+        const issue = vi.fn().mockResolvedValue({
+            paymentId: "synthetic-payment-unmarked-compensation",
+        });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-unmarked-compensation",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValueOnce(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(false);
+        compensatePaidSettlementStageMock.mockResolvedValue({
+            kind: "compensated",
+            eventId: "80000000-0000-4000-8000-000000000812",
+        });
+        markExpenseReportSettlementCompensatedMock.mockResolvedValue(false);
+
+        try {
+            await expect(
+                settleExpenseReportWorkflow(
+                    {
+                        id: expenseReportId,
+                        tenantId,
+                        actorId,
+                        roles: ["Finance Admin"],
+                        correlationId,
+                        idempotencyKey: "settlement-unmarked-compensation",
+                    },
+                    {
+                        paymentStubIssuer: { issue, compensate },
+                    },
+                ),
+            ).rejects.toThrow(
+                "Settlement saga failed and compensation could not complete.",
+            );
+        } finally {
+            consoleError.mockRestore();
+        }
+    });
+
+    void test("redacts private identifiers from settlement compensation error logs", async () => {
+        const consoleError = vi
+            .spyOn(console, "error")
+            .mockImplementation(() => undefined);
+        const issue = vi.fn().mockResolvedValue({
+            paymentId: "synthetic-payment-log-redaction",
+        });
+        const compensate = vi
+            .fn()
+            .mockRejectedValue(new Error("synthetic compensation failure"));
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "issue_payment",
+            settlement: {
+                id: settlementId,
+                paymentId: null,
+            },
+        });
+        recordExpenseReportSettlementPaymentMock.mockResolvedValue({
+            kind: "recorded",
+            settlement: {
+                paymentId: "synthetic-payment-log-redaction",
+            },
+        });
+        transitionIssuedExpenseReportSettlementToPaidMock.mockResolvedValueOnce(
+            true,
+        );
+        reconcileExpenseReportSettlementStageMock.mockResolvedValue(false);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        try {
+            await expect(
+                settleExpenseReportWorkflow(
+                    {
+                        id: expenseReportId,
+                        tenantId,
+                        actorId,
+                        roles: ["Finance Admin"],
+                        correlationId,
+                        idempotencyKey: "settlement-log-redaction",
+                    },
+                    {
+                        paymentStubIssuer: { issue, compensate },
+                    },
+                ),
+            ).rejects.toThrow(
+                "Settlement saga failed and compensation could not complete.",
+            );
+
+            const emittedLogs = JSON.stringify(consoleError.mock.calls);
+            expect(emittedLogs).not.toContain(expenseReportId);
+            expect(emittedLogs).not.toContain(tenantId);
+        } finally {
+            consoleError.mockRestore();
+        }
+    });
+
+    void test("rejects compensated settlement records without reusing payment", async () => {
+        const issue = vi.fn().mockResolvedValue({
+            paymentId: "synthetic-payment-should-not-issue",
+        });
+        const compensate = vi.fn().mockResolvedValue(undefined);
+        claimExpenseReportSettlementMock.mockResolvedValue({
+            kind: "terminal_compensated",
+            settlement: {
+                paymentId: "synthetic-payment-compensated",
+                status: "compensated",
+            },
+        });
+
+        await expect(
+            settleExpenseReportWorkflow(
+                {
+                    id: expenseReportId,
+                    tenantId,
+                    actorId,
+                    roles: ["Finance Admin"],
+                    correlationId,
+                    idempotencyKey: "settlement-compensated",
+                },
+                {
+                    paymentStubIssuer: { issue, compensate },
+                },
+            ),
+        ).rejects.toThrow(
+            "Expense Report settlement was compensated and cannot be reused.",
+        );
+
+        expect(issue).not.toHaveBeenCalled();
+        expect(compensate).not.toHaveBeenCalled();
     });
 });
 

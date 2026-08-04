@@ -759,6 +759,7 @@ void describe("stageTransition schema", () => {
             tableConfig.indexes.map((indexConfig) => indexConfig.config.name),
         ).toEqual([
             "stage_transition_tenant_report_idx",
+            "stage_transition_tenant_report_id_unique_idx",
             "stage_transition_tenant_occurred_at_idx",
         ]);
 
@@ -931,6 +932,9 @@ void describe("stageTransitionOutbox schema", () => {
         );
         expect(foreignKeyNames).toContain(
             "stage_transition_outbox_expense_report_tenant_fk",
+        );
+        expect(foreignKeyNames).toContain(
+            "stage_transition_outbox_transition_tenant_report_fk",
         );
     });
 });

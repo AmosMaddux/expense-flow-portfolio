@@ -4,7 +4,10 @@ import type {
     ClaimedStageTransitionOutboxEvent,
     StageTransitionOutboxStore,
 } from "./stageTransitionOutboxRepository.js";
-import { dispatchStageTransitionOutboxEvents } from "./stageTransitionOutboxDispatcher.js";
+import {
+    dispatchStageTransitionOutboxEvents,
+    StageTransitionOutboxOwnershipLostError,
+} from "./stageTransitionOutboxDispatcher.js";
 
 const event: ClaimedStageTransitionOutboxEvent = {
     id: "40000000-0000-4000-8000-000000000011",
@@ -27,8 +30,8 @@ function createStore(
 } {
     return {
         claim: vi.fn().mockResolvedValue(claimedEvents),
-        markFailed: vi.fn().mockResolvedValue(undefined),
-        markPublished: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(true),
+        markPublished: vi.fn().mockResolvedValue(true),
     };
 }
 
@@ -80,6 +83,64 @@ void describe("stage-transition outbox dispatcher", () => {
             new Date("2026-07-29T18:00:02.000Z"),
             undefined,
         );
+    });
+
+    void test("does not mark a published event failed when completion marking fails", async () => {
+        const store = createStore();
+        const publish = vi.fn().mockResolvedValue(undefined);
+        store.markPublished.mockRejectedValue(
+            new Error("synthetic stale completion"),
+        );
+
+        await expect(
+            dispatchStageTransitionOutboxEvents(event.id, {
+                now: () => new Date("2026-07-29T18:00:01.000Z"),
+                publisher: { publish },
+                store,
+            }),
+        ).rejects.toThrow("synthetic stale completion");
+
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(store.markPublished).toHaveBeenCalledTimes(1);
+        expect(store.markFailed).not.toHaveBeenCalled();
+    });
+
+    void test("reports stale ownership when publishing cannot be marked complete", async () => {
+        const store = createStore();
+        const publish = vi.fn().mockResolvedValue(undefined);
+        store.markPublished.mockResolvedValue(false);
+
+        await expect(
+            dispatchStageTransitionOutboxEvents(event.id, {
+                now: () => new Date("2026-07-29T18:00:01.000Z"),
+                publisher: { publish },
+                store,
+            }),
+        ).rejects.toBeInstanceOf(StageTransitionOutboxOwnershipLostError);
+
+        expect(publish).toHaveBeenCalledTimes(1);
+        expect(store.markPublished).toHaveBeenCalledTimes(1);
+        expect(store.markFailed).not.toHaveBeenCalled();
+    });
+
+    void test("reports stale ownership when a publish failure cannot be marked failed", async () => {
+        const store = createStore();
+        store.markFailed.mockResolvedValue(false);
+
+        await expect(
+            dispatchStageTransitionOutboxEvents(event.id, {
+                now: () => new Date("2026-07-29T18:00:01.000Z"),
+                publisher: {
+                    publish: vi
+                        .fn()
+                        .mockRejectedValue(new Error("synthetic SNS failure")),
+                },
+                store,
+            }),
+        ).rejects.toBeInstanceOf(StageTransitionOutboxOwnershipLostError);
+
+        expect(store.markPublished).not.toHaveBeenCalled();
+        expect(store.markFailed).toHaveBeenCalledTimes(1);
     });
 
     void test("dead-letters an event after the final failed attempt", async () => {
