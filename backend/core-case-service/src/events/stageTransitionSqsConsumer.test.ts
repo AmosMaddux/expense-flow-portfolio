@@ -136,85 +136,65 @@ void describe("plain stage-transition SQS consumer", () => {
         expect(send).toHaveBeenCalledOnce();
     });
 
-    void test("redrives repeated consumer failures to the DLQ without changing case state", async () => {
+    void test("retains repeated projection failures without changing persisted projection state", async () => {
         const maxReceiveCount = 3;
-        const receiptHandle = "synthetic-receipt-handle";
-        const mainMessages = [
-            {
-                Body: JSON.stringify(syntheticEvent),
-                ReceiptHandle: receiptHandle,
-                receiveCount: 0,
-            },
-        ];
-        const dlqMessages: typeof mainMessages = [];
-        const send = vi.fn().mockImplementation((command) => {
-            if (command instanceof DeleteMessageCommand) {
-                mainMessages.splice(0, mainMessages.length);
-                return Promise.resolve({});
-            }
-
-            const message = mainMessages[0];
-            if (message === undefined) {
-                return Promise.resolve({ Messages: [] });
-            }
-
-            message.receiveCount += 1;
-            if (message.receiveCount > maxReceiveCount) {
-                dlqMessages.push(message);
-                mainMessages.splice(0, mainMessages.length);
-                return Promise.resolve({ Messages: [] });
-            }
-
-            return Promise.resolve({
-                Messages: [
-                    {
-                        Body: message.Body,
-                        ReceiptHandle: message.ReceiptHandle,
+        const send = vi.fn().mockResolvedValue({
+            Messages: [
+                {
+                    Attributes: {
+                        ApproximateReceiveCount: "1",
                     },
-                ],
-            });
+                    Body: JSON.stringify(syntheticEvent),
+                    ReceiptHandle: "synthetic-receipt-handle",
+                },
+            ],
         });
-        const caseState = {
+        const persistedState = {
             currentStage: "Manager Approval",
-            projectionRows: 0,
+            projectionRows: new Map<string, string>(),
         };
-        const store = createStore();
+        const store: StageTransitionProjectionStore & {
+            project: ReturnType<typeof vi.fn>;
+        } = {
+            project: vi.fn(async (event: typeof syntheticEvent) => {
+                await Promise.resolve();
+                persistedState.projectionRows.set(event.id, event.data.toStage);
+                persistedState.currentStage = event.data.toStage;
+            }),
+        };
         store.project.mockRejectedValue(
             new Error("synthetic projection failure"),
         );
         const logger = createLogger();
 
-        await pollStageTransitionQueueOnce({ send }, config, {
-            logger,
-            store,
-        });
-        await pollStageTransitionQueueOnce({ send }, config, {
-            logger,
-            store,
-        });
-        await pollStageTransitionQueueOnce({ send }, config, {
-            logger,
-            store,
-        });
-        await pollStageTransitionQueueOnce({ send }, config, {
-            logger,
-            store,
-        });
+        for (let attempt = 0; attempt < maxReceiveCount; attempt += 1) {
+            const result = await pollStageTransitionQueueOnce(
+                { send },
+                config,
+                {
+                    logger,
+                    store,
+                },
+            );
 
-        expect(dlqMessages).toHaveLength(1);
-        expect(dlqMessages[0]?.Body).toBe(JSON.stringify(syntheticEvent));
-        expect(caseState).toStrictEqual({
-            currentStage: "Manager Approval",
-            projectionRows: 0,
-        });
+            expect(result).toStrictEqual({ failed: 1, processed: 0 });
+        }
+
+        expect(persistedState.currentStage).toBe("Manager Approval");
+        expect(persistedState.projectionRows.size).toBe(0);
         expect(store.project).toHaveBeenCalledTimes(maxReceiveCount);
         expect(logger.messageFailed).toHaveBeenCalledTimes(maxReceiveCount);
-        expect(send.mock.calls).toHaveLength(maxReceiveCount + 1);
+        expect(send).toHaveBeenCalledTimes(maxReceiveCount);
         expect(
             send.mock.calls.some(
                 ([command]) => command instanceof DeleteMessageCommand,
             ),
         ).toBe(false);
+        expect(send.mock.calls[0]?.[0]).toMatchObject({
+            input: {
+                MessageSystemAttributeNames: ["ApproximateReceiveCount"],
+            },
+        });
     });
 
     void test("backs off and keeps polling after a receive failure", async () => {

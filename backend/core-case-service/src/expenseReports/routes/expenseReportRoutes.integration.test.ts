@@ -3271,6 +3271,66 @@ void describe("Expense Report routes", () => {
         );
     });
 
+    void test("does not settle another tenant's Expense Report", async () => {
+        const owningTenantId = "40000000-0000-4000-8000-000000000213";
+        const requestingTenantId = "40000000-0000-4000-8000-000000000214";
+        const owner = "50000000-0000-4000-8000-000000000213";
+        const financeAdminId = "51000000-0000-4000-8000-000000000214";
+        const reportId = "60000000-0000-4000-8000-000000000213";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId: owningTenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${reportId}/settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        requestingTenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-settle-cross-tenant",
+                },
+                body: JSON.stringify({}),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, owningTenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(0);
+        expect(outboxRows).toHaveLength(0);
+    });
+
     void test("compensates with a first-class transition when settlement reconciliation fails", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000212";
         const owner = "50000000-0000-4000-8000-000000000212";
@@ -3292,7 +3352,7 @@ void describe("Expense Report routes", () => {
 CREATE OR REPLACE FUNCTION ${functionName}()
 RETURNS trigger AS $$
 BEGIN
-    IF NEW."from_stage" = 'Paid' AND NEW."to_stage" = 'Reconciled' THEN
+    IF NEW."expense_report_id" = '${reportId}' AND NEW."from_stage" = 'Paid' AND NEW."to_stage" = 'Reconciled' THEN
         RAISE EXCEPTION 'synthetic reconciliation transition failure';
     END IF;
     RETURN NEW;

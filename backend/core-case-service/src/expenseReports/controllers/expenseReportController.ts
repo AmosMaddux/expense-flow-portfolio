@@ -533,8 +533,6 @@ export async function getExpenseReportById(
     }
 }
 
-
-
 //OUTBOX submission events
 /**
  * Handles Expense Report submission requests.
@@ -549,7 +547,7 @@ export async function postExpenseReportSubmission(
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
-        
+
         // If authenticated user is not finance admin or department manager, they must be the owner of the expense report to submit it
         if (!hasExpenseReportSubmitRole(auth)) {
             await insertDeniedSubmissionAuditEntry(
@@ -726,11 +724,6 @@ export async function postExpenseReportSettlement(
         next(error);
     }
 }
-
-
-
-
-
 
 /**
  * Handles line-item flag clearing after internal review.

@@ -99,7 +99,6 @@ expenseReportRouter.post(
     postExpenseReportSettlement,
 );
 
-
 expenseReportRouter.post(
     "/expense-reports/:id/flags/clear",
     postExpenseReportFlagClear,

@@ -27,9 +27,24 @@ The standalone consumer long-polls the queue configured by
 CloudEvent, then idempotently inserts a `stage_transition_projection` record
 keyed by the CloudEvent `id`. It deletes a message only after the projection
 write succeeds; malformed events and storage failures remain available for SQS
-retry. The queue is configured with an SQS redrive policy so messages that keep
-failing consumer processing are moved to the stage-transition DLQ for inspection
-after the queue's `maxReceiveCount` is exceeded.
+retry. The local queue is configured with an SQS redrive policy so messages that
+keep failing consumer processing are moved to the stage-transition DLQ for
+inspection after the queue's `maxReceiveCount` is exceeded. Production queue
+ownership is outside this repository for now, so the deployed queue must provide
+an equivalent redrive policy before this consumer is enabled.
+
+Deployment acceptance is verified in the platform-owned infrastructure change
+that creates or updates the deployed `STAGE_TRANSITION_SQS_QUEUE_URL`. That
+change must include a stage-transition DLQ and an SQS `RedrivePolicy` on the
+source queue with `maxReceiveCount` set to `3` and `deadLetterTargetArn` pointing
+to that DLQ. Reviewers can verify the deployed queue without exposing controlled
+data by checking only queue attributes:
+
+```sh
+aws sqs get-queue-attributes \
+    --queue-url "$STAGE_TRANSITION_SQS_QUEUE_URL" \
+    --attribute-names RedrivePolicy
+```
 
 Run the local consumer with:
 
@@ -90,6 +105,7 @@ and `Reconciled`. Events are valid only for these workflow edges:
 - `Manager Approval` → `AP Review`
 - `AP Review` → `Paid`
 - `Paid` → `Reconciled`
+- `Paid` → `AP Review` for settlement compensation
 - `Manager Approval` → `Drafted`
 - `AP Review` → `Drafted`
 

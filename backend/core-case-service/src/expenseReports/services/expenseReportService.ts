@@ -1141,8 +1141,9 @@ export async function settleExpenseReportWorkflow(
             });
         } catch (compensationError: unknown) {
             console.error("Settlement saga failed during compensation.", {
-                compensationError,
-                error,
+                compensationErrorCategory:
+                    getSettlementSagaErrorCategory(compensationError),
+                errorCategory: getSettlementSagaErrorCategory(error),
                 phase: "settlement_compensation",
             });
             throw new ConflictError(
@@ -1261,7 +1262,7 @@ async function compensateSettlementSaga(request: {
         });
     } catch (error: unknown) {
         console.error("Settlement payment-stub compensation failed.", {
-            error,
+            errorCategory: getSettlementSagaErrorCategory(error),
             phase: "payment_stub_compensation",
         });
         throw error;
@@ -1327,6 +1328,15 @@ async function invalidateCachedCaseQueueStageRollupsBestEffort(
         // Reconciliation is already durable; cache refresh must not trigger payment compensation.
     }
 }
+
+function getSettlementSagaErrorCategory(error: unknown): string {
+    if (error instanceof Error && error.name.trim() !== "") {
+        return error.name;
+    }
+
+    return typeof error;
+}
+
 /**
  * Reads the tenant-scoped audit trail entries for an Expense Report case.
  */
