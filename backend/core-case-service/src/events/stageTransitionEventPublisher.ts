@@ -126,7 +126,13 @@ export function buildStageTransitionCloudEvent(
     occurredAt: Date,
     eventId: string,
 ): ExpenseReportStageTransitionedCloudEventV1 {
-    const data = ExpenseReportStageTransitionedDataV1Schema.parse(request);
+    const data = ExpenseReportStageTransitionedDataV1Schema.parse({
+        caseId: request.caseId,
+        tenantId: request.tenantId,
+        fromStage: request.fromStage,
+        toStage: request.toStage,
+        correlationId: request.correlationId,
+    });
 
     return ExpenseReportStageTransitionedCloudEventV1Schema.parse({
         specversion: "1.0",

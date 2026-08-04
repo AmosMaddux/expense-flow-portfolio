@@ -56,6 +56,34 @@ void describe("SNS stage-transition event publisher", () => {
         });
     });
 
+    void test("publishes an outbox request without leaking delivery metadata into event data", async () => {
+        const send = vi.fn().mockResolvedValue({ MessageId: "synthetic-id" });
+        const publisher = createSnsStageTransitionEventPublisher(
+            { send },
+            config,
+        );
+        const eventId = "40000000-0000-4000-8000-000000000002";
+        const occurredAt = new Date("2026-07-29T16:30:00.000Z");
+
+        await publisher.publish({
+            ...request,
+            eventId,
+            occurredAt,
+        });
+
+        expect(send).toHaveBeenCalledTimes(1);
+        const command = send.mock.calls[0]?.[0] as {
+            input: { Message?: string };
+        };
+        const event = ExpenseReportStageTransitionedCloudEventV1Schema.parse(
+            JSON.parse(command.input.Message ?? "") as unknown,
+        );
+
+        expect(event.id).toBe(eventId);
+        expect(event.time).toBe(occurredAt.toISOString());
+        expect(event.data).toStrictEqual(request);
+    });
+
     void test("surfaces SNS rejection as a backend downstream error", async () => {
         const send = vi.fn().mockRejectedValue(new Error("synthetic failure"));
         const publisher = createSnsStageTransitionEventPublisher(
