@@ -232,7 +232,10 @@ export function AuthProvider({
             const sendRequest = async (token: string): Promise<Response> => {
                 const headers = new Headers(init.headers);
                 headers.set("Authorization", `Bearer ${token}`);
-                return fetchImplementation(input, { ...init, headers });
+                return fetchImplementation(resolveApiInput(apiBaseUrl, input), {
+                    ...init,
+                    headers,
+                });
             };
 
             const response = await sendRequest(accessToken);
@@ -266,6 +269,7 @@ export function AuthProvider({
             return retryResponse;
         },
         [
+            apiBaseUrl,
             fetchImplementation,
             getAccessToken,
             invalidateSession,
@@ -352,6 +356,24 @@ async function refreshAndPersistSession(
     return refreshedSession;
 }
 
+function resolveApiInput(
+    apiBaseUrl: string,
+    input: RequestInfo | URL,
+): RequestInfo | URL {
+    if (apiBaseUrl.trim().length === 0) {
+        return input;
+    }
+
+    if (typeof input === "string") {
+        if (!input.startsWith("/")) {
+            return input;
+        }
+
+        return `${apiBaseUrl.replace(/\/$/, "")}${input}`;
+    }
+
+    return input;
+}
 function hasSameAuthorizationScope(
     currentSession: AuthSession,
     nextSession: AuthSession,
@@ -408,9 +430,10 @@ function resolveRefreshForSignal(
 
 function isAbortError(error: unknown): boolean {
     return (
-        error instanceof DOMException ||
-        (typeof error === "object" && error !== null && "name" in error)
-    ) && (error as { name: unknown }).name === "AbortError";
+        (error instanceof DOMException ||
+            (typeof error === "object" && error !== null && "name" in error)) &&
+        (error as { name: unknown }).name === "AbortError"
+    );
 }
 
 function reportLogoutError(

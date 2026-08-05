@@ -123,6 +123,7 @@ const tenantOwnedTablesInDeleteOrder = [
     "receipt_metadata",
     "attachment_metadata",
     "case_comment",
+    "reference_data_audit_entry",
     "gl_coding_result",
     "mileage_entry",
     "line_item",
