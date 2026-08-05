@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+
+FROM ghcr.io/astral-sh/uv:0.11.21 AS uv
+
+FROM python:3.13-slim-bookworm AS builder
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+COPY --from=uv /uv /bin/uv
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-dev --no-install-project
+
+FROM python:3.13-slim-bookworm AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN groupadd --gid 10001 expenseflow \
+    && useradd --uid 10001 --gid expenseflow --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin expenseflow
+
+COPY --from=builder --chown=10001:10001 /app/.venv /app/.venv
+COPY --chown=10001:10001 backend/__init__.py ./backend/__init__.py
+COPY --chown=10001:10001 backend/python ./backend/python
+
+USER 10001:10001
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+
+CMD ["uvicorn", "backend.python.main:app", "--host", "0.0.0.0", "--port", "8001"]
