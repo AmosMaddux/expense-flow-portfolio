@@ -11,3 +11,4 @@ ADRs must use only synthetic examples and must not include customer data, tenant
 - [0001. Store Expense Report Case records in PostgreSQL](0001-expense-report-case-postgresql.md)
 - [0002. Polyglot Service Split Placeholder](0002-polyglot-service-split-placeholder.md)
 - [0003. Use storage per bounded context](0003-storage-per-bounded-context.md)
+- [0004. Package the Core Case Service as an ECS-ready Node image](0004-core-case-service-container-image.md)
