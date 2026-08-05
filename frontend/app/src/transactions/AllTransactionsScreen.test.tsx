@@ -13,6 +13,7 @@ import { AuthProvider, type AuthClient, type AuthSession } from "../auth";
 import {
     AllTransactionsScreen,
     createAllTransactionsQueryString,
+    deriveDisplayedTransactionPages,
     type AllTransaction,
     type AllTransactionPage,
     type ExpenseReportReviewDetail,
@@ -1004,6 +1005,92 @@ describe("AllTransactionsScreen", () => {
     });
 });
 
+describe("deriveDisplayedTransactionPages", () => {
+    test("includes the current query page before loaded pagination state catches up", () => {
+        const loadedTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000190",
+            expenseReportId: "60000000-0000-4000-8000-000000000190",
+            date: "2026-07-18T12:00:00.000Z",
+            merchant: "Northstar Office",
+            category: "Office Supplies",
+            amount: "92.41",
+            currency: "USD",
+            status: "Submitted",
+            glCode: "6310",
+            flaggedLineItem: false,
+            reviewAction: "approve",
+            ...defaultReportMetadata,
+        };
+        const currentTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000191",
+            expenseReportId: "60000000-0000-4000-8000-000000000191",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6250",
+            flaggedLineItem: false,
+            reviewAction: null,
+            ...defaultReportMetadata,
+        };
+
+        const displayedPages = deriveDisplayedTransactionPages(
+            [
+                {
+                    cursor: null,
+                    page: createTransactionPage(
+                        [loadedTransaction],
+                        "synthetic-cursor",
+                    ),
+                },
+            ],
+            "synthetic-cursor",
+            createTransactionPage([currentTransaction]),
+        );
+
+        expect(displayedPages).toHaveLength(2);
+        expect(displayedPages[1]).toEqual({
+            cursor: "synthetic-cursor",
+            page: createTransactionPage([currentTransaction]),
+        });
+        expect(
+            displayedPages.flatMap((loadedPage) => loadedPage.page.items),
+        ).toEqual([loadedTransaction, currentTransaction]);
+    });
+
+    test("does not duplicate a query page that already exists in loaded pagination state", () => {
+        const currentTransaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000192",
+            expenseReportId: "60000000-0000-4000-8000-000000000192",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Cedar Bistro",
+            category: "Meals",
+            amount: "64.20",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6250",
+            flaggedLineItem: false,
+            reviewAction: null,
+            ...defaultReportMetadata,
+        };
+        const loadedPages = [
+            {
+                cursor: "synthetic-cursor",
+                page: createTransactionPage([currentTransaction]),
+            },
+        ];
+
+        expect(
+            deriveDisplayedTransactionPages(
+                loadedPages,
+                "synthetic-cursor",
+                createTransactionPage([]),
+            ),
+        ).toBe(loadedPages);
+    });
+});
 describe("createAllTransactionsQueryString", () => {
     test("omits empty filters and trims category", () => {
         expect(
