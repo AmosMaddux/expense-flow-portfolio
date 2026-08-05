@@ -15,11 +15,13 @@ for example `--platform linux/amd64`; use `linux/arm64` only for an ARM64 task.
 Do not build an ECS release image implicitly for the developer workstation's
 architecture.
 
-The Dockerfile uses `node:24-bookworm-slim` for the dependency, build,
-production dependency, and runtime stages. Node 24 matches the repository engine
-requirement, while the Debian slim variant keeps the image smaller than the full
-Bookworm image without taking on Alpine musl compatibility risk for native
-runtime packages such as `argon2`.
+The Dockerfile uses the digest-pinned `node:24-bookworm-slim` image for the
+dependency, build, production dependency, and runtime stages. Node 24 matches
+the repository engine requirement, while the Debian slim variant keeps the image
+smaller than the full Bookworm image without taking on Alpine musl compatibility
+risk for native runtime packages such as `argon2`. Pinning the base image by
+digest makes a given source revision build against the same base layers until
+the digest is intentionally updated.
 
 The dependency stage copies the root `package.json`, `package-lock.json`,
 workspace package manifests, and TypeScript configuration before running
@@ -44,6 +46,13 @@ schema changes during scale-out or rolling deployments. A later one-off ECS
 migration task or managed release step can use the same image with explicit
 runtime configuration to apply the Drizzle migrations that match the deployed
 service version.
+
+The root Compose service deliberately uses `CORE_CASE_LOCAL_APPLY_MIGRATIONS`
+as a local-only switch and defaults it to `true` so `docker compose up
+core-case-service` can initialize a fresh local PostgreSQL database. Do not
+reuse that local Compose default for ECS service tasks. Production-like service
+tasks should keep `AUTO_APPLY_MIGRATIONS=false` and run migrations through a
+separate release step.
 
 Runtime configuration comes from environment variables, not image layers. Do not
 bake `.env`, credentials, JWT key material, AWS secrets, database URLs, or

@@ -52,6 +52,24 @@ services:
                 condition: service_healthy
             minio-init:
                 condition: service_completed_successfully
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - >
+                export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
+                -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
+                const client = new SNSClient({
+                endpoint: process.env.STAGE_TRANSITION_SNS_ENDPOINT,
+                region: process.env.AWS_REGION
+                });
+                const response = await client.send(new CreateTopicCommand({
+                Name: 'expenseflow-stage-transitions-local'
+                }));
+                process.stdout.write(response.TopicArn ?? '');")";
+                if [ -z "$$STAGE_TRANSITION_SNS_TOPIC_ARN" ]; then
+                echo "Local stage-transition topic identifier could not be resolved." >&2;
+                exit 1;
+                fi;
+                node backend/core-case-service/dist/index.js
         environment:
             ARGON2_HASH_LENGTH: ${ARGON2_HASH_LENGTH:-32}
             ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-19456}
@@ -62,7 +80,7 @@ services:
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_PRIVATE_KEY_BASE64: ${AUTH_JWT_PRIVATE_KEY_BASE64:?AUTH_JWT_PRIVATE_KEY_BASE64 must be set in .env}
             AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
-            AUTO_APPLY_MIGRATIONS: ${AUTO_APPLY_MIGRATIONS:-true}
+            AUTO_APPLY_MIGRATIONS: ${CORE_CASE_LOCAL_APPLY_MIGRATIONS:-true}
             AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-expenseflow-local}
             AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
             AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
@@ -89,7 +107,6 @@ services:
             RECEIPT_STORAGE_FORCE_PATH_STYLE: ${RECEIPT_STORAGE_FORCE_PATH_STYLE:-true}
             REDIS_URL: redis://redis:6379
             STAGE_TRANSITION_SNS_ENDPOINT: http://localstack:4566
-            STAGE_TRANSITION_SNS_TOPIC_ARN: ${STAGE_TRANSITION_SNS_TOPIC_ARN:?STAGE_TRANSITION_SNS_TOPIC_ARN must be set in .env}
             STAGE_TRANSITION_SQS_ENDPOINT: http://localstack:4566
             STAGE_TRANSITION_SQS_QUEUE_URL: http://localstack:4566/000000000000/expenseflow-stage-transition-events-local
             TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE: ${TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE:-50}

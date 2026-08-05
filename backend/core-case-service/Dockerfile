@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS deps
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS deps
 
 WORKDIR /workspace
 
@@ -16,7 +16,7 @@ COPY backend/core-case-service/src backend/core-case-service/src
 
 RUN npm --workspace @expense-flow/core-case-service run build
 
-FROM node:24-bookworm-slim AS production-deps
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS production-deps
 
 WORKDIR /workspace
 
@@ -26,7 +26,7 @@ COPY frontend/app/package.json frontend/app/package.json
 
 RUN npm ci --omit=dev && npm cache clean --force
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 
 WORKDIR /workspace
 

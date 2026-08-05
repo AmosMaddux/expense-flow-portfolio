@@ -32,6 +32,7 @@ docker run \
     --publish 127.0.0.1::3000 \
     "${image_name}" >/dev/null
 
+wait_seconds="${CORE_CASE_SMOKE_WAIT_SECONDS:-90}"
 published_port="$(
     docker inspect \
         --format '{{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostPort}}' \
@@ -39,7 +40,7 @@ published_port="$(
 )"
 
 health_status=""
-for _attempt in $(seq 1 30); do
+for _attempt in $(seq 1 "${wait_seconds}"); do
     health_status="$(
         docker inspect \
             --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
@@ -66,6 +67,8 @@ if [[ "${health_status}" != "healthy" ]]; then
 fi
 
 curl --fail --silent --show-error "http://127.0.0.1:${published_port}/health" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:${published_port}/v1/openapi.json" \
+    | grep --quiet '"/v1/auth/login"'
 docker exec "${container_name}" test -d /workspace/backend/core-case-service/drizzle
 docker exec "${container_name}" test ! -f /workspace/.env
 
