@@ -1123,7 +1123,7 @@ button:disabled {
 .topbar__eyebrow,
 .screen-placeholder__label {
     margin: 0;
-    color: #627d98;
+    color: #486581;
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -1271,7 +1271,7 @@ button:disabled {
     position: absolute;
     top: 50%;
     right: 15px;
-    color: #627d98;
+    color: #486581;
     font-size: 0.78rem;
     font-weight: 700;
     transform: translateY(-50%);

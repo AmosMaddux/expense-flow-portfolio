@@ -1,4 +1,5 @@
 import {
+    BarController,
     BarElement,
     CategoryScale,
     Chart,
@@ -28,7 +29,14 @@ import {
     type FinanceDashboardTrendPoint,
 } from "./financeDashboardTrend";
 
-Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+Chart.register(
+    BarController,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Tooltip,
+    Legend,
+);
 
 export type FinanceDashboardScreenProps = {
     asOfDate?: string;
@@ -46,7 +54,7 @@ type TrendMetric = "volume" | "spend";
  * Renders the Finance Admin dashboard workload KPIs and trend chart.
  */
 export function FinanceDashboardScreen({
-    asOfDate = getCurrentLocalDate(),
+    asOfDate = getFinanceDashboardAsOfDate(),
 }: FinanceDashboardScreenProps): JSX.Element {
     const fromDate = getPriorDate(asOfDate, 29);
     const rollupQuery = useCaseQueueRollups(asOfDate);
@@ -111,6 +119,13 @@ export function FinanceDashboardScreen({
                 </>
             )}
         </section>
+    );
+}
+
+function getFinanceDashboardAsOfDate(): string {
+    return (
+        import.meta.env.VITE_FINANCE_DASHBOARD_AS_OF_DATE ??
+        getCurrentLocalDate()
     );
 }
 
@@ -212,23 +227,29 @@ function FinanceDashboardTrendChart({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        const context = canvas?.getContext("2d") ?? null;
 
         chartRef.current?.destroy();
         chartRef.current = null;
 
-        if (context === null || !hasTrendData) {
+        if (canvas === null || !hasTrendData) {
             return;
         }
 
-        chartRef.current = new Chart(
-            context,
-            buildTrendChartConfig(points, metric),
-        );
+        const context = canvas.getContext("2d");
+
+        if (context === null) {
+            return;
+        }
+
+        Chart.getChart(canvas)?.destroy();
+        const chart = new Chart(context, buildTrendChartConfig(points, metric));
+        chartRef.current = chart;
 
         return () => {
-            chartRef.current?.destroy();
-            chartRef.current = null;
+            chart.destroy();
+            if (chartRef.current === chart) {
+                chartRef.current = null;
+            }
         };
     }, [hasTrendData, metric, points]);
 

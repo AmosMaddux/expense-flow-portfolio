@@ -1,19 +1,16 @@
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
-const password =
-    process.env.EXPENSEFLOW_E2E_PASSWORD ?? "expenseflow-e2e-local-only";
-const employeeEmail = "employee.e2e@example.test";
-const managerEmail = "manager.e2e@example.test";
-const financeEmail = "finance.e2e@example.test";
+import { e2eAccounts, login } from "./support/auth.mjs";
 
 test.describe.configure({ mode: "serial" });
 
 test("employee submits an expense report and manager approves it", async ({
     browser,
 }) => {
+    test.setTimeout(150_000);
+
     const merchant = `E2E Travel ${randomUUID().slice(0, 8)}`;
     const employeeContext = await browser.newContext();
     const managerContext = await browser.newContext();
@@ -23,7 +20,7 @@ test("employee submits an expense report and manager approves it", async ({
 
     try {
         const employeePage = await employeeContext.newPage();
-        await login(employeePage, "employee", employeeEmail);
+        await login(employeePage, e2eAccounts.employee);
         await expect(
             employeePage.getByRole("heading", { name: "My Submissions" }),
         ).toBeVisible();
@@ -56,9 +53,12 @@ test("employee submits an expense report and manager approves it", async ({
         await expect(employeePage.getByText("Submitted stage")).toBeVisible();
 
         const managerPage = await managerContext.newPage();
-        managerTotpCode = await login(managerPage, "manager", managerEmail);
+        managerTotpCode = await login(managerPage, e2eAccounts.manager);
         await expect(
-            managerPage.getByRole("heading", { name: "Finance Dashboard" }),
+            managerPage.getByRole("heading", {
+                level: 1,
+                name: "Expense Reports",
+            }),
         ).toBeVisible();
 
         await managerPage.getByRole("link", { name: "Approval Queue" }).click();
@@ -118,7 +118,7 @@ test("employee submits an expense report and manager approves it", async ({
 
         freshManagerContext = await browser.newContext();
         const freshManagerPage = await freshManagerContext.newPage();
-        await login(freshManagerPage, "manager", managerEmail, managerTotpCode);
+        await login(freshManagerPage, e2eAccounts.manager, managerTotpCode);
         await freshManagerPage
             .getByRole("link", { name: "Approval Queue" })
             .click();
@@ -132,7 +132,7 @@ test("employee submits an expense report and manager approves it", async ({
         await expect(persistedManagerRow).toContainText("AP Review");
 
         const financePage = await financeContext.newPage();
-        await login(financePage, "finance", financeEmail);
+        await login(financePage, e2eAccounts.financeAdmin);
         await expect(
             financePage.getByRole("heading", { name: "Finance Dashboard" }),
         ).toBeVisible();
@@ -140,7 +140,10 @@ test("employee submits an expense report and manager approves it", async ({
             .getByRole("link", { name: "All Transactions" })
             .click();
         await expect(
-            financePage.getByRole("heading", { name: "All Transactions" }),
+            financePage.getByRole("heading", { name: "Transactions" }),
+        ).toBeVisible();
+        await expect(
+            financePage.getByRole("region", { name: "All Transactions list" }),
         ).toBeVisible();
         const financeTransactionRow = financePage.getByRole("row", {
             name: new RegExp(escapeRegExp(merchant)),
@@ -170,27 +173,6 @@ test("employee submits an expense report and manager approves it", async ({
     }
 });
 
-async function login(page, account, email, previousTotpCode) {
-    await page.goto("/login");
-    await expect(
-        page.getByRole("heading", { name: "Welcome back" }),
-    ).toBeVisible();
-    await page.getByLabel("Email").fill(email);
-    await page.getByRole("textbox", { name: "Password" }).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-
-    await expect(
-        page.getByRole("heading", { name: "Verify your identity" }),
-    ).toBeVisible();
-    const totpCode = await readFreshTotpCode(account, previousTotpCode);
-    for (const [index, digit] of [...totpCode].entries()) {
-        await page.getByLabel(`Digit ${index + 1}`).fill(digit);
-    }
-    await page.getByRole("button", { name: "Verify" }).click();
-
-    return totpCode;
-}
-
 async function readSubmittedReportId(page) {
     const reportText = await page
         .getByText(/^Expense Report [0-9a-f-]{36}$/)
@@ -202,36 +184,6 @@ async function readSubmittedReportId(page) {
     }
 
     return reportId;
-}
-
-function readTotpCode(account) {
-    return execFileSync(
-        "node",
-        [
-            "--env-file=.env",
-            "backend/core-case-service/dist/dev/e2eTestData.js",
-            "code",
-            account,
-        ],
-        { encoding: "utf8" },
-    ).trim();
-}
-
-async function readFreshTotpCode(account, previousTotpCode) {
-    const deadline = Date.now() + 45_000;
-
-    while (Date.now() < deadline) {
-        const totpCode = readTotpCode(account);
-        if (totpCode !== previousTotpCode) {
-            return totpCode;
-        }
-
-        await new Promise((resolve) => {
-            setTimeout(resolve, 1_000);
-        });
-    }
-
-    throw new Error(`A fresh ${account} MFA code was not available.`);
 }
 
 function escapeRegExp(value) {

@@ -4,7 +4,10 @@ import { z } from "zod";
 
 import type { TinEinValidationConfig } from "../config/tinEinValidationConfig.js";
 import { loadDefaultTinEinValidationConfig } from "../config/tinEinValidationConfig.js";
-import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
+import {
+    TinEinValidationServiceError,
+    TinEinValidationUnavailableError,
+} from "./tinEinValidationErrors.js";
 
 type CircuitBreaker<TArgs extends unknown[], TResult> = {
     fire: (...args: TArgs) => Promise<TResult>;
@@ -22,11 +25,21 @@ type OpossumModule = new <TArgs extends unknown[], TResult>(
     options: CircuitBreakerOptions,
 ) => CircuitBreaker<TArgs, TResult>;
 
+type SoapClient = Record<string, unknown> & {
+    setEndpoint?: (endpointUrl: string) => void;
+    setSecurity?: (security: unknown) => void;
+};
+
 type SoapModule = {
     createClientAsync: (
         wsdlUrl: string,
         options: WsdlClientOptions,
-    ) => Promise<Record<string, unknown>>;
+    ) => Promise<SoapClient>;
+    WSSecurity?: new (
+        username: string,
+        password: string,
+        options?: Record<string, unknown>,
+    ) => unknown;
 };
 type SoapOperationOptions = {
     timeout?: number;
@@ -44,7 +57,7 @@ const legalNameSchema = z
     });
 
 export const TinEinValidationRequestSchema = z.object({
-    identifierType: z.enum(["TIN", "EIN"]),
+    identifierType: z.enum(["EIN", "SSN"]),
     identifier: z.string().regex(/^\d{9}$/),
     legalName: legalNameSchema,
 });
@@ -54,18 +67,25 @@ export const TinEinValidationResponseSchema = z.object({
     normalizedLegalName: z.string().min(1).optional(),
     rejectionReason: z.string().min(1).optional(),
     serviceReferenceId: z.string().min(1).optional(),
+    taxpayerStanding: z.enum(["active", "inactive", "suspended"]).optional(),
+    taxpayerStandingAsOfDate: z.iso.date().optional(),
 });
 
 type ValidationServicePayload = {
-    IdentifierType: "TIN" | "EIN";
-    Identifier: string;
+    TIN: string;
+    TINType: "EIN" | "SSN";
     LegalName: string;
+};
+
+type TaxpayerStatusPayload = {
+    TIN: string;
+    TINType: "EIN" | "SSN";
 };
 
 const soapValidationPayloadSchema: z.ZodType<ValidationServicePayload> =
     z.object({
-        IdentifierType: z.enum(["TIN", "EIN"]),
-        Identifier: z.string().regex(/^\d{9}$/),
+        TIN: z.string().regex(/^\d{9}$/),
+        TINType: z.enum(["EIN", "SSN"]),
         LegalName: legalNameSchema,
     });
 
@@ -85,20 +105,34 @@ export type TinEinValidationClient = {
     ): Promise<TinEinValidationResponse>;
 };
 
-type ValidationServiceInvoker = (
-    payload: unknown,
-    operationOptions?: SoapOperationOptions,
-) => Promise<unknown>;
+type ValidationServiceInvoker = {
+    verifyTaxpayer: (
+        payload: ValidationServicePayload,
+        operationOptions?: SoapOperationOptions,
+    ) => Promise<unknown>;
+    getTaxpayerStatus?: (
+        payload: TaxpayerStatusPayload,
+        operationOptions?: SoapOperationOptions,
+    ) => Promise<unknown>;
+};
 type WsdlClientOptions = {
     wsdl_options?: {
         timeout?: number;
     };
 };
 
+type ValidationServiceTransportOptions = WsdlClientOptions & {
+    endpointUrl?: string;
+    username?: string;
+    password?: string;
+    statusEnrichmentEnabled: boolean;
+    statusOperationName: string;
+};
+
 type CreateValidationServiceInvoker = (
     wsdlUrl: string,
     operationName: string,
-    options: WsdlClientOptions,
+    options: ValidationServiceTransportOptions,
 ) => Promise<ValidationServiceInvoker>;
 
 export type TinEinValidationClientOptions = {
@@ -115,11 +149,11 @@ export function createSoapTinEinValidationClient(
 ): TinEinValidationClient {
     const createValidationServiceInvoker =
         options.createValidationServiceInvoker ??
-        ((wsdlUrl, operationName, wsdlOptions) =>
+        ((wsdlUrl, operationName, transportOptions) =>
             createNodeSoapInvoker(
                 wsdlUrl,
                 operationName,
-                wsdlOptions,
+                transportOptions,
                 options.soapModule,
             ));
     let invokerPromise: Promise<ValidationServiceInvoker> | undefined;
@@ -133,9 +167,34 @@ export function createSoapTinEinValidationClient(
                     wsdl_options: {
                         timeout: config.TIN_EIN_VALIDATION_TIMEOUT_MS,
                     },
+                    ...(config.TIN_EIN_VALIDATION_ENDPOINT_URL === undefined
+                        ? {}
+                        : {
+                              endpointUrl:
+                                  config.TIN_EIN_VALIDATION_ENDPOINT_URL,
+                          }),
+                    ...(config.TIN_EIN_VALIDATION_USERNAME === undefined
+                        ? {}
+                        : { username: config.TIN_EIN_VALIDATION_USERNAME }),
+                    ...(config.TIN_EIN_VALIDATION_PASSWORD === undefined
+                        ? {}
+                        : { password: config.TIN_EIN_VALIDATION_PASSWORD }),
+                    statusEnrichmentEnabled:
+                        config.TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED,
+                    statusOperationName:
+                        config.TIN_EIN_VALIDATION_STATUS_OPERATION_NAME,
                 },
             ).catch((error: unknown) => {
                 invokerPromise = undefined;
+                if (error instanceof TinEinValidationServiceError) {
+                    throw error;
+                }
+                if (isTransportError(error)) {
+                    throw new TinEinValidationUnavailableError(
+                        "The TIN/EIN validation service could not be reached.",
+                        { cause: error },
+                    );
+                }
                 throw error;
             });
         }
@@ -148,15 +207,24 @@ export function createSoapTinEinValidationClient(
         ): Promise<TinEinValidationResponse> => {
             const invoker = await readSoapInvoker();
             const soapPayload = soapValidationPayloadSchema.parse({
-                IdentifierType: request.identifierType,
-                Identifier: request.identifier,
+                TIN: request.identifier,
+                TINType: toTivsIdentifierType(request.identifierType),
                 LegalName: request.legalName,
             });
-            const rawSoapResponse = await invoker(soapPayload, {
+            const rawSoapResponse = await invoker.verifyTaxpayer(soapPayload, {
                 timeout: config.TIN_EIN_VALIDATION_TIMEOUT_MS,
             });
+            const validation = toTinEinValidationResponse(rawSoapResponse);
+            if (validation.isValid && invoker.getTaxpayerStatus !== undefined) {
+                return addTaxpayerStatusIfAvailable(
+                    validation,
+                    invoker,
+                    soapPayload,
+                    config.TIN_EIN_VALIDATION_TIMEOUT_MS,
+                );
+            }
 
-            return toTinEinValidationResponse(rawSoapResponse);
+            return validation;
         },
         {
             errorThresholdPercentage:
@@ -180,12 +248,16 @@ export function createSoapTinEinValidationClient(
                     throw error;
                 }
 
-                throw new TinEinValidationServiceError(
-                    failureMessageFor(error),
-                    {
-                        cause: error,
-                    },
-                );
+                const message = failureMessageFor(error);
+                const ErrorConstructor = isCircuitBreakerAvailabilityError(
+                    error,
+                )
+                    ? TinEinValidationUnavailableError
+                    : TinEinValidationServiceError;
+
+                throw new ErrorConstructor(message, {
+                    cause: error,
+                });
             }
         },
     };
@@ -194,30 +266,131 @@ export function createSoapTinEinValidationClient(
 async function createNodeSoapInvoker(
     wsdlUrl: string,
     operationName: string,
-    options: WsdlClientOptions,
+    options: ValidationServiceTransportOptions,
     soapModule?: SoapModule,
 ): Promise<ValidationServiceInvoker> {
-    const { createClientAsync } =
-        soapModule ?? (nodeRequire("soap") as SoapModule);
-    const soapClient = await createClientAsync(wsdlUrl, options);
-    const asyncMethodName = `${operationName}Async`;
-    const soapMethod = readSoapMethod(soapClient, asyncMethodName);
-
-    return async (payload, operationOptions) => {
-        try {
-            const response: unknown = await soapMethod(
-                payload,
-                operationOptions,
-            );
-
-            return unwrapSoapOperationResponse(response, operationName);
-        } catch (error: unknown) {
-            throw new TinEinValidationServiceError(
+    const soap = soapModule ?? (nodeRequire("soap") as SoapModule);
+    let soapClient: SoapClient;
+    try {
+        soapClient = await soap.createClientAsync(wsdlUrl, {
+            ...(options.wsdl_options === undefined
+                ? {}
+                : { wsdl_options: options.wsdl_options }),
+        });
+    } catch (error: unknown) {
+        if (isTransportError(error)) {
+            throw new TinEinValidationUnavailableError(
                 "The TIN/EIN validation service could not be reached.",
                 { cause: error },
             );
         }
+
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation SOAP client could not be created.",
+            { cause: error },
+        );
+    }
+    configureSoapClient(soapClient, soap, options);
+    const verifyMethod = readSoapMethod(soapClient, `${operationName}Async`);
+    const statusMethod = options.statusEnrichmentEnabled
+        ? readSoapMethod(soapClient, `${options.statusOperationName}Async`)
+        : undefined;
+
+    return {
+        verifyTaxpayer: async (payload, operationOptions) =>
+            unwrapSoapOperationResponse(
+                await invokeSoapMethod(verifyMethod, payload, operationOptions),
+                operationName,
+            ),
+        ...(statusMethod === undefined
+            ? {}
+            : {
+                  getTaxpayerStatus: async (payload, operationOptions) =>
+                      unwrapSoapOperationResponse(
+                          await invokeSoapMethod(
+                              statusMethod,
+                              payload,
+                              operationOptions,
+                          ),
+                          options.statusOperationName,
+                      ),
+              }),
     };
+}
+
+function configureSoapClient(
+    soapClient: SoapClient,
+    soapModule: SoapModule,
+    options: ValidationServiceTransportOptions,
+): void {
+    if (options.endpointUrl !== undefined) {
+        if (typeof soapClient.setEndpoint !== "function") {
+            throw new TinEinValidationServiceError(
+                "The TIN/EIN validation SOAP client does not support endpoint override.",
+            );
+        }
+        soapClient.setEndpoint(options.endpointUrl);
+    }
+
+    if (options.username !== undefined && options.password !== undefined) {
+        if (soapModule.WSSecurity === undefined) {
+            throw new TinEinValidationServiceError(
+                "The TIN/EIN validation SOAP module does not support WS-Security.",
+            );
+        }
+        if (typeof soapClient.setSecurity !== "function") {
+            throw new TinEinValidationServiceError(
+                "The TIN/EIN validation SOAP client does not support WS-Security.",
+            );
+        }
+        soapClient.setSecurity(
+            new soapModule.WSSecurity(options.username, options.password, {
+                passwordType: "PasswordText",
+            }),
+        );
+    }
+}
+
+async function invokeSoapMethod(
+    method: ValidationServiceInvoker["verifyTaxpayer"],
+    payload: ValidationServicePayload | TaxpayerStatusPayload,
+    operationOptions?: SoapOperationOptions,
+): Promise<unknown> {
+    try {
+        return await method(
+            payload as ValidationServicePayload,
+            operationOptions,
+        );
+    } catch (error: unknown) {
+        if (isTransportError(error)) {
+            throw new TinEinValidationUnavailableError(
+                "The TIN/EIN validation service could not be reached.",
+                { cause: error },
+            );
+        }
+
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation service returned a SOAP fault.",
+            { cause: error },
+        );
+    }
+}
+
+function isTransportError(error: unknown): boolean {
+    return (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        typeof error.code === "string" &&
+        [
+            "ECONNABORTED",
+            "ECONNREFUSED",
+            "ECONNRESET",
+            "EHOSTUNREACH",
+            "ENETUNREACH",
+            "ETIMEDOUT",
+        ].includes(error.code)
+    );
 }
 
 function containsControlCharacter(value: string): boolean {
@@ -261,7 +434,7 @@ function unwrapSoapOperationResponse(
 function readSoapMethod(
     soapClient: Record<string, unknown>,
     methodName: string,
-): ValidationServiceInvoker {
+): ValidationServiceInvoker["verifyTaxpayer"] {
     const method = soapClient[methodName];
     if (typeof method !== "function") {
         throw new TinEinValidationServiceError(
@@ -269,16 +442,16 @@ function readSoapMethod(
         );
     }
 
-    return async (
-        payload: unknown,
+    return (
+        payload: ValidationServicePayload,
         operationOptions?: SoapOperationOptions,
     ): Promise<unknown> => {
-        const response: unknown = await Reflect.apply(method, soapClient, [
+        const response: unknown = Reflect.apply(method, soapClient, [
             payload,
             operationOptions,
         ]);
 
-        return response;
+        return Promise.resolve(response);
     };
 }
 
@@ -289,6 +462,11 @@ function toTinEinValidationResponse(
         throw new TinEinValidationServiceError(
             "The TIN/EIN validation service returned an invalid response.",
         );
+    }
+
+    const tivsMatchCode = readOptionalMatchCode(rawSoapResponse, ["MatchCode"]);
+    if (tivsMatchCode !== undefined) {
+        return toTivsValidationResponse(rawSoapResponse, tivsMatchCode);
     }
 
     const valid = readOptionalBoolean(rawSoapResponse, [
@@ -338,6 +516,168 @@ function toTinEinValidationResponse(
     return TinEinValidationResponseSchema.parse(response);
 }
 
+function toTivsValidationResponse(
+    rawSoapResponse: Record<string, unknown>,
+    matchCode: string,
+): TinEinValidationResponse {
+    const serviceReferenceId = readOptionalString(rawSoapResponse, [
+        "ServiceReferenceId",
+        "serviceReferenceId",
+        "CorrelationId",
+        "correlationId",
+    ]);
+
+    if (matchCode === "0") {
+        const normalizedLegalName = readOptionalString(rawSoapResponse, [
+            "VerifiedName",
+        ]);
+
+        return TinEinValidationResponseSchema.parse({
+            isValid: true,
+            ...(normalizedLegalName === undefined
+                ? {}
+                : { normalizedLegalName }),
+            ...(serviceReferenceId === undefined ? {} : { serviceReferenceId }),
+        });
+    }
+
+    return TinEinValidationResponseSchema.parse({
+        isValid: false,
+        rejectionReason: rejectionReasonForTivsMatchCode(matchCode),
+        ...(serviceReferenceId === undefined ? {} : { serviceReferenceId }),
+    });
+}
+
+async function addTaxpayerStatusIfAvailable(
+    validation: TinEinValidationResponse,
+    invoker: ValidationServiceInvoker,
+    soapPayload: ValidationServicePayload,
+    timeout: number,
+): Promise<TinEinValidationResponse> {
+    if (invoker.getTaxpayerStatus === undefined) {
+        return validation;
+    }
+
+    let statusResponse: unknown;
+    try {
+        statusResponse = await invoker.getTaxpayerStatus(
+            {
+                TIN: soapPayload.TIN,
+                TINType: soapPayload.TINType,
+            },
+            {
+                timeout,
+            },
+        );
+    } catch (error: unknown) {
+        if (error instanceof TinEinValidationServiceError) {
+            return validation;
+        }
+
+        throw error;
+    }
+
+    try {
+        return addTaxpayerStatus(validation, statusResponse);
+    } catch (error: unknown) {
+        if (
+            error instanceof TinEinValidationServiceError ||
+            error instanceof z.ZodError
+        ) {
+            return validation;
+        }
+
+        throw error;
+    }
+}
+
+function addTaxpayerStatus(
+    validation: TinEinValidationResponse,
+    rawStatusResponse: unknown,
+): TinEinValidationResponse {
+    if (!isRecord(rawStatusResponse)) {
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation service returned an invalid taxpayer status response.",
+        );
+    }
+
+    const standing = readOptionalString(rawStatusResponse, ["Standing"]);
+    const asOfDate = readOptionalString(rawStatusResponse, ["AsOfDate"]);
+    if (standing === undefined || asOfDate === undefined) {
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation service taxpayer status response was incomplete.",
+        );
+    }
+
+    return TinEinValidationResponseSchema.parse({
+        ...validation,
+        taxpayerStanding: standing.toLowerCase(),
+        taxpayerStandingAsOfDate: parseLegacyMmddyyyy(asOfDate),
+    });
+}
+
+function rejectionReasonForTivsMatchCode(matchCode: string): string {
+    if (matchCode === "1") {
+        return "Taxpayer identifier has not been issued.";
+    }
+    if (matchCode === "2") {
+        return "Taxpayer identifier was not found.";
+    }
+    if (matchCode === "3") {
+        return "Taxpayer identifier and legal name do not match.";
+    }
+
+    throw new TinEinValidationServiceError(
+        "The TIN/EIN validation service returned an unknown match code.",
+    );
+}
+
+function parseLegacyMmddyyyy(value: string): string {
+    if (!/^\d{8}$/.test(value)) {
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation service returned an invalid status date.",
+        );
+    }
+
+    const month = value.slice(0, 2);
+    const day = value.slice(2, 4);
+    const year = value.slice(4, 8);
+    const isoDate = `${year}-${month}-${day}`;
+    if (!z.iso.date().safeParse(isoDate).success) {
+        throw new TinEinValidationServiceError(
+            "The TIN/EIN validation service returned an invalid status date.",
+        );
+    }
+
+    return isoDate;
+}
+
+function toTivsIdentifierType(
+    identifierType: TinEinValidationRequest["identifierType"],
+): "EIN" | "SSN" {
+    return identifierType;
+}
+
+function readOptionalMatchCode(
+    record: Record<string, unknown>,
+    keys: string[],
+): string | undefined {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === "number" && Number.isInteger(value)) {
+            return value.toString();
+        }
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (/^\d+$/.test(trimmed)) {
+                return trimmed;
+            }
+        }
+    }
+
+    return undefined;
+}
+
 function readOptionalBoolean(
     record: Record<string, unknown>,
     keys: string[],
@@ -378,6 +718,12 @@ function readOptionalString(
     return undefined;
 }
 
+function isCircuitBreakerAvailabilityError(error: unknown): boolean {
+    return (
+        isRecord(error) &&
+        (error.code === "EOPENBREAKER" || error.code === "ETIMEDOUT")
+    );
+}
 function failureMessageFor(error: unknown): string {
     if (isRecord(error) && error.code === "EOPENBREAKER") {
         return "The TIN/EIN validation circuit breaker is open.";
