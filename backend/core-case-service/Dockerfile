@@ -5,9 +5,8 @@ WORKDIR /workspace
 COPY package.json package-lock.json ./
 COPY tsconfig.json tsconfig.base.json ./
 COPY backend/core-case-service/package.json backend/core-case-service/package.json
-COPY frontend/app/package.json frontend/app/package.json
 
-RUN npm ci
+RUN npm ci --workspace @expense-flow/core-case-service --include-workspace-root
 
 FROM deps AS build
 

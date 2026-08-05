@@ -123,20 +123,10 @@ services:
             - "3301:3000"
 
     gl-coding:
-        image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
-        working_dir: /workspace
-        command:
-            [
-                "uv",
-                "run",
-                "--no-dev",
-                "uvicorn",
-                "backend.python.main:app",
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8001",
-            ]
+        build:
+            context: .
+            dockerfile: backend/python/Dockerfile
+        image: expenseflow-gl-coding:local
         depends_on:
             postgres:
                 condition: service_started
@@ -147,9 +137,6 @@ services:
             AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
             DATABASE_URL: postgres://expenseflow:expenseflow_local_dev_only@postgres:5432/expenseflow_core_case
             MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
-            UV_CACHE_DIR: /tmp/uv-cache
-            UV_LINK_MODE: copy
-            UV_PROJECT_ENVIRONMENT: /tmp/expenseflow-venv
         healthcheck:
             test:
                 [
@@ -163,10 +150,6 @@ services:
             retries: 12
         ports:
             - "8001:8001"
-        volumes:
-            - .:/workspace:ro
-            - gl-coding-cache:/tmp/uv-cache
-            - gl-coding-venv:/tmp/expenseflow-venv
 
     gl-mapping-init:
         image: postgres:17-alpine
@@ -306,7 +289,3 @@ services:
             - "4566:4566"
         volumes:
             - ./scripts/init-local-stage-transition-events.sh:/etc/localstack/init/ready.d/init-stage-transition-events.sh:ro
-
-volumes:
-    gl-coding-cache:
-    gl-coding-venv:

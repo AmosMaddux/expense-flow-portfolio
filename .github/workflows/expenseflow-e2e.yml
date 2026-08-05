@@ -45,6 +45,9 @@ jobs:
             - name: Smoke test Core Case container image
               run: npm run test:container:core-case
 
+            - name: Smoke test packaged GL-coding image
+              run: ./scripts/smoke-test-gl-coding-image.sh .env
+
             - name: Install Playwright Chromium
               run: npx playwright install --with-deps chromium
 
