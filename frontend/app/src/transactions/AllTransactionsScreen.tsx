@@ -120,7 +120,7 @@ export type ExpenseReportReviewDetail = z.infer<
 type AuditEntry = z.infer<typeof auditEntrySchema>;
 type CaseComment = z.infer<typeof caseCommentSchema>;
 type CaseDetailTab = "line-items" | "audit-trail" | "comments";
-export export type LoadedTransactionPage = {
+export type LoadedTransactionPage = {
     cursor: string | null;
     page: AllTransactionPage;
 };
