@@ -42,6 +42,9 @@ jobs:
             - name: Create synthetic local JWT keys
               run: ./scripts/generate-dev-jwt-keys.sh
 
+            - name: Smoke test packaged GL-coding image
+              run: ./scripts/smoke-test-gl-coding-image.sh .env
+
             - name: Install Playwright Chromium
               run: npx playwright install --with-deps chromium
 
