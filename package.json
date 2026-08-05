@@ -24,6 +24,7 @@
         "test:e2e": "npm run e2e:services && npm run e2e:reset && playwright test",
         "test:e2e:headed": "npm run e2e:services && npm run e2e:reset && playwright test --headed",
         "test:e2e:debug": "npm run e2e:services && npm run e2e:reset && playwright test --debug",
+        "test:container:core-case": "bash scripts/smoke-test-core-case-image.sh",
         "dev:events:receive": "sh scripts/receive-local-stage-transition-event.sh",
         "test:ui-gate": "npm run test:e2e && npm run lighthouse",
         "lighthouse": "node scripts/run-lighthouse-ci.mjs",
