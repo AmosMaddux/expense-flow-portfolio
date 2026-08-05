@@ -6,10 +6,7 @@ import {
     type TinEinValidationClient,
     type TinEinValidationResponse,
 } from "./tinEinValidationClient.js";
-import {
-    TinEinValidationServiceError,
-    TinEinValidationUnavailableError,
-} from "./tinEinValidationErrors.js";
+import { TinEinValidationServiceError } from "./tinEinValidationErrors.js";
 
 export const EinValidationRequestSchema = z
     .object({
@@ -80,7 +77,7 @@ export function createEinValidationAcl(
 
                 return toEinValidationResult(response);
             } catch (error: unknown) {
-                if (isServiceUnavailableError(error)) {
+                if (isValidationServiceError(error)) {
                     return EinValidationResultSchema.parse({
                         status: "unreachable",
                         isValid: false,
@@ -95,10 +92,10 @@ export function createEinValidationAcl(
     };
 }
 
-function isServiceUnavailableError(
+function isValidationServiceError(
     error: unknown,
 ): error is TinEinValidationServiceError {
-    if (error instanceof TinEinValidationUnavailableError) {
+    if (error instanceof TinEinValidationServiceError) {
         return true;
     }
 

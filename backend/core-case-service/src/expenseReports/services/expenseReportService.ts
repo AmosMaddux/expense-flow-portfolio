@@ -15,6 +15,12 @@ import type { RoleName } from "../../db/schema/index.js";
 import { codeExpenseLineItems } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
+    createEinValidationAcl,
+    type EinValidationAcl,
+    type EinValidationResult,
+} from "../../tinEin/tinEinValidationAcl.js";
+import { TinEinValidationServiceError } from "../../tinEin/tinEinValidationErrors.js";
+import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
     clearExpenseReportFlags as clearExpenseReportFlagsInStore,
@@ -101,6 +107,11 @@ export type StageTransitionEventDependencies = {
 export type SettlementSagaDependencies =
     Partial<StageTransitionEventDependencies> & {
         paymentStubIssuer?: PaymentStubIssuer;
+    };
+
+export type ExpenseReportSubmissionDependencies =
+    Partial<StageTransitionEventDependencies> & {
+        einValidationAcl?: EinValidationAcl;
     };
 
 export type SubmitExpenseReportResult = {
@@ -569,8 +580,11 @@ export async function submitExpenseReport(
         roles: RoleName[];
         correlationId: string;
         idempotencyKey: string;
+        requestHash: string;
+        employerEin: string;
+        employerLegalName: string;
     },
-    dependencies?: StageTransitionEventDependencies,
+    dependencies: ExpenseReportSubmissionDependencies = {},
 ): Promise<SubmitExpenseReportResult> {
     const sources = await readDraftSubmissionSources(
         request.tenantId,
@@ -582,6 +596,7 @@ export async function submitExpenseReport(
                 request.tenantId,
                 request.id,
                 request.idempotencyKey,
+                request.requestHash,
             );
         if (committedSubmission !== undefined) {
             return {
@@ -633,6 +648,29 @@ export async function submitExpenseReport(
         new Date(),
     );
     try {
+        // The repository re-confirms Drafted under FOR UPDATE before committing; keep outbound calls outside that lock.
+        // Holding a DB transaction across SOAP/GL latency would be riskier than allowing a losing concurrent submit to repeat external calls.
+        const einValidationAcl =
+            dependencies.einValidationAcl ?? createEinValidationAcl();
+        let employerValidationResult: EinValidationResult;
+        try {
+            employerValidationResult = await einValidationAcl.validateEin({
+                ein: request.employerEin,
+                legalName: request.employerLegalName,
+            });
+        } catch (error: unknown) {
+            if (!(error instanceof TinEinValidationServiceError)) {
+                throw error;
+            }
+
+            employerValidationResult = {
+                status: "unreachable",
+                isValid: false,
+                rejectionReason: "EIN validation is temporarily unavailable.",
+            };
+        }
+        const employerEinValidatedAt = new Date();
+
         const glResponse = await codeExpenseLineItems(
             glConfig.GL_CODING_SERVICE_BASE_URL,
             {
@@ -670,9 +708,16 @@ export async function submitExpenseReport(
             buildSubmissionSourceKeys(sources),
             buildSubmissionSourceFingerprint(sources),
             {
+                ein: request.employerEin,
+                legalName: request.employerLegalName,
+                result: employerValidationResult,
+                validatedAt: employerEinValidatedAt,
+            },
+            {
                 correlationId: request.correlationId,
                 eventId: outboxEventId,
                 idempotencyKey: request.idempotencyKey,
+                requestHash: request.requestHash,
                 occurredAt: new Date(),
             },
         );
@@ -1258,15 +1303,16 @@ async function compensateSettlementSaga(request: {
 
 async function dispatchOutboxEvent(
     eventId: string,
-    dependencies?: Partial<StageTransitionEventDependencies>,
+    dependencies: Partial<StageTransitionEventDependencies> = {},
 ): Promise<void> {
     try {
-        if (dependencies?.stageTransitionOutboxDispatcher === undefined) {
+        const dispatcher = dependencies.stageTransitionOutboxDispatcher;
+        if (dispatcher === undefined) {
             await dispatchStageTransitionOutboxEvents(eventId);
             return;
         }
 
-        await dependencies.stageTransitionOutboxDispatcher.dispatch(eventId);
+        await dispatcher.dispatch(eventId);
     } catch {
         // The durable outbox retry loop handles dispatch failures after the state change commits.
     }
@@ -1422,6 +1468,12 @@ function toExpenseReportResponse(report: {
     currentStage: string;
     onHold: boolean;
     holdReason: string | null;
+    employerEin?: string | null;
+    employerLegalName?: string | null;
+    employerEinValidationStatus?: string | null;
+    employerEinValidationReason?: string | null;
+    employerEinServiceReferenceId?: string | null;
+    employerEinValidatedAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
 }): ExpenseReportResponse {
@@ -1435,6 +1487,23 @@ function toExpenseReportResponse(report: {
             report.currentStage as ExpenseReportResponse["currentStage"],
         onHold: report.onHold,
         holdReason: report.holdReason,
+        employerEin: report.employerEin ?? null,
+        employerLegalName: report.employerLegalName ?? null,
+        employerEinValidation:
+            report.employerEinValidationStatus === null ||
+            report.employerEinValidationStatus === undefined ||
+            report.employerEinValidatedAt === null ||
+            report.employerEinValidatedAt === undefined
+                ? null
+                : {
+                      status: report.employerEinValidationStatus as
+                          "valid" | "invalid" | "unreachable",
+                      isValid: report.employerEinValidationStatus === "valid",
+                      reason: report.employerEinValidationReason ?? null,
+                      serviceReferenceId:
+                          report.employerEinServiceReferenceId ?? null,
+                      validatedAt: report.employerEinValidatedAt,
+                  },
         createdAt: report.createdAt,
         updatedAt: report.updatedAt,
     };

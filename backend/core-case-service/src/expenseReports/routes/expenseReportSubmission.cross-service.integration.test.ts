@@ -33,6 +33,13 @@ import {
     syntheticRsaPublicKeyBase64,
 } from "../../testSupport/jwtTestKeys.js";
 
+const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
+    createEinValidationAcl: () => ({
+        validateEin: einValidationAclValidateMock,
+    }),
+}));
 vi.mock("../../db/client.js", () => {
     const client = new Pool({
         connectionString: getCoreCaseTestDatabaseUrl(),
@@ -194,6 +201,13 @@ void describe("Expense Report submission across Core Case and GL-coding services
     });
 
     beforeEach(() => {
+        einValidationAclValidateMock.mockReset();
+        einValidationAclValidateMock.mockResolvedValue({
+            status: "valid",
+            isValid: true,
+            normalizedLegalName: "Synthetic Employer LLC",
+            serviceReferenceId: "synthetic-ein-reference",
+        });
         idempotencyRecords.clear();
         Object.values(idempotencyStoreMock).forEach((mock) => mock.mockClear());
         stageTransitionPublishMock.mockClear();
@@ -253,7 +267,10 @@ void describe("Expense Report submission across Core Case and GL-coding services
                     "content-type": "application/json",
                     "idempotency-key": "cross-tenant-submit",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -301,7 +318,10 @@ void describe("Expense Report submission across Core Case and GL-coding services
                     "content-type": "application/json",
                     "idempotency-key": "cross-service-submit",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const submitted = (await submitResponse.json()) as {
@@ -310,6 +330,28 @@ void describe("Expense Report submission across Core Case and GL-coding services
 
         expect(submitResponse.status).toBe(201);
         expect(submitted.currentStage).toBe("Submitted");
+        expect(einValidationAclValidateMock).toHaveBeenCalledWith({
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+        });
+
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        expect(reportRows[0]).toMatchObject({
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "valid",
+            employerEinValidationReason: null,
+            employerEinServiceReferenceId: "synthetic-ein-reference",
+        });
+        expect(reportRows[0]?.employerEinValidatedAt).toBeInstanceOf(Date);
 
         const codingRows = await db
             .select()

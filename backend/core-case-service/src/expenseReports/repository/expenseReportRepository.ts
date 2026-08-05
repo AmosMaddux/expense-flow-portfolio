@@ -36,6 +36,7 @@ import {
     stageTransitionOutbox,
 } from "../../db/schema/expenseReport.js";
 import type { GlCodingResponse } from "../../glCoding/glCodingClient.js";
+import type { EinValidationResult } from "../../tinEin/tinEinValidationAcl.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import type {
     ApprovalQueueLineItemResponse,
@@ -60,6 +61,7 @@ type StageTransitionEventContext = {
     correlationId: string;
     eventId: string;
     idempotencyKey?: string;
+    requestHash?: string;
     occurredAt: Date;
 };
 
@@ -89,6 +91,13 @@ export type SettlementPaymentRecordResult =
 
 export type AbandonSettlementClaimResult =
     { kind: "abandoned" } | { kind: "not_abandoned" };
+
+type EmployerEinValidationForSubmission = {
+    ein: string;
+    legalName: string;
+    result: EinValidationResult;
+    validatedAt: Date;
+};
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -1368,6 +1377,7 @@ export async function findCommittedSubmissionByIdempotencyKey(
     tenantId: string,
     expenseReportId: string,
     idempotencyKey: string,
+    requestHash: string,
 ): Promise<{ correlationId: string; report: ExpenseReport } | undefined> {
     const outboxRows = await db
         .select({ correlationId: stageTransitionOutbox.correlationId })
@@ -1377,6 +1387,7 @@ export async function findCommittedSubmissionByIdempotencyKey(
                 eq(stageTransitionOutbox.tenantId, tenantId),
                 eq(stageTransitionOutbox.expenseReportId, expenseReportId),
                 eq(stageTransitionOutbox.idempotencyKey, idempotencyKey),
+                eq(stageTransitionOutbox.requestHash, requestHash),
                 eq(stageTransitionOutbox.fromStage, "Drafted"),
                 eq(stageTransitionOutbox.toStage, "Submitted"),
             ),
@@ -1406,6 +1417,7 @@ export async function submitDraftExpenseReport(
     glCodingResponse: GlCodingResponse,
     expectedSourceKeys: Set<SubmissionSourceKey>,
     expectedSourceFingerprint: SubmissionSourceFingerprint,
+    employerValidation: EmployerEinValidationForSubmission,
     eventContext: StageTransitionEventContext = {
         correlationId: randomUUID(),
         eventId: randomUUID(),
@@ -1463,7 +1475,21 @@ export async function submitDraftExpenseReport(
 
         const updatedReports = await transaction
             .update(expenseReport)
-            .set({ currentStage: "Submitted", updatedAt: new Date() })
+            .set({
+                currentStage: "Submitted",
+                employerEin: employerValidation.ein,
+                employerLegalName: employerValidation.legalName,
+                employerEinValidationStatus: employerValidation.result.status,
+                employerEinValidationReason: readEmployerEinValidationReason(
+                    employerValidation.result,
+                ),
+                employerEinServiceReferenceId:
+                    readEmployerEinServiceReferenceId(
+                        employerValidation.result,
+                    ),
+                employerEinValidatedAt: employerValidation.validatedAt,
+                updatedAt: new Date(),
+            })
             .where(
                 and(
                     eq(expenseReport.tenantId, tenantId),
@@ -1524,6 +1550,19 @@ export async function submitDraftExpenseReport(
             "Drafted",
             "transition_approved",
         );
+        await appendAuditEntry(transaction, {
+            tenantId,
+            expenseReportId,
+            actorId,
+            action: "employer_ein_validated",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            denialReason: null,
+            outcomeReason: buildEmployerEinValidationAuditOutcome(
+                employerValidation.result,
+            ),
+        });
+
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId,
             id: expenseReportId,
@@ -2170,6 +2209,7 @@ export async function transitionExpenseReportStage(
             undefined,
             isSendBackTransition(request) ? request.reason : undefined,
         );
+
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId: request.tenantId,
             id: request.id,
@@ -2883,6 +2923,7 @@ async function writeSuccessfulStageTransitionAndOutbox(
         tenantId: request.tenantId,
         correlationId: request.correlationId,
         idempotencyKey: request.idempotencyKey,
+        requestHash: request.requestHash,
         fromStage: request.fromStage,
         toStage: request.toStage,
         occurredAt: request.occurredAt,
@@ -3097,6 +3138,36 @@ async function readApprovalQueueLineItemInTransaction(
         .limit(1);
 
     return rows[0] as ApprovalQueueLineItemRow | undefined;
+}
+
+function readEmployerEinValidationReason(
+    result: EinValidationResult,
+): string | null {
+    if (result.status === "valid") {
+        return null;
+    }
+
+    return result.rejectionReason ?? null;
+}
+
+function readEmployerEinServiceReferenceId(
+    result: EinValidationResult,
+): string | null {
+    if ("serviceReferenceId" in result) {
+        return result.serviceReferenceId ?? null;
+    }
+
+    return null;
+}
+
+function buildEmployerEinValidationAuditOutcome(
+    result: EinValidationResult,
+): string {
+    return JSON.stringify({
+        status: result.status,
+        reason: readEmployerEinValidationReason(result),
+        serviceReferenceId: readEmployerEinServiceReferenceId(result),
+    });
 }
 
 function readLatestSubmissionByReport(

@@ -39,6 +39,7 @@ import {
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
     findExpenseReportById,
+    findCommittedSubmissionByIdempotencyKey,
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
     insertDraftExpenseReport,
@@ -57,6 +58,19 @@ void describe("expenseReportRepository", () => {
             tenantId: tenantId ?? "00000000-0000-0000-0000-000000000083",
             owner: ownerId ?? "20000000-0000-0000-0000-000000000083",
             dueDate: "2026-07-02",
+        };
+    }
+    function buildSyntheticEmployerValidation() {
+        return {
+            ein: "123456789",
+            legalName: "Synthetic Employer LLC",
+            result: {
+                status: "valid" as const,
+                isValid: true as const,
+                normalizedLegalName: "Synthetic Employer LLC",
+                serviceReferenceId: "synthetic-ein-reference",
+            },
+            validatedAt: new Date("2026-07-31T00:00:00.000Z"),
         };
     }
 
@@ -496,9 +510,45 @@ void describe("expenseReportRepository", () => {
                     },
                 ],
             }),
+            buildSyntheticEmployerValidation(),
+            {
+                correlationId: "70000000-0000-4000-8000-000000000190",
+                eventId: "71000000-0000-4000-8000-000000000190",
+                idempotencyKey: "expense-submit-repository-190",
+                requestHash: "synthetic-request-hash-190",
+                occurredAt: new Date("2026-07-31T12:00:00.000Z"),
+            },
         );
 
-        expect(submitted?.currentStage).toBe("Submitted");
+        const recovered = await findCommittedSubmissionByIdempotencyKey(
+            tenantId,
+            report.id,
+            "expense-submit-repository-190",
+            "synthetic-request-hash-190",
+        );
+        const otherTenantRecovered =
+            await findCommittedSubmissionByIdempotencyKey(
+                "00000000-0000-4000-8000-000000000191",
+                report.id,
+                "expense-submit-repository-190",
+                "synthetic-request-hash-190",
+            );
+
+        expect(recovered?.correlationId).toBe(
+            "70000000-0000-4000-8000-000000000190",
+        );
+        expect(recovered?.report.id).toBe(report.id);
+        expect(otherTenantRecovered).toBeUndefined();
+
+        expect(submitted).toMatchObject({
+            currentStage: "Submitted",
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "valid",
+            employerEinValidationReason: null,
+            employerEinServiceReferenceId: "synthetic-ein-reference",
+        });
+        expect(submitted?.employerEinValidatedAt).toBeInstanceOf(Date);
 
         const auditRows = await db
             .select()
@@ -528,8 +578,10 @@ void describe("expenseReportRepository", () => {
                 ),
             );
 
-        expect(auditRows).toHaveLength(2);
-        expect(auditRows[1]).toMatchObject({
+        expect(auditRows).toHaveLength(3);
+        expect(
+            auditRows.find((row) => row.action === "transition_approved"),
+        ).toMatchObject({
             tenantId,
             expenseReportId: report.id,
             actorId,
@@ -537,6 +589,22 @@ void describe("expenseReportRepository", () => {
             stageBeforeAction: "Drafted",
             stageAfterProposedAction: "Submitted",
             denialReason: null,
+        });
+        expect(
+            auditRows.find((row) => row.action === "employer_ein_validated"),
+        ).toMatchObject({
+            tenantId,
+            expenseReportId: report.id,
+            actorId,
+            action: "employer_ein_validated",
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            denialReason: null,
+            outcomeReason: JSON.stringify({
+                status: "valid",
+                reason: null,
+                serviceReferenceId: "synthetic-ein-reference",
+            }),
         });
         expect(transitionRows).toHaveLength(2);
         expect(transitionRows[1]).toMatchObject({
@@ -673,6 +741,7 @@ void describe("expenseReportRepository", () => {
                 },
                 expectedSourceKeys,
                 expectedFingerprint,
+                buildSyntheticEmployerValidation(),
             );
             await new Promise((resolve) => setTimeout(resolve, 100));
             const contentPromise = insertDraftExpenseContent({
@@ -1874,6 +1943,7 @@ void describe("expenseReportRepository", () => {
                         ],
                         mileageEntries: [],
                     }),
+                    buildSyntheticEmployerValidation(),
                 ),
             ).rejects.toThrow("GL-coding service");
 

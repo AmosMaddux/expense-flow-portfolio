@@ -12,6 +12,7 @@ import {
     type IdempotencyResult,
 } from "../../idempotency/idempotencyStore.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
+import { TinEinValidationServiceError } from "../../tinEin/tinEinValidationErrors.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { verifyAccessToken } from "../../auth/shared/accessTokenMiddleware.js";
@@ -38,6 +39,13 @@ import { PolicyReferenceOutboundResponseSchema } from "../dto/expenseReportDto.j
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
+const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
+    createEinValidationAcl: () => ({
+        validateEin: einValidationAclValidateMock,
+    }),
+}));
 vi.mock("../../db/client.js", () => {
     const client = new Pool({
         connectionString: getCoreCaseTestDatabaseUrl(),
@@ -245,6 +253,13 @@ function refreshAuthorizationHeader(tenantId: string, userId: string): string {
 
 void describe("Expense Report routes", () => {
     beforeEach(() => {
+        einValidationAclValidateMock.mockReset();
+        einValidationAclValidateMock.mockResolvedValue({
+            status: "valid",
+            isValid: true,
+            normalizedLegalName: "Synthetic Employer LLC",
+            serviceReferenceId: "synthetic-ein-reference",
+        });
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
         idempotencyStoreMock.getResult.mockClear();
@@ -1278,7 +1293,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-130",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const body = (await response.json()) as { currentStage?: string };
@@ -1364,6 +1382,7 @@ void describe("Expense Report routes", () => {
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
         const replayResponse = await requestApp(
             `/v1/expense-reports/${created.id}/draft-content`,
             request,
@@ -2045,6 +2064,12 @@ void describe("Expense Report routes", () => {
         stageTransitionPublishMock.mockRejectedValueOnce(
             new Error("synthetic SNS failure"),
         );
+        einValidationAclValidateMock.mockResolvedValueOnce({
+            status: "invalid",
+            isValid: false,
+            rejectionReason: "Synthetic EIN and legal name mismatch.",
+            serviceReferenceId: "synthetic-reference-invalid-132",
+        });
 
         const response = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
@@ -2056,14 +2081,19 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-132",
                     "x-correlation-id": correlationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
         const body = (await response.json()) as { currentStage?: string };
+
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
         const replayResponse = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
             {
@@ -2074,7 +2104,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-132",
                     "x-correlation-id": replayCorrelationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const replayBody = (await replayResponse.json()) as {
@@ -2108,6 +2141,7 @@ void describe("Expense Report routes", () => {
             .from(stageTransitionOutbox)
             .where(eq(stageTransitionOutbox.expenseReportId, created.id));
         expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]?.requestHash).toMatch(/^[a-f0-9]{64}$/);
         expect(outboxRows[0]).toMatchObject({
             attemptCount: 1,
             idempotencyKey: "expense-submit-132",
@@ -2136,6 +2170,18 @@ void describe("Expense Report routes", () => {
                 }),
             ]),
         );
+        const employerValidationAudit = auditRows.find(
+            (row) => row.action === "employer_ein_validated",
+        );
+        expect(employerValidationAudit).toMatchObject({
+            stageBeforeAction: "Drafted",
+            stageAfterProposedAction: "Submitted",
+            outcomeReason: JSON.stringify({
+                status: "invalid",
+                reason: "Synthetic EIN and legal name mismatch.",
+                serviceReferenceId: "synthetic-reference-invalid-132",
+            }),
+        });
         expect(transitionRows).toContainEqual(
             expect.objectContaining({
                 actor: owner,
@@ -2207,7 +2253,30 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-232",
                     "x-correlation-id": correlationId,
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
+        const mismatchReplayResponse = await requestApp(
+            "/v1/expense-reports/" + created.id + "/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-232",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000234",
+                },
+                body: JSON.stringify({
+                    employerEin: "987654321",
+                    employerLegalName: "Different Synthetic Employer LLC",
+                }),
             },
         );
         await db
@@ -2224,7 +2293,10 @@ void describe("Expense Report routes", () => {
                     "idempotency-key": "expense-submit-232",
                     "x-correlation-id": "70000000-0000-4000-8000-000000000233",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const replayBody = (await replayResponse.json()) as {
@@ -2236,6 +2308,7 @@ void describe("Expense Report routes", () => {
             .where(eq(stageTransitionOutbox.expenseReportId, created.id));
 
         expect(firstResponse.status).toBe(500);
+        expect(mismatchReplayResponse.status).toBe(409);
         expect(replayResponse.status).toBe(201);
         expect(replayResponse.headers.get("x-correlation-id")).toBe(
             correlationId,
@@ -2244,6 +2317,7 @@ void describe("Expense Report routes", () => {
         expect(glCodingClientMock).toHaveBeenCalledOnce();
         expect(stageTransitionPublishMock).toHaveBeenCalledOnce();
         expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]?.requestHash).toMatch(/^[a-f0-9]{64}$/);
         expect(outboxRows[0]).toMatchObject({
             correlationId,
             idempotencyKey: "expense-submit-232",
@@ -2282,7 +2356,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-745",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2311,7 +2388,10 @@ void describe("Expense Report routes", () => {
                     ),
                     "content-type": "application/json",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2319,28 +2399,143 @@ void describe("Expense Report routes", () => {
         expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
     });
 
-    void test("rejects malformed submit request bodies", async () => {
+    void test.each([
+        [
+            "missing employer EIN",
+            "734",
+            { employerLegalName: "Synthetic Employer LLC" },
+        ],
+        [
+            "malformed employer EIN",
+            "735",
+            {
+                employerEin: "12-3456789",
+                employerLegalName: "Synthetic Employer LLC",
+            },
+        ],
+        [
+            "blank legal name",
+            "736",
+            { employerEin: "123456789", employerLegalName: " " },
+        ],
+        [
+            "control-character legal name",
+            "737",
+            {
+                employerEin: "123456789",
+                employerLegalName: "Synthetic\u0007Employer LLC",
+            },
+        ],
+    ])(
+        "rejects malformed submit request bodies before external calls: %s",
+        async (_caseName, suffix, body) => {
+            const response = await requestApp(
+                `/v1/expense-reports/10000000-0000-4000-8000-000000000${suffix}/submit`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            `40000000-0000-4000-8000-000000000${suffix}`,
+                            `50000000-0000-4000-8000-000000000${suffix}`,
+                            ["Department Manager"],
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": `expense-submit-${suffix}`,
+                    },
+                    body: JSON.stringify(body),
+                },
+            );
+
+            expect(response.status).toBe(400);
+            expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
+            expect(einValidationAclValidateMock).not.toHaveBeenCalled();
+            expect(glCodingClientMock).not.toHaveBeenCalled();
+        },
+    );
+
+    void test("records unreachable EIN validation when the ACL reports a SOAP service error", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000834";
+        const owner = "50000000-0000-4000-8000-000000000834";
+        const reportId = "60000000-0000-4000-8000-000000000834";
+        const sourceId = "30000000-0000-4000-8000-000000000834";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Drafted",
+        });
+        await db.insert(lineItem).values({
+            id: sourceId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-23",
+            amount: "42.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        einValidationAclValidateMock.mockRejectedValueOnce(
+            new TinEinValidationServiceError(
+                "The TIN/EIN validation service returned a SOAP fault.",
+            ),
+        );
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "42.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+
         const response = await requestApp(
-            "/v1/expense-reports/10000000-0000-4000-8000-000000000134/submit",
+            `/v1/expense-reports/${reportId}/submit`,
             {
                 method: "POST",
                 headers: {
-                    authorization: authorizationHeader(
-                        "40000000-0000-4000-8000-000000000134",
-                        "50000000-0000-4000-8000-000000000134",
-                        ["Department Manager"],
-                    ),
+                    authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-134",
+                    "idempotency-key": "expense-submit-234",
                 },
-                body: JSON.stringify({ unexpected: true }),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
-        expect(response.status).toBe(400);
-        expect(glCodingClientMock).not.toHaveBeenCalled();
+        expect(response.status).toBe(201);
+        expect(glCodingClientMock).toHaveBeenCalledOnce();
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        expect(reportRows[0]).toMatchObject({
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "unreachable",
+            employerEinValidationReason:
+                "EIN validation is temporarily unavailable.",
+            employerEinServiceReferenceId: null,
+        });
+        expect(reportRows[0]?.employerEinValidatedAt).toBeInstanceOf(Date);
     });
-
     void test("returns not found for missing submit targets", async () => {
         const response = await requestApp(
             "/v1/expense-reports/10000000-0000-4000-8000-000000000135/submit",
@@ -2355,7 +2550,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-135",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2395,7 +2593,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-140",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -2425,14 +2626,14 @@ void describe("Expense Report routes", () => {
     });
 
     void test("rejects submit requests for reports that are not Drafted", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000136";
-        const owner = "50000000-0000-4000-8000-000000000136";
+        const tenantId = "40000000-0000-4000-8000-000000000938";
+        const owner = "50000000-0000-4000-8000-000000000938";
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
-                "idempotency-key": "expense-create-136",
+                "idempotency-key": "expense-create-938",
             },
             body: JSON.stringify({ owner, dueDate: "2026-08-13" }),
         });
@@ -2450,13 +2651,16 @@ void describe("Expense Report routes", () => {
                 headers: {
                     authorization: authorizationHeader(
                         tenantId,
-                        "50000000-0000-4000-8000-000000000137",
+                        "50000000-0000-4000-8000-000000000939",
                         ["Department Manager"],
                     ),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-136",
+                    "idempotency-key": "expense-submit-938",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
@@ -2540,7 +2744,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-138",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -2640,7 +2847,10 @@ void describe("Expense Report routes", () => {
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-142",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
         const reportRows = await db
@@ -5463,7 +5673,10 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
                     "content-type": "application/json",
                     "idempotency-key": "expense-submit-184",
                 },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 

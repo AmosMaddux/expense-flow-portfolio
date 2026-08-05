@@ -571,6 +571,10 @@ export async function postExpenseReportSubmission(
             });
         }
         const idempotencyKey = parseIdempotencyKey(req);
+        const requestHash = createIdempotencyRequestHash({
+            id: parsedParams.id,
+            ...parsedRequest,
+        });
         const submitReport = async () =>
             submitExpenseReport({
                 id: parsedParams.id,
@@ -579,11 +583,10 @@ export async function postExpenseReportSubmission(
                 roles: auth.roles,
                 correlationId,
                 idempotencyKey,
+                requestHash,
+                employerEin: parsedRequest.employerEin,
+                employerLegalName: parsedRequest.employerLegalName,
             });
-        const requestHash = createIdempotencyRequestHash({
-            id: parsedParams.id,
-            ...parsedRequest,
-        });
         const result = await runIdempotentSubmission({
             idempotencyKey,
             operation: submitReport,

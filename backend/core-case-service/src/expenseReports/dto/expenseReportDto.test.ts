@@ -36,6 +36,9 @@ const validExpenseReportResponse = {
     currentStage: "Drafted",
     onHold: false,
     holdReason: null,
+    employerEin: null,
+    employerLegalName: null,
+    employerEinValidation: null,
     createdAt: new Date("2026-07-06T12:00:00.000Z"),
     updatedAt: new Date("2026-07-06T12:00:00.000Z"),
 };
