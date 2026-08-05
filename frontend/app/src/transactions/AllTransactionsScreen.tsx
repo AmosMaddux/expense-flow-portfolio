@@ -120,7 +120,7 @@ export type ExpenseReportReviewDetail = z.infer<
 type AuditEntry = z.infer<typeof auditEntrySchema>;
 type CaseComment = z.infer<typeof caseCommentSchema>;
 type CaseDetailTab = "line-items" | "audit-trail" | "comments";
-type LoadedTransactionPage = {
+export type LoadedTransactionPage = {
     cursor: string | null;
     page: AllTransactionPage;
 };
@@ -233,9 +233,13 @@ export function AllTransactionsScreen(): JSX.Element {
         string | null
     >(null);
     const query = useAllTransactions(appliedFilters, cursor);
+    const displayedPages = useMemo(
+        () => deriveDisplayedTransactionPages(loadedPages, cursor, query.data),
+        [cursor, loadedPages, query.data],
+    );
     const transactions = useMemo(
-        () => loadedPages.flatMap((loadedPage) => loadedPage.page.items),
-        [loadedPages],
+        () => displayedPages.flatMap((loadedPage) => loadedPage.page.items),
+        [displayedPages],
     );
     const categories = useMemo(
         () =>
@@ -412,6 +416,23 @@ export function AllTransactionsScreen(): JSX.Element {
     );
 }
 
+/**
+ * Returns persisted pages plus the active query page while pagination state catches up.
+ */
+export function deriveDisplayedTransactionPages(
+    loadedPages: LoadedTransactionPage[],
+    cursor: string | null,
+    page: AllTransactionPage | undefined,
+): LoadedTransactionPage[] {
+    if (
+        page === undefined ||
+        loadedPages.some((loadedPage) => loadedPage.cursor === cursor)
+    ) {
+        return loadedPages;
+    }
+
+    return [...loadedPages, { cursor, page }];
+}
 export function createAllTransactionsQueryString(
     filters: AllTransactionsFilters,
     cursor: string | null = null,

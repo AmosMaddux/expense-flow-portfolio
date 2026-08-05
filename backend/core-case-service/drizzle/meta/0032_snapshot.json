@@ -1,5 +1,5 @@
 {
-    "id": "127dc3a8-be85-441d-8d16-b5c1cf6897ca",
+    "id": "742d0d93-d0e0-4bc1-a30a-8a52a1f0eddf",
     "prevId": "b7dcd223-bb87-46bb-89c8-d6dbf5f36350",
     "version": "7",
     "dialect": "postgresql",
@@ -2433,6 +2433,145 @@
             "checkConstraints": {},
             "isRLSEnabled": false
         },
+        "public.reference_data_audit_entry": {
+            "name": "reference_data_audit_entry",
+            "schema": "",
+            "columns": {
+                "id": {
+                    "name": "id",
+                    "type": "uuid",
+                    "primaryKey": true,
+                    "notNull": true,
+                    "default": "gen_random_uuid()"
+                },
+                "tenant_id": {
+                    "name": "tenant_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "actor_id": {
+                    "name": "actor_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "entity_type": {
+                    "name": "entity_type",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "entity_id": {
+                    "name": "entity_id",
+                    "type": "uuid",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "action": {
+                    "name": "action",
+                    "type": "text",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "before": {
+                    "name": "before",
+                    "type": "jsonb",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "after": {
+                    "name": "after",
+                    "type": "jsonb",
+                    "primaryKey": false,
+                    "notNull": true
+                },
+                "created_at": {
+                    "name": "created_at",
+                    "type": "timestamp with time zone",
+                    "primaryKey": false,
+                    "notNull": true,
+                    "default": "now()"
+                }
+            },
+            "indexes": {
+                "reference_data_audit_entry_tenant_entity_idx": {
+                    "name": "reference_data_audit_entry_tenant_entity_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "entity_type",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "entity_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                },
+                "reference_data_audit_entry_tenant_actor_idx": {
+                    "name": "reference_data_audit_entry_tenant_actor_idx",
+                    "columns": [
+                        {
+                            "expression": "tenant_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "actor_id",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        },
+                        {
+                            "expression": "created_at",
+                            "isExpression": false,
+                            "asc": true,
+                            "nulls": "last"
+                        }
+                    ],
+                    "isUnique": false,
+                    "concurrently": false,
+                    "method": "btree",
+                    "with": {}
+                }
+            },
+            "foreignKeys": {},
+            "compositePrimaryKeys": {},
+            "uniqueConstraints": {},
+            "policies": {},
+            "checkConstraints": {
+                "reference_data_audit_entry_entity_type_check": {
+                    "name": "reference_data_audit_entry_entity_type_check",
+                    "value": "\"reference_data_audit_entry\".\"entity_type\" in ('gl_mapping')"
+                },
+                "reference_data_audit_entry_action_check": {
+                    "name": "reference_data_audit_entry_action_check",
+                    "value": "\"reference_data_audit_entry\".\"action\" in ('gl_mapping_updated')"
+                }
+            },
+            "isRLSEnabled": false
+        },
         "public.stage_transition": {
             "name": "stage_transition",
             "schema": "",
@@ -2993,43 +3132,6 @@
                 "tenant_rate_limit_window_request_count_positive_check": {
                     "name": "tenant_rate_limit_window_request_count_positive_check",
                     "value": "\"tenant_rate_limit_window\".\"request_count\" > 0"
-                }
-            },
-            "isRLSEnabled": false
-        },
-        "public.tenant_expense_policy": {
-            "name": "tenant_expense_policy",
-            "schema": "",
-            "columns": {
-                "tenant_id": {
-                    "name": "tenant_id",
-                    "type": "uuid",
-                    "primaryKey": true,
-                    "notNull": true
-                },
-                "policy_text": {
-                    "name": "policy_text",
-                    "type": "text",
-                    "primaryKey": false,
-                    "notNull": true
-                },
-                "updated_at": {
-                    "name": "updated_at",
-                    "type": "timestamp with time zone",
-                    "primaryKey": false,
-                    "notNull": true,
-                    "default": "now()"
-                }
-            },
-            "indexes": {},
-            "foreignKeys": {},
-            "compositePrimaryKeys": {},
-            "uniqueConstraints": {},
-            "policies": {},
-            "checkConstraints": {
-                "tenant_expense_policy_text_not_blank_check": {
-                    "name": "tenant_expense_policy_text_not_blank_check",
-                    "value": "nullif(btrim(\"tenant_expense_policy\".\"policy_text\"), '') is not null"
                 }
             },
             "isRLSEnabled": false

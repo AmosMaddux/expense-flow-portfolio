@@ -138,6 +138,10 @@ const auditEntryMigrationSqlUrl = new URL(
     "../../../drizzle/0004_fine_rocket_racer.sql",
     import.meta.url,
 );
+const referenceDataAuditEntryMigrationSqlUrl = new URL(
+    "../../../drizzle/0032_reference_data_audit_entry.sql",
+    import.meta.url,
+);
 const glReferenceMigrationSqlUrl = new URL(
     "../../../drizzle/0009_gl_reference_seed.sql",
     import.meta.url,
@@ -463,6 +467,25 @@ void describe("auditEntry schema", () => {
         );
         expect(migrationSql).toContain(
             'before update or delete on "audit_entry"',
+        );
+    });
+
+    void test("keeps hand-authored migration SQL for reference data audit immutability", async () => {
+        const migrationSql = (
+            await readFile(referenceDataAuditEntryMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            "create or replace function prevent_reference_data_audit_entry_mutation()",
+        );
+        expect(migrationSql).toContain(
+            "raise exception 'reference_data_audit_entry rows are append-only'",
+        );
+        expect(migrationSql).toContain(
+            "create trigger reference_data_audit_entry_prevent_mutation_trigger",
+        );
+        expect(migrationSql).toContain(
+            'before update or delete on "reference_data_audit_entry"',
         );
     });
 });

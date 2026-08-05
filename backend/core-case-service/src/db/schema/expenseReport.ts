@@ -647,6 +647,43 @@ export const glMapping = pgTable(
     ],
 );
 
+export const referenceDataAuditEntry = pgTable(
+    "reference_data_audit_entry",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        actorId: uuid("actor_id").notNull(),
+        entityType: text("entity_type").notNull(),
+        entityId: uuid("entity_id").notNull(),
+        action: text("action").notNull(),
+        before: jsonb("before").notNull(),
+        after: jsonb("after").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "reference_data_audit_entry_entity_type_check",
+            sql`${table.entityType} in ('gl_mapping')`,
+        ),
+        check(
+            "reference_data_audit_entry_action_check",
+            sql`${table.action} in ('gl_mapping_updated')`,
+        ),
+        index("reference_data_audit_entry_tenant_entity_idx").on(
+            table.tenantId,
+            table.entityType,
+            table.entityId,
+            table.createdAt,
+        ),
+        index("reference_data_audit_entry_tenant_actor_idx").on(
+            table.tenantId,
+            table.actorId,
+            table.createdAt,
+        ),
+    ],
+);
 export const glCodingResult = pgTable(
     "gl_coding_result",
     {
@@ -865,6 +902,12 @@ export type GlCode = InferSelectModel<typeof glCode>;
 export type NewGlCode = InferInsertModel<typeof glCode>;
 export type GlMapping = InferSelectModel<typeof glMapping>;
 export type NewGlMapping = InferInsertModel<typeof glMapping>;
+export type ReferenceDataAuditEntry = InferSelectModel<
+    typeof referenceDataAuditEntry
+>;
+export type NewReferenceDataAuditEntry = InferInsertModel<
+    typeof referenceDataAuditEntry
+>;
 export type GlCodingResult = InferSelectModel<typeof glCodingResult>;
 export type NewGlCodingResult = InferInsertModel<typeof glCodingResult>;
 export type CaseComment = InferSelectModel<typeof caseComment>;

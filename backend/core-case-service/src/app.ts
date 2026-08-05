@@ -16,6 +16,7 @@ import { loadRateLimitConfig } from "./config/rateLimitConfig.js";
 import { db } from "./db/client.js";
 import { problemJsonErrorHandler } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
+import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
 import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
@@ -54,6 +55,7 @@ v1Router.use("/case-queue", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use("/finance-dashboard", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use("/policy-reference", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use("/transactions", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use("/gl-mappings", createAccessTokenMiddleware(authJwtConfig));
 v1Router.use(
     "/expense-reports",
     createTenantRateLimitMiddleware(
@@ -89,12 +91,21 @@ v1Router.use(
         createPostgresTenantRateLimitStore(db),
     ),
 );
+v1Router.use(
+    "/gl-mappings",
+    createTenantRateLimitMiddleware(
+        loadRateLimitConfig(),
+        createPostgresTenantRateLimitStore(db),
+    ),
+);
 v1Router.use("/expense-reports", express.json());
 v1Router.use("/case-queue", express.json());
 v1Router.use("/finance-dashboard", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
+v1Router.use("/gl-mappings", express.json());
 v1Router.use("/", expenseReportRouter);
+v1Router.use("/", glMappingRouter);
 
 /**
  * Returns process health information for local and deployment smoke checks.

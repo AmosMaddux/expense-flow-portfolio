@@ -406,6 +406,39 @@ describe("AuthProvider", () => {
         });
     });
 
+    test("resolves authenticated relative API requests through the configured base URL", async () => {
+        const authClient = createAuthClientMock();
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(new Response(null, { status: 200 }));
+        render(
+            <AuthProvider
+                apiBaseUrl="http://127.0.0.1:3301"
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+                now={() => baseTime}
+            >
+                <SessionProbe />
+            </AuthProvider>,
+        );
+        await waitFor(() => expect(sessionApi.isRestoring).toBe(false));
+        await act(async () => {
+            await sessionApi.login({
+                tenantId,
+                email: "finance.admin@example.invalid",
+                password: "synthetic-password",
+            });
+        });
+
+        await sessionApi.authenticatedFetch("/v1/gl-mappings");
+
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "http://127.0.0.1:3301/v1/gl-mappings",
+            expect.objectContaining({
+                headers: expect.any(Headers) as Headers,
+            }),
+        );
+    });
     test("refreshes and retries once after a 401 response", async () => {
         const refreshedSession = createSession({
             accessToken: "synthetic-refreshed-access-token",
@@ -616,7 +649,6 @@ describe("AuthProvider", () => {
         expect(authClient.refresh).toHaveBeenCalledOnce();
         expect(fetchImplementation).toHaveBeenCalledTimes(4);
     });
-
 
     test("invalidates the session and cache when a refreshed request still returns 401", async () => {
         const refreshedSession = createSession({

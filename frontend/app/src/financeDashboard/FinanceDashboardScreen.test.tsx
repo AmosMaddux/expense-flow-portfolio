@@ -14,28 +14,67 @@ import type { CaseQueueStageRollup } from "../caseQueue/caseQueueRollups";
 import { createExpenseFlowQueryClient } from "../query/queryClient";
 import { FinanceDashboardScreen } from "./FinanceDashboardScreen";
 type ChartInstanceMock = {
+    canvas: HTMLCanvasElement | null;
     config: unknown;
     destroy: ReturnType<typeof vi.fn>;
 };
 
+const seededChartInstances = vi.hoisted((): ChartInstanceMock[] => []);
 const chartInstances = vi.hoisted((): ChartInstanceMock[] => []);
+const chartRegistry = vi.hoisted(
+    () => new Map<HTMLCanvasElement, ChartInstanceMock>(),
+);
+const seedRegisteredChartOnLookup = vi.hoisted(() => ({ enabled: false }));
 const chartConstructorMock = vi.hoisted(() =>
-    vi.fn(function chartMock(_context: unknown, config: unknown) {
+    vi.fn(function chartMock(context: unknown, config: unknown) {
+        const canvas =
+            context instanceof HTMLCanvasElement
+                ? context
+                : ((context as { canvas?: HTMLCanvasElement }).canvas ?? null);
         const instance = {
+            canvas,
             config,
-            destroy: vi.fn(),
+            destroy: vi.fn(() => {
+                if (canvas !== null && chartRegistry.get(canvas) === instance) {
+                    chartRegistry.delete(canvas);
+                }
+            }),
         };
         chartInstances.push(instance);
+        if (canvas !== null) {
+            chartRegistry.set(canvas, instance);
+        }
 
         return instance;
+    }),
+);
+const chartGetChartMock = vi.hoisted(() =>
+    vi.fn((canvas: HTMLCanvasElement) => {
+        if (seedRegisteredChartOnLookup.enabled && !chartRegistry.has(canvas)) {
+            const seededInstance = {
+                canvas,
+                config: undefined,
+                destroy: vi.fn(() => {
+                    if (chartRegistry.get(canvas) === seededInstance) {
+                        chartRegistry.delete(canvas);
+                    }
+                }),
+            };
+            seededChartInstances.push(seededInstance);
+            chartRegistry.set(canvas, seededInstance);
+        }
+
+        return chartRegistry.get(canvas);
     }),
 );
 const chartRegisterMock = vi.hoisted(() => vi.fn());
 
 vi.mock("chart.js", () => ({
+    BarController: {},
     BarElement: {},
     CategoryScale: {},
     Chart: Object.assign(chartConstructorMock, {
+        getChart: chartGetChartMock,
         register: chartRegisterMock,
     }),
     Legend: {},
@@ -170,10 +209,16 @@ function expectKpiCard(label: string, value: string, helper: string): void {
 
 beforeEach(() => {
     chartInstances.length = 0;
+    seededChartInstances.length = 0;
+    chartRegistry.clear();
+    seedRegisteredChartOnLookup.enabled = false;
     chartConstructorMock.mockClear();
+    chartGetChartMock.mockClear();
     chartRegisterMock.mockClear();
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
-        {} as CanvasRenderingContext2D,
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+        function getContextMock(this: HTMLCanvasElement) {
+            return { canvas: this } as CanvasRenderingContext2D;
+        },
     );
 });
 
@@ -326,6 +371,34 @@ describe("FinanceDashboardScreen", () => {
             expect.objectContaining({ data: [20, 0], label: "EUR" }),
             expect.objectContaining({ data: [125.5, 274.5], label: "USD" }),
         ]);
+    });
+
+    test("destroys a Chart.js registry instance before reusing the canvas", async () => {
+        seedRegisteredChartOnLookup.enabled = true;
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+        const registeredChart = seededChartInstances[0];
+
+        expect(chartGetChartMock).toHaveBeenCalledOnce();
+        expect(registeredChart?.destroy).toHaveBeenCalledOnce();
+        expect(chartConstructorMock).toHaveBeenCalledOnce();
+        expect(
+            registeredChart?.destroy.mock.invocationCallOrder[0],
+        ).toBeLessThan(chartConstructorMock.mock.invocationCallOrder[0] ?? 0);
     });
 
     test("destroys the Chart.js instance when the dashboard unmounts", async () => {
