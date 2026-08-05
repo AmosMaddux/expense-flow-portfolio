@@ -393,7 +393,8 @@ def test_tracked_test_sources_do_not_commit_jwt_secrets_or_tokens() -> None:
         if should_skip_secret_scan(relative_path):
             continue
 
-        content = (ROOT_DIR / relative_path).read_text(encoding="utf-8")
+        # Latin-1 preserves ASCII secret patterns while representing arbitrary binary bytes.
+        content = (ROOT_DIR / relative_path).read_bytes().decode("latin-1")
         for pattern in suspicious_patterns:
             assert pattern.search(content) is None, relative_path
 
