@@ -57,6 +57,10 @@ export async function updateGlMapping(
             input.id,
             transaction,
         );
+        if (existing.glCodeId === input.glCodeId) {
+            return existing;
+        }
+
         const nextCode = await readTenantGlCodeById(
             input.tenantId,
             input.glCodeId,
