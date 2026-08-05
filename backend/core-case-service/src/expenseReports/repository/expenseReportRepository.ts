@@ -61,6 +61,7 @@ type StageTransitionEventContext = {
     correlationId: string;
     eventId: string;
     idempotencyKey?: string;
+    requestHash?: string;
     occurredAt: Date;
 };
 
@@ -1376,6 +1377,7 @@ export async function findCommittedSubmissionByIdempotencyKey(
     tenantId: string,
     expenseReportId: string,
     idempotencyKey: string,
+    requestHash: string,
 ): Promise<{ correlationId: string; report: ExpenseReport } | undefined> {
     const outboxRows = await db
         .select({ correlationId: stageTransitionOutbox.correlationId })
@@ -1385,6 +1387,7 @@ export async function findCommittedSubmissionByIdempotencyKey(
                 eq(stageTransitionOutbox.tenantId, tenantId),
                 eq(stageTransitionOutbox.expenseReportId, expenseReportId),
                 eq(stageTransitionOutbox.idempotencyKey, idempotencyKey),
+                eq(stageTransitionOutbox.requestHash, requestHash),
                 eq(stageTransitionOutbox.fromStage, "Drafted"),
                 eq(stageTransitionOutbox.toStage, "Submitted"),
             ),
@@ -2920,6 +2923,7 @@ async function writeSuccessfulStageTransitionAndOutbox(
         tenantId: request.tenantId,
         correlationId: request.correlationId,
         idempotencyKey: request.idempotencyKey,
+        requestHash: request.requestHash,
         fromStage: request.fromStage,
         toStage: request.toStage,
         occurredAt: request.occurredAt,

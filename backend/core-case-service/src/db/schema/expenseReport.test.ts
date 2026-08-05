@@ -919,6 +919,7 @@ void describe("stageTransitionOutbox schema", () => {
                 "tenant_id",
                 "correlation_id",
                 "idempotency_key",
+                "request_hash",
                 "attempt_count",
                 "next_attempt_at",
                 "locked_until",

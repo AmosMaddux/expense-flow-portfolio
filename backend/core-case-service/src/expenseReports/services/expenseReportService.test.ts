@@ -866,6 +866,7 @@ void describe("Expense Report submission EIN validation", () => {
                 roles: ["Employee"],
                 correlationId,
                 idempotencyKey: "synthetic-submit-ein-validation",
+                requestHash: "synthetic-submit-ein-validation-hash",
                 employerEin: "123456789",
                 employerLegalName: "Synthetic Employer LLC",
             },

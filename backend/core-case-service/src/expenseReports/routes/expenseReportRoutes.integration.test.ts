@@ -1382,6 +1382,7 @@ void describe("Expense Report routes", () => {
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
         const replayResponse = await requestApp(
             `/v1/expense-reports/${created.id}/draft-content`,
             request,
@@ -2088,9 +2089,11 @@ void describe("Expense Report routes", () => {
         );
 
         const body = (await response.json()) as { currentStage?: string };
+
         await db
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
         const replayResponse = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
             {
@@ -2138,6 +2141,7 @@ void describe("Expense Report routes", () => {
             .from(stageTransitionOutbox)
             .where(eq(stageTransitionOutbox.expenseReportId, created.id));
         expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]?.requestHash).toMatch(/^[a-f0-9]{64}$/);
         expect(outboxRows[0]).toMatchObject({
             attemptCount: 1,
             idempotencyKey: "expense-submit-132",
@@ -2259,6 +2263,26 @@ void describe("Expense Report routes", () => {
             .delete(tenantRateLimitWindow)
             .where(eq(tenantRateLimitWindow.tenantId, tenantId));
 
+        const mismatchReplayResponse = await requestApp(
+            "/v1/expense-reports/" + created.id + "/submit",
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, owner),
+                    "content-type": "application/json",
+                    "idempotency-key": "expense-submit-232",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000234",
+                },
+                body: JSON.stringify({
+                    employerEin: "987654321",
+                    employerLegalName: "Different Synthetic Employer LLC",
+                }),
+            },
+        );
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
+
         const replayResponse = await requestApp(
             `/v1/expense-reports/${created.id}/submit`,
             {
@@ -2284,6 +2308,7 @@ void describe("Expense Report routes", () => {
             .where(eq(stageTransitionOutbox.expenseReportId, created.id));
 
         expect(firstResponse.status).toBe(500);
+        expect(mismatchReplayResponse.status).toBe(409);
         expect(replayResponse.status).toBe(201);
         expect(replayResponse.headers.get("x-correlation-id")).toBe(
             correlationId,
@@ -2292,6 +2317,7 @@ void describe("Expense Report routes", () => {
         expect(glCodingClientMock).toHaveBeenCalledOnce();
         expect(stageTransitionPublishMock).toHaveBeenCalledOnce();
         expect(outboxRows).toHaveLength(1);
+        expect(outboxRows[0]?.requestHash).toMatch(/^[a-f0-9]{64}$/);
         expect(outboxRows[0]).toMatchObject({
             correlationId,
             idempotencyKey: "expense-submit-232",

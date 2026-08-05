@@ -580,6 +580,7 @@ export async function submitExpenseReport(
         roles: RoleName[];
         correlationId: string;
         idempotencyKey: string;
+        requestHash: string;
         employerEin: string;
         employerLegalName: string;
     },
@@ -595,6 +596,7 @@ export async function submitExpenseReport(
                 request.tenantId,
                 request.id,
                 request.idempotencyKey,
+                request.requestHash,
             );
         if (committedSubmission !== undefined) {
             return {
@@ -715,6 +717,7 @@ export async function submitExpenseReport(
                 correlationId: request.correlationId,
                 eventId: outboxEventId,
                 idempotencyKey: request.idempotencyKey,
+                requestHash: request.requestHash,
                 occurredAt: new Date(),
             },
         );

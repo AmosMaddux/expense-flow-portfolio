@@ -310,6 +310,7 @@ export const stageTransitionOutbox = pgTable(
         tenantId: uuid("tenant_id").notNull(),
         correlationId: uuid("correlation_id").notNull(),
         idempotencyKey: text("idempotency_key"),
+        requestHash: text("request_hash"),
         fromStage: text("from_stage").notNull(),
         toStage: text("to_stage").notNull(),
         occurredAt: timestamp("occurred_at", { withTimezone: true })

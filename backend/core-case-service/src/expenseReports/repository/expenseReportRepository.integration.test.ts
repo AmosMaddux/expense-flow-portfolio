@@ -39,6 +39,7 @@ import {
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
     findExpenseReportById,
+    findCommittedSubmissionByIdempotencyKey,
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
     insertDraftExpenseReport,
@@ -510,7 +511,34 @@ void describe("expenseReportRepository", () => {
                 ],
             }),
             buildSyntheticEmployerValidation(),
+            {
+                correlationId: "70000000-0000-4000-8000-000000000190",
+                eventId: "71000000-0000-4000-8000-000000000190",
+                idempotencyKey: "expense-submit-repository-190",
+                requestHash: "synthetic-request-hash-190",
+                occurredAt: new Date("2026-07-31T12:00:00.000Z"),
+            },
         );
+
+        const recovered = await findCommittedSubmissionByIdempotencyKey(
+            tenantId,
+            report.id,
+            "expense-submit-repository-190",
+            "synthetic-request-hash-190",
+        );
+        const otherTenantRecovered =
+            await findCommittedSubmissionByIdempotencyKey(
+                "00000000-0000-4000-8000-000000000191",
+                report.id,
+                "expense-submit-repository-190",
+                "synthetic-request-hash-190",
+            );
+
+        expect(recovered?.correlationId).toBe(
+            "70000000-0000-4000-8000-000000000190",
+        );
+        expect(recovered?.report.id).toBe(report.id);
+        expect(otherTenantRecovered).toBeUndefined();
 
         expect(submitted).toMatchObject({
             currentStage: "Submitted",

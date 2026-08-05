@@ -4,6 +4,7 @@ ALTER TABLE "expense_report" ADD COLUMN "employer_ein_validation_status" text;
 ALTER TABLE "expense_report" ADD COLUMN "employer_ein_validation_reason" text;
 ALTER TABLE "expense_report" ADD COLUMN "employer_ein_service_reference_id" text;
 ALTER TABLE "expense_report" ADD COLUMN "employer_ein_validated_at" timestamp with time zone;
+ALTER TABLE "stage_transition_outbox" ADD COLUMN "request_hash" text;
 
 ALTER TABLE "expense_report" ADD CONSTRAINT "expense_report_employer_ein_check" CHECK ("expense_report"."employer_ein" is null or "expense_report"."employer_ein" ~ '^[0-9]{9}$');
 ALTER TABLE "expense_report" ADD CONSTRAINT "expense_report_employer_legal_name_check" CHECK ("expense_report"."employer_legal_name" is null or nullif(btrim("expense_report"."employer_legal_name"), '') is not null);
