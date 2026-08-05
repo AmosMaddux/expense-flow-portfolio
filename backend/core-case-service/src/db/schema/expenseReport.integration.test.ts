@@ -206,8 +206,8 @@ void describe("stage transition outbox ownership migration", () => {
                 ],
             );
 
-            await expect(applyMigrationRange(client, 29, 29)).rejects.toThrow(
-                "stage_transition_outbox contains rows whose stage_transition_id, tenant_id, and expense_report_id do not match stage_transition",
+            await expect(applyMigrationRange(client, 31, 31)).rejects.toThrow(
+                "stage_transition_outbox_transition_tenant_report_fk",
             );
         } finally {
             await client.end().catch(() => undefined);

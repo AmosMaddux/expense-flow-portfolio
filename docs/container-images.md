@@ -15,7 +15,7 @@ for example `--platform linux/amd64`; use `linux/arm64` only for an ARM64 task.
 Do not build an ECS release image implicitly for the developer workstation's
 architecture.
 
-The builder installs the exact production dependency graph from `uv.lock` with `uv sync --frozen --no-dev`. The runtime stage contains only Python, the resulting virtual environment, and `backend/python`; it does not contain `uv`, test dependencies, repository history, or frontend and Node files. The service runs as the unprivileged numeric user `10001` and exposes port `8001`.
+The builder installs the exact production dependency graph from `uv.lock` with `uv sync --frozen --no-dev`. The `uv` and Python base-image tags are also pinned to immutable multi-architecture manifest digests. Dependabot checks the Dockerfile weekly so base-image security updates remain explicit source changes. The runtime stage contains only Python, the resulting virtual environment, and `backend/python`; it does not contain `uv`, test dependencies, repository history, or frontend and Node files. The service runs as the unprivileged numeric user `10001` and exposes port `8001`.
 
 The dependency layer copies only `pyproject.toml` and `uv.lock` before running `uv sync`. Source-only changes therefore reuse the dependency layer. Dependency changes invalidate that layer intentionally. `.dockerignore` keeps local environments, build output, tests, documentation, and package caches out of the build context.
 
@@ -28,6 +28,15 @@ curl --fail http://localhost:8001/health
 ```
 
 The Dockerfile health check uses Python's standard library, so no HTTP client is installed solely for health checking. ECS can use the same command and `/health` endpoint.
+
+CI also runs the packaged-image smoke test directly. It builds the Dockerfile,
+starts the image with an ephemeral synthetic JWT key pair, waits for the
+container health check, requests `/health`, and verifies an authenticated
+identity request through the published port:
+
+```sh
+npm run test:container:gl-coding
+```
 
 ## Core Case service
 
