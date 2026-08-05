@@ -1853,8 +1853,7 @@
                 "type": "object",
                 "properties": {
                     "policyText": {
-                        "type": "string",
-                        "minLength": 1
+                        "type": "string"
                     },
                     "updatedAt": {
                         "type": "string",

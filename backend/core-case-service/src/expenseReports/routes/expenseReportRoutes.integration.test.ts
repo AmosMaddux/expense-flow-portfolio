@@ -12,6 +12,7 @@ import {
     type IdempotencyResult,
 } from "../../idempotency/idempotencyStore.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
+import { TinEinValidationServiceError } from "../../tinEin/tinEinValidationErrors.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import { verifyAccessToken } from "../../auth/shared/accessTokenMiddleware.js";
@@ -2372,28 +2373,143 @@ void describe("Expense Report routes", () => {
         expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
     });
 
-    void test("rejects malformed submit request bodies", async () => {
+    void test.each([
+        [
+            "missing employer EIN",
+            "734",
+            { employerLegalName: "Synthetic Employer LLC" },
+        ],
+        [
+            "malformed employer EIN",
+            "735",
+            {
+                employerEin: "12-3456789",
+                employerLegalName: "Synthetic Employer LLC",
+            },
+        ],
+        [
+            "blank legal name",
+            "736",
+            { employerEin: "123456789", employerLegalName: " " },
+        ],
+        [
+            "control-character legal name",
+            "737",
+            {
+                employerEin: "123456789",
+                employerLegalName: "Synthetic\u0007Employer LLC",
+            },
+        ],
+    ])(
+        "rejects malformed submit request bodies before external calls: %s",
+        async (_caseName, suffix, body) => {
+            const response = await requestApp(
+                `/v1/expense-reports/10000000-0000-4000-8000-000000000${suffix}/submit`,
+                {
+                    method: "POST",
+                    headers: {
+                        authorization: authorizationHeader(
+                            `40000000-0000-4000-8000-000000000${suffix}`,
+                            `50000000-0000-4000-8000-000000000${suffix}`,
+                            ["Department Manager"],
+                        ),
+                        "content-type": "application/json",
+                        "idempotency-key": `expense-submit-${suffix}`,
+                    },
+                    body: JSON.stringify(body),
+                },
+            );
+
+            expect(response.status).toBe(400);
+            expect(idempotencyStoreMock.acquireLock).not.toHaveBeenCalled();
+            expect(einValidationAclValidateMock).not.toHaveBeenCalled();
+            expect(glCodingClientMock).not.toHaveBeenCalled();
+        },
+    );
+
+    void test("records unreachable EIN validation when the ACL reports a SOAP service error", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000834";
+        const owner = "50000000-0000-4000-8000-000000000834";
+        const reportId = "60000000-0000-4000-8000-000000000834";
+        const sourceId = "30000000-0000-4000-8000-000000000834";
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-12",
+            currentStage: "Drafted",
+        });
+        await db.insert(lineItem).values({
+            id: sourceId,
+            tenantId,
+            expenseReportId: reportId,
+            merchant: "Synthetic Rail",
+            expenseDate: "2026-07-23",
+            amount: "42.00",
+            currency: "USD",
+            category: "Travel",
+        });
+        einValidationAclValidateMock.mockRejectedValueOnce(
+            new TinEinValidationServiceError(
+                "The TIN/EIN validation service returned a SOAP fault.",
+            ),
+        );
+        glCodingClientMock.mockResolvedValueOnce({
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "42.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+
         const response = await requestApp(
-            "/v1/expense-reports/10000000-0000-4000-8000-000000000134/submit",
+            `/v1/expense-reports/${reportId}/submit`,
             {
                 method: "POST",
                 headers: {
-                    authorization: authorizationHeader(
-                        "40000000-0000-4000-8000-000000000134",
-                        "50000000-0000-4000-8000-000000000134",
-                        ["Department Manager"],
-                    ),
+                    authorization: authorizationHeader(tenantId, owner),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-134",
+                    "idempotency-key": "expense-submit-234",
                 },
-                body: JSON.stringify({ unexpected: true }),
+                body: JSON.stringify({
+                    employerEin: "123456789",
+                    employerLegalName: "Synthetic Employer LLC",
+                }),
             },
         );
 
-        expect(response.status).toBe(400);
-        expect(glCodingClientMock).not.toHaveBeenCalled();
+        expect(response.status).toBe(201);
+        expect(glCodingClientMock).toHaveBeenCalledOnce();
+        const reportRows = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, tenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        expect(reportRows[0]).toMatchObject({
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "unreachable",
+            employerEinValidationReason:
+                "EIN validation is temporarily unavailable.",
+            employerEinServiceReferenceId: null,
+        });
+        expect(reportRows[0]?.employerEinValidatedAt).toBeInstanceOf(Date);
     });
-
     void test("returns not found for missing submit targets", async () => {
         const response = await requestApp(
             "/v1/expense-reports/10000000-0000-4000-8000-000000000135/submit",
@@ -2484,14 +2600,14 @@ void describe("Expense Report routes", () => {
     });
 
     void test("rejects submit requests for reports that are not Drafted", async () => {
-        const tenantId = "40000000-0000-4000-8000-000000000136";
-        const owner = "50000000-0000-4000-8000-000000000136";
+        const tenantId = "40000000-0000-4000-8000-000000000938";
+        const owner = "50000000-0000-4000-8000-000000000938";
         const createResponse = await requestApp("/v1/expense-reports", {
             method: "POST",
             headers: {
                 authorization: authorizationHeader(tenantId, owner),
                 "content-type": "application/json",
-                "idempotency-key": "expense-create-136",
+                "idempotency-key": "expense-create-938",
             },
             body: JSON.stringify({ owner, dueDate: "2026-08-13" }),
         });
@@ -2509,11 +2625,11 @@ void describe("Expense Report routes", () => {
                 headers: {
                     authorization: authorizationHeader(
                         tenantId,
-                        "50000000-0000-4000-8000-000000000137",
+                        "50000000-0000-4000-8000-000000000939",
                         ["Department Manager"],
                     ),
                     "content-type": "application/json",
-                    "idempotency-key": "expense-submit-136",
+                    "idempotency-key": "expense-submit-938",
                 },
                 body: JSON.stringify({
                     employerEin: "123456789",

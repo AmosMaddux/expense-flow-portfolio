@@ -512,7 +512,15 @@ void describe("expenseReportRepository", () => {
             buildSyntheticEmployerValidation(),
         );
 
-        expect(submitted?.currentStage).toBe("Submitted");
+        expect(submitted).toMatchObject({
+            currentStage: "Submitted",
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+            employerEinValidationStatus: "valid",
+            employerEinValidationReason: null,
+            employerEinServiceReferenceId: "synthetic-ein-reference",
+        });
+        expect(submitted?.employerEinValidatedAt).toBeInstanceOf(Date);
 
         const auditRows = await db
             .select()

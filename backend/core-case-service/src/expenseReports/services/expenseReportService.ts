@@ -17,7 +17,9 @@ import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import {
     createEinValidationAcl,
     type EinValidationAcl,
+    type EinValidationResult,
 } from "../../tinEin/tinEinValidationAcl.js";
+import { TinEinValidationServiceError } from "../../tinEin/tinEinValidationErrors.js";
 import {
     buildSubmissionSourceKeys,
     buildSubmissionSourceFingerprint,
@@ -644,12 +646,27 @@ export async function submitExpenseReport(
         new Date(),
     );
     try {
+        // The repository re-confirms Drafted under FOR UPDATE before committing; keep outbound calls outside that lock.
+        // Holding a DB transaction across SOAP/GL latency would be riskier than allowing a losing concurrent submit to repeat external calls.
         const einValidationAcl =
             dependencies.einValidationAcl ?? createEinValidationAcl();
-        const employerValidationResult = await einValidationAcl.validateEin({
-            ein: request.employerEin,
-            legalName: request.employerLegalName,
-        });
+        let employerValidationResult: EinValidationResult;
+        try {
+            employerValidationResult = await einValidationAcl.validateEin({
+                ein: request.employerEin,
+                legalName: request.employerLegalName,
+            });
+        } catch (error: unknown) {
+            if (!(error instanceof TinEinValidationServiceError)) {
+                throw error;
+            }
+
+            employerValidationResult = {
+                status: "unreachable",
+                isValid: false,
+                rejectionReason: "EIN validation is temporarily unavailable.",
+            };
+        }
         const employerEinValidatedAt = new Date();
 
         const glResponse = await codeExpenseLineItems(

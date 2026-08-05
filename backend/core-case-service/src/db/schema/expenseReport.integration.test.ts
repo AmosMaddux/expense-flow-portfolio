@@ -6,6 +6,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
+import { applyPendingCoreCaseMigrations } from "../migrations.js";
 
 import {
     expenseReport,
@@ -206,8 +207,8 @@ void describe("stage transition outbox ownership migration", () => {
                 ],
             );
 
-            await expect(applyMigrationRange(client, 29, 29)).rejects.toThrow(
-                "stage_transition_outbox contains rows whose stage_transition_id, tenant_id, and expense_report_id do not match stage_transition",
+            await expect(applyMigrationRange(client, 31, 31)).rejects.toThrow(
+                "stage_transition_outbox_transition_tenant_report_fk",
             );
         } finally {
             await client.end().catch(() => undefined);
@@ -456,6 +457,67 @@ $$;
     });
 });
 
+void describe("employer EIN validation migration", () => {
+    void test("runs after an environment has already applied migrations through 0032", async () => {
+        const container = await new PostgreSqlContainer("postgres:17-alpine")
+            .withDatabase("expenseflow_core_case_employer_ein_0033")
+            .withUsername("expenseflow")
+            .withPassword("expenseflow")
+            .start();
+        const client = new Client({
+            connectionString: container.getConnectionUri(),
+        });
+
+        try {
+            await client.connect();
+            await applyMigrationRange(client, 0, 32);
+            await client.query(`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+                    id SERIAL PRIMARY KEY,
+                    hash text NOT NULL,
+                    created_at bigint
+                )
+            `);
+            await client.query(
+                `INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at") VALUES ($1, $2)`,
+                ["synthetic-0032", 1785780023817],
+            );
+
+            await applyPendingCoreCaseMigrations(container.getConnectionUri());
+
+            const employerColumns = await client.query<{ column_name: string }>(
+                `SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'expense_report'
+                   AND column_name = ANY($1)
+                 ORDER BY column_name`,
+                [
+                    [
+                        "employer_ein",
+                        "employer_legal_name",
+                        "employer_ein_validation_status",
+                        "employer_ein_validation_reason",
+                        "employer_ein_service_reference_id",
+                        "employer_ein_validated_at",
+                    ],
+                ],
+            );
+            expect(employerColumns.rows.map((row) => row.column_name)).toEqual([
+                "employer_ein",
+                "employer_ein_service_reference_id",
+                "employer_ein_validated_at",
+                "employer_ein_validation_reason",
+                "employer_ein_validation_status",
+                "employer_legal_name",
+            ]);
+        } finally {
+            await client.end().catch(() => undefined);
+            await container.stop().catch(() => undefined);
+        }
+    }, 240000);
+});
 void describe("check migrations", () => {
     let client: Client;
 

@@ -181,7 +181,7 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
             rejectionReason: "EIN validation is temporarily unavailable.",
         });
     });
-    void test("surfaces contract service errors instead of treating them as outages", async () => {
+    void test("normalizes SOAP contract service errors as unreachable validation results", async () => {
         const acl = createEinValidationAcl({
             tinEinValidationClient: {
                 validateTinEin: vi
@@ -194,14 +194,14 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
             },
         });
 
-        await expect(acl.validateEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message:
-                "The TIN/EIN validation service returned an unknown match code.",
+        await expect(acl.validateEin(request)).resolves.toStrictEqual({
+            status: "unreachable",
+            isValid: false,
+            rejectionReason: "EIN validation is temporarily unavailable.",
         });
     });
 
-    void test("surfaces malformed SOAP contract failures through the ACL boundary", async () => {
+    void test("normalizes malformed SOAP contract failures as unreachable validation results", async () => {
         const soapClient: Record<string, unknown> = {
             ValidateSyntheticTinEinAsync: vi.fn(() =>
                 Promise.resolve([
@@ -222,10 +222,10 @@ void describe("TIN/EIN validation anti-corruption layer", () => {
             }),
         });
 
-        await expect(acl.validateEin(request)).rejects.toMatchObject({
-            name: "TinEinValidationServiceError",
-            message:
-                "The TIN/EIN validation service response did not include a validity result.",
+        await expect(acl.validateEin(request)).resolves.toStrictEqual({
+            status: "unreachable",
+            isValid: false,
+            rejectionReason: "EIN validation is temporarily unavailable.",
         });
     });
     void test("does not hide dependency programming errors as service outages", async () => {
