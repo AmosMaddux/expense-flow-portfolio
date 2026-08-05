@@ -116,9 +116,9 @@ npm start
 ```
 
 The Compose service builds the same slim, multi-stage GL-coding image intended
-for ECS. See [Service container images](docs/container-images.md) for standalone
-build, health-check, image-size, and layer-caching details for both backend
-services.
+for ECS. See the
+[GL-coding service container image guide](docs/container-images-gl-coding-service.md)
+for standalone build, health-check, image-size, and layer-caching details.
 
 The mapping initializer waits for the Core Case migrations and is idempotent, so
 these commands are safe to run again after switching branches.

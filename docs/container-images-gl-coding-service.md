@@ -1,8 +1,7 @@
-# Service container images
+# GL-coding service container image
 
-ExpenseFlow deploys the Core Case and GL-coding services as separate images. Build from the repository root so each Dockerfile receives the lockfile and workspace files it expects.
-
-## GL-coding service
+Build from the repository root so the Dockerfile receives the lockfile and
+workspace files it expects.
 
 Build the FastAPI image with:
 
@@ -38,27 +37,13 @@ identity request through the published port:
 npm run test:container:gl-coding
 ```
 
-## Core Case service
-
-The companion Node-service ticket supplies
-`backend/core-case-service/Dockerfile`. Once that file is present, build it
-from the same root context with:
-
-```sh
-docker build --file backend/core-case-service/Dockerfile --tag expenseflow-core-case:local .
-```
-
-Its dependency layer should copy the root and Core Case `package.json` files plus `package-lock.json` before `npm ci`. Its build stage compiles TypeScript, and its runtime stage should copy only production dependencies, compiled output, and required migration assets. This ordering lets source-only changes reuse the npm dependency layer and keeps TypeScript sources, tests, and build tooling out of the runtime image.
-
 ## Recording image size
 
 Image size depends on the target architecture and base-image revision, so record the immutable image digest, platform, and size together after each release build:
 
 ```sh
 docker image inspect expenseflow-gl-coding:local --format 'GL-coding {{.Id}} {{.Architecture}} {{.Size}} bytes'
-docker image inspect expenseflow-core-case:local --format 'Core Case {{.Id}} {{.Architecture}} {{.Size}} bytes'
 docker history expenseflow-gl-coding:local
-docker history expenseflow-core-case:local
 ```
 
 The reported byte count is the local uncompressed size. Registry and ECS transfer sizes are compressed and can differ. Comparing `docker history` between releases identifies unexpected layer growth while preserving an architecture-aware measurement instead of a stale hard-coded number.
