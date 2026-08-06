@@ -36,6 +36,20 @@ void describe("ExpenseReportStageTransitionedCloudEventV1Schema", () => {
         expect(parsed).toStrictEqual(syntheticStageTransitionEvent);
     });
 
+    void test("validates the settlement compensation edge", () => {
+        const parsed = ExpenseReportStageTransitionedCloudEventV1Schema.parse({
+            ...syntheticStageTransitionEvent,
+            data: {
+                ...syntheticStageTransitionEvent.data,
+                fromStage: "Paid",
+                toStage: "AP Review",
+            },
+        });
+
+        expect(parsed.data.fromStage).toBe("Paid");
+        expect(parsed.data.toStage).toBe("AP Review");
+    });
+
     void test("rejects an event with inconsistent correlation identifiers", () => {
         const result =
             ExpenseReportStageTransitionedCloudEventV1Schema.safeParse({

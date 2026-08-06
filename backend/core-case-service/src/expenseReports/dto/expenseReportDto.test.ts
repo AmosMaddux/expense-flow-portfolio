@@ -13,6 +13,7 @@ import {
     createMileageEntryInboundRequestSchema,
     ExpenseReportOutboundResponseSchema,
     GetExpenseReportInboundRequestSchema,
+    SubmitExpenseReportInboundRequestSchema,
     type AuditEntryResponse,
     type ApprovalQueueLineItemResponse,
     type CaseCommentResponse,
@@ -244,6 +245,45 @@ void describe("ClearExpenseReportFlagsInboundRequestSchema", () => {
             sourceIds: ["30000000-0000-4000-8000-000000000201"],
             reason: "reviewed receipt detail",
         });
+    });
+});
+
+void describe("SubmitExpenseReportInboundRequestSchema", () => {
+    void test("preserves the existing empty submit request contract", () => {
+        expect(SubmitExpenseReportInboundRequestSchema.parse({})).toStrictEqual(
+            {},
+        );
+    });
+
+    void test("accepts employer validation fields when both are supplied", () => {
+        expect(
+            SubmitExpenseReportInboundRequestSchema.parse({
+                employerEin: "123456789",
+                employerLegalName: "Synthetic Employer LLC",
+            }),
+        ).toStrictEqual({
+            employerEin: "123456789",
+            employerLegalName: "Synthetic Employer LLC",
+        });
+    });
+
+    void test("rejects partial or malformed employer validation fields", () => {
+        expect(() =>
+            SubmitExpenseReportInboundRequestSchema.parse({
+                employerLegalName: "Synthetic Employer LLC",
+            }),
+        ).toThrow();
+        expect(() =>
+            SubmitExpenseReportInboundRequestSchema.parse({
+                employerEin: "123456789",
+            }),
+        ).toThrow();
+        expect(() =>
+            SubmitExpenseReportInboundRequestSchema.parse({
+                employerEin: "12-3456789",
+                employerLegalName: "Synthetic Employer LLC",
+            }),
+        ).toThrow();
     });
 });
 

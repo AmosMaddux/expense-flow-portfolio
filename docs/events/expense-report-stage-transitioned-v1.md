@@ -27,12 +27,26 @@ The standalone consumer long-polls the queue configured by
 CloudEvent, then idempotently inserts a `stage_transition_projection` record
 keyed by the CloudEvent `id`. It deletes a message only after the projection
 write succeeds; malformed events and storage failures remain available for SQS
-retry.
+retry. The local queue is configured with an SQS redrive policy so messages that
+keep failing consumer processing are moved to the stage-transition DLQ for
+inspection after the queue's `maxReceiveCount` is exceeded. Production
+redrive configuration is included in
+[configure-stage-transition-redrive.sh](../../scripts/configure-stage-transition-redrive.sh)
+and acceptance is tracked in
+[SCRUM-133 deployment redrive verification](./stage-transition-production-redrive-verification.md),
+which records the exact queue-attribute evidence reviewers must collect before
+this consumer is enabled.
 
 Run the local consumer with:
 
 ```sh
 npm run dev:events:consume
+```
+
+Inspect locally redriven messages with:
+
+```sh
+./scripts/receive-local-stage-transition-dlq-event.sh
 ```
 
 The transport-independent `processStageTransitionEvent` function is the unit
@@ -82,6 +96,7 @@ and `Reconciled`. Events are valid only for these workflow edges:
 - `Manager Approval` → `AP Review`
 - `AP Review` → `Paid`
 - `Paid` → `Reconciled`
+- `Paid` → `AP Review` for settlement compensation
 - `Manager Approval` → `Drafted`
 - `AP Review` → `Drafted`
 

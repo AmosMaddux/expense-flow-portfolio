@@ -124,4 +124,31 @@ void describe("stage-transition projection repository", () => {
             ),
         ).rejects.toThrow();
     });
+
+    void test("persists the settlement compensation edge", async () => {
+        const tenantId = randomUUID();
+        const expenseReportId = randomUUID();
+        const syntheticEvent = buildSyntheticEvent(tenantId, expenseReportId, {
+            from: "Paid",
+            to: "AP Review",
+        });
+        await insertSyntheticExpenseReport(tenantId, expenseReportId);
+
+        await projectStageTransition(syntheticEvent);
+
+        const rows = await db
+            .select()
+            .from(stageTransitionProjection)
+            .where(eq(stageTransitionProjection.eventId, syntheticEvent.id));
+
+        expect(rows).toContainEqual(
+            expect.objectContaining({
+                eventId: syntheticEvent.id,
+                tenantId,
+                expenseReportId,
+                previousStage: "Paid",
+                currentStage: "AP Review",
+            }),
+        );
+    });
 });

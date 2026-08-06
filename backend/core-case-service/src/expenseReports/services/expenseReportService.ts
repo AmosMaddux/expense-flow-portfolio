@@ -581,8 +581,8 @@ export async function submitExpenseReport(
         correlationId: string;
         idempotencyKey: string;
         requestHash: string;
-        employerEin: string;
-        employerLegalName: string;
+        employerEin?: string;
+        employerLegalName?: string;
     },
     dependencies: ExpenseReportSubmissionDependencies = {},
 ): Promise<SubmitExpenseReportResult> {
@@ -650,26 +650,11 @@ export async function submitExpenseReport(
     try {
         // The repository re-confirms Drafted under FOR UPDATE before committing; keep outbound calls outside that lock.
         // Holding a DB transaction across SOAP/GL latency would be riskier than allowing a losing concurrent submit to repeat external calls.
-        const einValidationAcl =
-            dependencies.einValidationAcl ?? createEinValidationAcl();
-        let employerValidationResult: EinValidationResult;
-        try {
-            employerValidationResult = await einValidationAcl.validateEin({
-                ein: request.employerEin,
-                legalName: request.employerLegalName,
-            });
-        } catch (error: unknown) {
-            if (!(error instanceof TinEinValidationServiceError)) {
-                throw error;
-            }
-
-            employerValidationResult = {
-                status: "unreachable",
-                isValid: false,
-                rejectionReason: "EIN validation is temporarily unavailable.",
-            };
-        }
-        const employerEinValidatedAt = new Date();
+        const employerValidation = await validateEmployerForSubmission(
+            request.employerEin,
+            request.employerLegalName,
+            dependencies.einValidationAcl,
+        );
 
         const glResponse = await codeExpenseLineItems(
             glConfig.GL_CODING_SERVICE_BASE_URL,
@@ -707,12 +692,7 @@ export async function submitExpenseReport(
             glResponse,
             buildSubmissionSourceKeys(sources),
             buildSubmissionSourceFingerprint(sources),
-            {
-                ein: request.employerEin,
-                legalName: request.employerLegalName,
-                result: employerValidationResult,
-                validatedAt: employerEinValidatedAt,
-            },
+            employerValidation,
             {
                 correlationId: request.correlationId,
                 eventId: outboxEventId,
@@ -751,6 +731,47 @@ export async function submitExpenseReport(
 
         throw error;
     }
+}
+
+async function validateEmployerForSubmission(
+    employerEin: string | undefined,
+    employerLegalName: string | undefined,
+    einValidationAcl: ExpenseReportSubmissionDependencies["einValidationAcl"],
+): Promise<{
+    ein: string;
+    legalName: string;
+    result: EinValidationResult;
+    validatedAt: Date;
+} | null> {
+    if (employerEin === undefined || employerLegalName === undefined) {
+        return null;
+    }
+
+    const validationAcl = einValidationAcl ?? createEinValidationAcl();
+    let result: EinValidationResult;
+    try {
+        result = await validationAcl.validateEin({
+            ein: employerEin,
+            legalName: employerLegalName,
+        });
+    } catch (error: unknown) {
+        if (!(error instanceof TinEinValidationServiceError)) {
+            throw error;
+        }
+
+        result = {
+            status: "unreachable",
+            isValid: false,
+            rejectionReason: "EIN validation is temporarily unavailable.",
+        };
+    }
+
+    return {
+        ein: employerEin,
+        legalName: employerLegalName,
+        result,
+        validatedAt: new Date(),
+    };
 }
 
 /**
@@ -1141,8 +1162,9 @@ export async function settleExpenseReportWorkflow(
             });
         } catch (compensationError: unknown) {
             console.error("Settlement saga failed during compensation.", {
-                compensationError,
-                error,
+                compensationErrorCategory:
+                    getSettlementSagaErrorCategory(compensationError),
+                errorCategory: getSettlementSagaErrorCategory(error),
                 phase: "settlement_compensation",
             });
             throw new ConflictError(
@@ -1261,7 +1283,7 @@ async function compensateSettlementSaga(request: {
         });
     } catch (error: unknown) {
         console.error("Settlement payment-stub compensation failed.", {
-            error,
+            errorCategory: getSettlementSagaErrorCategory(error),
             phase: "payment_stub_compensation",
         });
         throw error;
@@ -1327,6 +1349,15 @@ async function invalidateCachedCaseQueueStageRollupsBestEffort(
         // Reconciliation is already durable; cache refresh must not trigger payment compensation.
     }
 }
+
+function getSettlementSagaErrorCategory(error: unknown): string {
+    if (error instanceof Error && error.name.trim() !== "") {
+        return error.name;
+    }
+
+    return typeof error;
+}
+
 /**
  * Reads the tenant-scoped audit trail entries for an Expense Report case.
  */

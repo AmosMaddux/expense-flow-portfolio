@@ -232,10 +232,35 @@ export const DraftExpenseContentOutboundResponseSchema = z.object({
 
 export const SubmitExpenseReportInboundRequestSchema = z
     .object({
-        employerEin: z.string().regex(/^\d{9}$/),
-        employerLegalName: employerLegalNameSchema,
+        employerEin: z
+            .string()
+            .regex(/^\d{9}$/)
+            .optional(),
+        employerLegalName: employerLegalNameSchema.optional(),
     })
-    .strict();
+    .strict()
+    .superRefine((request, context) => {
+        if (
+            request.employerEin === undefined &&
+            request.employerLegalName !== undefined
+        ) {
+            context.addIssue({
+                code: "custom",
+                message: "Employer EIN is required when legal name is present.",
+                path: ["employerEin"],
+            });
+        }
+        if (
+            request.employerEin !== undefined &&
+            request.employerLegalName === undefined
+        ) {
+            context.addIssue({
+                code: "custom",
+                message: "Employer legal name is required when EIN is present.",
+                path: ["employerLegalName"],
+            });
+        }
+    });
 
 export const TransitionExpenseReportWorkflowInboundRequestSchema = z
     .object({

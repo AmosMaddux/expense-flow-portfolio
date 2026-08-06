@@ -182,14 +182,27 @@ function createTrendFetchImplementation(
     ],
 ): typeof fetch {
     return vi.fn<typeof fetch>((input) => {
-        const url = input instanceof Request ? input.url : input.toString();
+        const requestPath = getRequestPath(input);
 
-        if (url.startsWith("/v1/finance-dashboard/trends")) {
+        if (requestPath.startsWith("/v1/finance-dashboard/trends")) {
             return Promise.resolve(createJsonResponse(trendBody));
         }
 
         return Promise.resolve(createJsonResponse(rollups));
     });
+}
+
+function getRequestPath(input: RequestInfo | URL): string {
+    const rawUrl =
+        input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.toString()
+              : input.toString();
+
+    return rawUrl.startsWith("/")
+        ? rawUrl
+        : `${new URL(rawUrl).pathname}${new URL(rawUrl).search}`;
 }
 
 function readChartConfig(index = chartInstances.length - 1): {
@@ -241,9 +254,9 @@ describe("FinanceDashboardScreen", () => {
             }),
         ).toBeTruthy();
         await waitFor(() => expect(fetchImplementation).toHaveBeenCalled());
-        expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
-            `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
-        );
+        expect(
+            getRequestPath(fetchImplementation.mock.calls[0]?.[0] ?? ""),
+        ).toBe(`/v1/case-queue/rollups?asOfDate=${asOfDate}`);
         expect(fetchImplementation.mock.calls[0]?.[1]?.headers).toBeInstanceOf(
             Headers,
         );
@@ -423,6 +436,30 @@ describe("FinanceDashboardScreen", () => {
         expect(chart?.destroy).toHaveBeenCalledOnce();
     });
 
+    test("destroys a Chart.js-registered canvas instance before recreating the trend chart", async () => {
+        seedRegisteredChartOnLookup.enabled = true;
+        const fetchImplementation = createTrendFetchImplementation([
+            {
+                periodStart: "2026-07-22",
+                reportCount: 4,
+                spendByCurrency: [
+                    {
+                        currency: "USD",
+                        spendAmount: "274.50",
+                    },
+                ],
+            },
+        ]);
+
+        renderFinanceDashboardScreen(fetchImplementation);
+
+        await screen.findByRole("img", { name: "Report trend chart" });
+        const staleChart = seededChartInstances[0];
+
+        expect(staleChart?.destroy).toHaveBeenCalledOnce();
+        expect(chartConstructorMock).toHaveBeenCalledOnce();
+    });
+
     test("renders a chart empty state when KPI data exists but trend data is empty", async () => {
         const fetchImplementation = createTrendFetchImplementation([
             {
@@ -530,16 +567,20 @@ describe("FinanceDashboardScreen", () => {
         await screen.findByRole("article", { name: "Submitted KPI" });
         expectKpiCard("Submitted", "9", "3 overdue");
         expect(fetchImplementation).toHaveBeenCalledTimes(4);
-        expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
-            `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
-        );
-        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+        expect(
+            getRequestPath(fetchImplementation.mock.calls[0]?.[0] ?? ""),
+        ).toBe(`/v1/case-queue/rollups?asOfDate=${asOfDate}`);
+        expect(
+            getRequestPath(fetchImplementation.mock.calls[1]?.[0] ?? ""),
+        ).toBe(
             "/v1/finance-dashboard/trends?fromDate=2026-06-23&toDate=2026-07-22",
         );
-        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
-            `/v1/case-queue/rollups?asOfDate=${asOfDate}`,
-        );
-        expect(fetchImplementation.mock.calls[3]?.[0]).toBe(
+        expect(
+            getRequestPath(fetchImplementation.mock.calls[2]?.[0] ?? ""),
+        ).toBe(`/v1/case-queue/rollups?asOfDate=${asOfDate}`);
+        expect(
+            getRequestPath(fetchImplementation.mock.calls[3]?.[0] ?? ""),
+        ).toBe(
             "/v1/finance-dashboard/trends?fromDate=2026-06-23&toDate=2026-07-22",
         );
         expect(

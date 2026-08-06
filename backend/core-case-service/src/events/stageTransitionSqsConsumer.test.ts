@@ -136,6 +136,67 @@ void describe("plain stage-transition SQS consumer", () => {
         expect(send).toHaveBeenCalledOnce();
     });
 
+    void test("retains repeated projection failures without changing persisted projection state", async () => {
+        const maxReceiveCount = 3;
+        const send = vi.fn().mockResolvedValue({
+            Messages: [
+                {
+                    Attributes: {
+                        ApproximateReceiveCount: "1",
+                    },
+                    Body: JSON.stringify(syntheticEvent),
+                    ReceiptHandle: "synthetic-receipt-handle",
+                },
+            ],
+        });
+        const persistedState = {
+            currentStage: "Manager Approval",
+            projectionRows: new Map<string, string>(),
+        };
+        const store: StageTransitionProjectionStore & {
+            project: ReturnType<typeof vi.fn>;
+        } = {
+            project: vi.fn(async (event: typeof syntheticEvent) => {
+                await Promise.resolve();
+                persistedState.projectionRows.set(event.id, event.data.toStage);
+                persistedState.currentStage = event.data.toStage;
+            }),
+        };
+        store.project.mockRejectedValue(
+            new Error("synthetic projection failure"),
+        );
+        const logger = createLogger();
+
+        for (let attempt = 0; attempt < maxReceiveCount; attempt += 1) {
+            const result = await pollStageTransitionQueueOnce(
+                { send },
+                config,
+                {
+                    logger,
+                    store,
+                },
+            );
+
+            expect(result).toStrictEqual({ failed: 1, processed: 0 });
+        }
+
+        expect(persistedState.currentStage).toBe("Manager Approval");
+        expect(persistedState.projectionRows.size).toBe(0);
+        expect(store.project).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(logger.messageFailed).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(send).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(
+            send.mock.calls.some(
+                ([command]) => command instanceof DeleteMessageCommand,
+            ),
+        ).toBe(false);
+        expect(send.mock.calls[0]?.[0]).toMatchObject({
+            input: {
+                MessageSystemAttributeNames: ["ApproximateReceiveCount"],
+            },
+        });
+    });
+
     void test("backs off and keeps polling after a receive failure", async () => {
         const shutdownController = new AbortController();
         const send = vi

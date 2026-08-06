@@ -84,6 +84,8 @@ expenseReportRouter.delete(
     "/expense-reports/:id/mileage-entries/:sourceId",
     deleteDraftMileageEntryRecord,
 );
+
+// Outbox routes
 expenseReportRouter.post(
     "/expense-reports/:id/submit",
     postExpenseReportSubmission,
@@ -96,6 +98,7 @@ expenseReportRouter.post(
     "/expense-reports/:id/settlement",
     postExpenseReportSettlement,
 );
+
 expenseReportRouter.post(
     "/expense-reports/:id/flags/clear",
     postExpenseReportFlagClear,

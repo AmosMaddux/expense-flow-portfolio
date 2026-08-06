@@ -482,6 +482,7 @@ export const stageTransitionProjection = pgTable(
                 or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'AP Review')
                 or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Paid')
                 or (${table.previousStage} = 'Paid' and ${table.currentStage} = 'Reconciled')
+                or (${table.previousStage} = 'Paid' and ${table.currentStage} = 'AP Review')
                 or (${table.previousStage} = 'Manager Approval' and ${table.currentStage} = 'Drafted')
                 or (${table.previousStage} = 'AP Review' and ${table.currentStage} = 'Drafted')
             )`,

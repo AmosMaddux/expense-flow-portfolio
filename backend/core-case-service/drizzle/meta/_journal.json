@@ -246,6 +246,13 @@
             "when": 1785780023819,
             "tag": "0034_employer_ein_validation",
             "breakpoints": true
+        },
+        {
+            "idx": 35,
+            "version": "7",
+            "when": 1785804000000,
+            "tag": "0035_stage_transition_projection_compensation",
+            "breakpoints": true
         }
     ]
 }

@@ -9,6 +9,16 @@ export const EXPENSE_REPORT_STAGE_TRANSITIONED_EVENT_TYPE =
 export const EXPENSE_REPORT_STAGE_TRANSITIONED_DATA_SCHEMA =
     "urn:expenseflow:schema:events:expense-report-stage-transitioned:v1" as const;
 
+function isStageTransitionEventEdge(
+    fromStage: (typeof approvedWorkflowStages)[number],
+    toStage: (typeof approvedWorkflowStages)[number],
+): boolean {
+    return (
+        isExpenseReportWorkflowEdge(fromStage, toStage) ||
+        (fromStage === "Paid" && toStage === "AP Review")
+    );
+}
+
 export const ExpenseReportStageTransitionedDataV1Schema = z
     .object({
         caseId: z.uuid(),
@@ -19,7 +29,7 @@ export const ExpenseReportStageTransitionedDataV1Schema = z
     })
     .strict()
     .refine(
-        (data) => isExpenseReportWorkflowEdge(data.fromStage, data.toStage),
+        (data) => isStageTransitionEventEdge(data.fromStage, data.toStage),
         {
             message: "Stage transition must use an allowed workflow edge.",
             path: ["toStage"],

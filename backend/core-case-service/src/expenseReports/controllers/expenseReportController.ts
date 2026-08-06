@@ -533,6 +533,7 @@ export async function getExpenseReportById(
     }
 }
 
+//OUTBOX submission events
 /**
  * Handles Expense Report submission requests.
  */
@@ -546,6 +547,8 @@ export async function postExpenseReportSubmission(
         const parsedParams = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
+
+        // If authenticated user is not finance admin or department manager, they must be the owner of the expense report to submit it
         if (!hasExpenseReportSubmitRole(auth)) {
             await insertDeniedSubmissionAuditEntry(
                 auth.tenantId,
@@ -584,8 +587,12 @@ export async function postExpenseReportSubmission(
                 correlationId,
                 idempotencyKey,
                 requestHash,
-                employerEin: parsedRequest.employerEin,
-                employerLegalName: parsedRequest.employerLegalName,
+                ...(parsedRequest.employerEin === undefined
+                    ? {}
+                    : { employerEin: parsedRequest.employerEin }),
+                ...(parsedRequest.employerLegalName === undefined
+                    ? {}
+                    : { employerLegalName: parsedRequest.employerLegalName }),
             });
         const result = await runIdempotentSubmission({
             idempotencyKey,
