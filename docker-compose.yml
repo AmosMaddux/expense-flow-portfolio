@@ -79,7 +79,6 @@ services:
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_PRIVATE_KEY_BASE64: ${AUTH_JWT_PRIVATE_KEY_BASE64:?AUTH_JWT_PRIVATE_KEY_BASE64 must be set in .env}
-            AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
             AUTO_APPLY_MIGRATIONS: ${CORE_CASE_LOCAL_APPLY_MIGRATIONS:-true}
             AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-expenseflowlocal}
             AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
@@ -134,7 +133,7 @@ services:
             AUTH_JWT_CLOCK_SKEW_SECONDS: ${AUTH_JWT_CLOCK_SKEW_SECONDS:-10}
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
-            AUTH_JWT_PUBLIC_KEY_BASE64: ${AUTH_JWT_PUBLIC_KEY_BASE64:?AUTH_JWT_PUBLIC_KEY_BASE64 must be set in .env}
+            AUTH_JWT_JWKS_JSON: ${AUTH_JWT_JWKS_JSON:?AUTH_JWT_JWKS_JSON must be set in .env}
             DATABASE_URL: postgres://expenseflow:expenseflow_local_dev_only@postgres:5432/expenseflow_core_case
             MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
         healthcheck:

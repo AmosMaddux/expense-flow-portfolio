@@ -9,8 +9,7 @@ const authJwtEnvironmentSchema = z.object({
         .min(1)
         .default("expenseflow-core-case-service"),
     AUTH_JWT_PRIVATE_KEY_BASE64: z.string().min(1),
-    AUTH_JWT_PUBLIC_KEY_BASE64: z.string().min(1).optional(),
-    AUTH_JWT_KEY_ID: z.string().trim().min(1).optional(),
+    AUTH_JWT_KEY_ID: z.string().trim().min(1),
     AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
         .number()
         .int()
@@ -18,12 +17,31 @@ const authJwtEnvironmentSchema = z.object({
         .default(900),
 });
 
-export type AuthJwtConfig = {
+export type RsaPublicJwk = {
+    kty: "RSA";
+    kid: string;
+    use: "sig";
+    alg: "RS256";
+    n: string;
+    e: string;
+};
+
+export type JsonWebKeySet = {
+    keys: RsaPublicJwk[];
+};
+
+export type JwtSigningConfig = {
     issuer: string;
     privateKey: KeyObject;
-    publicKey?: KeyObject;
-    keyId?: string;
+    keyId: string;
+};
+
+export type AccessTokenSigningConfig = JwtSigningConfig & {
     accessTokenTtlSeconds: number;
+};
+
+export type AuthJwtConfig = AccessTokenSigningConfig & {
+    publicJwk: RsaPublicJwk;
 };
 
 /**
@@ -36,20 +54,25 @@ export function loadAuthJwtConfig(
     const privateKey = parseRsaPrivateKey(
         parsedEnvironment.AUTH_JWT_PRIVATE_KEY_BASE64,
     );
-    const publicKey =
-        parsedEnvironment.AUTH_JWT_PUBLIC_KEY_BASE64 === undefined
-            ? derivePublicKey(privateKey)
-            : parseRsaPublicKey(parsedEnvironment.AUTH_JWT_PUBLIC_KEY_BASE64);
+    const publicJwk = exportRsaPublicJwk(
+        derivePublicKey(privateKey),
+        parsedEnvironment.AUTH_JWT_KEY_ID,
+    );
 
     return {
         issuer: parsedEnvironment.AUTH_JWT_ISSUER,
         privateKey,
-        publicKey,
-        ...(parsedEnvironment.AUTH_JWT_KEY_ID === undefined
-            ? {}
-            : { keyId: parsedEnvironment.AUTH_JWT_KEY_ID }),
+        publicJwk,
+        keyId: parsedEnvironment.AUTH_JWT_KEY_ID,
         accessTokenTtlSeconds: parsedEnvironment.AUTH_ACCESS_TOKEN_TTL_SECONDS,
     };
+}
+
+/**
+ * Returns the public verification keys for JWT consumers.
+ */
+export function buildAuthJwks(config: AuthJwtConfig): JsonWebKeySet {
+    return { keys: [config.publicJwk] };
 }
 
 function derivePublicKey(privateKey: KeyObject): KeyObject {
@@ -59,32 +82,6 @@ function derivePublicKey(privateKey: KeyObject): KeyObject {
     });
 
     return createPublicKey(privateKeyPem);
-}
-
-function parseRsaPublicKey(encodedPublicKey: string): KeyObject {
-    try {
-        const publicKey = createPublicKey(
-            Buffer.from(encodedPublicKey, "base64").toString("utf8"),
-        );
-
-        if (publicKey.asymmetricKeyType !== "rsa") {
-            throw new Error("AUTH_JWT_PUBLIC_KEY_BASE64 must be an RSA key.");
-        }
-
-        return publicKey;
-    } catch (error) {
-        if (
-            error instanceof Error &&
-            error.message === "AUTH_JWT_PUBLIC_KEY_BASE64 must be an RSA key."
-        ) {
-            throw error;
-        }
-
-        throw new Error(
-            "AUTH_JWT_PUBLIC_KEY_BASE64 must be a base64 PEM RSA public key.",
-            { cause: error },
-        );
-    }
 }
 
 function parseRsaPrivateKey(encodedPrivateKey: string): KeyObject {
@@ -111,4 +108,26 @@ function parseRsaPrivateKey(encodedPrivateKey: string): KeyObject {
             { cause: error },
         );
     }
+}
+
+function exportRsaPublicJwk(publicKey: KeyObject, keyId: string): RsaPublicJwk {
+    const jwk = publicKey.export({ format: "jwk" });
+    if (
+        jwk.kty !== "RSA" ||
+        typeof jwk.n !== "string" ||
+        typeof jwk.e !== "string"
+    ) {
+        throw new Error(
+            "AUTH_JWT_PRIVATE_KEY_BASE64 must derive an RSA public key.",
+        );
+    }
+
+    return {
+        kty: "RSA",
+        kid: keyId,
+        use: "sig",
+        alg: "RS256",
+        n: jwk.n,
+        e: jwk.e,
+    };
 }

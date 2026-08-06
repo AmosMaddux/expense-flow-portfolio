@@ -17,7 +17,7 @@ import {
     type StoredLoginCredential,
 } from "./loginService.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
-import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
 import type { PasswordHasher } from "../shared/passwordHasher.js";
 import type { TotpSecretProtector } from "../shared/totpSecretProtector.js";
 import { MfaRequiredError } from "../shared/authenticationErrors.js";
@@ -38,7 +38,7 @@ const storedCredential: StoredLoginCredential = {
     passwordHashAlgorithm: "argon2id",
     roles: ["Employee"],
 };
-const testAuthJwtConfig: AuthJwtConfig = {
+const testAuthJwtConfig: AccessTokenSigningConfig = {
     issuer: "expenseflow-core-case-service-test",
     privateKey: createPrivateKey(
         Buffer.from(syntheticRsaPrivateKeyBase64, "base64").toString("utf8"),

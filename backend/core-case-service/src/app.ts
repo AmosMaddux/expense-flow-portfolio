@@ -6,11 +6,14 @@ import { createLoginService } from "./auth/login/loginService.js";
 import { createDrizzleLoginCredentialRepository } from "./auth/login/loginRepository.js";
 import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
 import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
-import { loadAuthJwtConfig } from "./config/authJwtConfig.js";
+import { buildAuthJwks, loadAuthJwtConfig } from "./config/authJwtConfig.js";
 import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
-import { createAccessTokenMiddleware } from "./auth/shared/accessTokenMiddleware.js";
+import {
+    createAccessTokenMiddleware,
+    createAccessTokenVerifierConfig,
+} from "./auth/shared/accessTokenMiddleware.js";
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
 import { loadRateLimitConfig } from "./config/rateLimitConfig.js";
 import { db } from "./db/client.js";
@@ -23,6 +26,11 @@ import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRa
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
+const authJwks = buildAuthJwks(authJwtConfig);
+const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
+    authJwtConfig.issuer,
+    authJwks,
+);
 loadDefaultGlCodingConfig();
 const v1Router = express.Router();
 
@@ -33,6 +41,13 @@ Read each line as: "for any request whose URL starts with path, run this next."
 */
 
 v1Router.use("/auth", express.json());
+
+/**
+ * Publishes the public JWT verification keys for downstream services.
+ */
+v1Router.get("/.well-known/jwks.json", (_req: Request, res: Response) => {
+    res.status(200).json(authJwks);
+});
 v1Router.use(
     "/",
     createAuthRouter(
@@ -50,12 +65,30 @@ v1Router.use(
 );
 
 // Any request to /expense-reports/* or /case-queue/* must pass through createAccessTokenMiddleware first
-v1Router.use("/expense-reports", createAccessTokenMiddleware(authJwtConfig));
-v1Router.use("/case-queue", createAccessTokenMiddleware(authJwtConfig));
-v1Router.use("/finance-dashboard", createAccessTokenMiddleware(authJwtConfig));
-v1Router.use("/policy-reference", createAccessTokenMiddleware(authJwtConfig));
-v1Router.use("/transactions", createAccessTokenMiddleware(authJwtConfig));
-v1Router.use("/gl-mappings", createAccessTokenMiddleware(authJwtConfig));
+v1Router.use(
+    "/expense-reports",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
+v1Router.use(
+    "/case-queue",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
+v1Router.use(
+    "/finance-dashboard",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
+v1Router.use(
+    "/policy-reference",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
+v1Router.use(
+    "/transactions",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
+v1Router.use(
+    "/gl-mappings",
+    createAccessTokenMiddleware(accessTokenVerifierConfig),
+);
 v1Router.use(
     "/expense-reports",
     createTenantRateLimitMiddleware(

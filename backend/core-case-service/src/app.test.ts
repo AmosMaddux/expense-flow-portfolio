@@ -137,6 +137,31 @@ void describe("app", () => {
         }
     });
 
+    void test("publishes public JWT keys as JWKS without private material", async () => {
+        const response = await requestApp("/v1/.well-known/jwks.json");
+        const body = (await response.json()) as {
+            keys: Array<Record<string, unknown>>;
+        };
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain(
+            "application/json",
+        );
+        expect(body.keys).toHaveLength(1);
+        expect(body.keys[0]).toMatchObject({
+            alg: "RS256",
+            kid: "synthetic-key-v1",
+            kty: "RSA",
+            use: "sig",
+        });
+        expect(body.keys[0]).toHaveProperty("n");
+        expect(body.keys[0]).toHaveProperty("e");
+        expect(JSON.stringify(body)).not.toContain("PRIVATE");
+        expect(JSON.stringify(body)).not.toContain(
+            syntheticRsaPrivateKeyBase64,
+        );
+    });
+
     void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/v1/docs/");
         const body = await response.text();

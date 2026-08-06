@@ -1,6 +1,6 @@
 import { createSign } from "node:crypto";
 
-import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
 import type { RoleName } from "../../db/schema/index.js";
 
 export type AccessTokenSubject = {
@@ -20,7 +20,7 @@ export type IssuedAccessToken = {
  */
 export function signAccessToken(
     subject: AccessTokenSubject,
-    config: AuthJwtConfig,
+    config: AccessTokenSigningConfig,
     issuedAt: Date,
 ): IssuedAccessToken {
     const issuedAtSeconds = Math.floor(issuedAt.getTime() / 1000);
@@ -28,7 +28,7 @@ export function signAccessToken(
     const header = {
         alg: "RS256",
         typ: "JWT",
-        ...(config.keyId === undefined ? {} : { kid: config.keyId }),
+        kid: config.keyId,
     };
     const payload = {
         iss: config.issuer,

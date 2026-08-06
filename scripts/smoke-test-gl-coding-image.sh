@@ -20,7 +20,7 @@ if [[ $# -gt 0 ]]; then
     env_file="$1"
 else
     env_file="${smoke_dir}/synthetic.env"
-    "${root_dir}/scripts/generate-dev-jwt-keys.sh" "${env_file}" >/dev/null
+    AUTH_JWT_KEY_ID=smoke-key "${root_dir}/scripts/generate-dev-jwt-keys.sh" "${env_file}" >/dev/null
 fi
 
 if [[ ! -f "${env_file}" ]]; then
@@ -28,10 +28,10 @@ if [[ ! -f "${env_file}" ]]; then
     exit 1
 fi
 
-public_key_base64="$(sed -n 's/^AUTH_JWT_PUBLIC_KEY_BASE64=//p' "${env_file}")"
+jwks_json="$(sed -n 's/^AUTH_JWT_JWKS_JSON=//p' "${env_file}")"
 private_key_base64="$(sed -n 's/^AUTH_JWT_PRIVATE_KEY_BASE64=//p' "${env_file}")"
-if [[ -z "${public_key_base64}" || -z "${private_key_base64}" ]]; then
-    echo "Synthetic JWT public and private keys are required for the smoke test." >&2
+if [[ -z "${jwks_json}" || -z "${private_key_base64}" ]]; then
+    echo "Synthetic JWT JWKS and private key are required for the smoke test." >&2
     exit 1
 fi
 
@@ -67,7 +67,7 @@ docker run \
     --detach \
     --name "${container_name}" \
     --env AUTH_JWT_KEY_ID=smoke-key \
-    --env "AUTH_JWT_PUBLIC_KEY_BASE64=${public_key_base64}" \
+    --env "AUTH_JWT_JWKS_JSON=${jwks_json}" \
     --health-interval 1s \
     --health-retries 5 \
     --health-start-period 1s \

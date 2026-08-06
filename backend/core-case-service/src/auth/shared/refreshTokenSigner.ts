@@ -1,6 +1,6 @@
 import { createSign } from "node:crypto";
 
-import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { JwtSigningConfig } from "../../config/authJwtConfig.js";
 import type { RoleName } from "../../db/schema/index.js";
 
 export type RefreshTokenSubject = {
@@ -20,7 +20,7 @@ export type IssuedRefreshToken = {
  */
 export function signRefreshToken(
     subject: RefreshTokenSubject,
-    config: AuthJwtConfig,
+    config: JwtSigningConfig,
     issuedAt: Date,
     expiresAt: Date,
 ): IssuedRefreshToken {
@@ -29,7 +29,7 @@ export function signRefreshToken(
     const header = {
         alg: "RS256",
         typ: "JWT",
-        ...(config.keyId === undefined ? {} : { kid: config.keyId }),
+        kid: config.keyId,
     };
     const payload = {
         iss: config.issuer,

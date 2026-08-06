@@ -9,7 +9,7 @@ import {
     InvalidMfaCodeError,
     MfaRequiredError,
 } from "../shared/authenticationErrors.js";
-import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
 import type { RoleName } from "../../db/schema/index.js";
 import { signRefreshToken } from "../shared/refreshTokenSigner.js";
 import {
@@ -111,7 +111,7 @@ export function createLoginService(
     loginCredentialRepository: LoginCredentialRepository,
     passwordHasher: PasswordHasher,
     totpSecretProtector: TotpSecretProtector,
-    authJwtConfig: AuthJwtConfig,
+    authJwtConfig: AccessTokenSigningConfig,
     now: () => Date = () => new Date(),
 ): LoginService {
     return {
@@ -231,7 +231,7 @@ async function recordFailedLogin(
 async function issueTokens(
     loginCredentialRepository: LoginCredentialRepository,
     storedCredential: StoredLoginCredential,
-    authJwtConfig: AuthJwtConfig,
+    authJwtConfig: AccessTokenSigningConfig,
     acceptedTotpCounter: number,
     currentTime: Date,
 ): Promise<LoginResult | undefined> {

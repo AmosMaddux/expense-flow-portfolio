@@ -1,9 +1,12 @@
 import json
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import re
 import subprocess
 import tempfile
 import time
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 import anyio
@@ -164,6 +167,166 @@ async def test_auth_context_rejects_missing_token_before_handler_context(
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid or missing bearer token."}
     assert handler_was_called is False
+
+
+def test_auth_verifier_loads_public_keys_from_jwks_url(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+
+    with serve_jwks(generated_jwt_environment["AUTH_JWT_JWKS_JSON"]) as server:
+        identity = require_identity(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+            },
+            f"Bearer {token}",
+        )
+
+    assert str(identity.user_id) == USER_ID
+    assert str(identity.tenant_id) == TENANT_ID
+
+
+def test_auth_verifier_refreshes_jwks_url_on_unknown_kid(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    old_token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+    next_token = mint_node_access_token(
+        generated_next_jwt_environment, key_id="next-key", ttl_seconds=300
+    )
+
+    with serve_jwks(generated_jwt_environment["AUTH_JWT_JWKS_JSON"]) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+            }
+        )
+        old_identity = anyio.run(
+            require_authenticated_identity,
+            make_request(f"Bearer {old_token}"),
+            verifier,
+        )
+        server.set_jwks_json(
+            json.dumps(
+                {
+                    "keys": [
+                        jwk_with_key_id(
+                            generated_jwt_environment, "local-dev-rs256-v1"
+                        ),
+                        jwk_with_key_id(generated_next_jwt_environment, "next-key"),
+                    ]
+                },
+                separators=(",", ":"),
+            )
+        )
+        next_identity = anyio.run(
+            require_authenticated_identity,
+            make_request(f"Bearer {next_token}"),
+            verifier,
+        )
+
+    assert str(old_identity.user_id) == USER_ID
+    assert str(next_identity.user_id) == USER_ID
+
+
+def test_auth_verifier_refreshes_bootstrap_jwks_json_from_jwks_url(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    next_token = mint_node_access_token(
+        generated_next_jwt_environment, key_id="next-key", ttl_seconds=300
+    )
+    next_jwks_json = json.dumps(
+        {"keys": [jwk_with_key_id(generated_next_jwt_environment, "next-key")]},
+        separators=(",", ":"),
+    )
+
+    with serve_jwks(next_jwks_json) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_JSON": generated_jwt_environment["AUTH_JWT_JWKS_JSON"],
+                "AUTH_JWT_JWKS_URL": server.url,
+                "AUTH_JWT_JWKS_CACHE_TTL_SECONDS": "300",
+            }
+        )
+        identity = anyio.run(
+            require_authenticated_identity,
+            make_request(f"Bearer {next_token}"),
+            verifier,
+        )
+
+    assert str(identity.user_id) == USER_ID
+
+
+def test_auth_verifier_rejects_removed_key_after_jwks_cache_ttl(
+    generated_jwt_environment: dict[str, str],
+    generated_next_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    old_token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+    initial_jwks_json = json.dumps(
+        {
+            "keys": [
+                jwk_with_key_id(generated_jwt_environment, "local-dev-rs256-v1"),
+                jwk_with_key_id(generated_next_jwt_environment, "next-key"),
+            ]
+        },
+        separators=(",", ":"),
+    )
+    next_only_jwks_json = json.dumps(
+        {"keys": [jwk_with_key_id(generated_next_jwt_environment, "next-key")]},
+        separators=(",", ":"),
+    )
+
+    with serve_jwks(initial_jwks_json) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+                "AUTH_JWT_JWKS_CACHE_TTL_SECONDS": "0",
+            }
+        )
+        old_identity = anyio.run(
+            require_authenticated_identity,
+            make_request(f"Bearer {old_token}"),
+            verifier,
+        )
+        server.set_jwks_json(next_only_jwks_json)
+
+        with pytest.raises(HTTPException) as error:
+            anyio.run(
+                require_authenticated_identity,
+                make_request(f"Bearer {old_token}"),
+                verifier,
+            )
+
+    assert str(old_identity.user_id) == USER_ID
+    assert error.value.status_code == 401
+
+
+def test_auth_verifier_retries_jwks_url_at_startup(
+    generated_jwt_environment: dict[str, str],
+) -> None:
+    with serve_jwks(
+        generated_jwt_environment["AUTH_JWT_JWKS_JSON"], failures=1
+    ) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+                "AUTH_JWT_JWKS_STARTUP_RETRIES": "2",
+                "AUTH_JWT_JWKS_STARTUP_BACKOFF_SECONDS": "0",
+            }
+        )
+
+    assert isinstance(verifier, AuthJwtVerifier)
+    assert server.request_count == 2
 
 
 def test_auth_verifier_accepts_single_key_fallback(
@@ -346,11 +509,11 @@ def test_auth_me_rejects_missing_or_non_bearer_authorization(
     "environment",
     [
         {},
-        {"AUTH_JWT_PUBLIC_KEYS_JSON": "not-json"},
-        {"AUTH_JWT_PUBLIC_KEYS_JSON": "{}"},
-        {"AUTH_JWT_PUBLIC_KEY_BASE64": "not-base64"},
+        {"AUTH_JWT_JWKS_JSON": "not-json"},
+        {"AUTH_JWT_JWKS_JSON": "{}"},
+        {"AUTH_JWT_JWKS_JSON": json.dumps({"keys": []})},
         {
-            "AUTH_JWT_PUBLIC_KEY_BASE64": "not-base64",
+            "AUTH_JWT_JWKS_JSON": json.dumps({"keys": []}),
             "AUTH_JWT_CLOCK_SKEW_SECONDS": "-1",
         },
     ],
@@ -363,8 +526,8 @@ def test_auth_verifier_configuration_errors_are_not_401(
 
 
 def test_auth_verifier_configuration_is_validated_at_startup(monkeypatch) -> None:
-    monkeypatch.delenv("AUTH_JWT_PUBLIC_KEYS_JSON", raising=False)
-    monkeypatch.delenv("AUTH_JWT_PUBLIC_KEY_BASE64", raising=False)
+    monkeypatch.delenv("AUTH_JWT_JWKS_JSON", raising=False)
+    monkeypatch.delenv("AUTH_JWT_JWKS_URL", raising=False)
 
     async def start_app_without_auth_config() -> None:
         async with lifespan(app):
@@ -386,7 +549,6 @@ def test_tracked_test_sources_do_not_commit_jwt_secrets_or_tokens() -> None:
         re.compile(r"-----BEGIN (?:RSA )?(?:PRIVATE|PUBLIC) KEY-----"),
         re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
         re.compile(r"AUTH_JWT_PRIVATE_KEY_BASE64=[A-Za-z0-9+/]{80,}={0,2}"),
-        re.compile(r"AUTH_JWT_PUBLIC_KEY_BASE64=[A-Za-z0-9+/]{80,}={0,2}"),
     ]
 
     for relative_path in tracked_files:
@@ -448,14 +610,92 @@ def create_key_map_environment(
 ) -> dict[str, str]:
     return {
         "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
-        "AUTH_JWT_PUBLIC_KEYS_JSON": json.dumps(
+        "AUTH_JWT_JWKS_JSON": json.dumps(
             {
-                "old-key": old_environment["AUTH_JWT_PUBLIC_KEY_BASE64"],
-                "next-key": next_environment["AUTH_JWT_PUBLIC_KEY_BASE64"],
+                "keys": [
+                    jwk_with_key_id(old_environment, "old-key"),
+                    jwk_with_key_id(next_environment, "next-key"),
+                ]
             },
             separators=(",", ":"),
         ),
     }
+
+
+class JwksTestServer:
+    def __init__(
+        self,
+        server: HTTPServer,
+        thread: Thread,
+        jwks_json: str,
+        failures: int,
+    ) -> None:
+        self._server = server
+        self._thread = thread
+        self._jwks_json = jwks_json
+        self._failures_remaining = failures
+        self.request_count = 0
+        host, port = server.server_address
+        self.url = f"http://{host}:{port}/.well-known/jwks.json"
+
+    def set_jwks_json(self, jwks_json: str) -> None:
+        self._jwks_json = jwks_json
+
+    def response_body(self) -> bytes | None:
+        self.request_count += 1
+        if self._failures_remaining > 0:
+            self._failures_remaining -= 1
+            return None
+
+        return self._jwks_json.encode("utf-8")
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._thread.join(timeout=5)
+        self._server.server_close()
+
+
+@contextmanager
+def serve_jwks(jwks_json: str, failures: int = 0):
+    holder: dict[str, JwksTestServer] = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path != "/.well-known/jwks.json":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            body = holder["server"].response_body()
+            if body is None:
+                self.send_response(503)
+                self.end_headers()
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    http_server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=http_server.serve_forever, daemon=True)
+    server = JwksTestServer(http_server, thread, jwks_json, failures)
+    holder["server"] = server
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.close()
+
+
+def jwk_with_key_id(environment: dict[str, str], key_id: str) -> dict[str, str]:
+    jwks = json.loads(environment["AUTH_JWT_JWKS_JSON"])
+    public_jwk = jwks["keys"][0]
+    return {**public_jwk, "kid": key_id}
 
 
 def require_identity(
