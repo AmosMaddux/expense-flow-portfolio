@@ -2216,7 +2216,6 @@
                         "maxLength": 200
                     }
                 },
-                "required": ["employerEin", "employerLegalName"],
                 "additionalProperties": false
             },
             "TransitionExpenseReportWorkflowRequest": {

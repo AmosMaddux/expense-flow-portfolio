@@ -29,22 +29,12 @@ keyed by the CloudEvent `id`. It deletes a message only after the projection
 write succeeds; malformed events and storage failures remain available for SQS
 retry. The local queue is configured with an SQS redrive policy so messages that
 keep failing consumer processing are moved to the stage-transition DLQ for
-inspection after the queue's `maxReceiveCount` is exceeded. Production queue
-ownership is outside this repository for now, so the deployed queue must provide
-an equivalent redrive policy before this consumer is enabled.
-
-Deployment acceptance is verified in the platform-owned infrastructure change
-that creates or updates the deployed `STAGE_TRANSITION_SQS_QUEUE_URL`. That
-change must include a stage-transition DLQ and an SQS `RedrivePolicy` on the
-source queue with `maxReceiveCount` set to `3` and `deadLetterTargetArn` pointing
-to that DLQ. Reviewers can verify the deployed queue without exposing controlled
-data by checking only queue attributes:
-
-```sh
-aws sqs get-queue-attributes \
-    --queue-url "$STAGE_TRANSITION_SQS_QUEUE_URL" \
-    --attribute-names RedrivePolicy
-```
+inspection after the queue's `maxReceiveCount` is exceeded. Production
+acceptance is tracked in
+[SCRUM-133 deployment redrive verification](./stage-transition-production-redrive-verification.md),
+which records the deployment-side DLQ and source-queue `RedrivePolicy`
+requirement and the exact queue-attribute check reviewers must run before this
+consumer is enabled.
 
 Run the local consumer with:
 

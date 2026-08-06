@@ -587,8 +587,12 @@ export async function postExpenseReportSubmission(
                 correlationId,
                 idempotencyKey,
                 requestHash,
-                employerEin: parsedRequest.employerEin,
-                employerLegalName: parsedRequest.employerLegalName,
+                ...(parsedRequest.employerEin === undefined
+                    ? {}
+                    : { employerEin: parsedRequest.employerEin }),
+                ...(parsedRequest.employerLegalName === undefined
+                    ? {}
+                    : { employerLegalName: parsedRequest.employerLegalName }),
             });
         const result = await runIdempotentSubmission({
             idempotencyKey,

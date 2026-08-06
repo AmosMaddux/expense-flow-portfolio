@@ -97,7 +97,7 @@ type EmployerEinValidationForSubmission = {
     legalName: string;
     result: EinValidationResult;
     validatedAt: Date;
-};
+} | null;
 
 type ClearExpenseReportFlagsResult =
     | { kind: "cleared"; clearedFlagCount: number }
@@ -1477,17 +1477,24 @@ export async function submitDraftExpenseReport(
             .update(expenseReport)
             .set({
                 currentStage: "Submitted",
-                employerEin: employerValidation.ein,
-                employerLegalName: employerValidation.legalName,
-                employerEinValidationStatus: employerValidation.result.status,
-                employerEinValidationReason: readEmployerEinValidationReason(
-                    employerValidation.result,
-                ),
-                employerEinServiceReferenceId:
-                    readEmployerEinServiceReferenceId(
-                        employerValidation.result,
-                    ),
-                employerEinValidatedAt: employerValidation.validatedAt,
+                ...(employerValidation === null
+                    ? {}
+                    : {
+                          employerEin: employerValidation.ein,
+                          employerLegalName: employerValidation.legalName,
+                          employerEinValidationStatus:
+                              employerValidation.result.status,
+                          employerEinValidationReason:
+                              readEmployerEinValidationReason(
+                                  employerValidation.result,
+                              ),
+                          employerEinServiceReferenceId:
+                              readEmployerEinServiceReferenceId(
+                                  employerValidation.result,
+                              ),
+                          employerEinValidatedAt:
+                              employerValidation.validatedAt,
+                      }),
                 updatedAt: new Date(),
             })
             .where(
@@ -1550,18 +1557,20 @@ export async function submitDraftExpenseReport(
             "Drafted",
             "transition_approved",
         );
-        await appendAuditEntry(transaction, {
-            tenantId,
-            expenseReportId,
-            actorId,
-            action: "employer_ein_validated",
-            stageBeforeAction: "Drafted",
-            stageAfterProposedAction: "Submitted",
-            denialReason: null,
-            outcomeReason: buildEmployerEinValidationAuditOutcome(
-                employerValidation.result,
-            ),
-        });
+        if (employerValidation !== null) {
+            await appendAuditEntry(transaction, {
+                tenantId,
+                expenseReportId,
+                actorId,
+                action: "employer_ein_validated",
+                stageBeforeAction: "Drafted",
+                stageAfterProposedAction: "Submitted",
+                denialReason: null,
+                outcomeReason: buildEmployerEinValidationAuditOutcome(
+                    employerValidation.result,
+                ),
+            });
+        }
 
         await writeSuccessfulStageTransitionAndOutbox(transaction, {
             tenantId,

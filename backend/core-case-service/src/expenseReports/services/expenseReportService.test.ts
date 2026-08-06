@@ -782,6 +782,99 @@ void describe("Expense Report settlement saga", () => {
 });
 
 void describe("Expense Report submission EIN validation", () => {
+    void test("submits through the existing Employee flow when employer fields are omitted", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000812";
+        const actorId = "50000000-0000-4000-8000-000000000812";
+        const expenseReportId = "60000000-0000-4000-8000-000000000812";
+        const correlationId = "70000000-0000-4000-8000-000000000812";
+        const sourceId = "80000000-0000-4000-8000-000000000812";
+        const expectedSourceKeys = new Set([`line_item:${sourceId}`]);
+        const expectedFingerprint = "synthetic-submission-fingerprint";
+        const submittedReport = {
+            id: expenseReportId,
+            tenantId,
+            owner: actorId,
+            dueDate: "2026-07-31",
+            priority: "Normal",
+            currentStage: "Submitted",
+            onHold: false,
+            holdReason: null,
+            employerEin: null,
+            employerLegalName: null,
+            employerEinValidationStatus: null,
+            employerEinValidationReason: null,
+            employerEinServiceReferenceId: null,
+            employerEinValidatedAt: null,
+            createdAt: new Date("2026-07-20T12:00:00.000Z"),
+            updatedAt: new Date("2026-07-30T12:00:00.000Z"),
+        };
+        const einValidationAcl = {
+            validateEin: vi.fn(),
+        };
+        const dispatch = vi.fn().mockResolvedValue(undefined);
+
+        readDraftSubmissionSourcesMock.mockResolvedValue({
+            report: { id: expenseReportId },
+            lineItems: [
+                {
+                    id: sourceId,
+                    merchant: "Synthetic Air",
+                    amount: "42.00",
+                    currency: "USD",
+                    category: "Travel",
+                },
+            ],
+            mileageEntries: [],
+        });
+        buildSubmissionSourceKeysMock.mockReturnValue(expectedSourceKeys);
+        buildSubmissionSourceFingerprintMock.mockReturnValue(
+            expectedFingerprint,
+        );
+        codeExpenseLineItemsMock.mockResolvedValue({
+            coded_items: [
+                {
+                    source_id: sourceId,
+                    source_type: "line_item",
+                    category: "Travel",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "6000",
+                        account_name: "Travel Expense",
+                    },
+                    amount: "42.00",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+        submitDraftExpenseReportMock.mockResolvedValue(submittedReport);
+        invalidateCachedCaseQueueStageRollupsMock.mockResolvedValue(undefined);
+
+        const result = await submitExpenseReport(
+            {
+                id: expenseReportId,
+                tenantId,
+                actorId,
+                roles: ["Employee"],
+                correlationId,
+                idempotencyKey: "synthetic-submit-no-ein-validation",
+                requestHash: "synthetic-submit-no-ein-validation-hash",
+            },
+            {
+                einValidationAcl,
+                stageTransitionOutboxDispatcher: { dispatch },
+            },
+        );
+
+        expect(einValidationAcl.validateEin).not.toHaveBeenCalled();
+        expect(submitDraftExpenseReportMock).toHaveBeenCalledTimes(1);
+        expect(submitDraftExpenseReportMock.mock.calls[0]?.[7]).toBeNull();
+        expect(result.report.employerEin).toBeNull();
+        expect(result.report.employerLegalName).toBeNull();
+        expect(result.report.employerEinValidation).toBeNull();
+    });
+
     void test("validates employer EIN during submission and persists a non-blocking invalid result", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000811";
         const actorId = "50000000-0000-4000-8000-000000000811";
