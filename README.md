@@ -105,18 +105,67 @@ To run the fastapi service use:
 uv run --env-file .env uvicorn backend.python.main:app --port 8001
 ```
 
-The local Docker Compose stack starts this service automatically on port `8001`
-and seeds the baseline GL mappings for the tenant configured by
-`VITE_TENANT_ID`. Start the shared local dependencies before the Core Case
-Service:
+## Local Docker Compose Stack
+
+The local Docker Compose stack runs the Core Case Service, FastAPI GL-coding
+service, PostgreSQL, Redis, and local AWS-compatible support services for
+receipts, stage-transition events, and DynamoDB-backed local tables.
+
+Create a synthetic local environment file before the first run:
 
 ```sh
-docker compose up -d
-npm start
+cp .env.example .env
+./scripts/generate-dev-jwt-keys.sh
 ```
 
-The Compose service builds the same slim, multi-stage GL-coding image intended
-for ECS. See the
+Start the full local stack:
+
+```sh
+docker compose up --build
+```
+
+Compose config wires service-to-service traffic through Docker DNS. The Node
+Core Case Service uses PostgreSQL at `postgres:5432`, Redis at `redis:6379`, and
+the FastAPI service at `http://gl-coding:8001`. The FastAPI service uses the
+same Compose PostgreSQL database for GL mapping lookups. From the host machine,
+the main local ports are:
+
+- Core Case Service: `http://127.0.0.1:3301`
+- FastAPI GL-coding service: `http://127.0.0.1:8001`
+- PostgreSQL: `127.0.0.1:55432`
+- Redis: `127.0.0.1:56379`
+
+The Core Case Service applies checked-in Drizzle migrations on startup by
+default in Compose, including the Identity & Auth PostgreSQL schema used by the
+`/v1/auth/*` routes. After the stack is running, seed the synthetic local auth
+accounts when you need to sign in through the app:
+
+```sh
+npm run dev:auth:seed
+```
+
+Health checks:
+
+```sh
+curl http://127.0.0.1:3301/health
+curl http://127.0.0.1:8001/health
+curl http://127.0.0.1:3301/v1/openapi.json
+```
+
+Stop the stack while preserving each container writable layer:
+
+```sh
+docker compose stop
+```
+
+Remove containers and reset transient local datastore state:
+
+```sh
+docker compose down --volumes --remove-orphans
+```
+
+The Compose FastAPI service builds the same slim, multi-stage GL-coding image
+intended for ECS. See the
 [GL-coding service container image guide](docs/container-images-gl-coding-service.md)
 for standalone build, health-check, image-size, and layer-caching details.
 
