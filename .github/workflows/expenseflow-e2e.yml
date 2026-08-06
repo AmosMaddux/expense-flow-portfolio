@@ -54,6 +54,17 @@ jobs:
             - name: Run ExpenseFlow UI quality gate
               run: npm run test:ui-gate
 
+            - name: Run stage-transition DLQ redrive test
+              env:
+                  AWS_REGION: us-east-1
+                  AWS_ACCESS_KEY_ID: expenseflow-local
+                  AWS_SECRET_ACCESS_KEY: expenseflow-local-dev-only
+                  EXPENSE_FLOW_RUN_LOCALSTACK_TESTS: "1"
+                  STAGE_TRANSITION_SQS_ENDPOINT: http://127.0.0.1:4566
+              run: >
+                  npx vitest run --project integration
+                  backend/core-case-service/src/events/stageTransitionSqsConsumer.integration.test.ts
+
             - name: Collect service logs
               if: failure()
               run: |
