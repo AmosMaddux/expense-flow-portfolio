@@ -56,7 +56,7 @@ void describe.skipIf(!shouldRunLocalStackRedriveTests)(
                 {
                     RedrivePolicy: JSON.stringify({
                         deadLetterTargetArn: dlqArn,
-                        maxReceiveCount: "1",
+                        maxReceiveCount: "3",
                     }),
                     VisibilityTimeout: "0",
                 },
