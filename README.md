@@ -152,13 +152,13 @@ curl http://127.0.0.1:8001/health
 curl http://127.0.0.1:3301/v1/openapi.json
 ```
 
-Stop the stack without deleting local database state:
+Stop the stack while preserving each container writable layer:
 
 ```sh
-docker compose down
+docker compose stop
 ```
 
-Reset all Compose-managed local datastore state:
+Remove containers and reset transient local datastore state:
 
 ```sh
 docker compose down --volumes --remove-orphans
