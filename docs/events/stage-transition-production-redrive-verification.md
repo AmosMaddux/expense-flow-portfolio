@@ -6,7 +6,13 @@ The deployed queue referenced by `STAGE_TRANSITION_SQS_QUEUE_URL` must have a
 stage-transition DLQ and an SQS `RedrivePolicy` before the plain SQS projection
 consumer is enabled outside local development.
 
-The platform-owned deployment change for `SCRUM-133` must create or reference:
+The deployment-side configuration for `SCRUM-133` is
+[configure-stage-transition-redrive.sh](../../scripts/configure-stage-transition-redrive.sh).
+It creates or resolves the DLQ, attaches the source queue `RedrivePolicy`, and
+fails if the read-back verification does not match.
+
+The platform-owned deployment change for `SCRUM-133` must run or equivalently
+implement that configuration and create or reference:
 
 - Source queue: `STAGE_TRANSITION_SQS_QUEUE_URL`
 - Dead-letter queue: stage-transition event DLQ

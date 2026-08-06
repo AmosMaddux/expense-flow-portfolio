@@ -30,11 +30,12 @@ write succeeds; malformed events and storage failures remain available for SQS
 retry. The local queue is configured with an SQS redrive policy so messages that
 keep failing consumer processing are moved to the stage-transition DLQ for
 inspection after the queue's `maxReceiveCount` is exceeded. Production
-acceptance is tracked in
+redrive configuration is included in
+[configure-stage-transition-redrive.sh](../../scripts/configure-stage-transition-redrive.sh)
+and acceptance is tracked in
 [SCRUM-133 deployment redrive verification](./stage-transition-production-redrive-verification.md),
-which records the deployment-side DLQ and source-queue `RedrivePolicy`
-requirement and the exact queue-attribute check reviewers must run before this
-consumer is enabled.
+which records the exact queue-attribute evidence reviewers must collect before
+this consumer is enabled.
 
 Run the local consumer with:
 
