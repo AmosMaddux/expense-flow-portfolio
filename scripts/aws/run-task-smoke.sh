@@ -67,8 +67,6 @@ print_log_streams() {
     aws_cli logs describe-log-streams \
         --log-group-name "$log_group_name" \
         --log-stream-name-prefix "$stream_prefix" \
-        --order-by LastEventTime \
-        --descending \
         --max-items 5 \
         --query 'logStreams[].logStreamName' \
         --output text

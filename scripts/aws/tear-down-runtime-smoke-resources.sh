@@ -20,6 +20,7 @@ CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sand
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
 GL_CODING_TASK_DEFINITION="${GL_CODING_TASK_DEFINITION:-expenseflow-gl-coding-service}"
+RENDER_DIR="${RENDER_DIR:-/tmp/expenseflow-scrum-147-task-definitions}"
 
 SECRET_NAMES=(
     expenseflow/sandbox/core-case/database-url
@@ -46,26 +47,28 @@ aws_cli() {
 }
 
 stop_cluster_tasks() {
-    local task_arns
+    local desired_status task_arns
 
-    task_arns="$(aws_cli ecs list-tasks \
-        --cluster "$CLUSTER_NAME" \
-        --desired-status RUNNING \
-        --query 'taskArns[]' \
-        --output text 2>/dev/null || true)"
-
-    if [[ -z "$task_arns" || "$task_arns" == "None" ]]; then
-        return
-    fi
-
-    for task_arn in $task_arns; do
-        aws_cli ecs stop-task \
+    for desired_status in RUNNING PENDING; do
+        task_arns="$(aws_cli ecs list-tasks \
             --cluster "$CLUSTER_NAME" \
-            --task "$task_arn" \
-            --reason "SCRUM-147 runtime smoke teardown" >/dev/null || true
-    done
+            --desired-status "$desired_status" \
+            --query 'taskArns[]' \
+            --output text 2>/dev/null || true)"
 
-    aws_cli ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks $task_arns || true
+        if [[ -z "$task_arns" || "$task_arns" == "None" ]]; then
+            continue
+        fi
+
+        for task_arn in $task_arns; do
+            aws_cli ecs stop-task \
+                --cluster "$CLUSTER_NAME" \
+                --task "$task_arn" \
+                --reason "SCRUM-147 runtime smoke teardown" >/dev/null || true
+        done
+
+        aws_cli ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks $task_arns || true
+    done
 }
 
 deregister_task_definition_family() {
@@ -82,6 +85,8 @@ deregister_task_definition_family() {
         aws_cli ecs deregister-task-definition \
             --task-definition "$task_definition_arn" >/dev/null || true
     done
+
+    sleep 5
 
     inactive_task_definitions="$(aws_cli ecs list-task-definitions \
         --family-prefix "$family" \
@@ -195,6 +200,9 @@ main() {
     delete_role "$EXECUTION_ROLE_NAME"
     delete_role "$CORE_CASE_TASK_ROLE_NAME"
     delete_role "$GL_CODING_TASK_ROLE_NAME"
+
+    echo "Deleting rendered local task-definition output..."
+    rm -rf "$RENDER_DIR"
 
     echo "SCRUM-147 runtime smoke resources have been requested for teardown."
 }
