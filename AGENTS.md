@@ -159,6 +159,9 @@ When code behavior changes, update or delete any related comment in the same cha
 - Do not combine unrelated changes in one commit.
 - Agents must not commit directly to `main`.
 - Agents must not push directly to `main`.
+- Agents must not commit directly to the remote `development` branch.
+- Agents must not push directly to the remote `development` branch.
+- If asked to make code, documentation, configuration, or generated-file changes while the current branch is `development`, do not change files. Warn the user that the workspace is still on `development` and that changes must be made on a non-`development` branch first.
 - Planned work flows from `feature/*` to `development`, then from `development` to `main` through reviewed pull requests.
 - Agents may open pull requests from `development` or `hotfix/*` into `main`.
 - Urgent production fixes may flow through `hotfix/*` to `main`, then must be merged back to `development` when the fix is not already present there.
