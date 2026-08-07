@@ -7,7 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 import anyio
 import pytest
@@ -231,6 +231,62 @@ def test_auth_verifier_refreshes_jwks_url_on_unknown_kid(
 
     assert str(old_identity.user_id) == USER_ID
     assert str(next_identity.user_id) == USER_ID
+
+
+def test_auth_verifier_throttles_unknown_kid_jwks_refreshes(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    unknown_token = mint_node_access_token(
+        generated_jwt_environment, key_id="unknown-key", ttl_seconds=300
+    )
+
+    with serve_jwks(generated_jwt_environment["AUTH_JWT_JWKS_JSON"]) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+                "AUTH_JWT_JWKS_CACHE_TTL_SECONDS": "300",
+                "AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS": "30",
+            }
+        )
+        startup_request_count = server.request_count
+
+        for _ in range(2):
+            with pytest.raises(HTTPException) as error:
+                anyio.run(
+                    require_authenticated_identity,
+                    make_request(f"Bearer {unknown_token}"),
+                    verifier,
+                )
+            assert error.value.status_code == 401
+
+    assert server.request_count == startup_request_count + 1
+
+
+def test_auth_verifier_configuration_normalizes_malformed_jwk_values() -> None:
+    malformed_jwks_json = json.dumps(
+        {
+            "keys": [
+                {
+                    "kty": "RSA",
+                    "kid": "malformed-key",
+                    "use": "sig",
+                    "alg": "RS256",
+                    "n": "not-valid-base64url!",
+                    "e": "AQAB",
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(AuthJwtConfigurationError):
+        AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_JSON": malformed_jwks_json,
+            }
+        )
 
 
 def test_auth_verifier_refreshes_bootstrap_jwks_json_from_jwks_url(
@@ -635,7 +691,7 @@ class JwksTestServer:
         self._jwks_json = jwks_json
         self._failures_remaining = failures
         self.request_count = 0
-        host, port = server.server_address
+        host, port = cast(tuple[str, int], server.server_address[:2])
         self.url = f"http://{host}:{port}/.well-known/jwks.json"
 
     def set_jwks_json(self, jwks_json: str) -> None:

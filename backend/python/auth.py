@@ -1,12 +1,15 @@
+import binascii
 import json
 import os
 import time
+from threading import Lock
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Mapping
 from uuid import UUID
 
+import anyio
 import jwt
 from fastapi import Depends, HTTPException, Request
 from jwt import InvalidTokenError, PyJWK, PyJWKError
@@ -18,6 +21,7 @@ AUTH_JWT_JWKS_TIMEOUT_SECONDS_DEFAULT = 5
 AUTH_JWT_JWKS_CACHE_TTL_SECONDS_DEFAULT = 300
 AUTH_JWT_JWKS_STARTUP_RETRIES_DEFAULT = 3
 AUTH_JWT_JWKS_STARTUP_BACKOFF_SECONDS_DEFAULT = 0.25
+AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS_DEFAULT = 5
 
 # Mirrors backend/core-case-service/src/db/schema/identityAuth.ts roleValues.
 RoleName = Literal[
@@ -94,6 +98,9 @@ class AuthJwtVerifierConfig:
     jwks_url: str | None = None
     jwks_timeout_seconds: int = AUTH_JWT_JWKS_TIMEOUT_SECONDS_DEFAULT
     jwks_cache_ttl_seconds: float = AUTH_JWT_JWKS_CACHE_TTL_SECONDS_DEFAULT
+    jwks_miss_refresh_cooldown_seconds: float = (
+        AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS_DEFAULT
+    )
 
 
 class AuthJwtVerifier:
@@ -102,7 +109,9 @@ class AuthJwtVerifier:
     def __init__(self, config: AuthJwtVerifierConfig) -> None:
         self._config = config
         self._public_keys_by_id = dict(config.public_keys_by_id)
+        self._refresh_lock = Lock()
         self._next_jwks_refresh_at = time.monotonic() + config.jwks_cache_ttl_seconds
+        self._next_jwks_miss_refresh_at = 0.0
 
     @classmethod
     def from_environment(
@@ -110,6 +119,10 @@ class AuthJwtVerifier:
     ) -> "AuthJwtVerifier":
         """Create a verifier from validated process environment settings."""
         return cls(load_auth_jwt_verifier_config(environment))
+
+    async def verify_async(self, token: str) -> AuthenticatedIdentity:
+        """Return validated identity while keeping blocking JWKS I/O off the event loop."""
+        return await anyio.to_thread.run_sync(self.verify, token)
 
     def verify(self, token: str) -> AuthenticatedIdentity:
         """Return identity claims after signature, issuer, and expiry validation."""
@@ -151,12 +164,7 @@ class AuthJwtVerifier:
         if public_key is not None:
             return public_key
 
-        self._refresh_public_keys()
-        public_key = self._public_keys_by_id.get(key_id)
-        if public_key is None:
-            raise unauthorized()
-
-        return public_key
+        return self._refresh_public_keys_for_cache_miss(key_id)
 
     def _refresh_public_keys_if_stale(self) -> None:
         if self._config.jwks_url is None:
@@ -166,7 +174,37 @@ class AuthJwtVerifier:
 
         self._refresh_public_keys()
 
+    def _refresh_public_keys_for_cache_miss(self, key_id: str) -> Any:
+        if self._config.jwks_url is None:
+            raise unauthorized()
+
+        with self._refresh_lock:
+            public_key = self._public_keys_by_id.get(key_id)
+            if public_key is not None:
+                return public_key
+
+            current_time = time.monotonic()
+            if current_time < self._next_jwks_miss_refresh_at:
+                raise unauthorized()
+
+            self._next_jwks_miss_refresh_at = (
+                current_time + self._config.jwks_miss_refresh_cooldown_seconds
+            )
+            self._refresh_public_keys_unlocked()
+            public_key = self._public_keys_by_id.get(key_id)
+            if public_key is None:
+                raise unauthorized()
+
+            return public_key
+
     def _refresh_public_keys(self) -> None:
+        if self._config.jwks_url is None:
+            raise unauthorized()
+
+        with self._refresh_lock:
+            self._refresh_public_keys_unlocked()
+
+    def _refresh_public_keys_unlocked(self) -> None:
         if self._config.jwks_url is None:
             raise unauthorized()
 
@@ -195,6 +233,7 @@ def load_auth_jwt_verifier_config(
     clock_skew_seconds = read_clock_skew_seconds(env)
     jwks_timeout_seconds = read_jwks_timeout_seconds(env)
     jwks_cache_ttl_seconds = read_jwks_cache_ttl_seconds(env)
+    jwks_miss_refresh_cooldown_seconds = read_jwks_miss_refresh_cooldown_seconds(env)
     startup_retries = read_jwks_startup_retries(env)
     startup_backoff_seconds = read_jwks_startup_backoff_seconds(env)
     raw_jwks = env.get("AUTH_JWT_JWKS_JSON")
@@ -222,6 +261,7 @@ def load_auth_jwt_verifier_config(
         jwks_url=jwks_url,
         jwks_timeout_seconds=jwks_timeout_seconds,
         jwks_cache_ttl_seconds=jwks_cache_ttl_seconds,
+        jwks_miss_refresh_cooldown_seconds=jwks_miss_refresh_cooldown_seconds,
     )
 
 
@@ -297,6 +337,28 @@ def read_jwks_cache_ttl_seconds(env: Mapping[str, str]) -> float:
         )
 
     return ttl_seconds
+
+
+def read_jwks_miss_refresh_cooldown_seconds(env: Mapping[str, str]) -> float:
+    """Read the minimum seconds between unknown-kid JWKS refresh attempts."""
+    try:
+        cooldown_seconds = float(
+            env.get(
+                "AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS",
+                str(AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS_DEFAULT),
+            )
+        )
+    except ValueError as error:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS must be a non-negative number."
+        ) from error
+
+    if cooldown_seconds < 0:
+        raise AuthJwtConfigurationError(
+            "AUTH_JWT_JWKS_MISS_REFRESH_COOLDOWN_SECONDS must be a non-negative number."
+        )
+
+    return cooldown_seconds
 
 
 def read_jwks_startup_retries(env: Mapping[str, str]) -> int:
@@ -402,7 +464,7 @@ def build_public_keys_by_id(jwks: JsonWebKeySet) -> dict[str, Any]:
     for public_jwk in jwks.keys:
         try:
             pyjwk = PyJWK.from_dict(public_jwk.model_dump())
-        except PyJWKError as error:
+        except (PyJWKError, ValueError, binascii.Error) as error:
             raise AuthJwtConfigurationError(
                 "AUTH_JWT_JWKS_URL must expose valid RSA public keys."
             ) from error
@@ -444,7 +506,7 @@ async def require_authenticated_identity(
     if scheme.lower() != "bearer" or token.strip() == "":
         raise unauthorized()
 
-    return verifier.verify(token)
+    return await verifier.verify_async(token)
 
 
 async def require_request_context(
