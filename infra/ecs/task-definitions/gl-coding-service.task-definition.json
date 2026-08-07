@@ -1,0 +1,77 @@
+{
+    "family": "expenseflow-gl-coding-service",
+    "taskRoleArn": "${GL_CODING_TASK_ROLE_ARN}",
+    "executionRoleArn": "${ECS_TASK_EXECUTION_ROLE_ARN}",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "512",
+    "memory": "1024",
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    },
+    "containerDefinitions": [
+        {
+            "name": "gl-coding-service",
+            "image": "${GL_CODING_IMAGE_URI}",
+            "essential": true,
+            "portMappings": [
+                {
+                    "name": "http",
+                    "containerPort": 8001,
+                    "hostPort": 8001,
+                    "protocol": "tcp",
+                    "appProtocol": "http"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "AUTH_JWT_CLOCK_SKEW_SECONDS",
+                    "value": "10"
+                },
+                {
+                    "name": "AUTH_JWT_ISSUER",
+                    "value": "expenseflow-core-case-service"
+                },
+                {
+                    "name": "AUTH_JWT_KEY_ID",
+                    "value": "${AUTH_JWT_KEY_ID}"
+                },
+                {
+                    "name": "MILEAGE_REIMBURSEMENT_RATE",
+                    "value": "0.70"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "AUTH_JWT_PUBLIC_KEYS_JSON",
+                    "valueFrom": "${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN}"
+                },
+                {
+                    "name": "DATABASE_URL",
+                    "valueFrom": "${GL_CODING_DATABASE_URL_SECRET_ARN}"
+                }
+            ],
+            "healthCheck": {
+                "command": [
+                    "CMD",
+                    "python",
+                    "-c",
+                    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"
+                ],
+                "interval": 30,
+                "timeout": 3,
+                "retries": 3,
+                "startPeriod": 10
+            },
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "${GL_CODING_LOG_GROUP_NAME}",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "gl-coding-service"
+                }
+            }
+        }
+    ]
+}
