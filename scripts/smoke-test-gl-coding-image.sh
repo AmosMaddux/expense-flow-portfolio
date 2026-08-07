@@ -20,7 +20,7 @@ if [[ $# -gt 0 ]]; then
     env_file="$1"
 else
     env_file="${smoke_dir}/synthetic.env"
-    "${root_dir}/scripts/generate-dev-jwt-keys.sh" "${env_file}" >/dev/null
+    AUTH_JWT_KEY_ID=smoke-key "${root_dir}/scripts/generate-dev-jwt-keys.sh" "${env_file}" >/dev/null
 fi
 
 if [[ ! -f "${env_file}" ]]; then
@@ -28,12 +28,13 @@ if [[ ! -f "${env_file}" ]]; then
     exit 1
 fi
 
-public_key_base64="$(sed -n 's/^AUTH_JWT_PUBLIC_KEY_BASE64=//p' "${env_file}")"
+jwks_json="$(sed -n 's/^AUTH_JWT_JWKS_JSON=//p' "${env_file}")"
 private_key_base64="$(sed -n 's/^AUTH_JWT_PRIVATE_KEY_BASE64=//p' "${env_file}")"
-if [[ -z "${public_key_base64}" || -z "${private_key_base64}" ]]; then
-    echo "Synthetic JWT public and private keys are required for the smoke test." >&2
+if [[ -z "${jwks_json}" || -z "${private_key_base64}" ]]; then
+    echo "Synthetic JWT JWKS and private key are required for the smoke test." >&2
     exit 1
 fi
+jwt_key_id="$(JWKS_JSON="${jwks_json}" node --input-type=module -e 'const jwks = JSON.parse(process.env.JWKS_JSON ?? ""); const kid = jwks.keys?.[0]?.kid; if (typeof kid !== "string" || kid.trim() === "") process.exit(1); process.stdout.write(kid);')"
 
 private_key_file="${smoke_dir}/private-key.pem"
 printf '%s' "${private_key_base64}" | openssl base64 -d -A > "${private_key_file}"
@@ -44,7 +45,7 @@ base64url() {
 
 issued_at="$(date +%s)"
 expires_at="$((issued_at + 300))"
-token_header="$(printf '%s' '{"alg":"RS256","kid":"smoke-key","typ":"JWT"}' | base64url)"
+token_header="$(printf '{"alg":"RS256","kid":"%s","typ":"JWT"}' "${jwt_key_id}" | base64url)"
 token_payload="$(
     printf '%s' \
         "{\"exp\":${expires_at},\"iat\":${issued_at},\"iss\":\"expenseflow-core-case-service\",\"roles\":[\"Employee\"],\"sub\":\"22222222-2222-4222-8222-222222222222\",\"tenant_id\":\"11111111-1111-4111-8111-111111111111\",\"token_use\":\"access\"}" \
@@ -66,8 +67,7 @@ docker build \
 docker run \
     --detach \
     --name "${container_name}" \
-    --env AUTH_JWT_KEY_ID=smoke-key \
-    --env "AUTH_JWT_PUBLIC_KEY_BASE64=${public_key_base64}" \
+    --env "AUTH_JWT_JWKS_JSON=${jwks_json}" \
     --health-interval 1s \
     --health-retries 5 \
     --health-start-period 1s \

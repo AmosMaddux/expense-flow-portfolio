@@ -1,16 +1,29 @@
-import { createVerify } from "node:crypto";
+import { createPublicKey, createVerify, type KeyObject } from "node:crypto";
 
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { z } from "zod";
 
-import type { AuthJwtConfig } from "../../config/authJwtConfig.js";
+import type { JsonWebKeySet } from "../../config/authJwtConfig.js";
 import { roleValues, type RoleName } from "../../db/schema/index.js";
 import { UnauthorizedError } from "../../errors/problem-json.js";
+
+const rsaPublicJwkSchema = z.object({
+    kty: z.literal("RSA"),
+    kid: z.string().trim().min(1),
+    use: z.literal("sig"),
+    alg: z.literal("RS256"),
+    n: z.string().min(1),
+    e: z.string().min(1),
+});
+
+const jwksSchema = z.object({
+    keys: z.array(rsaPublicJwkSchema).min(1),
+});
 
 const jwtHeaderSchema = z.object({
     alg: z.literal("RS256"),
     typ: z.literal("JWT"),
-    kid: z.string().min(1).optional(),
+    kid: z.string().trim().min(1),
 });
 
 const accessTokenClaimsSchema = z.object({
@@ -22,6 +35,11 @@ const accessTokenClaimsSchema = z.object({
     iat: z.number().int().nonnegative(),
     exp: z.number().int().positive(),
 });
+
+export type AccessTokenVerifierConfig = {
+    issuer: string;
+    publicKeysById: Map<string, KeyObject>;
+};
 
 export type AuthenticatedRequestContext = {
     userId: string;
@@ -36,10 +54,32 @@ declare module "express-serve-static-core" {
 }
 
 /**
+ * Builds a verifier configuration from a validated JSON Web Key Set.
+ */
+export function createAccessTokenVerifierConfig(
+    issuer: string,
+    jwks: JsonWebKeySet,
+): AccessTokenVerifierConfig {
+    const parsedJwks = jwksSchema.parse(jwks);
+    const publicKeysById = new Map<string, KeyObject>();
+    for (const publicJwk of parsedJwks.keys) {
+        if (publicKeysById.has(publicJwk.kid)) {
+            throw new Error("JWKS key IDs must be unique.");
+        }
+        publicKeysById.set(
+            publicJwk.kid,
+            createPublicKey({ key: publicJwk, format: "jwk" }),
+        );
+    }
+
+    return { issuer, publicKeysById };
+}
+
+/**
  * Validates shared RS256 access JWTs and attaches their trusted identity context.
  */
 export function createAccessTokenMiddleware(
-    config: AuthJwtConfig,
+    config: AccessTokenVerifierConfig,
 ): RequestHandler {
     return (req: Request, _res: Response, next: NextFunction): void => {
         try {
@@ -57,8 +97,23 @@ export function createAccessTokenMiddleware(
  */
 export function verifyAccessToken(
     token: string,
-    config: AuthJwtConfig,
+    config: AccessTokenVerifierConfig,
     now: Date = new Date(),
+): AuthenticatedRequestContext {
+    try {
+        return verifyAccessTokenUnchecked(token, config, now);
+    } catch (error) {
+        if (error instanceof UnauthorizedError) {
+            throw error;
+        }
+        throw new UnauthorizedError();
+    }
+}
+
+function verifyAccessTokenUnchecked(
+    token: string,
+    config: AccessTokenVerifierConfig,
+    now: Date,
 ): AuthenticatedRequestContext {
     const segments = token.split(".");
     if (segments.length !== 3) {
@@ -79,20 +134,16 @@ export function verifyAccessToken(
         throw new UnauthorizedError();
     }
 
-    const header = parsedHeader.data;
-    if (config.keyId !== undefined && header.kid !== config.keyId) {
+    const publicKey = config.publicKeysById.get(parsedHeader.data.kid);
+    if (publicKey === undefined) {
         throw new UnauthorizedError();
     }
 
     const signingInput = `${encodedHeader}.${encodedPayload}`;
-    if (config.publicKey === undefined) {
-        throw new UnauthorizedError();
-    }
-
     const signatureIsValid = createVerify("RSA-SHA256")
         .update(signingInput)
         .end()
-        .verify(config.publicKey, Buffer.from(encodedSignature, "base64url"));
+        .verify(publicKey, Buffer.from(encodedSignature, "base64url"));
     if (!signatureIsValid) {
         throw new UnauthorizedError();
     }

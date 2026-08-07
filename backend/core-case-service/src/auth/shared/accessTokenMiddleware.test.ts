@@ -1,16 +1,19 @@
+import { createHmac } from "node:crypto";
+
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, test, vi } from "vitest";
 
-import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
 import {
-    syntheticRsaPrivateKeyBase64,
-    syntheticRsaPublicKeyBase64,
-} from "../../testSupport/jwtTestKeys.js";
+    buildAuthJwks,
+    loadAuthJwtConfig,
+} from "../../config/authJwtConfig.js";
+import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 import { UnauthorizedError } from "../../errors/problem-json.js";
 import { signAccessToken } from "./accessTokenSigner.js";
 import { signRefreshToken } from "./refreshTokenSigner.js";
 import {
     createAccessTokenMiddleware,
+    createAccessTokenVerifierConfig,
     verifyAccessToken,
 } from "./accessTokenMiddleware.js";
 
@@ -22,10 +25,18 @@ function buildConfig() {
     return loadAuthJwtConfig({
         AUTH_JWT_ISSUER: "expenseflow-auth-test",
         AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
-        AUTH_JWT_PUBLIC_KEY_BASE64: syntheticRsaPublicKeyBase64,
         AUTH_JWT_KEY_ID: "synthetic-key-v1",
         AUTH_ACCESS_TOKEN_TTL_SECONDS: "600",
     });
+}
+
+function buildVerifierConfig() {
+    const config = buildConfig();
+
+    return createAccessTokenVerifierConfig(
+        config.issuer,
+        buildAuthJwks(config),
+    );
 }
 
 function buildAccessToken(): string {
@@ -40,7 +51,7 @@ void describe("shared access token validation", () => {
     void test("returns trusted identity and tenant claims for a valid token", () => {
         const context = verifyAccessToken(
             buildAccessToken(),
-            buildConfig(),
+            buildVerifierConfig(),
             new Date("2026-07-15T12:05:00.000Z"),
         );
 
@@ -61,7 +72,7 @@ void describe("shared access token validation", () => {
         expect(() =>
             verifyAccessToken(
                 `${header}.${changedPayload}.${signature}`,
-                buildConfig(),
+                buildVerifierConfig(),
                 issuedAt,
             ),
         ).toThrow(UnauthorizedError);
@@ -73,14 +84,83 @@ void describe("shared access token validation", () => {
         expect(() =>
             verifyAccessToken(
                 token,
-                buildConfig(),
+                buildVerifierConfig(),
                 new Date("2026-07-15T12:10:01.000Z"),
             ),
         ).toThrow(UnauthorizedError);
         expect(() =>
             verifyAccessToken(
                 token,
-                { ...buildConfig(), issuer: "another-issuer" },
+                { ...buildVerifierConfig(), issuer: "another-issuer" },
+                issuedAt,
+            ),
+        ).toThrow(UnauthorizedError);
+    });
+
+    void test("rejects tokens without a matching JWKS kid", () => {
+        const token = buildAccessToken();
+        const [, encodedPayload, encodedSignature] = token.split(".");
+        const missingKidHeader = encodeJson({ alg: "RS256", typ: "JWT" });
+        const missingKidToken = `${missingKidHeader}.${encodedPayload}.${encodedSignature}`;
+
+        expect(() =>
+            verifyAccessToken(missingKidToken, buildVerifierConfig(), issuedAt),
+        ).toThrow(UnauthorizedError);
+        expect(() =>
+            verifyAccessToken(
+                token,
+                createAccessTokenVerifierConfig("expenseflow-auth-test", {
+                    keys: [{ ...buildConfig().publicJwk, kid: "another-key" }],
+                }),
+                issuedAt,
+            ),
+        ).toThrow(UnauthorizedError);
+    });
+
+    void test("rejects HS256 tokens", () => {
+        const header = encodeJson({
+            alg: "HS256",
+            typ: "JWT",
+            kid: "synthetic-key-v1",
+        });
+        const payload = encodeJson({
+            iss: "expenseflow-auth-test",
+            sub: userId,
+            tenant_id: tenantId,
+            roles: ["Employee"],
+            token_use: "access",
+            iat: Math.floor(issuedAt.getTime() / 1000),
+            exp: Math.floor(issuedAt.getTime() / 1000) + 600,
+        });
+        const signingInput = `${header}.${payload}`;
+        const signature = createHmac("sha256", "synthetic-shared-secret")
+            .update(signingInput)
+            .digest("base64url");
+
+        expect(() =>
+            verifyAccessToken(
+                `${signingInput}.${signature}`,
+                buildVerifierConfig(),
+                issuedAt,
+            ),
+        ).toThrow(UnauthorizedError);
+    });
+
+    void test("rejects duplicate JWKS key IDs during verifier setup", () => {
+        const config = buildConfig();
+
+        expect(() =>
+            createAccessTokenVerifierConfig(config.issuer, {
+                keys: [config.publicJwk, { ...config.publicJwk }],
+            }),
+        ).toThrow("JWKS key IDs must be unique.");
+    });
+
+    void test("bounds malformed token data as unauthorized for direct verification", () => {
+        expect(() =>
+            verifyAccessToken(
+                "not-json.not-json.not-signature",
+                buildVerifierConfig(),
                 issuedAt,
             ),
         ).toThrow(UnauthorizedError);
@@ -102,7 +182,7 @@ void describe("shared access token validation", () => {
         expect(() =>
             verifyAccessToken(
                 refreshToken,
-                buildConfig(),
+                buildVerifierConfig(),
                 new Date("2026-07-15T12:05:00.000Z"),
             ),
         ).toThrow(UnauthorizedError);
@@ -120,7 +200,7 @@ void describe("shared access token validation", () => {
         } as Request;
         const next = vi.fn() as NextFunction;
 
-        createAccessTokenMiddleware(buildConfig())(
+        createAccessTokenMiddleware(buildVerifierConfig())(
             request,
             {} as Response,
             next,
@@ -138,7 +218,7 @@ void describe("shared access token validation", () => {
         const request = { headers: {} } as Request;
         const next = vi.fn() as NextFunction;
 
-        createAccessTokenMiddleware(buildConfig())(
+        createAccessTokenMiddleware(buildVerifierConfig())(
             request,
             {} as Response,
             next,
@@ -148,3 +228,7 @@ void describe("shared access token validation", () => {
         expect(next).toHaveBeenCalledWith(expect.any(UnauthorizedError));
     });
 });
+
+function encodeJson(value: unknown): string {
+    return Buffer.from(JSON.stringify(value)).toString("base64url");
+}

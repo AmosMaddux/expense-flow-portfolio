@@ -17,7 +17,10 @@ import {
 } from "vitest";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
-import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
+import {
+    buildAuthJwks,
+    loadAuthJwtConfig,
+} from "../../config/authJwtConfig.js";
 import {
     auditEntry,
     expenseReport,
@@ -28,10 +31,7 @@ import {
     type RoleName,
 } from "../../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
-import {
-    syntheticRsaPrivateKeyBase64,
-    syntheticRsaPublicKeyBase64,
-} from "../../testSupport/jwtTestKeys.js";
+import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
 const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
 
@@ -151,7 +151,8 @@ void describe("Expense Report submission across Core Case and GL-coding services
         process.env.GL_CODING_SERVICE_BASE_URL = glCodingBaseUrl;
         process.env.CORE_CASE_RATE_LIMIT_REQUESTS = "20";
         process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
-        process.env.AUTH_JWT_PUBLIC_KEY_BASE64 = syntheticRsaPublicKeyBase64;
+        process.env.AUTH_JWT_KEY_ID = "synthetic-vitest-key";
+        const authJwksJson = JSON.stringify(buildAuthJwks(loadAuthJwtConfig()));
 
         fastApiProcess = spawn(
             "uv",
@@ -168,9 +169,7 @@ void describe("Expense Report submission across Core Case and GL-coding services
                 cwd: repositoryRoot,
                 env: {
                     ...process.env,
-                    AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
-                    AUTH_JWT_PUBLIC_KEY_BASE64: syntheticRsaPublicKeyBase64,
-                    AUTH_JWT_KEY_ID: "synthetic-vitest-key",
+                    AUTH_JWT_JWKS_JSON: authJwksJson,
                     DATABASE_URL: getCoreCaseTestDatabaseUrl(),
                     MILEAGE_REIMBURSEMENT_RATE: "0.70",
                 },

@@ -16,10 +16,7 @@ import { signAccessToken } from "../auth/shared/accessTokenSigner.js";
 import { loadAuthJwtConfig } from "../config/authJwtConfig.js";
 import { NotFoundError } from "../errors/problem-json.js";
 import type { RoleName } from "../db/schema/index.js";
-import {
-    syntheticRsaPrivateKeyBase64,
-    syntheticRsaPublicKeyBase64,
-} from "../testSupport/jwtTestKeys.js";
+import { syntheticRsaPrivateKeyBase64 } from "../testSupport/jwtTestKeys.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
 import {
     readGlMappingReference,
@@ -93,7 +90,6 @@ void describe("GL Mapping routes", () => {
     beforeAll(async () => {
         process.env.DATABASE_URL = getCoreCaseTestDatabaseUrl();
         process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
-        process.env.AUTH_JWT_PUBLIC_KEY_BASE64 = syntheticRsaPublicKeyBase64;
         process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
         process.env.CORE_CASE_RATE_LIMIT_REQUESTS = "100";
         process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(

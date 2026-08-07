@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="${1:-"${root_dir}/.env"}"
+key_id="${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}"
 private_key_file="$(mktemp)"
 public_key_file="$(mktemp)"
 
@@ -48,7 +49,36 @@ openssl rsa \
     -out "${public_key_file}" >/dev/null 2>&1
 
 private_key_base64="$(base64 < "${private_key_file}" | tr -d '\n')"
-public_key_base64="$(base64 < "${public_key_file}" | tr -d '\n')"
+jwks_json="$({
+    AUTH_JWT_KEY_ID="${key_id}" PUBLIC_KEY_FILE="${public_key_file}" node --input-type=module <<'NODE'
+import { createPublicKey } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+const keyId = process.env.AUTH_JWT_KEY_ID;
+const publicKeyFile = process.env.PUBLIC_KEY_FILE;
+if (keyId === undefined || publicKeyFile === undefined) {
+    throw new Error("JWT key ID and public key file are required.");
+}
+
+const jwk = createPublicKey(readFileSync(publicKeyFile, "utf8")).export({
+    format: "jwk",
+});
+process.stdout.write(
+    JSON.stringify({
+        keys: [
+            {
+                kty: "RSA",
+                kid: keyId,
+                use: "sig",
+                alg: "RS256",
+                n: jwk.n,
+                e: jwk.e,
+            },
+        ],
+    }),
+);
+NODE
+})"
 
 set_env_value() {
     local name="$1"
@@ -66,7 +96,18 @@ set_env_value() {
     fi
 }
 
-set_env_value "AUTH_JWT_PRIVATE_KEY_BASE64" "${private_key_base64}"
-set_env_value "AUTH_JWT_PUBLIC_KEY_BASE64" "${public_key_base64}"
+remove_env_value() {
+    local name="$1"
 
-echo "Generated local JWT keypair in ${env_file}."
+    if grep -q "^${name}=" "${env_file}"; then
+        sed -i.bak "/^${name}=.*/d" "${env_file}"
+        rm -f "${env_file}.bak"
+    fi
+}
+
+set_env_value "AUTH_JWT_PRIVATE_KEY_BASE64" "${private_key_base64}"
+set_env_value "AUTH_JWT_KEY_ID" "${key_id}"
+set_env_value "AUTH_JWT_JWKS_JSON" "${jwks_json}"
+remove_env_value "AUTH_JWT_PUBLIC_KEY_BASE64"
+
+echo "Generated local JWT keypair and JWKS in ${env_file}."

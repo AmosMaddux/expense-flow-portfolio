@@ -15,9 +15,15 @@ import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import { TinEinValidationServiceError } from "../../tinEin/tinEinValidationErrors.js";
 
 import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
-import { verifyAccessToken } from "../../auth/shared/accessTokenMiddleware.js";
+import {
+    createAccessTokenVerifierConfig,
+    verifyAccessToken,
+} from "../../auth/shared/accessTokenMiddleware.js";
 import { signRefreshToken } from "../../auth/shared/refreshTokenSigner.js";
-import { loadAuthJwtConfig } from "../../config/authJwtConfig.js";
+import {
+    buildAuthJwks,
+    loadAuthJwtConfig,
+} from "../../config/authJwtConfig.js";
 import { readCaseQueueStageRollups } from "../../db/queries/caseQueueRollups.js";
 import {
     attachmentMetadata,
@@ -1315,9 +1321,13 @@ void describe("Expense Report routes", () => {
         expect(glRequest.mileage).toHaveLength(1);
         expect(glOptions.accessToken).toBeDefined();
 
+        const authJwtConfig = loadAuthJwtConfig();
         const outboundAuth = verifyAccessToken(
             glOptions.accessToken ?? "",
-            loadAuthJwtConfig(),
+            createAccessTokenVerifierConfig(
+                authJwtConfig.issuer,
+                buildAuthJwks(authJwtConfig),
+            ),
         );
         expect(outboundAuth).toEqual({
             tenantId,
