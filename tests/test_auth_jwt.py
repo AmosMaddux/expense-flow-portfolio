@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import re
@@ -364,6 +365,39 @@ def test_auth_verifier_rejects_removed_key_after_jwks_cache_ttl(
 
     assert str(old_identity.user_id) == USER_ID
     assert error.value.status_code == 401
+
+
+def test_auth_verifier_coalesces_concurrent_stale_jwks_refreshes(
+    generated_jwt_environment: dict[str, str],
+    node_build: None,
+) -> None:
+    token = mint_node_access_token(generated_jwt_environment, ttl_seconds=300)
+
+    with serve_jwks(generated_jwt_environment["AUTH_JWT_JWKS_JSON"]) as server:
+        verifier = AuthJwtVerifier.from_environment(
+            {
+                "AUTH_JWT_ISSUER": AUTH_JWT_ISSUER,
+                "AUTH_JWT_JWKS_URL": server.url,
+                "AUTH_JWT_JWKS_CACHE_TTL_SECONDS": "300",
+            }
+        )
+        verifier._next_jwks_refresh_at = 0.0
+        startup_request_count = server.request_count
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            identities = list(
+                executor.map(
+                    lambda _: anyio.run(
+                        require_authenticated_identity,
+                        make_request(f"Bearer {token}"),
+                        verifier,
+                    ),
+                    range(4),
+                )
+            )
+
+    assert [str(identity.user_id) for identity in identities] == [USER_ID] * 4
+    assert server.request_count == startup_request_count + 1
 
 
 def test_auth_verifier_retries_jwks_url_at_startup(

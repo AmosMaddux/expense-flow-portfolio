@@ -202,6 +202,9 @@ class AuthJwtVerifier:
             raise unauthorized()
 
         with self._refresh_lock:
+            if time.monotonic() < self._next_jwks_refresh_at:
+                return
+
             self._refresh_public_keys_unlocked()
 
     def _refresh_public_keys_unlocked(self) -> None:
