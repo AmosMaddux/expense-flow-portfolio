@@ -7,7 +7,9 @@ const authJwtEnvironmentSchema = z.object({
         .string()
         .trim()
         .min(1)
-        .default("expenseflow-core-case-service"),
+        .default("expenseflow-core-case-service")
+        .transform((issuer) => issuer.replace(/\/+$/, "")),
+    AUTH_JWT_AUDIENCE: z.string().trim().min(1).default("expenseflow-http-api"),
     AUTH_JWT_PRIVATE_KEY_BASE64: z.string().min(1),
     AUTH_JWT_KEY_ID: z.string().trim().min(1),
     AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
@@ -30,8 +32,14 @@ export type JsonWebKeySet = {
     keys: RsaPublicJwk[];
 };
 
+export type OpenIdConfiguration = {
+    issuer: string;
+    jwks_uri: string;
+};
+
 export type JwtSigningConfig = {
     issuer: string;
+    audience: string;
     privateKey: KeyObject;
     keyId: string;
 };
@@ -61,6 +69,7 @@ export function loadAuthJwtConfig(
 
     return {
         issuer: parsedEnvironment.AUTH_JWT_ISSUER,
+        audience: parsedEnvironment.AUTH_JWT_AUDIENCE,
         privateKey,
         publicJwk,
         keyId: parsedEnvironment.AUTH_JWT_KEY_ID,
@@ -73,6 +82,32 @@ export function loadAuthJwtConfig(
  */
 export function buildAuthJwks(config: AuthJwtConfig): JsonWebKeySet {
     return { keys: [config.publicJwk] };
+}
+
+/**
+ * Returns the issuer metadata API Gateway uses to discover the shared JWKS.
+ */
+export function buildAuthOpenIdConfiguration(
+    config: AuthJwtConfig,
+): OpenIdConfiguration {
+    let issuer: URL;
+    try {
+        issuer = new URL(config.issuer);
+    } catch (error) {
+        throw new Error(
+            "AUTH_JWT_ISSUER must be an absolute HTTPS URL for OIDC discovery.",
+            { cause: error },
+        );
+    }
+    if (issuer.protocol !== "https:") {
+        throw new Error("AUTH_JWT_ISSUER must use HTTPS for OIDC discovery.");
+    }
+
+    const issuerUrl = config.issuer;
+    return {
+        issuer: issuerUrl,
+        jwks_uri: `${issuerUrl}/.well-known/jwks.json`,
+    };
 }
 
 function derivePublicKey(privateKey: KeyObject): KeyObject {

@@ -1326,6 +1326,7 @@ void describe("Expense Report routes", () => {
             glOptions.accessToken ?? "",
             createAccessTokenVerifierConfig(
                 authJwtConfig.issuer,
+                authJwtConfig.audience,
                 buildAuthJwks(authJwtConfig),
             ),
         );

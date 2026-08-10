@@ -1,0 +1,8 @@
+version = 0.1
+
+[sandbox.deploy.parameters]
+stack_name = "expenseflow-http-api-sandbox"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh JwtIssuer=https://core-api.example.invalid/v1 JwtAudience=expenseflow-http-api StageName=v1"

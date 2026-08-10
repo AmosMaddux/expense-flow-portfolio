@@ -54,6 +54,8 @@ async function closeActiveServer(): Promise<void> {
 void describe("app", () => {
     beforeAll(async () => {
         process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
+        process.env.AUTH_JWT_ISSUER =
+            "https://auth.expenseflow.example.test/v1";
         process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
         process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(
             32,
@@ -160,6 +162,19 @@ void describe("app", () => {
         expect(JSON.stringify(body)).not.toContain(
             syntheticRsaPrivateKeyBase64,
         );
+    });
+
+    void test("publishes OIDC metadata for API Gateway JWKS discovery", async () => {
+        const response = await requestApp(
+            "/v1/.well-known/openid-configuration",
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({
+            issuer: "https://auth.expenseflow.example.test/v1",
+            jwks_uri:
+                "https://auth.expenseflow.example.test/v1/.well-known/jwks.json",
+        });
     });
 
     void test("serves Scalar documentation for the OpenAPI document", async () => {

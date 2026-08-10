@@ -18,6 +18,10 @@ const coreCaseIntegrationTestGlob = `${coreCaseSourceRoot}**/*.integration.test.
 const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
 const frontendSourceRoot = new URL("./frontend/app/src/", import.meta.url)
     .pathname;
+const platformHttpApiSourceRoot = new URL(
+    "./platform/http-api/src/",
+    import.meta.url,
+).pathname;
 const testEnvironment = {
     AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",
@@ -71,6 +75,13 @@ const frontendProject = {
         testTimeout: 10_000,
     },
 };
+const platformHttpApiProject = {
+    test: {
+        name: "platform-http-api",
+        include: [`${platformHttpApiSourceRoot}**/*.test.ts`],
+        root: repositoryRoot,
+    },
+};
 
 export default defineConfig({
     test: {
@@ -104,6 +115,7 @@ export default defineConfig({
                 ? [coreCaseIntegrationProject]
                 : []),
             frontendProject,
+            platformHttpApiProject,
         ],
     },
 });

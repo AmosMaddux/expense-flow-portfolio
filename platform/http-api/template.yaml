@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ExpenseFlow HTTP API with the shared native JWT authorizer.
+
+Parameters:
+    EnvironmentTag:
+        Type: String
+        Default: sandbox
+        AllowedValues:
+            - sandbox
+    UserTag:
+        Type: String
+        Default: muhilramesh
+        AllowedValues:
+            - muhilramesh
+    JwtIssuer:
+        Type: String
+        Description: HTTPS issuer URL that publishes OIDC metadata and the shared JWKS.
+        AllowedPattern: "^https://.+$"
+    JwtAudience:
+        Type: String
+        Default: expenseflow-http-api
+        MinLength: 1
+    StageName:
+        Type: String
+        Default: v1
+        AllowedPattern: "^[a-zA-Z0-9_-]+$"
+
+Resources:
+    SharedJwtHttpApi:
+        Type: AWS::Serverless::HttpApi
+        Properties:
+            Description: ExpenseFlow serverless endpoints protected by the shared access token.
+            FailOnWarnings: true
+            PropagateTags: true
+            StageName: !Ref StageName
+            Auth:
+                DefaultAuthorizer: SharedJwtAuthorizer
+                Authorizers:
+                    SharedJwtAuthorizer:
+                        IdentitySource: $request.header.Authorization
+                        JwtConfiguration:
+                            issuer: !Ref JwtIssuer
+                            audience:
+                                - !Ref JwtAudience
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+
+    ClaimsProbeFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: Confirms verified JWT tenant and role claims reach protected Lambdas.
+            Architectures:
+                - arm64
+            CodeUri: .
+            Handler: src/claimsProbe.handler
+            MemorySize: 128
+            Runtime: nodejs24.x
+            Timeout: 5
+            PropagateTags: true
+            Events:
+                ProtectedClaimsProbe:
+                    Type: HttpApi
+                    Properties:
+                        ApiId: !Ref SharedJwtHttpApi
+                        Method: GET
+                        Path: /auth-context
+                        PayloadFormatVersion: "2.0"
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+        Metadata:
+            BuildMethod: esbuild
+            BuildProperties:
+                Bundle: true
+                EntryPoints:
+                    - src/claimsProbe.ts
+                Minify: true
+                Sourcemap: false
+                Target: node24
+
+Outputs:
+    HttpApiId:
+        Description: API Gateway HTTP API identifier.
+        Value: !Ref SharedJwtHttpApi
+    ProtectedClaimsProbeUrl:
+        Description: Protected route used by the JWT gateway smoke test.
+        Value: !Sub https://${SharedJwtHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/auth-context
