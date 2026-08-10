@@ -23,6 +23,7 @@ RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 CORE_CASE_RUNTIME_POLICY_NAME="${CORE_CASE_RUNTIME_POLICY_NAME:-expenseflow-sandbox-scrum-147-core-case-runtime}"
+CORE_CASE_RUNTIME_SMOKE_SECRET_NAME="${CORE_CASE_RUNTIME_SMOKE_SECRET_NAME:-expenseflow/sandbox/core-case/runtime-smoke-shared-secret}"
 SMOKE_PATH="${SMOKE_PATH:-/v1/openapi.json}"
 CORE_CASE_GL_CODING_SMOKE_PATH="${CORE_CASE_GL_CODING_SMOKE_PATH:-/v1/runtime-smoke/gl-coding}"
 INTERNAL_GL_CODING_SMOKE_TASK_FAMILY="${INTERNAL_GL_CODING_SMOKE_TASK_FAMILY:-expenseflow-internal-gl-coding-alb-smoke}"
@@ -81,6 +82,13 @@ security_group_id() {
 
 iam_role_arn() {
     aws_cli iam get-role --role-name "$1" --query 'Role.Arn' --output text
+}
+
+secret_value() {
+    aws_cli secretsmanager get-secret-value \
+        --secret-id "$1" \
+        --query SecretString \
+        --output text
 }
 
 require_non_empty() {
@@ -353,14 +361,15 @@ run_alb_smoke() {
 }
 
 run_core_case_gl_coding_smoke() {
-    local alb_dns_name smoke_url response_file status_code
+    local alb_dns_name smoke_url response_file runtime_smoke_token status_code
 
     alb_dns_name="$(load_balancer_dns_name "$ALB_NAME")"
     smoke_url="http://$alb_dns_name$CORE_CASE_GL_CODING_SMOKE_PATH"
     response_file="$(mktemp)"
+    runtime_smoke_token="$(secret_value "$CORE_CASE_RUNTIME_SMOKE_SECRET_NAME")"
 
     echo "Calling Core Case to GL-coding smoke endpoint: $smoke_url"
-    status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' "$smoke_url")"
+    status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' --header "x-runtime-smoke-token: $runtime_smoke_token" "$smoke_url")"
 
     if [[ "$status_code" != "200" ]]; then
         echo "Core Case to GL-coding smoke failed with HTTP $status_code." >&2

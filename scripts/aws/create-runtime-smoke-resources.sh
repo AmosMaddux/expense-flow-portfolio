@@ -468,6 +468,7 @@ put_secret() {
 create_jwt_secret_values() {
     local temp_dir private_key public_key
     temp_dir="$(mktemp -d)"
+    trap 'rm -rf "$temp_dir"; trap - RETURN' RETURN
     private_key="$temp_dir/scrum-147-private.pem"
     public_key="$temp_dir/scrum-147-public.pem"
 
@@ -488,8 +489,7 @@ process.stdout.write(JSON.stringify({ keys: [jwk] }));
 "
     )"
     MFA_TOTP_SECRET_ENCRYPTION_KEY="$(openssl rand -base64 32)"
-
-    rm -rf "$temp_dir"
+    RUNTIME_SMOKE_SHARED_SECRET="$(openssl rand -base64 32)"
 }
 
 write_execution_role_secret_policy() {
@@ -611,6 +611,7 @@ main() {
     core_db_arn="$(put_secret expenseflow/sandbox/core-case/database-url "$CORE_CASE_DATABASE_URL")"
     core_private_key_arn="$(put_secret expenseflow/sandbox/core-case/auth-jwt-private-key-base64 "$JWT_PRIVATE_KEY_BASE64")"
     core_mfa_key_arn="$(put_secret expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key "$MFA_TOTP_SECRET_ENCRYPTION_KEY")"
+    core_runtime_smoke_secret_arn="$(put_secret expenseflow/sandbox/core-case/runtime-smoke-shared-secret "$RUNTIME_SMOKE_SHARED_SECRET")"
     core_tin_username_arn="$(put_secret expenseflow/sandbox/core-case/tin-ein-validation-username synthetic-tin-ein-user)"
     core_tin_password_arn="$(put_secret expenseflow/sandbox/core-case/tin-ein-validation-password synthetic-tin-ein-password)"
     gl_db_arn="$(put_secret expenseflow/sandbox/gl-coding/database-url "$GL_CODING_DATABASE_URL")"
@@ -626,7 +627,7 @@ main() {
         --policy-arn "$(aws_arn_prefix):iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 
     policy_file="$(mktemp)"
-    write_execution_role_secret_policy "$policy_file" "$core_db_arn,$core_private_key_arn,$core_mfa_key_arn,$core_tin_username_arn,$core_tin_password_arn,$gl_db_arn,$gl_public_keys_arn"
+    write_execution_role_secret_policy "$policy_file" "$core_db_arn,$core_private_key_arn,$core_mfa_key_arn,$core_runtime_smoke_secret_arn,$core_tin_username_arn,$core_tin_password_arn,$gl_db_arn,$gl_public_keys_arn"
     aws_cli iam put-role-policy \
         --role-name "$EXECUTION_ROLE_NAME" \
         --policy-name expenseflow-sandbox-scrum-147-secrets-read \

@@ -110,6 +110,7 @@ fs.writeFileSync(target, rendered);
 export AWS_REGION
 export AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
 export MFA_TOTP_SECRET_KEY_VERSION="${MFA_TOTP_SECRET_KEY_VERSION:-scrum-147-synthetic-v1}"
+export RUNTIME_SMOKE_GL_CODING_ENABLED="${RUNTIME_SMOKE_GL_CODING_ENABLED:-false}"
 export GL_CODING_SERVICE_BASE_URL="${GL_CODING_SERVICE_BASE_URL:-}"
 export DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 export DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
@@ -133,6 +134,7 @@ if [[ "$VALIDATE_RENDER_ONLY" == "true" ]]; then
     CORE_CASE_DATABASE_URL_SECRET_ARN="${CORE_CASE_DATABASE_URL_SECRET_ARN:-synthetic-core-case-db-secret-ref}"
     CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN="${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN:-synthetic-core-case-private-key-secret-ref}"
     CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-synthetic-core-case-mfa-key-secret-ref}"
+    CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN="${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN:-synthetic-core-case-runtime-smoke-secret-ref}"
     CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN:-synthetic-tin-user-secret-ref}"
     CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN:-synthetic-tin-password-secret-ref}"
     GL_CODING_DATABASE_URL_SECRET_ARN="${GL_CODING_DATABASE_URL_SECRET_ARN:-synthetic-gl-coding-db-secret-ref}"
@@ -140,6 +142,7 @@ if [[ "$VALIDATE_RENDER_ONLY" == "true" ]]; then
     export CORE_CASE_DATABASE_URL_SECRET_ARN
     export CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN
     export CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN
+    export CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN
     export CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN
     export CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN
     export GL_CODING_DATABASE_URL_SECRET_ARN
@@ -168,6 +171,7 @@ if [[ "$VALIDATE_RENDER_ONLY" != "true" ]]; then
     export CORE_CASE_DATABASE_URL_SECRET_ARN="${CORE_CASE_DATABASE_URL_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/database-url)}"
     export CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN="${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/auth-jwt-private-key-base64)}"
     export CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key)}"
+    export CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN="${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/runtime-smoke-shared-secret)}"
     export CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/tin-ein-validation-username)}"
     export CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/tin-ein-validation-password)}"
     export GL_CODING_DATABASE_URL_SECRET_ARN="${GL_CODING_DATABASE_URL_SECRET_ARN:-$(secret_arn expenseflow/sandbox/gl-coding/database-url)}"

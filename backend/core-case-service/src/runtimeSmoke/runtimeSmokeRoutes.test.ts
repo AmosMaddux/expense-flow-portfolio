@@ -7,12 +7,17 @@ import { problemJsonErrorHandler } from "../errors/problem-json.js";
 import {
     createRuntimeSmokeRouter,
     isGlCodingRuntimeSmokeEnabled,
+    loadRuntimeSmokeConfig,
 } from "./runtimeSmokeRoutes.js";
 
 const realFetch = globalThis.fetch;
+const runtimeSmokeSecret = "synthetic-runtime-smoke-secret-value";
 let activeServer: Server | undefined;
 
-async function requestRuntimeSmoke(path: string): Promise<Response> {
+async function requestRuntimeSmoke(
+    path: string,
+    init?: RequestInit,
+): Promise<Response> {
     const app = express();
     app.use("/v1/runtime-smoke", createRuntimeSmokeRouter());
     app.use(problemJsonErrorHandler);
@@ -31,7 +36,7 @@ async function requestRuntimeSmoke(path: string): Promise<Response> {
         throw new Error("Expected test server to listen on a TCP port.");
     }
 
-    return realFetch(`http://127.0.0.1:${address.port}${path}`);
+    return realFetch(`http://127.0.0.1:${address.port}${path}`, init);
 }
 
 async function closeActiveServer(): Promise<void> {
@@ -57,6 +62,8 @@ async function closeActiveServer(): Promise<void> {
 void describe("runtime smoke routes", () => {
     afterEach(async () => {
         vi.unstubAllGlobals();
+        delete process.env.RUNTIME_SMOKE_GL_CODING_ENABLED;
+        delete process.env.RUNTIME_SMOKE_SHARED_SECRET;
         await closeActiveServer();
     });
 
@@ -65,11 +72,45 @@ void describe("runtime smoke routes", () => {
         expect(
             isGlCodingRuntimeSmokeEnabled({
                 RUNTIME_SMOKE_GL_CODING_ENABLED: "true",
+                RUNTIME_SMOKE_SHARED_SECRET: runtimeSmokeSecret,
             }),
         ).toBe(true);
     });
 
+    void test("requires a shared secret when GL-coding runtime smoke is enabled", () => {
+        expect(() =>
+            loadRuntimeSmokeConfig({
+                RUNTIME_SMOKE_GL_CODING_ENABLED: "true",
+            }),
+        ).toThrow(
+            "RUNTIME_SMOKE_SHARED_SECRET is required when GL-coding runtime smoke is enabled.",
+        );
+    });
+
+    void test("rejects GL-coding smoke requests without the shared token", async () => {
+        process.env.RUNTIME_SMOKE_GL_CODING_ENABLED = "true";
+        process.env.RUNTIME_SMOKE_SHARED_SECRET = runtimeSmokeSecret;
+        const fetchMock = vi.fn<typeof fetch>();
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await requestRuntimeSmoke(
+            "/v1/runtime-smoke/gl-coding",
+        );
+        const body: unknown = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(body).toMatchObject({
+            type: "about:blank",
+            title: "Unauthorized",
+            status: 401,
+            detail: "A valid runtime smoke token is required.",
+        });
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     void test("calls GL-coding health through the configured Core Case client URL", async () => {
+        process.env.RUNTIME_SMOKE_GL_CODING_ENABLED = "true";
+        process.env.RUNTIME_SMOKE_SHARED_SECRET = runtimeSmokeSecret;
         const fetchMock = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 Response.json({
@@ -82,6 +123,11 @@ void describe("runtime smoke routes", () => {
 
         const response = await requestRuntimeSmoke(
             "/v1/runtime-smoke/gl-coding",
+            {
+                headers: {
+                    "x-runtime-smoke-token": runtimeSmokeSecret,
+                },
+            },
         );
         const body: unknown = await response.json();
 
@@ -99,6 +145,8 @@ void describe("runtime smoke routes", () => {
     });
 
     void test("returns a bad gateway problem when GL-coding cannot be reached", async () => {
+        process.env.RUNTIME_SMOKE_GL_CODING_ENABLED = "true";
+        process.env.RUNTIME_SMOKE_SHARED_SECRET = runtimeSmokeSecret;
         vi.stubGlobal(
             "fetch",
             vi.fn<typeof fetch>(() =>
@@ -108,6 +156,11 @@ void describe("runtime smoke routes", () => {
 
         const response = await requestRuntimeSmoke(
             "/v1/runtime-smoke/gl-coding",
+            {
+                headers: {
+                    "x-runtime-smoke-token": runtimeSmokeSecret,
+                },
+            },
         );
         const body: unknown = await response.json();
 

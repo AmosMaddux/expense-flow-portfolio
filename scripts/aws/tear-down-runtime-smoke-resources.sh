@@ -4,7 +4,6 @@ set -euo pipefail
 EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 CONFIRM_RESOURCE_TEARDOWN="${CONFIRM_RESOURCE_TEARDOWN:-}"
 
 VPC_ID="${VPC_ID:-}"
@@ -39,14 +38,15 @@ SECRET_NAMES=(
     expenseflow/sandbox/core-case/database-url
     expenseflow/sandbox/core-case/auth-jwt-private-key-base64
     expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key
+    expenseflow/sandbox/core-case/runtime-smoke-shared-secret
     expenseflow/sandbox/core-case/tin-ein-validation-username
     expenseflow/sandbox/core-case/tin-ein-validation-password
     expenseflow/sandbox/gl-coding/database-url
     expenseflow/sandbox/gl-coding/auth-jwt-public-keys-json
 )
 
-if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
-    echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
+if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" ]]; then
+    echo "Refusing to run destructive teardown with AWS_PROFILE=$AWS_PROFILE. Use the dedicated $EXPECTED_PROFILE sandbox profile." >&2
     exit 1
 fi
 
@@ -67,6 +67,50 @@ require_non_empty() {
         echo "$variable_name must be supplied explicitly before tearing down ECS sandbox resources." >&2
         return 1
     fi
+}
+
+require_sandbox_tag_query() {
+    local label="$1"
+    shift
+    local is_sandbox_resource
+
+    is_sandbox_resource="$(aws_cli "$@" --output text)"
+    if [[ "$is_sandbox_resource" != "True" ]]; then
+        echo "Refusing to delete $label because it does not have the expected sandbox ownership tags." >&2
+        return 1
+    fi
+}
+
+require_named_resource_tags() {
+    local label="$1"
+    shift
+
+    require_sandbox_tag_query "$label" "$@" \
+        --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && (contains(Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
+}
+
+require_elbv2_resource_tags() {
+    local label="$1"
+    local resource_arn="$2"
+
+    require_sandbox_tag_query "$label" elbv2 describe-tags \
+        --resource-arns "$resource_arn" \
+        --query "contains(TagDescriptions[0].Tags[?Key=='user'].Value, 'amos-maddux') && contains(TagDescriptions[0].Tags[?Key=='env'].Value, 'sandbox') && (contains(TagDescriptions[0].Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(TagDescriptions[0].Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
+}
+
+require_security_group_tags() {
+    local group_id="$1"
+
+    require_sandbox_tag_query "security group $group_id" ec2 describe-security-groups \
+        --group-ids "$group_id" \
+        --query "contains(SecurityGroups[0].Tags[?Key=='user'].Value, 'amos-maddux') && contains(SecurityGroups[0].Tags[?Key=='env'].Value, 'sandbox') && (contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
+}
+
+require_cluster_tags() {
+    require_sandbox_tag_query "ECS cluster $CLUSTER_NAME" ecs describe-clusters \
+        --clusters "$CLUSTER_NAME" \
+        --include TAGS \
+        --query "contains(clusters[0].tags[?key=='user'].value, 'amos-maddux') && contains(clusters[0].tags[?key=='env'].value, 'sandbox') && (contains(clusters[0].tags[?key=='ticket'].value, 'SCRUM-147') || contains(clusters[0].tags[?key=='ticket'].value, 'SCRUM-148'))"
 }
 
 stop_cluster_tasks() {
@@ -96,17 +140,21 @@ stop_cluster_tasks() {
 
 delete_service() {
     local service_name="$1"
-    local service_status
+    local service_arn service_status
 
-    service_status="$(aws_cli ecs describe-services \
+    read -r service_status service_arn < <(aws_cli ecs describe-services \
         --cluster "$CLUSTER_NAME" \
         --services "$service_name" \
-        --query 'services[0].status' \
-        --output text 2>/dev/null || true)"
+        --query 'services[0].[status,serviceArn]' \
+        --output text 2>/dev/null || true) || true
 
     if [[ -z "$service_status" || "$service_status" == "None" || "$service_status" == "INACTIVE" ]]; then
         return 0
     fi
+
+    require_sandbox_tag_query "ECS service $service_name" ecs list-tags-for-resource \
+        --resource-arn "$service_arn" \
+        --query "contains(tags[?key=='user'].value, 'amos-maddux') && contains(tags[?key=='env'].value, 'sandbox') && (contains(tags[?key=='ticket'].value, 'SCRUM-147') || contains(tags[?key=='ticket'].value, 'SCRUM-148'))"
 
     aws_cli ecs update-service \
         --cluster "$CLUSTER_NAME" \
@@ -145,6 +193,7 @@ delete_load_balancer_stack() {
 
     alb_arn="$(load_balancer_arn "$load_balancer_name")"
     if [[ -n "$alb_arn" && "$alb_arn" != "None" ]]; then
+        require_elbv2_resource_tags "load balancer $load_balancer_name" "$alb_arn"
         listener_arns="$(aws_cli elbv2 describe-listeners \
             --load-balancer-arn "$alb_arn" \
             --query 'Listeners[].ListenerArn' \
@@ -168,6 +217,7 @@ delete_load_balancer_stack() {
     for target_group in "${target_groups[@]}"; do
         target_group_arn_value="$(target_group_arn "$target_group")"
         if [[ -n "$target_group_arn_value" && "$target_group_arn_value" != "None" ]]; then
+            require_elbv2_resource_tags "target group $target_group" "$target_group_arn_value"
             aws_cli elbv2 delete-target-group --target-group-arn "$target_group_arn_value" >/dev/null 2>&1 || true
         fi
     done
@@ -184,6 +234,9 @@ deregister_task_definition_family() {
         --output text 2>/dev/null || true)"
 
     for task_definition_arn in $active_task_definitions; do
+        require_sandbox_tag_query "task definition $task_definition_arn" ecs list-tags-for-resource \
+            --resource-arn "$task_definition_arn" \
+            --query "contains(tags[?key=='user'].value, 'amos-maddux') && contains(tags[?key=='env'].value, 'sandbox') && (contains(tags[?key=='ticket'].value, 'SCRUM-147') || contains(tags[?key=='ticket'].value, 'SCRUM-148'))"
         aws_cli ecs deregister-task-definition \
             --task-definition "$task_definition_arn" >/dev/null || true
     done
@@ -197,6 +250,11 @@ deregister_task_definition_family() {
         --output text 2>/dev/null || true)"
 
     if [[ -n "$inactive_task_definitions" && "$inactive_task_definitions" != "None" ]]; then
+        for task_definition_arn in $inactive_task_definitions; do
+            require_sandbox_tag_query "task definition $task_definition_arn" ecs list-tags-for-resource \
+                --resource-arn "$task_definition_arn" \
+                --query "contains(tags[?key=='user'].value, 'amos-maddux') && contains(tags[?key=='env'].value, 'sandbox') && (contains(tags[?key=='ticket'].value, 'SCRUM-147') || contains(tags[?key=='ticket'].value, 'SCRUM-148'))"
+        done
         aws_cli ecs delete-task-definitions \
             --task-definitions $inactive_task_definitions >/dev/null 2>&1 || true
     fi
@@ -204,6 +262,20 @@ deregister_task_definition_family() {
 
 delete_repository() {
     local repository_name="$1"
+    local repository_arn
+
+    repository_arn="$(aws_cli ecr describe-repositories \
+        --repository-names "$repository_name" \
+        --query 'repositories[0].repositoryArn' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$repository_arn" || "$repository_arn" == "None" ]]; then
+        return 0
+    fi
+
+    require_sandbox_tag_query "ECR repository $repository_name" ecr list-tags-for-resource \
+        --resource-arn "$repository_arn" \
+        --query "contains(tags[?Key=='user'].Value, 'amos-maddux') && contains(tags[?Key=='env'].Value, 'sandbox') && (contains(tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(tags[?Key=='ticket'].Value, 'SCRUM-148'))"
 
     aws_cli ecr delete-repository \
         --repository-name "$repository_name" \
@@ -213,6 +285,12 @@ delete_repository() {
 delete_secret() {
     local secret_name="$1"
 
+    if ! aws_cli secretsmanager describe-secret --secret-id "$secret_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    require_named_resource_tags "secret $secret_name" secretsmanager describe-secret --secret-id "$secret_name"
+
     aws_cli secretsmanager delete-secret \
         --secret-id "$secret_name" \
         --force-delete-without-recovery >/dev/null 2>&1 || true
@@ -220,6 +298,20 @@ delete_secret() {
 
 delete_log_group() {
     local log_group_name="$1"
+    local log_group_arn
+
+    log_group_arn="$(aws_cli logs describe-log-groups \
+        --log-group-name-prefix "$log_group_name" \
+        --query "logGroups[?logGroupName=='$log_group_name'] | [0].logGroupName" \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$log_group_arn" || "$log_group_arn" == "None" ]]; then
+        return 0
+    fi
+
+    require_sandbox_tag_query "log group $log_group_name" logs list-tags-log-group \
+        --log-group-name "$log_group_name" \
+        --query "tags.user == 'amos-maddux' && tags.env == 'sandbox' && (tags.ticket == 'SCRUM-147' || tags.ticket == 'SCRUM-148')"
 
     aws_cli logs delete-log-group --log-group-name "$log_group_name" >/dev/null 2>&1 || true
 }
@@ -233,6 +325,9 @@ delete_sns_topic() {
         --output text 2>/dev/null || true)"
 
     if [[ -n "$topic_arn" && "$topic_arn" != "None" ]]; then
+        require_sandbox_tag_query "SNS topic $topic_name" sns list-tags-for-resource \
+            --resource-arn "$topic_arn" \
+            --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && (contains(Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
         aws_cli sns delete-topic --topic-arn "$topic_arn" >/dev/null 2>&1 || true
     fi
 }
@@ -241,6 +336,9 @@ delete_receipt_bucket() {
     local bucket_name="$1"
 
     if aws_cli s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+        require_sandbox_tag_query "S3 bucket $bucket_name" s3api get-bucket-tagging \
+            --bucket "$bucket_name" \
+            --query "contains(TagSet[?Key=='user'].Value, 'amos-maddux') && contains(TagSet[?Key=='env'].Value, 'sandbox') && (contains(TagSet[?Key=='ticket'].Value, 'SCRUM-147') || contains(TagSet[?Key=='ticket'].Value, 'SCRUM-148'))"
         aws_cli s3 rm "s3://$bucket_name" --recursive >/dev/null 2>&1 || true
         aws_cli s3api delete-bucket --bucket "$bucket_name" >/dev/null 2>&1 || true
     fi
@@ -248,6 +346,20 @@ delete_receipt_bucket() {
 
 delete_dynamodb_table() {
     local table_name="$1"
+    local table_arn
+
+    table_arn="$(aws_cli dynamodb describe-table \
+        --table-name "$table_name" \
+        --query 'Table.TableArn' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$table_arn" || "$table_arn" == "None" ]]; then
+        return 0
+    fi
+
+    require_sandbox_tag_query "DynamoDB table $table_name" dynamodb list-tags-of-resource \
+        --resource-arn "$table_arn" \
+        --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && (contains(Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
 
     aws_cli dynamodb delete-table --table-name "$table_name" >/dev/null 2>&1 || true
 }
@@ -262,6 +374,7 @@ delete_security_group() {
         --output text 2>/dev/null || true)"
 
     if [[ -n "$group_id" && "$group_id" != "None" ]]; then
+        require_security_group_tags "$group_id"
         aws_cli ec2 delete-security-group --group-id "$group_id" >/dev/null 2>&1 || true
     fi
 }
@@ -269,6 +382,14 @@ delete_security_group() {
 delete_role() {
     local role_name="$1"
     local attached_policy_arns inline_policy_names
+
+    if ! aws_cli iam get-role --role-name "$role_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    require_sandbox_tag_query "IAM role $role_name" iam list-role-tags \
+        --role-name "$role_name" \
+        --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && (contains(Tags[?Key=='ticket'].Value, 'SCRUM-147') || contains(Tags[?Key=='ticket'].Value, 'SCRUM-148'))"
 
     inline_policy_names="$(aws_cli iam list-role-policies \
         --role-name "$role_name" \
@@ -300,6 +421,7 @@ main() {
 
     echo "Verifying AWS identity for profile $AWS_PROFILE in $AWS_REGION..."
     aws_cli sts get-caller-identity
+    require_cluster_tags
 
     echo "Deleting SCRUM-148 ECS services..."
     delete_service "$CORE_CASE_SERVICE_NAME"
@@ -320,6 +442,7 @@ main() {
     deregister_task_definition_family "$INTERNAL_GL_CODING_SMOKE_TASK_FAMILY"
 
     echo "Deleting ECS cluster..."
+    require_cluster_tags
     aws_cli ecs delete-cluster --cluster "$CLUSTER_NAME" >/dev/null 2>&1 || true
 
     echo "Deleting ECR repositories..."

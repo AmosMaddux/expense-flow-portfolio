@@ -38,10 +38,10 @@ These sandbox scripts do not configure ECS Service Auto Scaling. Each service
 uses the configured desired count, which defaults to one task, and ECS replaces
 unhealthy tasks through the service scheduler and ALB health checks.
 
-The Core Case sandbox task enables `RUNTIME_SMOKE_GL_CODING_ENABLED=true` so the
-ALB smoke can prove Core Case itself calls GL-coding through the internal ALB.
-The route is disabled by default in application code when that environment flag
-is absent.
+The Core Case task template keeps `RUNTIME_SMOKE_GL_CODING_ENABLED` render-time
+configurable and defaults it to `false` in the registration script. Sandbox ALB
+smoke runs must explicitly render it as `true`; the endpoint also requires a
+Secrets Manager-backed runtime smoke token.
 
 ## Placeholder reference
 
@@ -63,6 +63,7 @@ Replace these placeholders before registration:
 | `${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN}` | Secrets Manager ARN | Core Case |
 | `${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN}` | Secrets Manager ARN | GL-coding |
 | `${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN}` | Secrets Manager ARN | Core Case |
+| `${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN}` | Secrets Manager ARN | Core Case |
 | `${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN}` | Secrets Manager ARN | Core Case |
 | `${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN}` | Secrets Manager ARN | Core Case |
 | `${DYNAMODB_EXPENSE_REPORT_TABLE}` | Config | Core Case |
@@ -71,6 +72,7 @@ Replace these placeholders before registration:
 | `${MFA_TOTP_SECRET_KEY_VERSION}` | Config | Core Case |
 | `${RECEIPT_STORAGE_BUCKET}` | Config | Core Case |
 | `${REDIS_URL}` | Config | Core Case |
+| `${RUNTIME_SMOKE_GL_CODING_ENABLED}` | Config | Core Case |
 | `${STAGE_TRANSITION_SNS_TOPIC_ARN}` | Config | Core Case |
 | `${TIN_EIN_VALIDATION_ENDPOINT_URL}` | Config | Core Case |
 | `${TIN_EIN_VALIDATION_WSDL_URL}` | Config | Core Case |
