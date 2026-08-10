@@ -21,6 +21,9 @@ GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sand
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
 GL_CODING_TASK_DEFINITION="${GL_CODING_TASK_DEFINITION:-expenseflow-gl-coding-service}"
 RENDER_DIR="${RENDER_DIR:-/tmp/expenseflow-scrum-147-task-definitions}"
+RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
+DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
+STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 
 SECRET_NAMES=(
     expenseflow/sandbox/core-case/database-url
@@ -122,6 +125,34 @@ delete_log_group() {
     aws_cli logs delete-log-group --log-group-name "$log_group_name" >/dev/null 2>&1 || true
 }
 
+delete_sns_topic() {
+    local topic_name="$1"
+    local topic_arn
+
+    topic_arn="$(aws_cli sns list-topics \
+        --query "Topics[?ends_with(TopicArn, ':$topic_name')].TopicArn | [0]" \
+        --output text 2>/dev/null || true)"
+
+    if [[ -n "$topic_arn" && "$topic_arn" != "None" ]]; then
+        aws_cli sns delete-topic --topic-arn "$topic_arn" >/dev/null 2>&1 || true
+    fi
+}
+
+delete_receipt_bucket() {
+    local bucket_name="$1"
+
+    if aws_cli s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+        aws_cli s3 rm "s3://$bucket_name" --recursive >/dev/null 2>&1 || true
+        aws_cli s3api delete-bucket --bucket "$bucket_name" >/dev/null 2>&1 || true
+    fi
+}
+
+delete_dynamodb_table() {
+    local table_name="$1"
+
+    aws_cli dynamodb delete-table --table-name "$table_name" >/dev/null 2>&1 || true
+}
+
 delete_security_group() {
     local group_name="$1"
     local group_id
@@ -191,6 +222,11 @@ main() {
     echo "Deleting CloudWatch log groups..."
     delete_log_group "$CORE_CASE_LOG_GROUP"
     delete_log_group "$GL_CODING_LOG_GROUP"
+
+    echo "Deleting Core Case AWS runtime dependencies..."
+    delete_sns_topic "$STAGE_TRANSITION_SNS_TOPIC_NAME"
+    delete_receipt_bucket "$RECEIPT_STORAGE_BUCKET"
+    delete_dynamodb_table "$DYNAMODB_EXPENSE_REPORT_TABLE"
 
     echo "Deleting task security groups..."
     delete_security_group "$CORE_CASE_SECURITY_GROUP_NAME"

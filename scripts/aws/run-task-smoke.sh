@@ -12,6 +12,12 @@ CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sand
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
 GL_CODING_TASK_DEFINITION="${GL_CODING_TASK_DEFINITION:-expenseflow-gl-coding-service}"
+CORE_CASE_TASK_ROLE_NAME="${CORE_CASE_TASK_ROLE_NAME:-expenseflow-sandbox-core-case-task-role}"
+GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-coding-task-role}"
+RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
+DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
+STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
+CORE_CASE_RUNTIME_POLICY_NAME="${CORE_CASE_RUNTIME_POLICY_NAME:-expenseflow-sandbox-scrum-147-core-case-runtime}"
 STOP_AFTER_SMOKE="${STOP_AFTER_SMOKE:-false}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
@@ -28,6 +34,66 @@ security_group_id() {
         --filters Name=vpc-id,Values="$VPC_ID" Name=group-name,Values="$1" \
         --query 'SecurityGroups[0].GroupId' \
         --output text
+}
+
+assert_not_loopback_value() {
+    local field_name="$1"
+    local field_value="$2"
+
+    if [[ -z "$field_value" || "$field_value" == "None" ]]; then
+        echo "$field_name is missing from the registered task definition." >&2
+        return 1
+    fi
+
+    if [[ "$field_value" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*://([^/@]*@)?(127\.0\.0\.1|localhost)(:|/|$) ]]; then
+        echo "$field_name must be ECS-reachable for the Fargate smoke, not $field_value." >&2
+        return 1
+    fi
+}
+
+task_environment_value() {
+    local task_definition="$1"
+    local container_name="$2"
+    local environment_name="$3"
+
+    aws_cli ecs describe-task-definition \
+        --task-definition "$task_definition" \
+        --query "taskDefinition.containerDefinitions[?name=='$container_name']|[0].environment[?name=='$environment_name']|[0].value" \
+        --output text
+}
+
+topic_arn() {
+    local topic_name="$1"
+
+    aws_cli sns list-topics \
+        --query "Topics[?ends_with(TopicArn, ':$topic_name')].TopicArn | [0]" \
+        --output text
+}
+
+preflight_runtime_configuration() {
+    local gl_coding_url redis_url stage_topic_arn
+
+    echo "Checking registered task definition runtime wiring..."
+    gl_coding_url="$(task_environment_value "$CORE_CASE_TASK_DEFINITION" "core-case-service" "GL_CODING_SERVICE_BASE_URL")"
+    redis_url="$(task_environment_value "$CORE_CASE_TASK_DEFINITION" "core-case-service" "REDIS_URL")"
+    assert_not_loopback_value GL_CODING_SERVICE_BASE_URL "$gl_coding_url"
+    assert_not_loopback_value REDIS_URL "$redis_url"
+
+    echo "Checking Core Case AWS runtime dependencies..."
+    stage_topic_arn="$(topic_arn "$STAGE_TRANSITION_SNS_TOPIC_NAME")"
+    if [[ -z "$stage_topic_arn" || "$stage_topic_arn" == "None" ]]; then
+        echo "Missing SNS topic: $STAGE_TRANSITION_SNS_TOPIC_NAME" >&2
+        return 1
+    fi
+    aws_cli s3api head-bucket --bucket "$RECEIPT_STORAGE_BUCKET" >/dev/null
+    aws_cli dynamodb describe-table --table-name "$DYNAMODB_EXPENSE_REPORT_TABLE" >/dev/null
+
+    echo "Checking ECS task roles and Core Case runtime policy..."
+    aws_cli iam get-role --role-name "$CORE_CASE_TASK_ROLE_NAME" >/dev/null
+    aws_cli iam get-role --role-name "$GL_CODING_TASK_ROLE_NAME" >/dev/null
+    aws_cli iam get-role-policy \
+        --role-name "$CORE_CASE_TASK_ROLE_NAME" \
+        --policy-name "$CORE_CASE_RUNTIME_POLICY_NAME" >/dev/null
 }
 
 wait_for_container_health() {
@@ -113,6 +179,8 @@ run_one_task() {
         echo "Leaving $label task running. Stop it with: aws ecs stop-task --profile $AWS_PROFILE --region $AWS_REGION --cluster $CLUSTER_NAME --task $task_arn"
     fi
 }
+
+preflight_runtime_configuration
 
 core_case_sg="$(security_group_id "$CORE_CASE_SECURITY_GROUP_NAME")"
 gl_coding_sg="$(security_group_id "$GL_CODING_SECURITY_GROUP_NAME")"

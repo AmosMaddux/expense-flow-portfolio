@@ -28,12 +28,26 @@ Verify identity first:
 aws sts get-caller-identity --profile expenseflow-smoke --region us-east-1
 ```
 
+Required runtime values:
+
+- `CORE_CASE_DATABASE_URL`: ECS-reachable PostgreSQL URL for Core Case.
+- `GL_CODING_DATABASE_URL`: ECS-reachable PostgreSQL URL for GL-coding.
+- `GL_CODING_SERVICE_BASE_URL`: ECS-reachable Core Case to GL-coding HTTP base URL.
+- `REDIS_URL`: ECS-reachable Redis URL for Core Case.
+
+The scripts reject `localhost` and `127.0.0.1` for these values because each Fargate task has its own network namespace.
+
 ## Script Order
 
 ### 1. Create Runtime Smoke Resources
 
 ```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/create-runtime-smoke-resources.sh
+CORE_CASE_DATABASE_URL="$CORE_CASE_DATABASE_URL" \
+GL_CODING_DATABASE_URL="$GL_CODING_DATABASE_URL" \
+GL_CODING_SERVICE_BASE_URL="$GL_CODING_SERVICE_BASE_URL" \
+REDIS_URL="$REDIS_URL" \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/create-runtime-smoke-resources.sh
 ```
 
 This creates or updates the AWS resources that the task definitions need:
@@ -41,9 +55,15 @@ This creates or updates the AWS resources that the task definitions need:
 - ECR repositories
 - ECS cluster
 - CloudWatch log groups
+- SNS topic for stage-transition events
+- S3 bucket for synthetic receipt-storage smoke paths
+- DynamoDB table for the configured Expense Report read-projection path
 - Fargate task security groups
 - IAM execution and task roles
-- Synthetic Secrets Manager values
+- Core Case task-role permissions for SNS, S3, and DynamoDB runtime calls
+- Secrets Manager values
+
+Database URLs are stored in Secrets Manager from the operator-supplied values. The script does not create PostgreSQL, Redis, service discovery, an internal load balancer, or ECS services.
 
 The script is idempotent where AWS supports it, so it can be rerun after a partial failure.
 
@@ -63,7 +83,12 @@ Run this after creating ECR repositories and before registering task definitions
 ### 3. Register Task Definitions
 
 ```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/register-task-definitions.sh
+CORE_CASE_DATABASE_URL="$CORE_CASE_DATABASE_URL" \
+GL_CODING_DATABASE_URL="$GL_CODING_DATABASE_URL" \
+GL_CODING_SERVICE_BASE_URL="$GL_CODING_SERVICE_BASE_URL" \
+REDIS_URL="$REDIS_URL" \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/register-task-definitions.sh
 ```
 
 This renders the portable task-definition templates with real AWS values, then registers:
@@ -71,7 +96,20 @@ This renders the portable task-definition templates with real AWS values, then r
 - `expenseflow-core-case-service`
 - `expenseflow-gl-coding-service`
 
+`GL_CODING_SERVICE_BASE_URL` and `REDIS_URL` must be ECS-reachable endpoints such as Cloud Map, ECS Service Connect, or internal load balancer DNS names. The registration script rejects `localhost` and `127.0.0.1` for those cross-task dependencies because each Fargate task has its own network namespace.
+
 Rendered task-definition JSON is written to `/tmp/expenseflow-scrum-147-task-definitions` by default because it contains account-specific ARNs and ECR image URIs.
+
+Validate template rendering locally without registering task definitions:
+
+```bash
+CORE_CASE_DATABASE_URL="postgres://expenseflow_sandbox:synthetic-password@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
+GL_CODING_DATABASE_URL="postgres://expenseflow_sandbox:synthetic-password@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
+GL_CODING_SERVICE_BASE_URL="http://gl-coding.expenseflow-sandbox.local:8001" \
+REDIS_URL="redis://redis.expenseflow-sandbox.local:6379" \
+VALIDATE_RENDER_ONLY=true \
+scripts/aws/register-task-definitions.sh
+```
 
 ### 4. Run The Fargate Smoke
 
@@ -83,12 +121,14 @@ This runs one-off Fargate tasks for both services in the existing public subnets
 
 Expected result:
 
+- Preflight confirms the registered Core Case task definition does not contain loopback GL-coding or Redis endpoints.
+- Preflight confirms the configured SNS topic, S3 bucket, DynamoDB table, task roles, and Core Case runtime task-role policy are present.
 - GL-coding reaches `RUNNING` and container health becomes `HEALTHY`.
 - Core Case reaches `RUNNING` and container health becomes `HEALTHY`.
 - CloudWatch log stream names are printed.
 - With `STOP_AFTER_SMOKE=true`, both tasks are stopped after passing.
 
-This proves ECS can pull the ECR images, inject Secrets Manager values, start the containers on Fargate, run container health checks, and write logs.
+This proves ECS can pull the ECR images, inject Secrets Manager values, start the containers on Fargate, run container health checks, write logs, and reference the expected AWS runtime resources. It does not prove a full Expense Report submission path, database connectivity, or Core Case to GL-coding request success; that deeper smoke requires the later service-discovery and database infrastructure work.
 
 ## Useful Verification Commands
 
