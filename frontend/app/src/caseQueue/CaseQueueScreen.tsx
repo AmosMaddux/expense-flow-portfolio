@@ -981,7 +981,7 @@ function ApprovalQueueLineItemTable({
     );
 }
 
-function ApprovalQueueReviewDialog({
+export function ApprovalQueueReviewDialog({
     canManageReviewWorkflow,
     isActionPending,
     lineItems,
