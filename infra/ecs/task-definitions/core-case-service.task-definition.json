@@ -126,6 +126,10 @@
                     "value": "false"
                 },
                 {
+                    "name": "RUNTIME_SMOKE_GL_CODING_ENABLED",
+                    "value": "true"
+                },
+                {
                     "name": "REDIS_URL",
                     "value": "${REDIS_URL}"
                 },

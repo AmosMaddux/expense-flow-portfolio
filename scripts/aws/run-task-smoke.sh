@@ -12,7 +12,7 @@ PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
 INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
-INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
+INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sbox-int-gl-tg}"
 CORE_CASE_SERVICE_NAME="${CORE_CASE_SERVICE_NAME:-expenseflow-core-case-service}"
 GL_CODING_SERVICE_NAME="${GL_CODING_SERVICE_NAME:-expenseflow-gl-coding-service}"
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
@@ -24,6 +24,7 @@ DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sand
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 CORE_CASE_RUNTIME_POLICY_NAME="${CORE_CASE_RUNTIME_POLICY_NAME:-expenseflow-sandbox-scrum-147-core-case-runtime}"
 SMOKE_PATH="${SMOKE_PATH:-/v1/openapi.json}"
+CORE_CASE_GL_CODING_SMOKE_PATH="${CORE_CASE_GL_CODING_SMOKE_PATH:-/v1/runtime-smoke/gl-coding}"
 INTERNAL_GL_CODING_SMOKE_TASK_FAMILY="${INTERNAL_GL_CODING_SMOKE_TASK_FAMILY:-expenseflow-internal-gl-coding-alb-smoke}"
 INTERNAL_GL_CODING_SMOKE_IMAGE="${INTERNAL_GL_CODING_SMOKE_IMAGE:-public.ecr.aws/docker/library/busybox:1.36}"
 ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE="${ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE:-false}"
@@ -351,6 +352,36 @@ run_alb_smoke() {
     echo "ALB smoke passed: $smoke_url"
 }
 
+run_core_case_gl_coding_smoke() {
+    local alb_dns_name smoke_url response_file status_code
+
+    alb_dns_name="$(load_balancer_dns_name "$ALB_NAME")"
+    smoke_url="http://$alb_dns_name$CORE_CASE_GL_CODING_SMOKE_PATH"
+    response_file="$(mktemp)"
+
+    echo "Calling Core Case to GL-coding smoke endpoint: $smoke_url"
+    status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' "$smoke_url")"
+
+    if [[ "$status_code" != "200" ]]; then
+        echo "Core Case to GL-coding smoke failed with HTTP $status_code." >&2
+        cat "$response_file" >&2
+        rm -f "$response_file"
+        return 1
+    fi
+
+    if ! grep --quiet '"dependency":"gl-coding"' "$response_file" ||
+        ! grep --quiet '"status":"healthy"' "$response_file"; then
+        echo "Core Case to GL-coding smoke response did not contain the expected dependency health payload." >&2
+        cat "$response_file" >&2
+        rm -f "$response_file"
+        return 1
+    fi
+
+    rm -f "$response_file"
+    echo "Core Case to GL-coding smoke passed: $smoke_url"
+}
+
 preflight_runtime_configuration
 run_alb_smoke
+run_core_case_gl_coding_smoke
 run_internal_gl_coding_smoke

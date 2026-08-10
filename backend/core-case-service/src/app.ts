@@ -23,6 +23,10 @@ import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
 import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
+import {
+    createRuntimeSmokeRouter,
+    isGlCodingRuntimeSmokeEnabled,
+} from "./runtimeSmoke/runtimeSmokeRoutes.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
@@ -137,6 +141,9 @@ v1Router.use("/finance-dashboard", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());
+if (isGlCodingRuntimeSmokeEnabled()) {
+    v1Router.use("/runtime-smoke", createRuntimeSmokeRouter());
+}
 v1Router.use("/", expenseReportRouter);
 v1Router.use("/", glMappingRouter);
 

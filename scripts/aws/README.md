@@ -169,9 +169,10 @@ Expected result:
 - Preflight confirms ALB, listener rules, target groups, ECS services, task roles, and runtime resources are present.
 - Public Core Case and internal GL-coding target groups each report at least one healthy target.
 - `http://<alb-dns>/v1/openapi.json` returns HTTP 200 and contains Core Case OpenAPI paths.
+- `http://<alb-dns>/v1/runtime-smoke/gl-coding` returns HTTP 200 after Core Case calls GL-coding through its configured base URL.
 - A temporary ECS smoke task calls `http://<internal-gl-coding-alb-dns>/health` and receives HTTP 200.
 
-This proves ECS services can run on Fargate behind ALBs, target-group health gates service readiness, the public ALB routes `/v1/*` to Core Case, and the internal ALB is reachable from the Core Case network path. When `ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true` is used, receipt storage is explicitly not verified. This smoke also does not prove a full authenticated Expense Report submission path.
+This proves ECS services can run on Fargate behind ALBs, target-group health gates service readiness, the public ALB routes `/v1/*` to Core Case, Core Case is configured to reach GL-coding, and the internal ALB is reachable from the Core Case network path. The Core Case runtime-smoke route is enabled only in this sandbox task definition with `RUNTIME_SMOKE_GL_CODING_ENABLED=true`. When `ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true` is used, receipt storage is explicitly not verified. This smoke also does not prove a full authenticated Expense Report submission path.
 
 ## Useful Verification Commands
 

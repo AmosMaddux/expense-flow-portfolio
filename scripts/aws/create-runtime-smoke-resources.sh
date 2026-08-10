@@ -24,7 +24,7 @@ INTERNAL_ALB_SECURITY_GROUP_NAME="${INTERNAL_ALB_SECURITY_GROUP_NAME:-expenseflo
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
 INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
-INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
+INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sbox-int-gl-tg}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
@@ -205,6 +205,11 @@ create_or_tag_target_group() {
             --tags "${ELB_TAGS[@]}" \
             --query 'TargetGroups[0].TargetGroupArn' \
             --output text)"
+    fi
+
+    if [[ -z "$target_group_arn" || "$target_group_arn" == "None" ]]; then
+        echo "Failed to create or resolve target group $target_group_name." >&2
+        return 1
     fi
 
     aws_cli elbv2 modify-target-group-attributes \

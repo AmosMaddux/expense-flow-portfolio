@@ -172,6 +172,12 @@ void describe("app", () => {
         expect(body).toContain("/v1/openapi.json");
     });
 
+    void test("does not mount runtime smoke routes by default", async () => {
+        const response = await requestApp("/v1/runtime-smoke/gl-coding");
+
+        expect(response.status).toBe(404);
+    });
+
     void test.each([
         ["POST", "/expense-reports"],
         ["POST", "/auth/login"],

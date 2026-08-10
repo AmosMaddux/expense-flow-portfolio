@@ -38,6 +38,11 @@ These sandbox scripts do not configure ECS Service Auto Scaling. Each service
 uses the configured desired count, which defaults to one task, and ECS replaces
 unhealthy tasks through the service scheduler and ALB health checks.
 
+The Core Case sandbox task enables `RUNTIME_SMOKE_GL_CODING_ENABLED=true` so the
+ALB smoke can prove Core Case itself calls GL-coding through the internal ALB.
+The route is disabled by default in application code when that environment flag
+is absent.
+
 ## Placeholder reference
 
 Replace these placeholders before registration:
