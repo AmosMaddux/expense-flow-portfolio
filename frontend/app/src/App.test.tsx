@@ -8,7 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import App, { AppShell, getRoleLandingScreen } from "./App";
+import App, {
+    AppShell,
+    getRoleLandingScreen,
+    getTenantDisplayName,
+    type AppProps,
+} from "./App";
 import {
     AuthProvider,
     AuthRequestError,
@@ -108,10 +113,10 @@ function createAuthClientMock(role: Role = "Finance Admin"): AuthClient {
     };
 }
 
-function renderApp(authClient: AuthClient): void {
+function renderApp(authClient: AuthClient, appProps?: AppProps): void {
     render(
         <AuthProvider authClient={authClient}>
-            <App tenantId={tenantId} />
+            <App tenantId={tenantId} {...appProps} />
         </AuthProvider>,
     );
 }
@@ -119,7 +124,7 @@ function renderApp(authClient: AuthClient): void {
 async function completePrimarySignIn(): Promise<void> {
     await screen.findByRole("heading", { name: "Welcome back" });
     fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "employee@example.invalid" },
+        target: { value: "employee@example1.invalid" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
         target: { value: "synthetic-password" },
@@ -165,7 +170,7 @@ describe("authentication UI", () => {
 
         expect(authClient.login).toHaveBeenNthCalledWith(1, {
             tenantId,
-            email: "employee@example.invalid",
+            email: "employee@example1.invalid",
             password: "synthetic-password",
         });
 
@@ -185,7 +190,7 @@ describe("authentication UI", () => {
         expect(window.location.pathname).toBe("/my-submissions");
         expect(authClient.login).toHaveBeenNthCalledWith(2, {
             tenantId,
-            email: "employee@example.invalid",
+            email: "employee@example1.invalid",
             password: "synthetic-password",
             totpCode: "123456",
         });
@@ -194,6 +199,30 @@ describe("authentication UI", () => {
         await screen.findByRole("heading", { name: "Welcome back" });
         expect(window.location.pathname).toBe("/");
         expect(authClient.logout).toHaveBeenCalledOnce();
+    });
+
+    test("signs the second synthetic company into its own tenant", async () => {
+        const secondaryTenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fc";
+        const authClient = createAuthClientMock();
+        renderApp(authClient, { secondaryTenantId });
+
+        await screen.findByRole("heading", { name: "Welcome back" });
+        fireEvent.change(screen.getByLabelText("Email"), {
+            target: { value: "manager@example2.invalid" },
+        });
+        fireEvent.change(screen.getByLabelText("Password"), {
+            target: { value: "synthetic-password" },
+        });
+        fireEvent.submit(
+            screen.getByRole("button", { name: /sign in/i }).closest("form")!,
+        );
+
+        await screen.findByRole("heading", { name: "Verify your identity" });
+        expect(authClient.login).toHaveBeenCalledWith({
+            tenantId: secondaryTenantId,
+            email: "manager@example2.invalid",
+            password: "synthetic-password",
+        });
     });
 
     test("shows a retry-safe error when the MFA code is rejected", async () => {
@@ -252,7 +281,7 @@ describe("authentication UI", () => {
         });
         expect(authClient.login).toHaveBeenNthCalledWith(2, {
             tenantId,
-            email: "employee@example.invalid",
+            email: "employee@example1.invalid",
             password: "synthetic-password",
             totpCode: "123456",
         });
@@ -279,7 +308,7 @@ describe("authentication UI", () => {
         });
         expect(authClient.login).toHaveBeenNthCalledWith(2, {
             tenantId,
-            email: "employee@example.invalid",
+            email: "employee@example1.invalid",
             password: "synthetic-password",
             totpCode: "654321",
         });
@@ -320,7 +349,7 @@ describe("authentication UI", () => {
         );
         await screen.findByRole("heading", { name: "Reset your password" });
         fireEvent.change(screen.getByLabelText("Email"), {
-            target: { value: "employee@example.invalid" },
+            target: { value: "employee@example1.invalid" },
         });
         fireEvent.submit(
             screen.getByRole("button", { name: "Continue" }).closest("form")!,
@@ -351,7 +380,36 @@ describe("role landing selection", () => {
     );
 });
 
+describe("tenant display names", () => {
+    test("maps both configured synthetic tenants to their company labels", () => {
+        const secondaryTenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fc";
+
+        expect(
+            getTenantDisplayName(tenantId, tenantId, secondaryTenantId),
+        ).toBe("example1");
+        expect(
+            getTenantDisplayName(
+                secondaryTenantId,
+                tenantId,
+                secondaryTenantId,
+            ),
+        ).toBe("example2");
+    });
+});
+
 describe("AppShell", () => {
+    test("shows the authenticated tenant in the top bar", () => {
+        render(
+            <AppShell
+                currentPath="/my-submissions"
+                signedInRole="Employee"
+                tenantId={tenantId}
+            />,
+        );
+
+        expect(screen.getByLabelText("Tenant example1")).not.toBeNull();
+    });
+
     test("renders Department Manager navigation without Team & Users", () => {
         render(
             <AppShell
