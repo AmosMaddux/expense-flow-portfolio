@@ -9,6 +9,7 @@ ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 VPC_ID="${VPC_ID:-}"
 CLUSTER_NAME="${CLUSTER_NAME:-expenseflow-sandbox}"
 PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
+INTERNAL_SUBNETS="${INTERNAL_SUBNETS:-$PUBLIC_SUBNETS}"
 CORE_CASE_REPOSITORY="${CORE_CASE_REPOSITORY:-expenseflow-core-case-service}"
 GL_CODING_REPOSITORY="${GL_CODING_REPOSITORY:-expenseflow-gl-coding-service}"
 CORE_CASE_LOG_GROUP="${CORE_CASE_LOG_GROUP:-/ecs/expenseflow-sandbox/core-case-service}"
@@ -19,16 +20,17 @@ GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-cod
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
 ALB_SECURITY_GROUP_NAME="${ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-alb-sg}"
+INTERNAL_ALB_SECURITY_GROUP_NAME="${INTERNAL_ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-internal-alb-sg}"
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
+INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
-GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
+INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
-GL_CODING_SERVICE_BASE_URL="${GL_CODING_SERVICE_BASE_URL:-}"
 REDIS_URL="${REDIS_URL:-}"
 CORE_CASE_DATABASE_URL="${CORE_CASE_DATABASE_URL:-}"
 GL_CODING_DATABASE_URL="${GL_CODING_DATABASE_URL:-}"
@@ -142,7 +144,10 @@ create_or_tag_cluster() {
 create_or_tag_load_balancer() {
     local load_balancer_name="$1"
     local security_group_id="$2"
+    local scheme="$3"
+    local subnets_csv="$4"
     local load_balancer_arn
+    local existing_scheme
 
     load_balancer_arn="$(aws_cli elbv2 describe-load-balancers \
         --names "$load_balancer_name" \
@@ -150,18 +155,27 @@ create_or_tag_load_balancer() {
         --output text 2>/dev/null || true)"
 
     if [[ -z "$load_balancer_arn" || "$load_balancer_arn" == "None" ]]; then
-        IFS=',' read -r -a subnet_ids <<<"$PUBLIC_SUBNETS"
+        IFS=',' read -r -a subnet_ids <<<"$subnets_csv"
         load_balancer_arn="$(aws_cli elbv2 create-load-balancer \
             --name "$load_balancer_name" \
             --subnets "${subnet_ids[@]}" \
             --security-groups "$security_group_id" \
-            --scheme internet-facing \
+            --scheme "$scheme" \
             --type application \
             --ip-address-type ipv4 \
             --tags "${ELB_TAGS[@]}" \
             --query 'LoadBalancers[0].LoadBalancerArn' \
             --output text)"
         aws_cli elbv2 wait load-balancer-available --load-balancer-arns "$load_balancer_arn"
+    else
+        existing_scheme="$(aws_cli elbv2 describe-load-balancers \
+            --names "$load_balancer_name" \
+            --query 'LoadBalancers[0].Scheme' \
+            --output text)"
+        if [[ "$existing_scheme" != "$scheme" ]]; then
+            echo "Load balancer $load_balancer_name exists with scheme $existing_scheme, expected $scheme." >&2
+            return 1
+        fi
     fi
 
     aws_cli elbv2 add-tags --resource-arns "$load_balancer_arn" --tags "${ELB_TAGS[@]}"
@@ -202,6 +216,7 @@ create_or_tag_target_group() {
 
 create_or_update_http_listener() {
     local load_balancer_arn="$1"
+    local default_actions="$2"
     local listener_arn
 
     listener_arn="$(aws_cli elbv2 describe-listeners \
@@ -214,14 +229,14 @@ create_or_update_http_listener() {
             --load-balancer-arn "$load_balancer_arn" \
             --protocol HTTP \
             --port 80 \
-            --default-actions '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]' \
+            --default-actions "$default_actions" \
             --tags "${ELB_TAGS[@]}" \
             --query 'Listeners[0].ListenerArn' \
             --output text)"
     else
         aws_cli elbv2 modify-listener \
             --listener-arn "$listener_arn" \
-            --default-actions '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]' >/dev/null
+            --default-actions "$default_actions" >/dev/null
     fi
 
     echo "$listener_arn"
@@ -258,6 +273,21 @@ create_or_update_listener_rule() {
 
     aws_cli elbv2 add-tags --resource-arns "$rule_arn" --tags "${ELB_TAGS[@]}"
     echo "$rule_arn"
+}
+
+delete_listener_rule_by_priority() {
+    local listener_arn="$1"
+    local priority="$2"
+    local rule_arn
+
+    rule_arn="$(aws_cli elbv2 describe-rules \
+        --listener-arn "$listener_arn" \
+        --query "Rules[?Priority=='$priority'].RuleArn | [0]" \
+        --output text 2>/dev/null || true)"
+
+    if [[ -n "$rule_arn" && "$rule_arn" != "None" ]]; then
+        aws_cli elbv2 delete-rule --rule-arn "$rule_arn" >/dev/null
+    fi
 }
 
 create_or_tag_sns_topic() {
@@ -369,6 +399,22 @@ authorize_security_group_ingress() {
             --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,UserIdGroupPairs=[{GroupId=$source}]" >/dev/null 2>&1 || true
     else
         aws_cli ec2 authorize-security-group-ingress \
+            --group-id "$group_id" \
+            --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,IpRanges=[{CidrIp=$source}]" >/dev/null 2>&1 || true
+    fi
+}
+
+revoke_security_group_ingress() {
+    local group_id="$1"
+    local port="$2"
+    local source="$3"
+
+    if [[ "$source" == sg-* ]]; then
+        aws_cli ec2 revoke-security-group-ingress \
+            --group-id "$group_id" \
+            --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,UserIdGroupPairs=[{GroupId=$source}]" >/dev/null 2>&1 || true
+    else
+        aws_cli ec2 revoke-security-group-ingress \
             --group-id "$group_id" \
             --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,IpRanges=[{CidrIp=$source}]" >/dev/null 2>&1 || true
     fi
@@ -496,8 +542,8 @@ fs.writeFileSync(process.argv[1], JSON.stringify({
 main() {
     require_non_empty VPC_ID "$VPC_ID"
     require_non_empty PUBLIC_SUBNETS "$PUBLIC_SUBNETS"
+    require_non_empty INTERNAL_SUBNETS "$INTERNAL_SUBNETS"
     require_non_empty ROLE_PERMISSIONS_BOUNDARY_ARN "$ROLE_PERMISSIONS_BOUNDARY_ARN"
-    require_non_loopback_endpoint GL_CODING_SERVICE_BASE_URL "$GL_CODING_SERVICE_BASE_URL"
     require_non_loopback_endpoint REDIS_URL "$REDIS_URL"
     require_non_loopback_endpoint CORE_CASE_DATABASE_URL "$CORE_CASE_DATABASE_URL"
     require_non_loopback_endpoint GL_CODING_DATABASE_URL "$GL_CODING_DATABASE_URL"
@@ -516,33 +562,39 @@ main() {
     create_or_tag_log_group "$CORE_CASE_LOG_GROUP"
     create_or_tag_log_group "$GL_CODING_LOG_GROUP"
 
-    echo "Creating or tagging load balancer security group..."
+    echo "Creating or tagging load balancer security groups..."
     alb_sg="$(create_or_tag_security_group "$ALB_SECURITY_GROUP_NAME" "SCRUM-147 internet-facing ALB smoke security group.")"
+    internal_alb_sg="$(create_or_tag_security_group "$INTERNAL_ALB_SECURITY_GROUP_NAME" "SCRUM-148 internal GL-coding ALB security group.")"
     authorize_security_group_ingress "$alb_sg" 80 "0.0.0.0/0"
 
     echo "Creating or tagging task security groups..."
     core_case_sg="$(create_or_tag_security_group "$CORE_CASE_SECURITY_GROUP_NAME" "SCRUM-147 Core Case Fargate service security group.")"
     gl_coding_sg="$(create_or_tag_security_group "$GL_CODING_SECURITY_GROUP_NAME" "SCRUM-147 GL-coding Fargate service security group.")"
     authorize_security_group_ingress "$core_case_sg" 3000 "$alb_sg"
-    authorize_security_group_ingress "$gl_coding_sg" 8001 "$alb_sg"
-    authorize_security_group_ingress "$gl_coding_sg" 8001 "$core_case_sg"
+    authorize_security_group_ingress "$internal_alb_sg" 80 "$core_case_sg"
+    authorize_security_group_ingress "$gl_coding_sg" 8001 "$internal_alb_sg"
+    revoke_security_group_ingress "$gl_coding_sg" 8001 "$alb_sg"
+    revoke_security_group_ingress "$gl_coding_sg" 8001 "$core_case_sg"
 
-    echo "Creating or tagging ALB, target groups, and listener rules..."
-    alb_arn="$(create_or_tag_load_balancer "$ALB_NAME" "$alb_sg")"
+    echo "Creating or tagging public ALB, target group, and listener rule..."
+    alb_arn="$(create_or_tag_load_balancer "$ALB_NAME" "$alb_sg" internet-facing "$PUBLIC_SUBNETS")"
     core_case_target_group_arn="$(create_or_tag_target_group "$CORE_CASE_TARGET_GROUP_NAME" 3000)"
-    gl_coding_target_group_arn="$(create_or_tag_target_group "$GL_CODING_TARGET_GROUP_NAME" 8001)"
-    listener_arn="$(create_or_update_http_listener "$alb_arn")"
+    listener_arn="$(create_or_update_http_listener "$alb_arn" '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]')"
     create_or_update_listener_rule \
         "$listener_arn" \
         100 \
         "$core_case_target_group_arn" \
         Field=path-pattern,Values='/v1/*'
-    create_or_update_listener_rule \
-        "$listener_arn" \
-        200 \
-        "$gl_coding_target_group_arn" \
-        Field=host-header,Values='gl-coding.sandbox.expenseflow.internal' \
-        Field=path-pattern,Values='/__gl-coding-health/*'
+    delete_listener_rule_by_priority "$listener_arn" 200
+
+    echo "Creating or tagging internal GL-coding ALB, target group, and listener..."
+    internal_alb_arn="$(create_or_tag_load_balancer "$INTERNAL_ALB_NAME" "$internal_alb_sg" internal "$INTERNAL_SUBNETS")"
+    internal_gl_coding_target_group_arn="$(create_or_tag_target_group "$INTERNAL_GL_CODING_TARGET_GROUP_NAME" 8001)"
+    create_or_update_http_listener "$internal_alb_arn" "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$internal_gl_coding_target_group_arn\"}]" >/dev/null
+    internal_alb_dns_name="$(aws_cli elbv2 describe-load-balancers \
+        --load-balancer-arns "$internal_alb_arn" \
+        --query 'LoadBalancers[0].DNSName' \
+        --output text)"
 
     echo "Creating or tagging Core Case AWS runtime dependencies..."
     stage_transition_topic_arn="$(create_or_tag_sns_topic "$STAGE_TRANSITION_SNS_TOPIC_NAME")"
@@ -585,6 +637,8 @@ main() {
     rm -f "$policy_file"
 
     echo "SCRUM-147 runtime smoke resources are ready."
+    echo "Internal GL-coding ALB DNS name: $internal_alb_dns_name"
+    echo "Use GL_CODING_SERVICE_BASE_URL=http://$internal_alb_dns_name when registering Core Case."
 }
 
 main "$@"

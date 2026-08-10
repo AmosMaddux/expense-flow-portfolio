@@ -2,8 +2,8 @@
 
 ExpenseFlow defines lightweight ECS Fargate task-definition templates for the
 Core Case Service and GL-coding service under `infra/ecs/task-definitions`.
-Temporary Bash scripts under `scripts/aws/` create the sandbox ALB, target
-groups, ECS services, and smoke path around those task definitions. They
+Temporary Bash scripts under `scripts/aws/` create the sandbox ALBs, target
+groups, ECS services, and smoke paths around those task definitions. They
 intentionally do not introduce Terraform, CDK, or CloudFormation.
 
 Build release images from the existing Dockerfiles, push them to ECR, and then
@@ -30,8 +30,13 @@ The GL-coding service task exposes port `8001` and checks `/health` with
 Python's standard library. It receives verification key material only.
 
 The sandbox ECS services attach both tasks to ALB target groups. The public HTTP
-listener routes `/v1/*` to Core Case. GL-coding has a target group for service
-health and deployment gating, but it is not part of the public `/v1` API surface.
+listener routes `/v1/*` to Core Case. GL-coding attaches to a separate internal
+ALB target group so Core Case can call GL-coding through a VPC-internal load
+balancer without making GL-coding part of the public `/v1` API surface.
+
+These sandbox scripts do not configure ECS Service Auto Scaling. Each service
+uses the configured desired count, which defaults to one task, and ECS replaces
+unhealthy tasks through the service scheduler and ALB health checks.
 
 ## Placeholder reference
 

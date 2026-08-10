@@ -19,15 +19,19 @@ GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-cod
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
 ALB_SECURITY_GROUP_NAME="${ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-alb-sg}"
+INTERNAL_ALB_SECURITY_GROUP_NAME="${INTERNAL_ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-internal-alb-sg}"
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
 GL_CODING_TASK_DEFINITION="${GL_CODING_TASK_DEFINITION:-expenseflow-gl-coding-service}"
+INTERNAL_GL_CODING_SMOKE_TASK_FAMILY="${INTERNAL_GL_CODING_SMOKE_TASK_FAMILY:-expenseflow-internal-gl-coding-alb-smoke}"
 RENDER_DIR="${RENDER_DIR:-/tmp/expenseflow-scrum-147-task-definitions}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
+INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
 GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
+INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
 CORE_CASE_SERVICE_NAME="${CORE_CASE_SERVICE_NAME:-expenseflow-core-case-service}"
 GL_CODING_SERVICE_NAME="${GL_CODING_SERVICE_NAME:-expenseflow-gl-coding-service}"
 
@@ -118,8 +122,10 @@ delete_service() {
 }
 
 load_balancer_arn() {
+    local load_balancer_name="$1"
+
     aws_cli elbv2 describe-load-balancers \
-        --names "$ALB_NAME" \
+        --names "$load_balancer_name" \
         --query 'LoadBalancers[0].LoadBalancerArn' \
         --output text 2>/dev/null || true
 }
@@ -132,9 +138,12 @@ target_group_arn() {
 }
 
 delete_load_balancer_stack() {
-    local alb_arn listener_arns rule_arns target_group
+    local load_balancer_name="$1"
+    shift
+    local target_groups=("$@")
+    local alb_arn listener_arns rule_arns target_group target_group_arn_value
 
-    alb_arn="$(load_balancer_arn)"
+    alb_arn="$(load_balancer_arn "$load_balancer_name")"
     if [[ -n "$alb_arn" && "$alb_arn" != "None" ]]; then
         listener_arns="$(aws_cli elbv2 describe-listeners \
             --load-balancer-arn "$alb_arn" \
@@ -156,7 +165,7 @@ delete_load_balancer_stack() {
         aws_cli elbv2 wait load-balancers-deleted --load-balancer-arns "$alb_arn" >/dev/null 2>&1 || true
     fi
 
-    for target_group in "$CORE_CASE_TARGET_GROUP_NAME" "$GL_CODING_TARGET_GROUP_NAME"; do
+    for target_group in "${target_groups[@]}"; do
         target_group_arn_value="$(target_group_arn "$target_group")"
         if [[ -n "$target_group_arn_value" && "$target_group_arn_value" != "None" ]]; then
             aws_cli elbv2 delete-target-group --target-group-arn "$target_group_arn_value" >/dev/null 2>&1 || true
@@ -299,12 +308,16 @@ main() {
     echo "Stopping remaining SCRUM-147 smoke tasks..."
     stop_cluster_tasks
 
-    echo "Deleting ALB, listeners, rules, and target groups..."
-    delete_load_balancer_stack
+    echo "Deleting public ALB, listeners, rules, and target groups..."
+    delete_load_balancer_stack "$ALB_NAME" "$CORE_CASE_TARGET_GROUP_NAME" "$GL_CODING_TARGET_GROUP_NAME"
+
+    echo "Deleting internal ALB, listener, and GL-coding target group..."
+    delete_load_balancer_stack "$INTERNAL_ALB_NAME" "$INTERNAL_GL_CODING_TARGET_GROUP_NAME"
 
     echo "Deregistering SCRUM-147 task definition families..."
     deregister_task_definition_family "$CORE_CASE_TASK_DEFINITION"
     deregister_task_definition_family "$GL_CODING_TASK_DEFINITION"
+    deregister_task_definition_family "$INTERNAL_GL_CODING_SMOKE_TASK_FAMILY"
 
     echo "Deleting ECS cluster..."
     aws_cli ecs delete-cluster --cluster "$CLUSTER_NAME" >/dev/null 2>&1 || true
@@ -330,6 +343,7 @@ main() {
     echo "Deleting task security groups..."
     delete_security_group "$CORE_CASE_SECURITY_GROUP_NAME"
     delete_security_group "$GL_CODING_SECURITY_GROUP_NAME"
+    delete_security_group "$INTERNAL_ALB_SECURITY_GROUP_NAME"
     delete_security_group "$ALB_SECURITY_GROUP_NAME"
 
     echo "Deleting IAM roles and attached policies..."

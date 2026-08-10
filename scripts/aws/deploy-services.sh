@@ -12,8 +12,9 @@ PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
+INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
-GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
+INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
 CORE_CASE_SERVICE_NAME="${CORE_CASE_SERVICE_NAME:-expenseflow-core-case-service}"
 GL_CODING_SERVICE_NAME="${GL_CODING_SERVICE_NAME:-expenseflow-gl-coding-service}"
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
@@ -57,8 +58,10 @@ target_group_arn() {
 }
 
 load_balancer_dns_name() {
+    local load_balancer_name="$1"
+
     aws_cli elbv2 describe-load-balancers \
-        --names "$ALB_NAME" \
+        --names "$load_balancer_name" \
         --query 'LoadBalancers[0].DNSName' \
         --output text
 }
@@ -127,7 +130,7 @@ main() {
     core_case_sg="$(security_group_id "$CORE_CASE_SECURITY_GROUP_NAME")"
     gl_coding_sg="$(security_group_id "$GL_CODING_SECURITY_GROUP_NAME")"
     core_case_target_group_arn="$(target_group_arn "$CORE_CASE_TARGET_GROUP_NAME")"
-    gl_coding_target_group_arn="$(target_group_arn "$GL_CODING_TARGET_GROUP_NAME")"
+    gl_coding_target_group_arn="$(target_group_arn "$INTERNAL_GL_CODING_TARGET_GROUP_NAME")"
 
     core_case_service_arn="$(
         create_or_update_service \
@@ -148,11 +151,13 @@ main() {
             8001
     )"
 
-    alb_dns_name="$(load_balancer_dns_name)"
+    alb_dns_name="$(load_balancer_dns_name "$ALB_NAME")"
+    internal_alb_dns_name="$(load_balancer_dns_name "$INTERNAL_ALB_NAME")"
 
     echo "Core Case service ARN: $core_case_service_arn"
     echo "GL-coding service ARN: $gl_coding_service_arn"
     echo "ALB DNS name: $alb_dns_name"
+    echo "Internal GL-coding ALB DNS name: $internal_alb_dns_name"
 }
 
 main "$@"
