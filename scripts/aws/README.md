@@ -14,13 +14,12 @@ Required local tools:
 - Docker with Buildx support
 - Node.js, used by the task-definition render script
 - OpenSSL, used to generate synthetic JWT key material for sandbox secrets
+- curl, used by the ALB smoke script
 
 Default AWS target:
 
 - Profile: `expenseflow-smoke`
 - Region: `us-east-1`
-- VPC: `vpc-07d74aa9f23a0a4d5`
-- Public subnets: `subnet-009a1b8ff487f5f03`, `subnet-0c860e6ff8d54bd74`
 
 Verify identity first:
 
@@ -34,6 +33,9 @@ Required runtime values:
 - `GL_CODING_DATABASE_URL`: ECS-reachable PostgreSQL URL for GL-coding.
 - `GL_CODING_SERVICE_BASE_URL`: ECS-reachable Core Case to GL-coding HTTP base URL.
 - `REDIS_URL`: ECS-reachable Redis URL for Core Case.
+- `VPC_ID`: VPC where the ALB, target groups, and task security groups are created.
+- `PUBLIC_SUBNETS`: comma-separated public subnet IDs for the ALB and Fargate services.
+- `ROLE_PERMISSIONS_BOUNDARY_ARN`: permissions boundary ARN required for sandbox IAM roles.
 
 The scripts reject `localhost` and `127.0.0.1` for these values because each Fargate task has its own network namespace.
 
@@ -46,6 +48,9 @@ CORE_CASE_DATABASE_URL="$CORE_CASE_DATABASE_URL" \
 GL_CODING_DATABASE_URL="$GL_CODING_DATABASE_URL" \
 GL_CODING_SERVICE_BASE_URL="$GL_CODING_SERVICE_BASE_URL" \
 REDIS_URL="$REDIS_URL" \
+VPC_ID="$VPC_ID" \
+PUBLIC_SUBNETS="$PUBLIC_SUBNETS" \
+ROLE_PERMISSIONS_BOUNDARY_ARN="$ROLE_PERMISSIONS_BOUNDARY_ARN" \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/create-runtime-smoke-resources.sh
 ```
@@ -55,15 +60,18 @@ This creates or updates the AWS resources that the task definitions need:
 - ECR repositories
 - ECS cluster
 - CloudWatch log groups
+- Internet-facing Application Load Balancer
+- HTTP listener with `/v1/*` routing to Core Case
+- Core Case and GL-coding target groups
 - SNS topic for stage-transition events
 - S3 bucket for synthetic receipt-storage smoke paths
 - DynamoDB table for the configured Expense Report read-projection path
-- Fargate task security groups
+- ALB and Fargate task security groups
 - IAM execution and task roles
 - Core Case task-role permissions for SNS, S3, and DynamoDB runtime calls
 - Secrets Manager values
 
-Database URLs are stored in Secrets Manager from the operator-supplied values. The script does not create PostgreSQL, Redis, service discovery, an internal load balancer, or ECS services.
+Database URLs are stored in Secrets Manager from the operator-supplied values. The script does not create PostgreSQL, Redis, service discovery, or ECS services.
 
 The script is idempotent where AWS supports it, so it can be rerun after a partial failure.
 
@@ -96,6 +104,8 @@ This renders the portable task-definition templates with real AWS values, then r
 - `expenseflow-core-case-service`
 - `expenseflow-gl-coding-service`
 
+The registration script resolves the stage-transition SNS topic by `STAGE_TRANSITION_SNS_TOPIC_NAME`, which defaults to `expenseflow-sandbox-stage-transitions`, after the resource script creates it.
+
 `GL_CODING_SERVICE_BASE_URL` and `REDIS_URL` must be ECS-reachable endpoints such as Cloud Map, ECS Service Connect, or internal load balancer DNS names. The registration script rejects `localhost` and `127.0.0.1` for those cross-task dependencies because each Fargate task has its own network namespace.
 
 Rendered task-definition JSON is written to `/tmp/expenseflow-scrum-147-task-definitions` by default because it contains account-specific ARNs and ECR image URIs.
@@ -103,32 +113,46 @@ Rendered task-definition JSON is written to `/tmp/expenseflow-scrum-147-task-def
 Validate template rendering locally without registering task definitions:
 
 ```bash
-CORE_CASE_DATABASE_URL="postgres://expenseflow_sandbox:synthetic-password@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
-GL_CODING_DATABASE_URL="postgres://expenseflow_sandbox:synthetic-password@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
+CORE_CASE_DATABASE_URL="postgres://db-user:db-pass@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
+GL_CODING_DATABASE_URL="postgres://db-user:db-pass@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
 GL_CODING_SERVICE_BASE_URL="http://gl-coding.expenseflow-sandbox.local:8001" \
 REDIS_URL="redis://redis.expenseflow-sandbox.local:6379" \
+STAGE_TRANSITION_SNS_TOPIC_ARN="synthetic-stage-transition-topic-ref" \
 VALIDATE_RENDER_ONLY=true \
 scripts/aws/register-task-definitions.sh
 ```
 
-### 4. Run The Fargate Smoke
+### 4. Deploy ECS Services
 
 ```bash
-STOP_AFTER_SMOKE=true AWS_PROFILE=expenseflow-smoke scripts/aws/run-task-smoke.sh
+VPC_ID="$VPC_ID" \
+PUBLIC_SUBNETS="$PUBLIC_SUBNETS" \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/deploy-services.sh
 ```
 
-This runs one-off Fargate tasks for both services in the existing public subnets with public IP assignment enabled.
+This creates or updates long-running Fargate services for:
+
+- `expenseflow-core-case-service`
+- `expenseflow-gl-coding-service`
+
+Both services are attached to ALB target groups. The public ALB listener routes `/v1/*` to Core Case. GL-coding is attached to its own target group for ECS service health and deployment gating, but it is not exposed as a public `/v1` API.
+
+### 5. Run The ALB Smoke
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/run-task-smoke.sh
+```
+
+This validates ALB-backed ECS services and calls the ALB DNS name.
 
 Expected result:
 
-- Preflight confirms the registered Core Case task definition does not contain loopback GL-coding or Redis endpoints.
-- Preflight confirms the configured SNS topic, S3 bucket, DynamoDB table, task roles, and Core Case runtime task-role policy are present.
-- GL-coding reaches `RUNNING` and container health becomes `HEALTHY`.
-- Core Case reaches `RUNNING` and container health becomes `HEALTHY`.
-- CloudWatch log stream names are printed.
-- With `STOP_AFTER_SMOKE=true`, both tasks are stopped after passing.
+- Preflight confirms ALB, listener rules, target groups, ECS services, task roles, and runtime resources are present.
+- Core Case and GL-coding target groups each report at least one healthy target.
+- `http://<alb-dns>/v1/openapi.json` returns HTTP 200 and contains Core Case OpenAPI paths.
 
-This proves ECS can pull the ECR images, inject Secrets Manager values, start the containers on Fargate, run container health checks, write logs, and reference the expected AWS runtime resources. It does not prove a full Expense Report submission path, database connectivity, or Core Case to GL-coding request success; that deeper smoke requires the later service-discovery and database infrastructure work.
+This proves ECS services can run on Fargate behind the ALB, target-group health gates service readiness, and the ALB routes `/v1/*` to Core Case. It does not prove a full authenticated Expense Report submission path.
 
 ## Useful Verification Commands
 
@@ -148,14 +172,15 @@ aws ecs describe-task-definition \
   --query 'taskDefinition.{status:status,cpu:cpu,memory:memory,executionRole:executionRoleArn,taskRole:taskRoleArn}'
 ```
 
-Check that no smoke tasks are still running:
+Check services:
 
 ```bash
-aws ecs list-tasks \
+aws ecs describe-services \
   --profile expenseflow-smoke \
   --region us-east-1 \
   --cluster expenseflow-sandbox \
-  --desired-status RUNNING
+  --services expenseflow-core-case-service expenseflow-gl-coding-service \
+  --query 'services[].{name:serviceName,status:status,running:runningCount,desired:desiredCount}'
 ```
 
 Tail logs:
@@ -177,7 +202,10 @@ aws logs tail /ecs/expenseflow-sandbox/gl-coding-service \
 Only run teardown when the sandbox smoke resources are no longer needed:
 
 ```bash
-CONFIRM_RESOURCE_TEARDOWN=SCRUM-147 AWS_PROFILE=expenseflow-smoke scripts/aws/tear-down-runtime-smoke-resources.sh
+CONFIRM_RESOURCE_TEARDOWN=SCRUM-147 \
+VPC_ID="$VPC_ID" \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/tear-down-runtime-smoke-resources.sh
 ```
 
-The teardown script stops pending or running smoke tasks, deregisters and deletes task-definition revisions where AWS permits it, deletes the ECS cluster, deletes ECR repositories and pushed images, force-deletes the synthetic Secrets Manager entries, deletes CloudWatch log groups, deletes task security groups, removes IAM role policies and roles, and deletes rendered task-definition output under `/tmp`.
+The teardown script scales down and deletes ECS services, stops remaining smoke tasks, deletes ALB listeners/rules, deletes the ALB and target groups, deregisters and deletes task-definition revisions where AWS permits it, deletes the ECS cluster, deletes ECR repositories and pushed images, force-deletes the Secrets Manager entries, deletes CloudWatch log groups, deletes security groups, removes IAM role policies and roles, and deletes rendered task-definition output under `/tmp`.

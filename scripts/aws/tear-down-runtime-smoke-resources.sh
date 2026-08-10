@@ -7,7 +7,7 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 CONFIRM_RESOURCE_TEARDOWN="${CONFIRM_RESOURCE_TEARDOWN:-}"
 
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
+VPC_ID="${VPC_ID:-}"
 CLUSTER_NAME="${CLUSTER_NAME:-expenseflow-sandbox}"
 CORE_CASE_REPOSITORY="${CORE_CASE_REPOSITORY:-expenseflow-core-case-service}"
 GL_CODING_REPOSITORY="${GL_CODING_REPOSITORY:-expenseflow-gl-coding-service}"
@@ -18,12 +18,18 @@ CORE_CASE_TASK_ROLE_NAME="${CORE_CASE_TASK_ROLE_NAME:-expenseflow-sandbox-core-c
 GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-coding-task-role}"
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
+ALB_SECURITY_GROUP_NAME="${ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-alb-sg}"
 CORE_CASE_TASK_DEFINITION="${CORE_CASE_TASK_DEFINITION:-expenseflow-core-case-service}"
 GL_CODING_TASK_DEFINITION="${GL_CODING_TASK_DEFINITION:-expenseflow-gl-coding-service}"
 RENDER_DIR="${RENDER_DIR:-/tmp/expenseflow-scrum-147-task-definitions}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
+ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
+CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
+GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
+CORE_CASE_SERVICE_NAME="${CORE_CASE_SERVICE_NAME:-expenseflow-core-case-service}"
+GL_CODING_SERVICE_NAME="${GL_CODING_SERVICE_NAME:-expenseflow-gl-coding-service}"
 
 SECRET_NAMES=(
     expenseflow/sandbox/core-case/database-url
@@ -49,6 +55,16 @@ aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
 }
 
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly before tearing down ECS sandbox resources." >&2
+        return 1
+    fi
+}
+
 stop_cluster_tasks() {
     local desired_status task_arns
 
@@ -71,6 +87,80 @@ stop_cluster_tasks() {
         done
 
         aws_cli ecs wait tasks-stopped --cluster "$CLUSTER_NAME" --tasks $task_arns || true
+    done
+}
+
+delete_service() {
+    local service_name="$1"
+    local service_status
+
+    service_status="$(aws_cli ecs describe-services \
+        --cluster "$CLUSTER_NAME" \
+        --services "$service_name" \
+        --query 'services[0].status' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$service_status" || "$service_status" == "None" || "$service_status" == "INACTIVE" ]]; then
+        return 0
+    fi
+
+    aws_cli ecs update-service \
+        --cluster "$CLUSTER_NAME" \
+        --service "$service_name" \
+        --desired-count 0 >/dev/null 2>&1 || true
+    aws_cli ecs wait services-stable \
+        --cluster "$CLUSTER_NAME" \
+        --services "$service_name" >/dev/null 2>&1 || true
+    aws_cli ecs delete-service \
+        --cluster "$CLUSTER_NAME" \
+        --service "$service_name" \
+        --force >/dev/null 2>&1 || true
+}
+
+load_balancer_arn() {
+    aws_cli elbv2 describe-load-balancers \
+        --names "$ALB_NAME" \
+        --query 'LoadBalancers[0].LoadBalancerArn' \
+        --output text 2>/dev/null || true
+}
+
+target_group_arn() {
+    aws_cli elbv2 describe-target-groups \
+        --names "$1" \
+        --query 'TargetGroups[0].TargetGroupArn' \
+        --output text 2>/dev/null || true
+}
+
+delete_load_balancer_stack() {
+    local alb_arn listener_arns rule_arns target_group
+
+    alb_arn="$(load_balancer_arn)"
+    if [[ -n "$alb_arn" && "$alb_arn" != "None" ]]; then
+        listener_arns="$(aws_cli elbv2 describe-listeners \
+            --load-balancer-arn "$alb_arn" \
+            --query 'Listeners[].ListenerArn' \
+            --output text 2>/dev/null || true)"
+
+        for listener_arn in $listener_arns; do
+            rule_arns="$(aws_cli elbv2 describe-rules \
+                --listener-arn "$listener_arn" \
+                --query 'Rules[?Priority!=`default`].RuleArn' \
+                --output text 2>/dev/null || true)"
+            for rule_arn in $rule_arns; do
+                aws_cli elbv2 delete-rule --rule-arn "$rule_arn" >/dev/null 2>&1 || true
+            done
+            aws_cli elbv2 delete-listener --listener-arn "$listener_arn" >/dev/null 2>&1 || true
+        done
+
+        aws_cli elbv2 delete-load-balancer --load-balancer-arn "$alb_arn" >/dev/null 2>&1 || true
+        aws_cli elbv2 wait load-balancers-deleted --load-balancer-arns "$alb_arn" >/dev/null 2>&1 || true
+    fi
+
+    for target_group in "$CORE_CASE_TARGET_GROUP_NAME" "$GL_CODING_TARGET_GROUP_NAME"; do
+        target_group_arn_value="$(target_group_arn "$target_group")"
+        if [[ -n "$target_group_arn_value" && "$target_group_arn_value" != "None" ]]; then
+            aws_cli elbv2 delete-target-group --target-group-arn "$target_group_arn_value" >/dev/null 2>&1 || true
+        fi
     done
 }
 
@@ -197,11 +287,20 @@ delete_role() {
 }
 
 main() {
+    require_non_empty VPC_ID "$VPC_ID"
+
     echo "Verifying AWS identity for profile $AWS_PROFILE in $AWS_REGION..."
     aws_cli sts get-caller-identity
 
-    echo "Stopping SCRUM-147 smoke tasks..."
+    echo "Deleting SCRUM-148 ECS services..."
+    delete_service "$CORE_CASE_SERVICE_NAME"
+    delete_service "$GL_CODING_SERVICE_NAME"
+
+    echo "Stopping remaining SCRUM-147 smoke tasks..."
     stop_cluster_tasks
+
+    echo "Deleting ALB, listeners, rules, and target groups..."
+    delete_load_balancer_stack
 
     echo "Deregistering SCRUM-147 task definition families..."
     deregister_task_definition_family "$CORE_CASE_TASK_DEFINITION"
@@ -231,6 +330,7 @@ main() {
     echo "Deleting task security groups..."
     delete_security_group "$CORE_CASE_SECURITY_GROUP_NAME"
     delete_security_group "$GL_CODING_SECURITY_GROUP_NAME"
+    delete_security_group "$ALB_SECURITY_GROUP_NAME"
 
     echo "Deleting IAM roles and attached policies..."
     delete_role "$EXECUTION_ROLE_NAME"

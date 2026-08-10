@@ -6,15 +6,15 @@
 
 ## Context
 
-ExpenseFlow needs a production-oriented runtime shape for the Core Case Service and GL-coding service. Both services are already packaged as container images, and the deployment target must support task-level CPU and memory sizing, environment configuration, Secrets Manager injection, service health checks, CloudWatch logs, and later placement behind an Application Load Balancer.
+ExpenseFlow needs a production-oriented runtime shape for the Core Case Service and GL-coding service. Both services are already packaged as container images, and the deployment target must support task-level CPU and memory sizing, environment configuration, Secrets Manager injection, service health checks, CloudWatch logs, and placement behind an Application Load Balancer.
 
-The platform also needs to keep operational scope reasonable for the current team and delivery phase. SCRUM-147 defines ECS Fargate task definitions and a sandbox smoke path. Later infrastructure tickets will introduce a fuller deployment model, including Terraform-managed resources.
+The platform also needs to keep operational scope reasonable for the current team and delivery phase. SCRUM-147 defines ECS Fargate task definitions and a sandbox smoke path, and SCRUM-148 extends that sandbox runtime to ECS services behind an ALB. Later infrastructure tickets will introduce a fuller deployment model, including Terraform-managed resources.
 
 ## Decision
 
 ExpenseFlow will run the Core Case Service and GL-coding service on AWS ECS Fargate.
 
-The task definitions define the production task shape for each service: Fargate launch type, `awsvpc` networking, Linux `X86_64`, CPU and memory settings, image references, health checks, CloudWatch log configuration, non-secret environment configuration, and Secrets Manager references for sensitive values.
+The task definitions define the production task shape for each service: Fargate launch type, `awsvpc` networking, Linux `X86_64`, CPU and memory settings, image references, health checks, CloudWatch log configuration, non-secret environment configuration, and Secrets Manager references for sensitive values. ECS services attach the task definitions to ALB target groups so target-group health can gate service deployment readiness.
 
 Fargate is the default runtime choice because it lets the team run containerized services without managing the underlying compute hosts. AWS owns host provisioning, host patching, cluster capacity management, and low-level container runtime maintenance. The application team can focus on service images, task definitions, networking, secrets, logs, IAM boundaries, and deployment behavior.
 
@@ -54,6 +54,6 @@ Local Docker checks should continue to verify that the image builds and the serv
 
 ## Temporary Implementation Note
 
-The repository stores Bash scripts under `scripts/aws/` to create, smoke, and tear down the SCRUM-147 sandbox runtime resources. These scripts are a temporary bridge so the team can validate ECS Fargate task definitions with real ECR images, IAM roles, Secrets Manager entries, security groups, log groups, and one-off Fargate tasks.
+The repository stores Bash scripts under `scripts/aws/` to create, deploy, smoke, and tear down the SCRUM-147/SCRUM-148 sandbox runtime resources. These scripts are a temporary bridge so the team can validate ECS Fargate task definitions and ALB-backed ECS services with real ECR images, IAM roles, Secrets Manager entries, security groups, log groups, target groups, and load-balancer routing.
 
 Long-term AWS infrastructure should move into Terraform once the later infrastructure tickets establish the project convention. The Bash scripts should not become the permanent infrastructure-as-code system.

@@ -6,8 +6,9 @@ AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
+VPC_ID="${VPC_ID:-}"
 CLUSTER_NAME="${CLUSTER_NAME:-expenseflow-sandbox}"
+PUBLIC_SUBNETS="${PUBLIC_SUBNETS:-}"
 CORE_CASE_REPOSITORY="${CORE_CASE_REPOSITORY:-expenseflow-core-case-service}"
 GL_CODING_REPOSITORY="${GL_CODING_REPOSITORY:-expenseflow-gl-coding-service}"
 CORE_CASE_LOG_GROUP="${CORE_CASE_LOG_GROUP:-/ecs/expenseflow-sandbox/core-case-service}"
@@ -17,7 +18,11 @@ CORE_CASE_TASK_ROLE_NAME="${CORE_CASE_TASK_ROLE_NAME:-expenseflow-sandbox-core-c
 GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-coding-task-role}"
 CORE_CASE_SECURITY_GROUP_NAME="${CORE_CASE_SECURITY_GROUP_NAME:-expenseflow-sandbox-core-case-task-sg}"
 GL_CODING_SECURITY_GROUP_NAME="${GL_CODING_SECURITY_GROUP_NAME:-expenseflow-sandbox-gl-coding-task-sg}"
-ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-arn:aws:iam::208096650110:policy/TraineeSandboxBoundary}"
+ALB_SECURITY_GROUP_NAME="${ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-alb-sg}"
+ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
+CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
+GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
+ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
@@ -29,11 +34,22 @@ GL_CODING_DATABASE_URL="${GL_CODING_DATABASE_URL:-}"
 
 TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-147)
 EC2_TAGS="ResourceType=security-group,Tags=[{Key=user,Value=amos-maddux},{Key=env,Value=sandbox},{Key=ticket,Value=SCRUM-147}]"
+ELB_TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-147)
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
     exit 1
 fi
+
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly before creating ECS sandbox resources." >&2
+        return 1
+    fi
+}
 
 require_non_loopback_endpoint() {
     local variable_name="$1"
@@ -58,6 +74,14 @@ account_id() {
     aws_cli sts get-caller-identity --query Account --output text
 }
 
+aws_arn_prefix() {
+    local caller_arn arn_label partition
+
+    caller_arn="$(aws_cli sts get-caller-identity --query Arn --output text)"
+    IFS=':' read -r arn_label partition _ <<<"$caller_arn"
+    echo "$arn_label:$partition"
+}
+
 create_or_tag_ecr_repository() {
     local repository_name="$1"
     local repository_arn
@@ -78,7 +102,9 @@ create_or_tag_ecr_repository() {
 
 create_or_tag_log_group() {
     local log_group_name="$1"
-    local log_group_arn="arn:aws:logs:$AWS_REGION:$(account_id):log-group:$log_group_name"
+    local log_group_arn
+
+    log_group_arn="$(aws_arn_prefix):logs:$AWS_REGION:$(account_id):log-group:$log_group_name"
 
     aws_cli logs create-log-group --log-group-name "$log_group_name" 2>/dev/null || true
     aws_cli logs put-retention-policy --log-group-name "$log_group_name" --retention-in-days 14
@@ -108,6 +134,124 @@ create_or_tag_cluster() {
     echo "$cluster_arn"
 }
 
+create_or_tag_load_balancer() {
+    local load_balancer_name="$1"
+    local security_group_id="$2"
+    local load_balancer_arn
+
+    load_balancer_arn="$(aws_cli elbv2 describe-load-balancers \
+        --names "$load_balancer_name" \
+        --query 'LoadBalancers[0].LoadBalancerArn' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$load_balancer_arn" || "$load_balancer_arn" == "None" ]]; then
+        IFS=',' read -r -a subnet_ids <<<"$PUBLIC_SUBNETS"
+        load_balancer_arn="$(aws_cli elbv2 create-load-balancer \
+            --name "$load_balancer_name" \
+            --subnets "${subnet_ids[@]}" \
+            --security-groups "$security_group_id" \
+            --scheme internet-facing \
+            --type application \
+            --ip-address-type ipv4 \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'LoadBalancers[0].LoadBalancerArn' \
+            --output text)"
+        aws_cli elbv2 wait load-balancer-available --load-balancer-arns "$load_balancer_arn"
+    fi
+
+    aws_cli elbv2 add-tags --resource-arns "$load_balancer_arn" --tags "${ELB_TAGS[@]}"
+    echo "$load_balancer_arn"
+}
+
+create_or_tag_target_group() {
+    local target_group_name="$1"
+    local port="$2"
+    local target_group_arn
+
+    target_group_arn="$(aws_cli elbv2 describe-target-groups \
+        --names "$target_group_name" \
+        --query 'TargetGroups[0].TargetGroupArn' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$target_group_arn" || "$target_group_arn" == "None" ]]; then
+        target_group_arn="$(aws_cli elbv2 create-target-group \
+            --name "$target_group_name" \
+            --protocol HTTP \
+            --port "$port" \
+            --vpc-id "$VPC_ID" \
+            --target-type ip \
+            --health-check-protocol HTTP \
+            --health-check-path /health \
+            --matcher HttpCode=200 \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)"
+    fi
+
+    aws_cli elbv2 add-tags --resource-arns "$target_group_arn" --tags "${ELB_TAGS[@]}"
+    echo "$target_group_arn"
+}
+
+create_or_update_http_listener() {
+    local load_balancer_arn="$1"
+    local listener_arn
+
+    listener_arn="$(aws_cli elbv2 describe-listeners \
+        --load-balancer-arn "$load_balancer_arn" \
+        --query 'Listeners[?Port==`80`].ListenerArn | [0]' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$listener_arn" || "$listener_arn" == "None" ]]; then
+        listener_arn="$(aws_cli elbv2 create-listener \
+            --load-balancer-arn "$load_balancer_arn" \
+            --protocol HTTP \
+            --port 80 \
+            --default-actions '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]' \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'Listeners[0].ListenerArn' \
+            --output text)"
+    else
+        aws_cli elbv2 modify-listener \
+            --listener-arn "$listener_arn" \
+            --default-actions '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]' >/dev/null
+    fi
+
+    echo "$listener_arn"
+}
+
+create_or_update_listener_rule() {
+    local listener_arn="$1"
+    local priority="$2"
+    local target_group_arn="$3"
+    shift 3
+    local conditions=("$@")
+    local rule_arn
+
+    rule_arn="$(aws_cli elbv2 describe-rules \
+        --listener-arn "$listener_arn" \
+        --query "Rules[?Priority=='$priority'].RuleArn | [0]" \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$rule_arn" || "$rule_arn" == "None" ]]; then
+        rule_arn="$(aws_cli elbv2 create-rule \
+            --listener-arn "$listener_arn" \
+            --priority "$priority" \
+            --conditions "${conditions[@]}" \
+            --actions Type=forward,TargetGroupArn="$target_group_arn" \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'Rules[0].RuleArn' \
+            --output text)"
+    else
+        aws_cli elbv2 modify-rule \
+            --rule-arn "$rule_arn" \
+            --conditions "${conditions[@]}" \
+            --actions Type=forward,TargetGroupArn="$target_group_arn" >/dev/null
+    fi
+
+    aws_cli elbv2 add-tags --resource-arns "$rule_arn" --tags "${ELB_TAGS[@]}"
+    echo "$rule_arn"
+}
+
 create_or_tag_sns_topic() {
     local topic_name="$1"
     local topic_arn
@@ -124,6 +268,7 @@ create_or_tag_sns_topic() {
 
 create_or_tag_receipt_bucket() {
     local bucket_name="$1"
+    local bucket_arn
 
     if ! aws_cli s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
         if [[ "$AWS_REGION" == "us-east-1" ]]; then
@@ -138,7 +283,8 @@ create_or_tag_receipt_bucket() {
     aws_cli s3api put-bucket-tagging \
         --bucket "$bucket_name" \
         --tagging "TagSet=[{Key=user,Value=amos-maddux},{Key=env,Value=sandbox},{Key=ticket,Value=SCRUM-147}]" >/dev/null
-    echo "arn:aws:s3:::$bucket_name"
+    bucket_arn="$(aws_arn_prefix):s3:::$bucket_name"
+    echo "$bucket_arn"
 }
 
 create_or_tag_expense_report_table() {
@@ -196,6 +342,22 @@ create_or_tag_security_group() {
 
     aws_cli ec2 create-tags --resources "$group_id" --tags "${TAGS[@]}"
     echo "$group_id"
+}
+
+authorize_security_group_ingress() {
+    local group_id="$1"
+    local port="$2"
+    local source="$3"
+
+    if [[ "$source" == sg-* ]]; then
+        aws_cli ec2 authorize-security-group-ingress \
+            --group-id "$group_id" \
+            --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,UserIdGroupPairs=[{GroupId=$source}]" >/dev/null 2>&1 || true
+    else
+        aws_cli ec2 authorize-security-group-ingress \
+            --group-id "$group_id" \
+            --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,IpRanges=[{CidrIp=$source}]" >/dev/null 2>&1 || true
+    fi
 }
 
 create_or_tag_role() {
@@ -308,6 +470,9 @@ fs.writeFileSync(process.argv[1], JSON.stringify({
 }
 
 main() {
+    require_non_empty VPC_ID "$VPC_ID"
+    require_non_empty PUBLIC_SUBNETS "$PUBLIC_SUBNETS"
+    require_non_empty ROLE_PERMISSIONS_BOUNDARY_ARN "$ROLE_PERMISSIONS_BOUNDARY_ARN"
     require_non_loopback_endpoint GL_CODING_SERVICE_BASE_URL "$GL_CODING_SERVICE_BASE_URL"
     require_non_loopback_endpoint REDIS_URL "$REDIS_URL"
     require_non_loopback_endpoint CORE_CASE_DATABASE_URL "$CORE_CASE_DATABASE_URL"
@@ -327,14 +492,38 @@ main() {
     create_or_tag_log_group "$CORE_CASE_LOG_GROUP"
     create_or_tag_log_group "$GL_CODING_LOG_GROUP"
 
+    echo "Creating or tagging load balancer security group..."
+    alb_sg="$(create_or_tag_security_group "$ALB_SECURITY_GROUP_NAME" "SCRUM-147 internet-facing ALB smoke security group.")"
+    authorize_security_group_ingress "$alb_sg" 80 "0.0.0.0/0"
+
+    echo "Creating or tagging task security groups..."
+    core_case_sg="$(create_or_tag_security_group "$CORE_CASE_SECURITY_GROUP_NAME" "SCRUM-147 Core Case Fargate service security group.")"
+    gl_coding_sg="$(create_or_tag_security_group "$GL_CODING_SECURITY_GROUP_NAME" "SCRUM-147 GL-coding Fargate service security group.")"
+    authorize_security_group_ingress "$core_case_sg" 3000 "$alb_sg"
+    authorize_security_group_ingress "$gl_coding_sg" 8001 "$alb_sg"
+    authorize_security_group_ingress "$gl_coding_sg" 8001 "$core_case_sg"
+
+    echo "Creating or tagging ALB, target groups, and listener rules..."
+    alb_arn="$(create_or_tag_load_balancer "$ALB_NAME" "$alb_sg")"
+    core_case_target_group_arn="$(create_or_tag_target_group "$CORE_CASE_TARGET_GROUP_NAME" 3000)"
+    gl_coding_target_group_arn="$(create_or_tag_target_group "$GL_CODING_TARGET_GROUP_NAME" 8001)"
+    listener_arn="$(create_or_update_http_listener "$alb_arn")"
+    create_or_update_listener_rule \
+        "$listener_arn" \
+        100 \
+        "$core_case_target_group_arn" \
+        Field=path-pattern,Values='/v1/*'
+    create_or_update_listener_rule \
+        "$listener_arn" \
+        200 \
+        "$gl_coding_target_group_arn" \
+        Field=host-header,Values='gl-coding.sandbox.expenseflow.internal' \
+        Field=path-pattern,Values='/__gl-coding-health/*'
+
     echo "Creating or tagging Core Case AWS runtime dependencies..."
     stage_transition_topic_arn="$(create_or_tag_sns_topic "$STAGE_TRANSITION_SNS_TOPIC_NAME")"
     receipt_bucket_arn="$(create_or_tag_receipt_bucket "$RECEIPT_STORAGE_BUCKET")"
     expense_report_table_arn="$(create_or_tag_expense_report_table "$DYNAMODB_EXPENSE_REPORT_TABLE" "$DYNAMODB_EXPENSE_REPORT_TENANT_INDEX")"
-
-    echo "Creating or tagging task security groups..."
-    create_or_tag_security_group "$CORE_CASE_SECURITY_GROUP_NAME" "SCRUM-147 Core Case Fargate task smoke security group."
-    create_or_tag_security_group "$GL_CODING_SECURITY_GROUP_NAME" "SCRUM-147 GL-coding Fargate task smoke security group."
 
     echo "Creating Secrets Manager values..."
     create_jwt_secret_values
@@ -353,7 +542,7 @@ main() {
 
     aws_cli iam attach-role-policy \
         --role-name "$EXECUTION_ROLE_NAME" \
-        --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        --policy-arn "$(aws_arn_prefix):iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 
     policy_file="$(mktemp)"
     write_execution_role_secret_policy "$policy_file" "$core_db_arn,$core_private_key_arn,$core_mfa_key_arn,$core_tin_username_arn,$core_tin_password_arn,$gl_db_arn,$gl_public_keys_arn"
