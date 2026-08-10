@@ -145,6 +145,14 @@ AWS_PROFILE=expenseflow-smoke scripts/aws/run-task-smoke.sh
 ```
 
 This validates ALB-backed ECS services and calls the ALB DNS name.
+If the sandbox AWS Organizations policy still blocks creation of the dedicated
+receipt bucket, run the ALB-only smoke with:
+
+```bash
+ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/run-task-smoke.sh
+```
 
 Expected result:
 
@@ -152,7 +160,7 @@ Expected result:
 - Core Case and GL-coding target groups each report at least one healthy target.
 - `http://<alb-dns>/v1/openapi.json` returns HTTP 200 and contains Core Case OpenAPI paths.
 
-This proves ECS services can run on Fargate behind the ALB, target-group health gates service readiness, and the ALB routes `/v1/*` to Core Case. It does not prove a full authenticated Expense Report submission path.
+This proves ECS services can run on Fargate behind the ALB, target-group health gates service readiness, and the ALB routes `/v1/*` to Core Case. When `ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true` is used, receipt storage is explicitly not verified. This smoke also does not prove a full authenticated Expense Report submission path.
 
 ## Useful Verification Commands
 

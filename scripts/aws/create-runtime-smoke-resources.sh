@@ -27,6 +27,7 @@ RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
 DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
+AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
 GL_CODING_SERVICE_BASE_URL="${GL_CODING_SERVICE_BASE_URL:-}"
 REDIS_URL="${REDIS_URL:-}"
 CORE_CASE_DATABASE_URL="${CORE_CASE_DATABASE_URL:-}"
@@ -115,12 +116,16 @@ create_or_tag_log_group() {
 
 create_or_tag_cluster() {
     local cluster_arn
+    local cluster_status
 
-    if ! cluster_arn="$(aws_cli ecs describe-clusters --clusters "$CLUSTER_NAME" --query 'clusters[0].clusterArn' --output text 2>/dev/null)"; then
+    if ! cluster_status="$(aws_cli ecs describe-clusters --clusters "$CLUSTER_NAME" --query 'clusters[0].status' --output text 2>/dev/null)"; then
         cluster_arn="MISSING"
+        cluster_status="MISSING"
+    else
+        cluster_arn="$(aws_cli ecs describe-clusters --clusters "$CLUSTER_NAME" --query 'clusters[0].clusterArn' --output text 2>/dev/null)"
     fi
 
-    if [[ "$cluster_arn" == "None" || "$cluster_arn" == "MISSING" ]]; then
+    if [[ "$cluster_arn" == "None" || "$cluster_arn" == "MISSING" || "$cluster_status" == "INACTIVE" ]]; then
         cluster_arn="$(aws_cli ecs create-cluster \
             --cluster-name "$CLUSTER_NAME" \
             --tags key=user,value=amos-maddux key=env,value=sandbox key=ticket,value=SCRUM-147 \
@@ -188,6 +193,9 @@ create_or_tag_target_group() {
             --output text)"
     fi
 
+    aws_cli elbv2 modify-target-group-attributes \
+        --target-group-arn "$target_group_arn" \
+        --attributes Key=deregistration_delay.timeout_seconds,Value=10 >/dev/null
     aws_cli elbv2 add-tags --resource-arns "$target_group_arn" --tags "${ELB_TAGS[@]}"
     echo "$target_group_arn"
 }
@@ -272,11 +280,17 @@ create_or_tag_receipt_bucket() {
 
     if ! aws_cli s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
         if [[ "$AWS_REGION" == "us-east-1" ]]; then
-            aws_cli s3api create-bucket --bucket "$bucket_name" >/dev/null
+            aws_cli s3api create-bucket --bucket "$bucket_name" >/dev/null || {
+                echo "Failed to create receipt bucket $bucket_name. Provide an existing dedicated bucket or grant s3:CreateBucket in the sandbox." >&2
+                return 1
+            }
         else
             aws_cli s3api create-bucket \
                 --bucket "$bucket_name" \
-                --create-bucket-configuration LocationConstraint="$AWS_REGION" >/dev/null
+                --create-bucket-configuration LocationConstraint="$AWS_REGION" >/dev/null || {
+                    echo "Failed to create receipt bucket $bucket_name. Provide an existing dedicated bucket or grant s3:CreateBucket in the sandbox." >&2
+                    return 1
+                }
         fi
     fi
 
@@ -410,8 +424,18 @@ create_jwt_secret_values() {
     openssl rsa -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
 
     JWT_PRIVATE_KEY_BASE64="$(base64 -w 0 "$private_key")"
-    JWT_PUBLIC_KEY_BASE64="$(base64 -w 0 "$public_key")"
-    JWT_PUBLIC_KEYS_JSON="$(printf '{"synthetic-scrum-147-key":"%s"}' "$JWT_PUBLIC_KEY_BASE64")"
+    JWT_PUBLIC_KEYS_JSON="$(
+        AUTH_JWT_KEY_ID="$AUTH_JWT_KEY_ID" PUBLIC_KEY_PATH="$public_key" node -e "
+const crypto = require('crypto');
+const fs = require('fs');
+const key = crypto.createPublicKey(fs.readFileSync(process.env.PUBLIC_KEY_PATH));
+const jwk = key.export({ format: 'jwk' });
+jwk.kid = process.env.AUTH_JWT_KEY_ID;
+jwk.use = 'sig';
+jwk.alg = 'RS256';
+process.stdout.write(JSON.stringify({ keys: [jwk] }));
+"
+    )"
     MFA_TOTP_SECRET_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 
     rm -rf "$temp_dir"

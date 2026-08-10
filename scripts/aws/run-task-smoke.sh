@@ -19,6 +19,7 @@ DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sand
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 CORE_CASE_RUNTIME_POLICY_NAME="${CORE_CASE_RUNTIME_POLICY_NAME:-expenseflow-sandbox-scrum-147-core-case-runtime}"
 SMOKE_PATH="${SMOKE_PATH:-/v1/openapi.json}"
+ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE="${ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE:-false}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -145,7 +146,15 @@ preflight_runtime_configuration() {
         echo "Missing SNS topic: $STAGE_TRANSITION_SNS_TOPIC_NAME" >&2
         return 1
     fi
-    aws_cli s3api head-bucket --bucket "$RECEIPT_STORAGE_BUCKET" >/dev/null
+    if [[ "$ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE" == "true" ]]; then
+        # Temporary SCRUM-148 escape hatch: the sandbox AWS Organizations SCP
+        # currently denies s3:CreateBucket, and this ALB smoke only proves
+        # ECS service health plus /v1 routing. Receipt storage remains
+        # unverified until a dedicated bucket is provisioned by platform/IaC.
+        echo "Skipping receipt bucket preflight because ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true." >&2
+    else
+        aws_cli s3api head-bucket --bucket "$RECEIPT_STORAGE_BUCKET" >/dev/null
+    fi
     aws_cli dynamodb describe-table --table-name "$DYNAMODB_EXPENSE_REPORT_TABLE" >/dev/null
 
     echo "Checking ECS task roles and Core Case runtime policy..."
