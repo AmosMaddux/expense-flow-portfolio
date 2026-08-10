@@ -40,11 +40,6 @@ export const navigationItems = [
         allowedRoles: internalRoles,
     },
     {
-        label: "Receipts",
-        path: "/receipts",
-        allowedRoles: internalRoles,
-    },
-    {
         label: "Policy Reference",
         path: "/policy-reference",
         allowedRoles: internalRoles,
