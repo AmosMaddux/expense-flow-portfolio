@@ -15,7 +15,8 @@ import {
     type QueryClient,
     type QueryKey,
 } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { z } from "zod";
 
 import { useSession } from "../auth";
@@ -1121,6 +1122,7 @@ function ApprovalQueueReviewDialog({
                 </div>
                 <ReceiptGallery
                     activeLineItemId={activeLineItemId}
+                    expenseReportId={reportLineItem.expenseReportId}
                     receipts={receipts}
                     reviewRows={reviewRows}
                     view={receiptView}
@@ -1409,6 +1411,7 @@ function ApprovalQueueReviewDialog({
 
 function ReceiptGallery({
     activeLineItemId,
+    expenseReportId,
     receipts,
     reviewRows,
     view,
@@ -1416,6 +1419,7 @@ function ReceiptGallery({
     onViewChange,
 }: {
     activeLineItemId: string | null;
+    expenseReportId: string;
     receipts: ApprovalQueueReceipt[];
     reviewRows: ApprovalQueueReviewRow[];
     view: "grid" | "list";
@@ -1496,13 +1500,38 @@ function ReceiptGallery({
                                     .join(" ")}
                                 key={receipt.id}
                             >
-                                <button
+                                <div
                                     aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${receipt.filename ?? "Receipt file"}. ${receipt.contentType ?? "Receipt"}. ${lineItemLabel}.`}
+                                    aria-disabled={!isLinked}
                                     className="receipt-gallery__select"
-                                    disabled={!isLinked}
-                                    type="button"
-                                    onClick={() => onReceiptSelect(receipt)}
+                                    role="button"
+                                    tabIndex={isLinked ? 0 : -1}
+                                    onKeyDown={(event) => {
+                                        if (
+                                            !isLinked ||
+                                            (event.key !== "Enter" &&
+                                                event.key !== " ")
+                                        ) {
+                                            return;
+                                        }
+
+                                        event.preventDefault();
+                                        onReceiptSelect(receipt);
+                                    }}
+                                    onClick={() => {
+                                        if (isLinked) {
+                                            onReceiptSelect(receipt);
+                                        }
+                                    }}
                                 >
+                                    <ReceiptPreview
+                                        contentType={receipt.contentType}
+                                        merchant={receipt.merchant}
+                                        url={buildReceiptFileUrl(
+                                            expenseReportId,
+                                            receipt.id,
+                                        )}
+                                    />
                                     <span className="receipt-gallery__meta">
                                         <strong>{receipt.merchant}</strong>
                                         <span className="receipt-gallery__filename">
@@ -1519,7 +1548,7 @@ function ReceiptGallery({
                                             {lineItemLabel}
                                         </small>
                                     </span>
-                                </button>
+                                </div>
                             </article>
                         );
                     })}
@@ -1527,6 +1556,193 @@ function ReceiptGallery({
             )}
         </section>
     );
+}
+
+function ReceiptPreview({
+    contentType,
+    merchant,
+    url,
+}: {
+    contentType: string | null;
+    merchant: string;
+    url: string;
+}): JSX.Element {
+    const session = useSession();
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const [hasPreviewError, setHasPreviewError] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    useEffect(() => {
+        if (!isPreviewableReceipt(contentType)) {
+            setObjectUrl(null);
+            setHasPreviewError(false);
+            setIsExpanded(false);
+            return undefined;
+        }
+        if (!canLoadReceiptObjectPreview()) {
+            setObjectUrl(null);
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return undefined;
+        }
+
+        const controller = new AbortController();
+        let nextObjectUrl: string | null = null;
+
+        async function loadReceiptPreview(): Promise<void> {
+            try {
+                const response = await session.authenticatedFetch(url, {
+                    signal: controller.signal,
+                });
+                if (!response.ok) {
+                    throw new Error("Receipt preview request failed.");
+                }
+
+                const blob = await response.blob();
+                if (controller.signal.aborted) {
+                    return;
+                }
+
+                nextObjectUrl = URL.createObjectURL(blob);
+                setObjectUrl(nextObjectUrl);
+                setHasPreviewError(false);
+            } catch {
+                if (!controller.signal.aborted) {
+                    setObjectUrl(null);
+                    setHasPreviewError(true);
+                    setIsExpanded(false);
+                }
+            }
+        }
+
+        void loadReceiptPreview();
+
+        return () => {
+            controller.abort();
+            if (
+                nextObjectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(nextObjectUrl);
+            }
+        };
+    }, [contentType, session, url]);
+
+    if (isPreviewableReceipt(contentType)) {
+        const hasLoadedPreview = objectUrl !== null && !hasPreviewError;
+
+        return (
+            <span className="receipt-gallery__preview">
+                {hasLoadedPreview && isImageReceipt(contentType) ? (
+                    <img
+                        alt={`Receipt image for ${merchant}`}
+                        src={objectUrl}
+                    />
+                ) : hasLoadedPreview && contentType === "application/pdf" ? (
+                    <iframe
+                        src={objectUrl}
+                        title={`Receipt PDF for ${merchant}`}
+                    />
+                ) : (
+                    <span>
+                        {hasPreviewError
+                            ? getReceiptPreviewLabel(contentType)
+                            : "..."}
+                    </span>
+                )}
+                {hasLoadedPreview ? (
+                    <button
+                        aria-label={`Expand receipt preview for ${merchant}`}
+                        className="receipt-gallery__expand"
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setIsExpanded(true);
+                        }}
+                    >
+                        <span aria-hidden="true" />
+                    </button>
+                ) : null}
+                {hasLoadedPreview && isExpanded && document.body
+                    ? createPortal(
+                          <div
+                              aria-label={`Expanded receipt preview for ${merchant}`}
+                              aria-modal="true"
+                              className="receipt-gallery__lightbox"
+                              role="dialog"
+                              onClick={(event) => event.stopPropagation()}
+                          >
+                              <button
+                                  aria-label="Close expanded receipt preview"
+                                  className="receipt-gallery__lightbox-close"
+                                  type="button"
+                                  onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIsExpanded(false);
+                                  }}
+                              >
+                                  X
+                              </button>
+                              <div className="receipt-gallery__lightbox-content">
+                                  {isImageReceipt(contentType) ? (
+                                      <img
+                                          alt={`Expanded receipt image for ${merchant}`}
+                                          src={objectUrl}
+                                      />
+                                  ) : (
+                                      <iframe
+                                          src={objectUrl}
+                                          title={`Expanded receipt PDF for ${merchant}`}
+                                      />
+                                  )}
+                              </div>
+                          </div>,
+                          document.body,
+                      )
+                    : null}
+            </span>
+        );
+    }
+
+    return (
+        <span className="receipt-gallery__preview receipt-gallery__preview--file">
+            <span>{contentType === "application/pdf" ? "PDF" : "FILE"}</span>
+        </span>
+    );
+}
+
+function isPreviewableReceipt(contentType: string | null): boolean {
+    return isImageReceipt(contentType) || contentType === "application/pdf";
+}
+
+function isImageReceipt(contentType: string | null): boolean {
+    return (
+        contentType === "image/png" ||
+        contentType === "image/jpeg" ||
+        contentType === "image/webp"
+    );
+}
+
+function getReceiptPreviewLabel(contentType: string | null): string {
+    return contentType === "application/pdf"
+        ? "PDF"
+        : isImageReceipt(contentType)
+          ? "IMG"
+          : "FILE";
+}
+
+function canLoadReceiptObjectPreview(): boolean {
+    return (
+        typeof URL.createObjectURL === "function" &&
+        !navigator.userAgent.toLowerCase().includes("jsdom")
+    );
+}
+
+function buildReceiptFileUrl(
+    expenseReportId: string,
+    receiptId: string,
+): string {
+    return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
 }
 
 function collectReportReceipts(

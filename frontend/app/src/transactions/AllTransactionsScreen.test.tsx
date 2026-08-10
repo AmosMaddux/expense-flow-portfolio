@@ -136,6 +136,7 @@ function createReportDetail(
             },
         ],
         mileageEntries: [],
+        receipts: [],
         ...overrides,
     };
 }
@@ -379,6 +380,78 @@ describe("AllTransactionsScreen", () => {
         fireEvent.click(within(dialog).getByRole("button", { name: "Exit" }));
 
         expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    test("renders receipt metadata cards with preview slots", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000178",
+            expenseReportId: "60000000-0000-4000-8000-000000000178",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "reject",
+            ...defaultReportMetadata,
+        };
+        const reportDetail = createReportDetail(transaction, {
+            receipts: [
+                {
+                    id: "81000000-0000-4000-8000-000000000101",
+                    lineItemId: transaction.id,
+                    merchant: "Summit Air",
+                    receiptDate: "2026-07-20",
+                    amount: 512.09,
+                    filename: "summit-air.png",
+                    contentType: "image/png",
+                },
+                {
+                    id: "81000000-0000-4000-8000-000000000102",
+                    lineItemId: null,
+                    merchant: "Synthetic Lodge",
+                    receiptDate: "2026-07-21",
+                    amount: 144.25,
+                    filename: "synthetic-lodge.pdf",
+                    contentType: "application/pdf",
+                },
+            ],
+        });
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            const requestUrl = readRequestInput(input);
+            return Promise.resolve(
+                requestUrl.includes("/review-detail")
+                    ? createJsonResponse(reportDetail)
+                    : createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", {
+            name: /Expense Report 60000000/i,
+        });
+        fireEvent.click(
+            await within(dialog).findByRole("tab", { name: "Receipts" }),
+        );
+
+        expect(
+            within(dialog).getByRole("heading", {
+                name: "Receipt Attachments (2)",
+            }),
+        ).toBeTruthy();
+        expect(within(dialog).getByText("summit-air.png")).toBeTruthy();
+        expect(within(dialog).getByText("Synthetic Lodge")).toBeTruthy();
+        expect(within(dialog).getByText("IMG")).toBeTruthy();
+        expect(within(dialog).getByText("PDF")).toBeTruthy();
     });
 
     test("loads report detail from all report sources instead of visible transaction rows", async () => {

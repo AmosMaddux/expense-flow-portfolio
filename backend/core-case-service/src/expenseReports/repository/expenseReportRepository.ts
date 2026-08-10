@@ -193,6 +193,15 @@ type ApprovalQueueReceiptRow = {
     blobReference: unknown;
 };
 
+export type ReceiptFileMetadata = {
+    id: string;
+    expenseReportId: string;
+    filename: string | null;
+    contentType: string | null;
+    objectKey: string;
+    sizeBytes: number | null;
+};
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -302,47 +311,49 @@ export async function findExpenseReportReviewDetail(
         return undefined;
     }
 
-    const [savedLineItems, savedMileageEntries, glRows] = await Promise.all([
-        db
-            .select()
-            .from(lineItem)
-            .where(
-                and(
-                    eq(lineItem.tenantId, tenantId),
-                    eq(lineItem.expenseReportId, expenseReportId),
-                ),
-            )
-            .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
-        db
-            .select()
-            .from(mileageEntry)
-            .where(
-                and(
-                    eq(mileageEntry.tenantId, tenantId),
-                    eq(mileageEntry.expenseReportId, expenseReportId),
-                ),
-            )
-            .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
-        db
-            .select({
-                sourceType: glCodingResult.sourceType,
-                sourceId: glCodingResult.sourceId,
-                glCode: glCodingResult.glAccountCode,
-                amount: glCodingResult.amount,
-                currency: glCodingResult.currency,
-                flaggedLineItem: glCodingResult.flaggedLineItem,
-                reviewAction: glCodingResult.lineItemReviewAction,
-                deductible: glCodingResult.deductible,
-            })
-            .from(glCodingResult)
-            .where(
-                and(
-                    eq(glCodingResult.tenantId, tenantId),
-                    eq(glCodingResult.expenseReportId, expenseReportId),
-                ),
-            )
-            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
-    ]);
+    const [savedLineItems, savedMileageEntries, glRows, receiptRows] =
+        await Promise.all([
+            db
+                .select()
+                .from(lineItem)
+                .where(
+                    and(
+                        eq(lineItem.tenantId, tenantId),
+                        eq(lineItem.expenseReportId, expenseReportId),
+                    ),
+                )
+                .orderBy(asc(lineItem.expenseDate), asc(lineItem.id)),
+            db
+                .select()
+                .from(mileageEntry)
+                .where(
+                    and(
+                        eq(mileageEntry.tenantId, tenantId),
+                        eq(mileageEntry.expenseReportId, expenseReportId),
+                    ),
+                )
+                .orderBy(asc(mileageEntry.mileageDate), asc(mileageEntry.id)),
+            db
+                .select({
+                    sourceType: glCodingResult.sourceType,
+                    sourceId: glCodingResult.sourceId,
+                    glCode: glCodingResult.glAccountCode,
+                    amount: glCodingResult.amount,
+                    currency: glCodingResult.currency,
+                    flaggedLineItem: glCodingResult.flaggedLineItem,
+                    reviewAction: glCodingResult.lineItemReviewAction,
+                    deductible: glCodingResult.deductible,
+                })
+                .from(glCodingResult)
+                .where(
+                    and(
+                        eq(glCodingResult.tenantId, tenantId),
+                        eq(glCodingResult.expenseReportId, expenseReportId),
+                    ),
+                )
+                .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
+            findApprovalQueueReceipts(tenantId, [expenseReportId]),
+        ]);
     const latestGlBySource = new Map<string, LatestReportGlResult>();
     for (const row of glRows) {
         if (row.sourceType !== "line_item" && row.sourceType !== "mileage") {
@@ -404,6 +415,7 @@ export async function findExpenseReportReviewDetail(
                 deductible: latestGl?.deductible ?? null,
             };
         }),
+        receipts: receiptRows.map(toApprovalQueueReceiptResponse),
     };
 }
 
@@ -481,6 +493,49 @@ export async function findApprovalQueueLineItems(
         mileageRows,
         receiptRows,
     );
+}
+
+/**
+ * Reads tenant-scoped receipt object metadata for authenticated file access.
+ */
+export async function findReceiptFileMetadata(
+    tenantId: string,
+    expenseReportId: string,
+    receiptId: string,
+): Promise<ReceiptFileMetadata | undefined> {
+    const rows = await db
+        .select({
+            id: receiptMetadata.id,
+            expenseReportId: receiptMetadata.expenseReportId,
+            blobReference: receiptMetadata.blobReference,
+        })
+        .from(receiptMetadata)
+        .where(
+            and(
+                eq(receiptMetadata.tenantId, tenantId),
+                eq(receiptMetadata.expenseReportId, expenseReportId),
+                eq(receiptMetadata.id, receiptId),
+            ),
+        )
+        .limit(1);
+    const row = rows[0];
+    if (row === undefined) {
+        return undefined;
+    }
+
+    const objectKey = readReceiptBlobString(row.blobReference, "objectKey");
+    if (objectKey === null) {
+        return undefined;
+    }
+
+    return {
+        id: row.id,
+        expenseReportId: row.expenseReportId,
+        filename: readReceiptBlobString(row.blobReference, "filename"),
+        contentType: readReceiptBlobString(row.blobReference, "contentType"),
+        objectKey,
+        sizeBytes: readReceiptBlobNumber(row.blobReference, "sizeBytes"),
+    };
 }
 
 /**
@@ -3607,7 +3662,7 @@ function toApprovalQueueReceiptResponse(row: ApprovalQueueReceiptRow) {
 
 function readReceiptBlobString(
     blobReference: unknown,
-    key: "contentType" | "filename",
+    key: "contentType" | "filename" | "objectKey",
 ): string | null {
     if (
         blobReference === null ||
@@ -3621,6 +3676,24 @@ function readReceiptBlobString(
     const value = metadata[key];
 
     return typeof value === "string" ? value : null;
+}
+
+function readReceiptBlobNumber(
+    blobReference: unknown,
+    key: "sizeBytes",
+): number | null {
+    if (
+        blobReference === null ||
+        typeof blobReference !== "object" ||
+        !(key in blobReference)
+    ) {
+        return null;
+    }
+
+    const metadata = blobReference as Record<string, unknown>;
+    const value = metadata[key];
+
+    return typeof value === "number" ? value : null;
 }
 
 function toPolicyChecks(

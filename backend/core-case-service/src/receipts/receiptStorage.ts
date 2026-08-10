@@ -1,4 +1,5 @@
 import {
+    GetObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
     S3Client,
@@ -19,6 +20,11 @@ export type ReceiptObjectDescriptor = {
 };
 
 export type ReceiptStorage = {
+    get(objectKey: string): Promise<{
+        content: Uint8Array;
+        contentLength?: number;
+        contentType?: string;
+    }>;
     put(
         descriptor: ReceiptObjectDescriptor,
         content: Uint8Array,
@@ -53,6 +59,38 @@ export function createS3ReceiptStorage(
     config: ReceiptStorageConfig,
 ): ReceiptStorage {
     return {
+        async get(objectKey) {
+            try {
+                const storedObject = await client.send(
+                    new GetObjectCommand({
+                        Bucket: config.bucket,
+                        Key: objectKey,
+                    }),
+                );
+                const body = storedObject.Body;
+                if (
+                    body === undefined ||
+                    typeof body.transformToByteArray !== "function"
+                ) {
+                    throw new Error("Receipt storage response body was empty.");
+                }
+
+                return {
+                    content: await body.transformToByteArray(),
+                    ...(storedObject.ContentLength === undefined
+                        ? {}
+                        : { contentLength: storedObject.ContentLength }),
+                    ...(storedObject.ContentType === undefined
+                        ? {}
+                        : { contentType: storedObject.ContentType }),
+                };
+            } catch (error: unknown) {
+                throw new BadGatewayError(
+                    "Receipt storage could not read the file.",
+                    { cause: error },
+                );
+            }
+        },
         async put(descriptor, content) {
             const objectKey = buildReceiptObjectKey(descriptor);
             try {

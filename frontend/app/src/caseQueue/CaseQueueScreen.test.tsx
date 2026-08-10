@@ -728,7 +728,8 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.queryByRole("link", { name: "Open receipt" }),
         ).toBeNull();
-        expect(document.querySelector(".receipt-gallery__preview")).toBeNull();
+        expect(document.querySelector(".receipt-gallery__preview")).toBeTruthy();
+        expect(screen.getByText("PDF")).toBeTruthy();
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
@@ -840,7 +841,7 @@ describe("CaseQueueScreen", () => {
         const receiptButton = screen.getByRole("button", {
             name: /Unlinked receipt/i,
         });
-        expect(receiptButton).toHaveProperty("disabled", true);
+        expect(receiptButton.getAttribute("aria-disabled")).toBe("true");
         expect(
             screen.getByText("application/pdf / Unlinked receipt"),
         ).toBeTruthy();

@@ -14,6 +14,7 @@ const findCaseCommentsByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
+const findReceiptFileMetadataMock = vi.hoisted(() => vi.fn());
 const insertCaseCommentForExpenseReportMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
 const abandonUnpaidExpenseReportSettlementClaimMock = vi.hoisted(() => vi.fn());
@@ -25,6 +26,11 @@ const transitionIssuedExpenseReportSettlementToPaidMock = vi.hoisted(() =>
     vi.fn(),
 );
 const readDraftSubmissionSourcesMock = vi.hoisted(() => vi.fn());
+const receiptStorageMock = vi.hoisted(() => ({
+    get: vi.fn(),
+    put: vi.fn(),
+    verify: vi.fn(),
+}));
 const submitDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportStageMock = vi.hoisted(() => vi.fn());
 const compensatePaidSettlementStageMock = vi.hoisted(() => vi.fn());
@@ -47,6 +53,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     findCurrentDraftExpenseReport: findCurrentDraftExpenseReportMock,
     findExpenseReportById: findExpenseReportByIdMock,
     findExpenseReportReviewDetail: findExpenseReportReviewDetailMock,
+    findReceiptFileMetadata: findReceiptFileMetadataMock,
     insertDeniedSubmissionAuditEntry: vi.fn(),
     insertDeniedWorkflowTransitionAttempt:
         insertDeniedWorkflowTransitionAttemptMock,
@@ -67,6 +74,10 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     transitionExpenseReportStage: transitionExpenseReportStageMock,
     updateExpenseReportSourceDeductibility:
         updateExpenseReportSourceDeductibilityMock,
+}));
+
+vi.mock("../../receipts/receiptStorage.js", () => ({
+    getDefaultReceiptStorage: () => receiptStorageMock,
 }));
 
 vi.mock("../../auth/shared/accessTokenSigner.js", () => ({
@@ -111,6 +122,7 @@ import {
     readExpenseReportAuditEntries,
     readExpenseReportComments,
     readExpenseReportReviewDetail,
+    readReceiptFile,
     settleExpenseReportWorkflow,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
@@ -128,6 +140,10 @@ beforeEach(() => {
     findCurrentDraftExpenseReportMock.mockReset();
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
+    findReceiptFileMetadataMock.mockReset();
+    receiptStorageMock.get.mockReset();
+    receiptStorageMock.put.mockReset();
+    receiptStorageMock.verify.mockReset();
     insertCaseCommentForExpenseReportMock.mockReset();
     insertMileageEntryMock.mockReset();
     abandonUnpaidExpenseReportSettlementClaimMock.mockReset();
@@ -825,6 +841,7 @@ void describe("Expense Report submission EIN validation", () => {
                 },
             ],
             mileageEntries: [],
+            receipts: [],
         });
         buildSubmissionSourceKeysMock.mockReturnValue(expectedSourceKeys);
         buildSubmissionSourceFingerprintMock.mockReturnValue(
@@ -925,6 +942,7 @@ void describe("Expense Report submission EIN validation", () => {
                 },
             ],
             mileageEntries: [],
+            receipts: [],
         });
         buildSubmissionSourceKeysMock.mockReturnValue(expectedSourceKeys);
         buildSubmissionSourceFingerprintMock.mockReturnValue(
@@ -1096,6 +1114,7 @@ void describe("Expense Report mileage service", () => {
                 },
             ],
             mileageEntries: [],
+            receipts: [],
         });
 
         const detail = await readExpenseReportReviewDetail({
@@ -1110,6 +1129,45 @@ void describe("Expense Report mileage service", () => {
         );
         expect(detail.isOverdue).toBe(true);
         expect(detail.lineItems).toHaveLength(2);
+    });
+
+    void test("reads tenant-scoped receipt bytes without exposing storage keys", async () => {
+        const receiptId = "81000000-0000-4000-8000-000000000901";
+        findReceiptFileMetadataMock.mockResolvedValue({
+            id: receiptId,
+            expenseReportId,
+            filename: "synthetic-receipt.png",
+            contentType: "image/png",
+            objectKey: "synthetic/private-object-key",
+            sizeBytes: 15,
+        });
+        receiptStorageMock.get.mockResolvedValue({
+            content: new TextEncoder().encode("synthetic image"),
+            contentLength: 15,
+            contentType: "image/png",
+        });
+
+        const file = await readReceiptFile({
+            expenseReportId,
+            receiptId,
+            tenantId,
+        });
+
+        expect(findReceiptFileMetadataMock).toHaveBeenCalledWith(
+            tenantId,
+            expenseReportId,
+            receiptId,
+        );
+        expect(receiptStorageMock.get).toHaveBeenCalledWith(
+            "synthetic/private-object-key",
+        );
+        expect(file).toStrictEqual({
+            content: new TextEncoder().encode("synthetic image"),
+            contentLength: 15,
+            contentType: "image/png",
+            filename: "synthetic-receipt.png",
+        });
+        expect("objectKey" in file).toBe(false);
     });
 
     void test("adds mileage and computes reimbursement from configuration", async () => {
