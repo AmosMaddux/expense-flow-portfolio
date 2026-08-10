@@ -31,6 +31,7 @@ INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
 GL_CODING_TARGET_GROUP_NAME="${GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-gl-coding-tg}"
 INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sbox-int-gl-tg}"
+LEGACY_INTERNAL_GL_CODING_TARGET_GROUP_NAME="${LEGACY_INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sandbox-internal-gl-coding-tg}"
 CORE_CASE_SERVICE_NAME="${CORE_CASE_SERVICE_NAME:-expenseflow-core-case-service}"
 GL_CODING_SERVICE_NAME="${GL_CODING_SERVICE_NAME:-expenseflow-gl-coding-service}"
 
@@ -113,6 +114,45 @@ require_cluster_tags() {
         --query "contains(clusters[0].tags[?key=='user'].value, 'amos-maddux') && contains(clusters[0].tags[?key=='env'].value, 'sandbox') && (contains(clusters[0].tags[?key=='ticket'].value, 'SCRUM-147') || contains(clusters[0].tags[?key=='ticket'].value, 'SCRUM-148'))"
 }
 
+cluster_exists() {
+    local cluster_status
+
+    cluster_status="$(aws_cli ecs describe-clusters \
+        --clusters "$CLUSTER_NAME" \
+        --query 'clusters[0].status' \
+        --output text 2>/dev/null || true)"
+
+    [[ -n "$cluster_status" && "$cluster_status" != "None" && "$cluster_status" != "INACTIVE" ]]
+}
+
+resolve_vpc_id() {
+    local resolved_vpc_id
+
+    if [[ -n "$VPC_ID" ]]; then
+        return 0
+    fi
+
+    resolved_vpc_id="$(aws_cli ec2 describe-security-groups \
+        --filters Name=group-name,Values="$ALB_SECURITY_GROUP_NAME" \
+        --query 'SecurityGroups[0].VpcId' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$resolved_vpc_id" || "$resolved_vpc_id" == "None" ]]; then
+        resolved_vpc_id="$(aws_cli ec2 describe-security-groups \
+            --filters Name=group-name,Values="$CORE_CASE_SECURITY_GROUP_NAME" \
+            --query 'SecurityGroups[0].VpcId' \
+            --output text 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$resolved_vpc_id" || "$resolved_vpc_id" == "None" ]]; then
+        echo "VPC_ID could not be inferred from sandbox security groups; security-group deletion will be best-effort by tagged group name." >&2
+        return 0
+    fi
+
+    VPC_ID="$resolved_vpc_id"
+    echo "Resolved VPC_ID=$VPC_ID from sandbox security groups."
+}
+
 stop_cluster_tasks() {
     local desired_status task_arns
 
@@ -167,6 +207,9 @@ delete_service() {
         --cluster "$CLUSTER_NAME" \
         --service "$service_name" \
         --force >/dev/null 2>&1 || true
+    aws_cli ecs wait services-inactive \
+        --cluster "$CLUSTER_NAME" \
+        --services "$service_name" >/dev/null 2>&1 || true
 }
 
 load_balancer_arn() {
@@ -367,9 +410,14 @@ delete_dynamodb_table() {
 delete_security_group() {
     local group_name="$1"
     local group_id
+    local filters=(Name=group-name,Values="$group_name")
+
+    if [[ -n "$VPC_ID" ]]; then
+        filters+=(Name=vpc-id,Values="$VPC_ID")
+    fi
 
     group_id="$(aws_cli ec2 describe-security-groups \
-        --filters Name=vpc-id,Values="$VPC_ID" Name=group-name,Values="$group_name" \
+        --filters "${filters[@]}" \
         --query 'SecurityGroups[0].GroupId' \
         --output text 2>/dev/null || true)"
 
@@ -377,6 +425,33 @@ delete_security_group() {
         require_security_group_tags "$group_id"
         aws_cli ec2 delete-security-group --group-id "$group_id" >/dev/null 2>&1 || true
     fi
+}
+
+revoke_security_group_ingress_rules() {
+    local group_name="$1"
+    local group_id
+    local filters=(Name=group-name,Values="$group_name")
+
+    if [[ -n "$VPC_ID" ]]; then
+        filters+=(Name=vpc-id,Values="$VPC_ID")
+    fi
+
+    group_id="$(aws_cli ec2 describe-security-groups \
+        --filters "${filters[@]}" \
+        --query 'SecurityGroups[0].GroupId' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$group_id" || "$group_id" == "None" ]]; then
+        return 0
+    fi
+
+    require_security_group_tags "$group_id"
+    aws_cli ec2 revoke-security-group-ingress \
+        --group-id "$group_id" \
+        --ip-permissions "$(aws_cli ec2 describe-security-groups \
+            --group-ids "$group_id" \
+            --query 'SecurityGroups[0].IpPermissions' \
+            --output json)" >/dev/null 2>&1 || true
 }
 
 delete_role() {
@@ -417,24 +492,29 @@ delete_role() {
 }
 
 main() {
-    require_non_empty VPC_ID "$VPC_ID"
-
     echo "Verifying AWS identity for profile $AWS_PROFILE in $AWS_REGION..."
     aws_cli sts get-caller-identity
-    require_cluster_tags
+    resolve_vpc_id
+    if cluster_exists; then
+        require_cluster_tags
+    fi
 
     echo "Deleting SCRUM-148 ECS services..."
-    delete_service "$CORE_CASE_SERVICE_NAME"
-    delete_service "$GL_CODING_SERVICE_NAME"
+    if cluster_exists; then
+        delete_service "$CORE_CASE_SERVICE_NAME"
+        delete_service "$GL_CODING_SERVICE_NAME"
+    fi
 
     echo "Stopping remaining SCRUM-147 smoke tasks..."
-    stop_cluster_tasks
+    if cluster_exists; then
+        stop_cluster_tasks
+    fi
 
     echo "Deleting public ALB, listeners, rules, and target groups..."
     delete_load_balancer_stack "$ALB_NAME" "$CORE_CASE_TARGET_GROUP_NAME" "$GL_CODING_TARGET_GROUP_NAME"
 
     echo "Deleting internal ALB, listener, and GL-coding target group..."
-    delete_load_balancer_stack "$INTERNAL_ALB_NAME" "$INTERNAL_GL_CODING_TARGET_GROUP_NAME"
+    delete_load_balancer_stack "$INTERNAL_ALB_NAME" "$INTERNAL_GL_CODING_TARGET_GROUP_NAME" "$LEGACY_INTERNAL_GL_CODING_TARGET_GROUP_NAME"
 
     echo "Deregistering SCRUM-147 task definition families..."
     deregister_task_definition_family "$CORE_CASE_TASK_DEFINITION"
@@ -442,8 +522,10 @@ main() {
     deregister_task_definition_family "$INTERNAL_GL_CODING_SMOKE_TASK_FAMILY"
 
     echo "Deleting ECS cluster..."
-    require_cluster_tags
-    aws_cli ecs delete-cluster --cluster "$CLUSTER_NAME" >/dev/null 2>&1 || true
+    if cluster_exists; then
+        require_cluster_tags
+        aws_cli ecs delete-cluster --cluster "$CLUSTER_NAME" >/dev/null 2>&1 || true
+    fi
 
     echo "Deleting ECR repositories..."
     delete_repository "$CORE_CASE_REPOSITORY"
@@ -464,6 +546,10 @@ main() {
     delete_dynamodb_table "$DYNAMODB_EXPENSE_REPORT_TABLE"
 
     echo "Deleting task security groups..."
+    revoke_security_group_ingress_rules "$CORE_CASE_SECURITY_GROUP_NAME"
+    revoke_security_group_ingress_rules "$GL_CODING_SECURITY_GROUP_NAME"
+    revoke_security_group_ingress_rules "$INTERNAL_ALB_SECURITY_GROUP_NAME"
+    revoke_security_group_ingress_rules "$ALB_SECURITY_GROUP_NAME"
     delete_security_group "$CORE_CASE_SECURITY_GROUP_NAME"
     delete_security_group "$GL_CODING_SECURITY_GROUP_NAME"
     delete_security_group "$INTERNAL_ALB_SECURITY_GROUP_NAME"
