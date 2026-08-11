@@ -39,6 +39,16 @@ The scripts reject `localhost` and `127.0.0.1` for these values because each Far
 
 ## Script Order
 
+### DynamoDB Only
+
+Create or tag the AWS DynamoDB table that matches the local Expense Report read-projection defaults:
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/create-expense-report-dynamodb-table.sh
+```
+
+The script creates `expenseflow-expense-reports` with primary key `id` and GSI `tenantId-index` unless `DYNAMODB_EXPENSE_REPORT_TABLE` or `DYNAMODB_EXPENSE_REPORT_TENANT_INDEX` are overridden.
+
 ### 1. Create Runtime Smoke Resources
 
 ```bash
@@ -57,7 +67,7 @@ This creates or updates the AWS resources that the task definitions need:
 - CloudWatch log groups
 - SNS topic for stage-transition events
 - S3 bucket for synthetic receipt-storage smoke paths
-- DynamoDB table for the configured Expense Report read-projection path
+- DynamoDB table for the configured Expense Report read-projection path, using the local defaults `expenseflow-expense-reports` and `tenantId-index` unless overridden
 - Fargate task security groups
 - IAM execution and task roles
 - Core Case task-role permissions for SNS, S3, and DynamoDB runtime calls

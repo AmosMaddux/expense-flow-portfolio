@@ -41,6 +41,7 @@ import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
 import type {
     ApprovalQueueLineItemResponse,
     ExpenseReportReviewDetail,
+    ExpenseReportSummary,
     TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
 import { isExpenseReportWorkflowEdge } from "../domain/expenseReportWorkflow.js";
@@ -57,6 +58,12 @@ type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
 type ReviewableExpenseSourceType = "line_item" | "mileage";
 type SubmissionSourceFingerprint = string;
+type ExpenseReportSummarySource = {
+    expenseReportId: string;
+    category: string;
+    amount: string;
+    currency: string;
+};
 type StageTransitionEventContext = {
     correlationId: string;
     eventId: string;
@@ -405,6 +412,114 @@ export async function findExpenseReportReviewDetail(
             };
         }),
     };
+}
+
+/**
+ * Reads tenant-scoped Expense Report summaries for the internal reports page.
+ */
+export async function findExpenseReportSummaries(
+    tenantId: string,
+): Promise<ExpenseReportSummary[]> {
+    const reports = await db
+        .select()
+        .from(expenseReport)
+        .where(eq(expenseReport.tenantId, tenantId))
+        .orderBy(desc(expenseReport.createdAt), desc(expenseReport.id));
+
+    if (reports.length === 0) {
+        return [];
+    }
+
+    const reportIds = reports.map((report) => report.id);
+    const [lineItemRows, mileageRows] = await Promise.all([
+        db
+            .select({
+                expenseReportId: lineItem.expenseReportId,
+                category: lineItem.category,
+                amount: lineItem.amount,
+                currency: lineItem.currency,
+            })
+            .from(lineItem)
+            .where(
+                and(
+                    eq(lineItem.tenantId, tenantId),
+                    inArray(lineItem.expenseReportId, reportIds),
+                ),
+            ),
+        db
+            .select({
+                expenseReportId: glCodingResult.expenseReportId,
+                sourceId: glCodingResult.sourceId,
+                amount: glCodingResult.amount,
+                currency: glCodingResult.currency,
+            })
+            .from(glCodingResult)
+            .innerJoin(
+                mileageEntry,
+                and(
+                    eq(mileageEntry.tenantId, glCodingResult.tenantId),
+                    eq(mileageEntry.id, glCodingResult.sourceId),
+                    eq(
+                        mileageEntry.expenseReportId,
+                        glCodingResult.expenseReportId,
+                    ),
+                ),
+            )
+            .where(
+                and(
+                    eq(glCodingResult.tenantId, tenantId),
+                    eq(glCodingResult.sourceType, "mileage"),
+                    inArray(glCodingResult.expenseReportId, reportIds),
+                ),
+            )
+            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
+    ]);
+    const sourcesByReportId = new Map<string, ExpenseReportSummarySource[]>();
+
+    for (const row of lineItemRows) {
+        appendReportSummarySource(sourcesByReportId, {
+            expenseReportId: row.expenseReportId,
+            category: row.category,
+            amount: row.amount,
+            currency: row.currency,
+        });
+    }
+
+    const latestMileageRowsBySource = new Map<string, (typeof mileageRows)[0]>();
+    for (const row of mileageRows) {
+        const sourceKey = `${row.expenseReportId}:${row.sourceId}`;
+        if (!latestMileageRowsBySource.has(sourceKey)) {
+            latestMileageRowsBySource.set(sourceKey, row);
+        }
+    }
+
+    for (const row of latestMileageRowsBySource.values()) {
+        if (row.amount === null || row.currency === null) {
+            continue;
+        }
+
+        appendReportSummarySource(sourcesByReportId, {
+            expenseReportId: row.expenseReportId,
+            category: "Mileage",
+            amount: row.amount,
+            currency: row.currency,
+        });
+    }
+
+    return reports.map((report) => {
+        const sources = sourcesByReportId.get(report.id) ?? [];
+
+        return {
+            id: report.id,
+            createdAt: report.createdAt,
+            employeeId: report.owner,
+            managerId: null,
+            category: summarizeReportCategory(sources),
+            amount: sumReportAmounts(sources),
+            currency: summarizeReportCurrency(sources),
+            status: report.currentStage as ExpenseReportSummary["status"],
+        };
+    });
 }
 
 /**
@@ -3885,4 +4000,69 @@ export async function insertCaseCommentForExpenseReport(
 
         return created;
     });
+}
+
+function appendReportSummarySource(
+    sourcesByReportId: Map<string, ExpenseReportSummarySource[]>,
+    source: ExpenseReportSummarySource,
+): void {
+    const sources = sourcesByReportId.get(source.expenseReportId);
+    if (sources === undefined) {
+        sourcesByReportId.set(source.expenseReportId, [source]);
+        return;
+    }
+
+    sources.push(source);
+}
+
+function summarizeReportCategory(
+    sources: ExpenseReportSummarySource[],
+): string {
+    const categories = new Set(sources.map((source) => source.category));
+    if (categories.size === 0) {
+        return "Uncategorized";
+    }
+
+    if (categories.size === 1) {
+        return sources[0]?.category ?? "Uncategorized";
+    }
+
+    return "Multiple";
+}
+
+function summarizeReportCurrency(
+    sources: ExpenseReportSummarySource[],
+): string {
+    const currencies = new Set(sources.map((source) => source.currency));
+    if (currencies.size === 1) {
+        return sources[0]?.currency ?? "USD";
+    }
+
+    return "USD";
+}
+
+function sumReportAmounts(sources: ExpenseReportSummarySource[]): string {
+    const cents = sources.reduce(
+        (total, source) => total + decimalCurrencyToCents(source.amount),
+        0,
+    );
+
+    return centsToDecimalCurrency(cents);
+}
+
+function decimalCurrencyToCents(amount: string): number {
+    const sign = amount.startsWith("-") ? -1 : 1;
+    const normalizedAmount = amount.replace("-", "");
+    const [dollars = "0", cents = "0"] = normalizedAmount.split(".");
+
+    return sign * (Number(dollars) * 100 + Number(cents.padEnd(2, "0")));
+}
+
+function centsToDecimalCurrency(cents: number): string {
+    const sign = cents < 0 ? "-" : "";
+    const absoluteCents = Math.abs(cents);
+    const dollars = Math.floor(absoluteCents / 100);
+    const remainder = absoluteCents % 100;
+
+    return `${sign}${dollars}.${remainder.toString().padStart(2, "0")}`;
 }

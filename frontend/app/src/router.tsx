@@ -24,6 +24,7 @@ import {
     SignInScreen,
 } from "./auth/AuthScreens";
 import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
+import { ExpenseReportsScreen } from "./expenseReports/ExpenseReportsScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { GlMappingScreen } from "./glMapping/GlMappingScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
@@ -74,6 +75,8 @@ const protectedRoutes = navigationItems.map((item) =>
         component: () =>
             item.path === "/finance-dashboard" ? (
                 <FinanceDashboardScreen />
+            ) : item.path === "/expense-reports" ? (
+                <ExpenseReportsScreen />
             ) : item.path === "/approval-queue" ? (
                 <CaseQueueScreen />
             ) : item.path === "/transactions" ? (

@@ -34,6 +34,7 @@ import {
     findDraftExpenseContent,
     findExpenseReportById,
     findExpenseReportReviewDetail,
+    findExpenseReportSummaries,
     abandonUnpaidExpenseReportSettlementClaim,
     claimExpenseReportSettlement,
     compensatePaidSettlementStage,
@@ -63,6 +64,7 @@ import {
     CaseCommentOutboundResponseSchema,
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
+    ExpenseReportSummaryListSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -78,6 +80,7 @@ import {
     type DraftExpenseContentResponse,
     type ExpenseReportResponse,
     type ExpenseReportReviewDetail,
+    type ExpenseReportSummary,
     type GetExpenseReportRequest,
     type MileageConfigResponse,
     type MileageEntryResponse,
@@ -194,6 +197,22 @@ export async function readExpenseReportReviewDetail(request: {
         ...detail,
         isOverdue: detail.status !== "Reconciled" && detail.dueDate < today,
     });
+}
+
+/**
+ * Reads tenant-scoped Expense Report summaries for internal workspaces.
+ */
+export async function readExpenseReportSummaries(request: {
+    tenantId: string;
+    roles: RoleName[];
+}): Promise<ExpenseReportSummary[]> {
+    if (!canReviewWorkflow(request.roles)) {
+        throw new ForbiddenError();
+    }
+
+    return ExpenseReportSummaryListSchema.parse(
+        await findExpenseReportSummaries(request.tenantId),
+    );
 }
 
 /**

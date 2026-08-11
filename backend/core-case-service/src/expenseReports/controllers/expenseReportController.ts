@@ -65,6 +65,7 @@ import {
     readExpenseReportAuditEntries,
     readExpenseReportComments,
     readExpenseReportReviewDetail,
+    readExpenseReportSummaries,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
@@ -533,6 +534,28 @@ export async function getExpenseReportById(
     }
 }
 
+/**
+ * Handles internal Expense Report summary list reads.
+ */
+export async function getExpenseReports(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const reports = await readExpenseReportSummaries({
+            tenantId: auth.tenantId,
+            roles: auth.roles,
+        });
+
+        res.status(200).json(reports);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
 //OUTBOX submission events
 /**
  * Handles Expense Report submission requests.
@@ -974,7 +997,7 @@ export async function getExpenseReportReviewDetail(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireFinanceAdminAllTransactionsAccess(auth);
+        requireInternalCaseQueueAccess(auth);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });

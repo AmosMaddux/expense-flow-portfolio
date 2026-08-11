@@ -12,6 +12,7 @@ import {
     getExpenseReportAuditEntries,
     getExpenseReportById,
     getExpenseReportComments,
+    getExpenseReports,
     getExpenseReportReviewDetail,
     getFinanceDashboardTrend,
     getMileageConfig,
@@ -40,6 +41,7 @@ expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);
 expenseReportRouter.get("/finance-dashboard/trends", getFinanceDashboardTrend);
 expenseReportRouter.get("/policy-reference", getPolicyReference);
 expenseReportRouter.get("/transactions", getAllTransactions);
+expenseReportRouter.get("/expense-reports", getExpenseReports);
 expenseReportRouter.get("/expense-reports/my-submissions", getMySubmissions);
 expenseReportRouter.get(
     "/expense-reports/:id/submission-detail",

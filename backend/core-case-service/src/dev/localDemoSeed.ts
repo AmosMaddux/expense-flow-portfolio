@@ -246,17 +246,32 @@ async function seedGlReferenceData(
     }
 
     for (const code of demoGlCodes) {
+        const [tenantGlCode] = await transaction
+            .select({ id: glCode.id })
+            .from(glCode)
+            .where(
+                and(
+                    eq(glCode.tenantId, tenantId),
+                    eq(glCode.accountCode, code.accountCode),
+                ),
+            );
+        if (tenantGlCode === undefined) {
+            throw new Error(
+                `Local demo seed could not resolve GL code ${code.accountCode}.`,
+            );
+        }
+
         await transaction
             .insert(glMapping)
             .values({
                 tenantId,
                 category: code.category,
-                glCodeId: code.id,
+                glCodeId: tenantGlCode.id,
             })
             .onConflictDoUpdate({
                 target: [glMapping.tenantId, glMapping.category],
                 set: {
-                    glCodeId: code.id,
+                    glCodeId: tenantGlCode.id,
                     updatedAt: seededAt,
                 },
             });

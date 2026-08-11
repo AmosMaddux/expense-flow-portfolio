@@ -659,6 +659,21 @@ export const ExpenseReportReviewDetailSchema = z.object({
     ),
 });
 
+export const ExpenseReportSummarySchema = z.object({
+    id: z.uuid(),
+    createdAt: z.date(),
+    employeeId: z.uuid(),
+    managerId: z.uuid().nullable(),
+    category: z.string().min(1),
+    amount: z.string().regex(/^\d+\.\d{2}$/),
+    currency: z.string().min(3).max(3),
+    status: z.enum(approvedWorkflowStages),
+});
+
+export const ExpenseReportSummaryListSchema = z.array(
+    ExpenseReportSummarySchema,
+);
+
 export const MySubmissionSchema = z.object({
     id: z.uuid(),
     dueDate: z.iso.date(),
@@ -837,6 +852,10 @@ export const expenseReportResponseSchema = ExpenseReportOutboundResponseSchema;
 
 export const expenseReportReviewDetailSchema = ExpenseReportReviewDetailSchema;
 
+export const expenseReportSummarySchema = ExpenseReportSummarySchema;
+
+export const expenseReportSummaryListSchema = ExpenseReportSummaryListSchema;
+
 export const readCaseQueueStageRollupsRequestSchema =
     ReadCaseQueueStageRollupsInboundRequestSchema;
 
@@ -996,6 +1015,8 @@ export type ExpenseReportResponse = z.infer<
 export type ExpenseReportReviewDetail = z.infer<
     typeof ExpenseReportReviewDetailSchema
 >;
+
+export type ExpenseReportSummary = z.infer<typeof ExpenseReportSummarySchema>;
 
 export type ReadCaseQueueStageRollupsParams = z.infer<
     typeof ReadCaseQueueStageRollupsInboundRequestSchema
