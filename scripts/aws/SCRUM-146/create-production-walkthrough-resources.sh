@@ -7,6 +7,8 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_PRODUCTION_PROFILE="${ALLOW_NON_PRODUCTION_PROFILE:-false}"
 ENV_FILE="${ENV_FILE:-.env}"
 ALLOW_AWS_ENDPOINT_OVERRIDES="${ALLOW_AWS_ENDPOINT_OVERRIDES:-false}"
+ACTION="${ACTION:-create}"
+CONFIRM_TEARDOWN="${CONFIRM_TEARDOWN:-}"
 
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-production-stage-transitions}"
 STAGE_TRANSITION_SQS_QUEUE_NAME="${STAGE_TRANSITION_SQS_QUEUE_NAME:-expenseflow-production-stage-transition-events}"
@@ -215,13 +217,62 @@ create_or_tag_expense_report_table() {
     echo "$table_arn"
 }
 
-main() {
+queue_url_if_exists() {
+    local queue_name="$1"
+
+    aws_cli sqs get-queue-url \
+        --queue-name "$queue_name" \
+        --query QueueUrl \
+        --output text 2>/dev/null || true
+}
+
+delete_queue_if_exists() {
+    local queue_name="$1"
+    local queue_url
+
+    queue_url="$(queue_url_if_exists "$queue_name")"
+    if [[ -z "$queue_url" || "$queue_url" == "None" ]]; then
+        echo "SQS queue $queue_name does not exist; skipping."
+        return
+    fi
+
+    aws_cli sqs delete-queue --queue-url "$queue_url"
+    echo "Deleted SQS queue $queue_name."
+}
+
+delete_topic_if_exists() {
+    local topic_name="$1"
+    local topic_arn
+
+    topic_arn="arn:aws:sns:$AWS_REGION:$(account_id):$topic_name"
+    aws_cli sns delete-topic --topic-arn "$topic_arn"
+    echo "Deleted SNS topic $topic_name if it existed."
+}
+
+delete_table_if_exists() {
+    local table_name="$1"
+
+    if ! aws_cli dynamodb describe-table --table-name "$table_name" >/dev/null 2>&1; then
+        echo "DynamoDB table $table_name does not exist; skipping."
+        return
+    fi
+
+    aws_cli dynamodb delete-table --table-name "$table_name" >/dev/null
+    aws_cli dynamodb wait table-not-exists --table-name "$table_name"
+    echo "Deleted DynamoDB table $table_name."
+}
+
+verify_identity() {
     if [[ -n "$AWS_PROFILE" ]]; then
         echo "Verifying AWS identity for profile $AWS_PROFILE in $AWS_REGION..."
     else
         echo "Verifying AWS identity from environment session credentials in $AWS_REGION..."
     fi
     aws_cli sts get-caller-identity >/dev/null
+}
+
+create_resources() {
+    verify_identity
 
     echo "Creating or tagging SNS topic..."
     topic_arn="$(create_or_tag_sns_topic "$STAGE_TRANSITION_SNS_TOPIC_NAME")"
@@ -256,6 +307,36 @@ SNS subscription: $subscription_arn
 DynamoDB table ARN: $table_arn
 AWS account: $(account_id)
 EOF
+}
+
+teardown_resources() {
+    if [[ "$CONFIRM_TEARDOWN" != "SCRUM-146" ]]; then
+        echo "Refusing teardown. Set CONFIRM_TEARDOWN=SCRUM-146 to delete SCRUM-146 AWS resources." >&2
+        exit 1
+    fi
+
+    verify_identity
+
+    echo "Deleting SCRUM-146 AWS resources..."
+    delete_queue_if_exists "$STAGE_TRANSITION_SQS_QUEUE_NAME"
+    delete_queue_if_exists "$STAGE_TRANSITION_SQS_DLQ_NAME"
+    delete_topic_if_exists "$STAGE_TRANSITION_SNS_TOPIC_NAME"
+    delete_table_if_exists "$DYNAMODB_EXPENSE_REPORT_TABLE"
+}
+
+main() {
+    case "$ACTION" in
+        create)
+            create_resources
+            ;;
+        teardown)
+            teardown_resources
+            ;;
+        *)
+            echo "Unknown ACTION=$ACTION. Expected create or teardown." >&2
+            exit 1
+            ;;
+    esac
 }
 
 main "$@"

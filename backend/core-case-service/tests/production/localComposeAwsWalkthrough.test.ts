@@ -9,8 +9,13 @@ import {
     ReceiveMessageCommand,
     SQSClient,
 } from "@aws-sdk/client-sqs";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { GetTopicAttributesCommand, SNSClient } from "@aws-sdk/client-sns";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+    DeleteCommand,
+    DynamoDBDocumentClient,
+    PutCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
@@ -26,17 +31,18 @@ import type { StageTransitionProjectionStore } from "../../src/events/stageTrans
 
 loadDotEnvFile();
 clearAwsEndpointOverridesForProduction();
+preferAwsProfileCredentialsForProduction();
 
 const localComposeAwsEnvSchema = z
     .object({
         EXPENSE_FLOW_RUN_PRODUCTION_TESTS: z.literal("1").optional(),
-        LOCAL_CORE_CASE_BASE_URL: z
-            .url()
-            .default("http://127.0.0.1:3301"),
+        LOCAL_CORE_CASE_BASE_URL: z.url().default("http://127.0.0.1:3301"),
         AWS_REGION: z.string().trim().min(1),
-        AWS_ACCESS_KEY_ID: z.string().trim().min(1),
-        AWS_SECRET_ACCESS_KEY: z.string().trim().min(1),
-        AWS_SESSION_TOKEN: z.string().trim().min(1),
+        AWS_PROFILE: z.string().trim().min(1).optional(),
+        AWS_ACCESS_KEY_ID: z.string().trim().min(1).optional(),
+        AWS_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
+        AWS_SESSION_TOKEN: z.string().trim().min(1).optional(),
+        EXPECTED_AWS_ACCOUNT_ID: z.string().regex(/^\d{12}$/),
         STAGE_TRANSITION_SNS_TOPIC_ARN: z.string().trim().min(1),
         STAGE_TRANSITION_SQS_QUEUE_URL: z.url(),
         STAGE_TRANSITION_SQS_DLQ_URL: z.url(),
@@ -117,7 +123,10 @@ const addDraftContentResponseSchema = z
 
 const submitExpenseReportRequestSchema = z
     .object({
-        employerEin: z.string().regex(/^\d{9}$/).optional(),
+        employerEin: z
+            .string()
+            .regex(/^\d{9}$/)
+            .optional(),
         employerLegalName: z.string().min(1).optional(),
     })
     .strict();
@@ -169,6 +178,14 @@ const describeTableRequestSchema = z
     })
     .strict();
 
+const getCallerIdentityRequestSchema = z.object({}).strict();
+
+const getCallerIdentityResponseSchema = z
+    .object({
+        Account: z.string().regex(/^\d{12}$/),
+    })
+    .passthrough();
+
 const putDynamoProjectionRequestSchema = z
     .object({
         TableName: z.string().min(1),
@@ -181,6 +198,25 @@ const putDynamoProjectionRequestSchema = z
                 seededBy: z.literal("SCRUM-146-local-compose-aws-walkthrough"),
             })
             .strict(),
+    })
+    .strict();
+
+const deleteDynamoProjectionRequestSchema = z
+    .object({
+        TableName: z.string().min(1),
+        Key: z.union([
+            z
+                .object({
+                    id: z.uuid(),
+                })
+                .strict(),
+            z
+                .object({
+                    tenantId: z.uuid(),
+                    id: z.uuid(),
+                })
+                .strict(),
+        ]),
     })
     .strict();
 
@@ -246,25 +282,26 @@ const shouldRunProductionTests =
 const describeProduction = shouldRunProductionTests ? describe : describe.skip;
 
 describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
-    test(
-        "walks local compose workflow through real SNS, SQS, and DynamoDB resources",
-        async () => {
-            const env = localComposeAwsEnvSchema.parse(process.env);
-            const { createDynamoExpenseReportCaseStore } = await import(
-                "../../src/dynamodb/expenseReportCaseStore.js"
-            );
+    test("walks local compose workflow through real SNS, SQS, and DynamoDB resources", async () => {
+        const env = localComposeAwsEnvSchema.parse(process.env);
+        const { createDynamoExpenseReportCaseStore } =
+            await import("../../src/dynamodb/expenseReportCaseStore.js");
 
-            await resetE2eTestData();
-            await assertLocalCoreCaseIsReachable(env.LOCAL_CORE_CASE_BASE_URL);
+        await resetE2eTestData();
+        await assertLocalCoreCaseIsReachable(env.LOCAL_CORE_CASE_BASE_URL);
 
-            const snsClient = new SNSClient({ region: env.AWS_REGION });
-            const sqsClient = new SQSClient({ region: env.AWS_REGION });
-            const dynamoClient = new DynamoDBClient({
-                region: env.AWS_REGION,
-            });
-            const dynamoDocumentClient =
-                DynamoDBDocumentClient.from(dynamoClient);
+        const stsClient = new STSClient({ region: env.AWS_REGION });
+        const snsClient = new SNSClient({ region: env.AWS_REGION });
+        const sqsClient = new SQSClient({ region: env.AWS_REGION });
+        const dynamoClient = new DynamoDBClient({
+            region: env.AWS_REGION,
+        });
+        const dynamoDocumentClient = DynamoDBDocumentClient.from(dynamoClient);
+        const dynamoProjectionKeysToCleanup: DynamoProjectionKey[] = [];
+        let testFailed = false;
 
+        try {
+            await assertExpectedAwsAccount(env, stsClient);
             await assertAwsResourcesExist(
                 env,
                 snsClient,
@@ -418,17 +455,20 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
                 new Set(transitionCorrelationIds),
             );
 
+            const dynamoProjectionKey = {
+                tenantId: e2eWalkthroughTenantId,
+                id: created.id,
+            };
+            dynamoProjectionKeysToCleanup.push(dynamoProjectionKey);
             await dynamoDocumentClient.send(
                 new PutCommand(
                     putDynamoProjectionRequestSchema.parse({
                         TableName: env.DYNAMODB_EXPENSE_REPORT_TABLE,
                         Item: {
-                            tenantId: e2eWalkthroughTenantId,
-                            id: created.id,
+                            ...dynamoProjectionKey,
                             currentStage: "Paid",
                             dueDate: addDaysIsoDate(7),
-                            seededBy:
-                                "SCRUM-146-local-compose-aws-walkthrough",
+                            seededBy: "SCRUM-146-local-compose-aws-walkthrough",
                         },
                     }),
                 ),
@@ -446,10 +486,85 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
             );
 
             expect(paidRollup?.reportCount).toBeGreaterThanOrEqual(1);
-        },
-        180_000,
-    );
+        } catch (error: unknown) {
+            testFailed = true;
+            throw error;
+        } finally {
+            try {
+                await cleanupDynamoProjectionItems(
+                    dynamoDocumentClient,
+                    env.DYNAMODB_EXPENSE_REPORT_TABLE,
+                    dynamoProjectionKeysToCleanup,
+                );
+            } catch (cleanupError: unknown) {
+                if (!testFailed) {
+                    throw cleanupError;
+                }
+
+                const detail =
+                    cleanupError instanceof Error
+                        ? cleanupError.message
+                        : "Unknown cleanup error.";
+                process.stderr.write(
+                    `SCRUM-146 DynamoDB cleanup failed after test failure: ${detail}\n`,
+                );
+            }
+        }
+    }, 180_000);
 });
+
+type DynamoProjectionKey = {
+    tenantId: string;
+    id: string;
+};
+
+async function cleanupDynamoProjectionItems(
+    client: DynamoDBDocumentClient,
+    tableName: string,
+    keys: DynamoProjectionKey[],
+): Promise<void> {
+    await Promise.all(
+        keys.map((key) => deleteDynamoProjectionItem(client, tableName, key)),
+    );
+}
+
+async function deleteDynamoProjectionItem(
+    client: DynamoDBDocumentClient,
+    tableName: string,
+    key: DynamoProjectionKey,
+): Promise<void> {
+    try {
+        await client.send(
+            new DeleteCommand(
+                deleteDynamoProjectionRequestSchema.parse({
+                    TableName: tableName,
+                    Key: { id: key.id },
+                }),
+            ),
+        );
+    } catch (error: unknown) {
+        if (!isDynamoKeySchemaMismatch(error)) {
+            throw error;
+        }
+
+        await client.send(
+            new DeleteCommand(
+                deleteDynamoProjectionRequestSchema.parse({
+                    TableName: tableName,
+                    Key: key,
+                }),
+            ),
+        );
+    }
+}
+
+function isDynamoKeySchemaMismatch(error: unknown): boolean {
+    return (
+        error instanceof Error &&
+        error.name === "ValidationException" &&
+        error.message.includes("provided key element does not match the schema")
+    );
+}
 
 async function assertLocalCoreCaseIsReachable(baseUrl: string): Promise<void> {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/health`);
@@ -496,12 +611,33 @@ async function assertAwsResourcesExist(
     );
 }
 
+async function assertExpectedAwsAccount(
+    env: z.infer<typeof localComposeAwsEnvSchema>,
+    client: STSClient,
+): Promise<void> {
+    const identity = await assertAwsPreflight(
+        "STS caller identity",
+        client.send(
+            new GetCallerIdentityCommand(
+                getCallerIdentityRequestSchema.parse({}),
+            ),
+        ),
+    );
+    const account = getCallerIdentityResponseSchema.parse(identity).Account;
+
+    if (account !== env.EXPECTED_AWS_ACCOUNT_ID) {
+        throw new Error(
+            `AWS account preflight failed: expected ${env.EXPECTED_AWS_ACCOUNT_ID}, got ${account}.`,
+        );
+    }
+}
+
 async function assertAwsPreflight(
     resourceName: string,
     request: Promise<unknown>,
-): Promise<void> {
+): Promise<unknown> {
     try {
-        await request;
+        return await request;
     } catch (error: unknown) {
         const detail =
             error instanceof Error ? error.message : "Unknown AWS SDK error.";
@@ -611,9 +747,8 @@ async function receiveMatchingStageTransitionEvent(
     toStage: "Paid",
     store: StageTransitionProjectionStore,
 ): Promise<ExpenseReportStageTransitionedCloudEventV1> {
-    const { processStageTransitionEvent } = await import(
-        "../../src/events/index.js"
-    );
+    const { processStageTransitionEvent } =
+        await import("../../src/events/index.js");
     const deadline = Date.now() + 120_000;
 
     while (Date.now() < deadline) {
@@ -772,10 +907,14 @@ function loadDotEnvFile(): void {
 
 function shouldDotEnvOverrideProcessEnv(key: string): boolean {
     return (
+        key === "AWS_PROFILE" ||
+        key === "AWS_REGION" ||
+        key === "AWS_DEFAULT_REGION" ||
         key === "AWS_ACCESS_KEY_ID" ||
         key === "AWS_SECRET_ACCESS_KEY" ||
         key === "AWS_SESSION_TOKEN" ||
         key === "AWS_CREDENTIAL_EXPIRATION" ||
+        key === "EXPECTED_AWS_ACCOUNT_ID" ||
         key === "AUTH_JWT_KEY_ID" ||
         key === "AUTH_JWT_PRIVATE_KEY_BASE64" ||
         key === "MFA_TOTP_SECRET_ENCRYPTION_KEY" ||
@@ -795,6 +934,20 @@ function clearAwsEndpointOverridesForProduction(): void {
     delete process.env.DYNAMODB_ENDPOINT;
     delete process.env.STAGE_TRANSITION_SNS_ENDPOINT;
     delete process.env.STAGE_TRANSITION_SQS_ENDPOINT;
+}
+
+function preferAwsProfileCredentialsForProduction(): void {
+    if (
+        process.env.AWS_PROFILE === undefined ||
+        process.env.AWS_WALKTHROUGH_USE_EXPORTED_CREDENTIALS === "true"
+    ) {
+        return;
+    }
+
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_SESSION_TOKEN;
+    delete process.env.AWS_CREDENTIAL_EXPIRATION;
 }
 
 function parseDotEnvLine(
