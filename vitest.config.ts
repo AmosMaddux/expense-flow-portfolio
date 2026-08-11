@@ -14,8 +14,13 @@ const coreCaseSourceRoot = new URL(
     "./backend/core-case-service/src/",
     import.meta.url,
 ).pathname;
+const coreCaseTestsRoot = new URL(
+    "./backend/core-case-service/tests/",
+    import.meta.url,
+).pathname;
 const coreCaseIntegrationTestGlob = `${coreCaseSourceRoot}**/*.integration.test.ts`;
 const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
+const coreCaseProductionTestGlob = `${coreCaseTestsRoot}production/**/*.test.ts`;
 const frontendSourceRoot = new URL("./frontend/app/src/", import.meta.url)
     .pathname;
 const platformHttpApiSourceRoot = new URL(
@@ -66,6 +71,19 @@ const coreCaseIntegrationProject = {
         testTimeout: 60_000,
     },
 };
+const coreCaseProductionProject = {
+    test: {
+        name: "production",
+        env: testEnvironment,
+        exclude: [...configDefaults.exclude, "**/dist"],
+        fileParallelism: false,
+        include: [coreCaseProductionTestGlob],
+        maxWorkers: 1,
+        pool: "forks",
+        root: repositoryRoot,
+        testTimeout: 180_000,
+    },
+};
 const frontendProject = {
     test: {
         name: "frontend",
@@ -114,6 +132,7 @@ export default defineConfig({
             ...(shouldRunCoreCaseIntegrationTests
                 ? [coreCaseIntegrationProject]
                 : []),
+            coreCaseProductionProject,
             frontendProject,
             platformHttpApiProject,
         ],
