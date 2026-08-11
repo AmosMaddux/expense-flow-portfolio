@@ -140,9 +140,9 @@ main() {
 
     echo "SCRUM-149 Lambda verification passed."
     echo "Function: $FUNCTION_NAME ($function_state)"
-    echo "Queue: $source_queue_arn"
-    echo "DLQ: $dead_letter_queue_arn"
-    echo "Topic: $stage_transition_topic_arn"
+    echo "Queue: $STAGE_TRANSITION_QUEUE_NAME"
+    echo "DLQ: $STAGE_TRANSITION_DLQ_NAME"
+    echo "Topic: $STAGE_TRANSITION_TOPIC_NAME"
 }
 
 main "$@"

@@ -51,7 +51,7 @@ main() {
         --push \
         .
 
-    echo "Pushed $image_uri"
+    echo "Pushed Lambda image repository $LAMBDA_REPOSITORY with tag $IMAGE_TAG."
 }
 
 main "$@"

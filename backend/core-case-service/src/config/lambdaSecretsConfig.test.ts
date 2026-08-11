@@ -10,7 +10,7 @@ import {
 } from "./lambdaSecretsConfig.js";
 
 const databaseUrl =
-    "postgres://synthetic-user:synthetic-password@db.example.invalid:5432/expenseflow";
+    "postgres://synthetic-user@db.example.invalid:5432/expenseflow";
 
 function createSecretsClient(secretString: string | undefined = databaseUrl) {
     return {

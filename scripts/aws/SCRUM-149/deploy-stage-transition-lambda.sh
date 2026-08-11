@@ -90,7 +90,7 @@ main() {
     function_arn="$(aws_cli lambda get-function --function-name "$FUNCTION_NAME" --query 'Configuration.FunctionArn' --output text)"
     tag_function "$function_arn"
 
-    echo "Deployed Lambda function $FUNCTION_NAME with image $image_uri"
+    echo "Deployed Lambda function $FUNCTION_NAME with image tag $IMAGE_TAG."
 }
 
 main "$@"

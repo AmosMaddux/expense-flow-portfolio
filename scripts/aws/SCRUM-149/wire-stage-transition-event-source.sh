@@ -98,7 +98,7 @@ main() {
     fi
 
     echo "Wired $STAGE_TRANSITION_QUEUE_NAME to $FUNCTION_NAME with event source mapping $mapping_uuid"
-    echo "Verified SNS topic exists: $stage_transition_topic_arn"
+    echo "Verified SNS topic exists: $STAGE_TRANSITION_TOPIC_NAME"
 }
 
 main "$@"

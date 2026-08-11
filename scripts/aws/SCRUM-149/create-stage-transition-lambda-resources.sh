@@ -37,7 +37,7 @@ aws_arn_prefix() {
 
     caller_arn="$(aws_cli sts get-caller-identity --query Arn --output text)"
     IFS=':' read -r arn_label partition _ <<<"$caller_arn"
-    echo "$arn_label:$partition"
+    printf '%s:%s\n' "$arn_label" "$partition"
 }
 
 queue_url() {
@@ -108,7 +108,6 @@ create_or_tag_lambda_role() {
     fi
 
     aws_cli iam tag-role --role-name "$LAMBDA_ROLE_NAME" --tags "${TAGS[@]}"
-    echo "$role_arn"
 }
 
 write_lambda_policy() {
@@ -117,7 +116,8 @@ write_lambda_policy() {
     local dead_letter_queue_arn="$3"
     local database_secret_arn="$4"
 
-    ACCOUNT_ID="$(account_id)" \
+    ARN_PREFIX="$(aws_arn_prefix)" \
+        ACCOUNT_ID="$(account_id)" \
         AWS_REGION="$AWS_REGION" \
         LAMBDA_LOG_GROUP="$LAMBDA_LOG_GROUP" \
         SOURCE_QUEUE_ARN="$source_queue_arn" \
@@ -125,10 +125,11 @@ write_lambda_policy() {
         DATABASE_SECRET_ARN="$database_secret_arn" \
         node -e "
 const fs = require('fs');
+const arnPrefix = process.env.ARN_PREFIX;
 const accountId = process.env.ACCOUNT_ID;
 const region = process.env.AWS_REGION;
 const logGroup = process.env.LAMBDA_LOG_GROUP;
-const logGroupArn = 'arn:aws:logs:' + region + ':' + accountId + ':log-group:' + logGroup + ':*';
+const logGroupArn = arnPrefix + ':logs:' + region + ':' + accountId + ':log-group:' + logGroup + ':*';
 fs.writeFileSync(process.argv[1], JSON.stringify({
   Version: '2012-10-17',
   Statement: [
@@ -179,7 +180,7 @@ main() {
     lambda_security_group_id="$(create_or_tag_security_group)"
 
     echo "Creating or tagging Lambda execution role..."
-    lambda_role_arn="$(create_or_tag_lambda_role)"
+    create_or_tag_lambda_role
 
     policy_file="$(mktemp)"
     write_lambda_policy "$policy_file" "$source_queue_arn" "$dead_letter_queue_arn" "$database_secret_arn"
@@ -190,7 +191,7 @@ main() {
     rm -f "$policy_file"
 
     echo "SCRUM-149 Lambda resources are ready."
-    echo "Lambda role ARN: $lambda_role_arn"
+    echo "Lambda role: $LAMBDA_ROLE_NAME"
     echo "Lambda security group ID: $lambda_security_group_id"
 }
 
