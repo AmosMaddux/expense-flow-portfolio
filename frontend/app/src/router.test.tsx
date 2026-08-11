@@ -287,7 +287,7 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
-        await screen.findByRole("heading", { name: "Case Queue" });
+        await screen.findByRole("heading", { name: "Approval Queue" });
         expect(screen.getAllByText("Approval Queue").length).toBeGreaterThan(1);
         expect(
             screen.queryByText(/This protected workspace route is available/),
@@ -300,6 +300,44 @@ describe("ExpenseFlowRouter", () => {
         expect(
             screen.queryByRole("link", { name: "Finance Dashboard" }),
         ).toBeNull();
+    });
+
+    test("mounts the current queue under Expense Reports for managers", async () => {
+        const authClient = createAuthClientMock("Department Manager");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Department Manager"),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                new Response(JSON.stringify([]), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            ),
+        );
+        window.history.pushState(null, "", "/expense-reports");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        expect(
+            await screen.findAllByRole("heading", { name: "Expense Reports" }),
+        ).not.toHaveLength(0);
+        expect(
+            screen.queryByText(/This protected workspace route is available/),
+        ).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "/v1/case-queue/line-items",
+            expect.anything(),
+        );
+        expect(
+            screen
+                .getByRole("link", { name: "Expense Reports" })
+                .getAttribute("aria-current"),
+        ).toBe("page");
     });
 
     test("renders sign out in the routed workspace and clears the session", async () => {

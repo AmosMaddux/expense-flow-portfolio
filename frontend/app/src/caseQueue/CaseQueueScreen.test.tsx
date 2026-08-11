@@ -331,6 +331,7 @@ function renderCaseQueueScreen(
     fetchImplementation: typeof fetch,
     queryClient = createNoRetryQueryClient(),
     roles: Role[] = ["Department Manager"],
+    props: Parameters<typeof CaseQueueScreen>[0] = {},
 ): void {
     render(
         <QueryClientProvider client={queryClient}>
@@ -340,7 +341,7 @@ function renderCaseQueueScreen(
                 fetchImplementation={fetchImplementation}
                 now={() => baseTime}
             >
-                <CaseQueueScreen />
+                <CaseQueueScreen {...props} />
             </AuthProvider>
         </QueryClientProvider>,
     );
@@ -534,6 +535,30 @@ describe("CaseQueueScreen", () => {
         expect(screen.queryByText("Employee 0192")).toBeNull();
         expect(screen.getByText("Showing 1 of 3 reports")).toBeTruthy();
     });
+    test("locks the manager approval queue to Submitted and Manager Approval reports", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Department Manager"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Submitted", "Manager Approval"],
+            },
+        );
+
+        await screen.findByText("Employee 0191");
+        expect(
+            screen.getByRole("heading", { name: "Approval Queue" }),
+        ).toBeTruthy();
+        expect(screen.getByText("Employee 0192")).toBeTruthy();
+        expect(screen.queryByText("Employee 0193")).toBeNull();
+        expect(screen.queryByLabelText("Filter by stage")).toBeNull();
+        expect(screen.getByText("Showing 2 of 2 reports")).toBeTruthy();
+    });
 
     test("filters report rows by the amount-over-threshold checkbox", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -725,9 +750,7 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Linked to Northstar Hotels"),
         ).toBeTruthy();
-        expect(
-            screen.queryByRole("link", { name: "Open receipt" }),
-        ).toBeNull();
+        expect(screen.queryByRole("link", { name: "Open receipt" })).toBeNull();
         expect(document.querySelector(".receipt-gallery__preview")).toBeNull();
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
@@ -746,7 +769,7 @@ describe("CaseQueueScreen", () => {
             .mockImplementation((callback) => {
                 callback(0);
                 return 0;
-        });
+            });
         Element.prototype.scrollIntoView = scrollIntoView;
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(linkedReceiptReportItems)),
@@ -844,9 +867,7 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Unlinked receipt"),
         ).toBeTruthy();
-        expect(
-            screen.queryByRole("link", { name: "Open receipt" }),
-        ).toBeNull();
+        expect(screen.queryByRole("link", { name: "Open receipt" })).toBeNull();
     });
 
     test("opens one report with a separate expense row and mileage row for review", async () => {
