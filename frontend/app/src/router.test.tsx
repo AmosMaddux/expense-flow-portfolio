@@ -83,7 +83,7 @@ function RoutedApp({
 async function submitSignIn(): Promise<void> {
     await screen.findByRole("heading", { name: "Welcome back" });
     fireEvent.change(screen.getByLabelText("Email"), {
-        target: { value: "employee@example.invalid" },
+        target: { value: "employee@example1.invalid" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
         target: { value: "synthetic-password" },
@@ -144,7 +144,7 @@ describe("ExpenseFlowRouter", () => {
         );
         expect(authClient.login).toHaveBeenCalledWith({
             tenantId,
-            email: "employee@example.invalid",
+            email: "employee@example1.invalid",
             password: "synthetic-password",
         });
     });

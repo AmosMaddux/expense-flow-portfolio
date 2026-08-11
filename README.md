@@ -182,13 +182,33 @@ transactions, GL mappings, and a receipt-gallery Expense Report:
 npm run dev:demo:seed
 ```
 
-Sign in as the synthetic Department Manager to inspect the receipt gallery:
+Sign in as the primary synthetic Department Manager to inspect the receipt gallery:
 
 ```text
-Email: manager@example.invalid
+Email: manager@example1.invalid
 Password: expenseflow-local-dev-only
-MFA: npm run dev:auth:code -- manager
+MFA: npm run dev:auth:code -- manager-1
 ```
+
+The local seed creates a matching role cohort for a second synthetic company.
+Use the `-1` account aliases and `@example1.invalid` emails for the primary
+tenant, or the `-2` aliases and `@example2.invalid` emails for the secondary
+tenant:
+
+| Role               | Primary tenant                    | Secondary tenant                  |
+| ------------------ | --------------------------------- | --------------------------------- |
+| Employee 1         | `employee@example1.invalid`       | `employee@example2.invalid`       |
+| Employee 2         | `employee2@example1.invalid`      | `employee2@example2.invalid`      |
+| Department Manager | `manager@example1.invalid`        | `manager@example2.invalid`        |
+| Finance Admin      | `finance-admin@example1.invalid`  | `finance-admin@example2.invalid`  |
+| Admin              | `platform-admin@example1.invalid` | `platform-admin@example2.invalid` |
+
+Generate MFA with `npm run dev:auth:code -- <account-alias>`, such as
+`employee-2` or `manager-2`. The second Employee aliases are `employee-1b` and
+`employee-2b`. Employee portals start without automatically seeded submissions;
+use each Employee account to create distinct Expense Reports. Tenant-scoped
+roles can access both Employee reports in their authenticated tenant without
+accessing either report from the other tenant.
 
 Open Approval Queue and select Expense Report
 `73000000-0000-4000-8000-000000000001`. The AP Review dialog includes three

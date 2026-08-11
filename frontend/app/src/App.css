@@ -1095,6 +1095,36 @@ button:disabled {
     min-width: 0;
 }
 
+.topbar__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.topbar__tenant {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border: 1px solid #bcccdc;
+    border-radius: 999px;
+    background: #f0f4f8;
+    padding: 7px 12px;
+    color: #243b53;
+    white-space: nowrap;
+}
+
+.topbar__tenant span {
+    color: #486581;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.topbar__tenant strong {
+    font-size: 0.85rem;
+}
+
 .topbar__menu {
     display: none;
     width: 40px;
@@ -2459,6 +2489,10 @@ button:disabled {
 
     .topbar__tenant {
         white-space: normal;
+    }
+
+    .topbar__actions {
+        justify-content: space-between;
     }
 
     .case-queue__header {
