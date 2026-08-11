@@ -24,19 +24,46 @@ const httpApiRequestSchema = z.object({
 
 const serializedRolesSchema = z.string().transform((value, context) => {
     try {
-        return z.array(roleSchema).min(1).parse(JSON.parse(value));
-    } catch {
-        const singleRole = roleSchema.safeParse(value);
-        if (singleRole.success) {
-            return [singleRole.data];
+        const decodedValue: unknown = JSON.parse(value);
+        const decodedRoles = z.array(roleSchema).min(1).safeParse(decodedValue);
+        if (decodedRoles.success) {
+            return decodedRoles.data;
         }
 
-        context.addIssue({
-            code: "custom",
-            message: "The verified roles claim is invalid.",
-        });
-        return z.NEVER;
+        const decodedRole = roleSchema.safeParse(decodedValue);
+        if (decodedRole.success) {
+            return [decodedRole.data];
+        }
+    } catch {
+        // Continue with API Gateway's non-JSON string representations.
     }
+
+    const singleRole = roleSchema.safeParse(value);
+    if (singleRole.success) {
+        return [singleRole.data];
+    }
+
+    const bracketedRoles = /^\[(.*)\]$/.exec(value.trim());
+    if (bracketedRoles !== null) {
+        const roles = z
+            .array(roleSchema)
+            .min(1)
+            .safeParse(
+                (bracketedRoles[1] ?? "")
+                    .split(",")
+                    .map((role) => role.trim())
+                    .filter((role) => role.length > 0),
+            );
+        if (roles.success) {
+            return roles.data;
+        }
+    }
+
+    context.addIssue({
+        code: "custom",
+        message: "The verified roles claim is invalid.",
+    });
+    return z.NEVER;
 });
 
 type HttpApiResponse = {

@@ -1,0 +1,48 @@
+let lambda_functions = Resources.*[Type == "AWS::Serverless::Function"]
+let http_apis = Resources.*[Type == "AWS::Serverless::HttpApi"]
+let log_groups = Resources.*[Type == "AWS::Logs::LogGroup"]
+let iam_roles = Resources.*[Type == "AWS::IAM::Role"]
+
+rule lambda_functions_use_required_tags when %lambda_functions !empty {
+    %lambda_functions {
+        Properties.Tags.env.Ref == "EnvironmentTag"
+        Properties.Tags.user.Ref == "UserTag"
+    }
+}
+
+rule http_apis_use_required_tags when %http_apis !empty {
+    %http_apis {
+        Properties.Tags.env.Ref == "EnvironmentTag"
+        Properties.Tags.user.Ref == "UserTag"
+    }
+}
+
+rule lambda_functions_are_bounded when %lambda_functions !empty {
+    %lambda_functions {
+        Properties.Timeout <= 5
+        Properties.MemorySize <= 128
+    }
+}
+
+rule http_apis_are_throttled when %http_apis !empty {
+    %http_apis {
+        Properties.DefaultRouteSettings.ThrottlingBurstLimit <= 10
+        Properties.DefaultRouteSettings.ThrottlingRateLimit <= 5
+    }
+}
+
+rule log_groups_are_tagged_and_expire when %log_groups !empty {
+    %log_groups {
+        Properties.RetentionInDays <= 14
+        Properties.Tags[Key == "env"] !empty
+        Properties.Tags[Key == "user"] !empty
+    }
+}
+
+rule iam_roles_use_required_tags when %iam_roles !empty {
+    %iam_roles {
+        Properties.PermissionsBoundary exists
+        Properties.Tags[Key == "env"] !empty
+        Properties.Tags[Key == "user"] !empty
+    }
+}

@@ -49,4 +49,32 @@ void describe("HTTP API JWT claims probe", () => {
             }).statusCode,
         ).toBe(500);
     });
+
+    void test.each([
+        ['"Finance Admin"', ["Finance Admin"]],
+        ["Finance Admin", ["Finance Admin"]],
+        ["[Finance Admin]", ["Finance Admin"]],
+        [
+            "[Finance Admin, Department Manager]",
+            ["Finance Admin", "Department Manager"],
+        ],
+    ])("accepts a gateway role representation", (rolesClaim, expectedRoles) => {
+        const response = handler({
+            requestContext: {
+                authorizer: {
+                    jwt: {
+                        claims: {
+                            tenant_id: "10000000-0000-4000-8000-000000000100",
+                            roles: rolesClaim,
+                        },
+                    },
+                },
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(JSON.parse(response.body)).toMatchObject({
+            verifiedClaims: { roles: expectedRoles },
+        });
+    });
 });

@@ -15,7 +15,7 @@ Private signing keys stay with the core API. Do not put a private key, token, cu
 
 ## Build and deploy
 
-Deployment changes AWS resources and requires AWS credentials, AWS SAM CLI, an artifact bucket managed by SAM, and permission to manage CloudFormation, API Gateway, Lambda, CloudWatch Logs, S3 deployment artifacts, and IAM execution roles. Review the changeset before execution.
+Deployment changes AWS resources and requires AWS credentials, AWS SAM CLI, an artifact bucket managed by SAM, and permission to manage CloudFormation, API Gateway, Lambda, CloudWatch Logs, S3 deployment artifacts, and bounded IAM execution roles. Each Lambda role uses the account-managed `TraineeSandboxBoundary`, trusts only Lambda, and attaches only `AWSLambdaBasicExecutionRole`. Review each changeset before execution.
 
 ```bash
 cd platform/http-api

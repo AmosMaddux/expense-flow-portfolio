@@ -31,6 +31,9 @@ Resources:
         Type: AWS::Serverless::HttpApi
         Properties:
             Description: ExpenseFlow serverless endpoints protected by the shared access token.
+            DefaultRouteSettings:
+                ThrottlingBurstLimit: 10
+                ThrottlingRateLimit: 5
             FailOnWarnings: true
             PropagateTags: true
             StageName: !Ref StageName
@@ -54,9 +57,10 @@ Resources:
             Description: Confirms verified JWT tenant and role claims reach protected Lambdas.
             Architectures:
                 - arm64
-            CodeUri: .
-            Handler: src/claimsProbe.handler
+            CodeUri: build
+            Handler: claimsProbe.handler
             MemorySize: 128
+            Role: !GetAtt ClaimsProbeFunctionRole.Arn
             Runtime: nodejs24.x
             Timeout: 5
             PropagateTags: true
@@ -72,15 +76,42 @@ Resources:
                 env: !Ref EnvironmentTag
                 service: Platform
                 user: !Ref UserTag
-        Metadata:
-            BuildMethod: esbuild
-            BuildProperties:
-                Bundle: true
-                EntryPoints:
-                    - src/claimsProbe.ts
-                Minify: true
-                Sourcemap: false
-                Target: node24
+
+    ClaimsProbeFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            PermissionsBoundary: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/TraineeSandboxBoundary
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
+
+    ClaimsProbeLogGroup:
+        Type: AWS::Logs::LogGroup
+        DeletionPolicy: Delete
+        UpdateReplacePolicy: Delete
+        Properties:
+            LogGroupName: !Sub /aws/lambda/${ClaimsProbeFunction}
+            RetentionInDays: 14
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
 
 Outputs:
     HttpApiId:

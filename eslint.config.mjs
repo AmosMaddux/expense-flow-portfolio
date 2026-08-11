@@ -9,6 +9,7 @@ export default [
             "**/node_modules/**",
             "**/dist/**",
             "**/build/**",
+            "**/issuer-build/**",
             "**/coverage/**",
             "**/.lighthouseci/**",
             "**/playwright-report/**",
