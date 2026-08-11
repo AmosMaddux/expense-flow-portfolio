@@ -55,6 +55,19 @@ services:
         entrypoint: ["/bin/sh", "-c"]
         command:
             - >
+                if [ "$${AWS_WALKTHROUGH_USE_REAL_AWS:-false}" = "true" ]; then
+                unset AWS_ENDPOINT_URL
+                AWS_ENDPOINT_URL_DYNAMODB
+                AWS_ENDPOINT_URL_SNS
+                AWS_ENDPOINT_URL_SQS
+                DYNAMODB_ENDPOINT
+                STAGE_TRANSITION_SNS_ENDPOINT
+                STAGE_TRANSITION_SQS_ENDPOINT;
+                if [ -z "$${STAGE_TRANSITION_SNS_TOPIC_ARN:-}" ]; then
+                echo "STAGE_TRANSITION_SNS_TOPIC_ARN is required for AWS walkthrough mode." >&2;
+                exit 1;
+                fi;
+                else
                 export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
                 -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
                 const client = new SNSClient({
@@ -68,6 +81,7 @@ services:
                 if [ -z "$$STAGE_TRANSITION_SNS_TOPIC_ARN" ]; then
                 echo "Local stage-transition topic identifier could not be resolved." >&2;
                 exit 1;
+                fi;
                 fi;
                 node backend/core-case-service/dist/index.js
         environment:
@@ -85,6 +99,8 @@ services:
             AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
             AWS_REGION: ${AWS_REGION:-us-east-1}
             AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-expenseflowlocaldevonly}
+            AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+            AWS_WALKTHROUGH_USE_REAL_AWS: ${AWS_WALKTHROUGH_USE_REAL_AWS:-false}
             CASE_QUEUE_ROLLUP_TTL_SECONDS: ${CASE_QUEUE_ROLLUP_TTL_SECONDS:-30}
             CORE_CASE_RATE_LIMIT_REQUESTS: ${CORE_CASE_RATE_LIMIT_REQUESTS:-100}
             CORE_CASE_RATE_LIMIT_WINDOW_SECONDS: ${CORE_CASE_RATE_LIMIT_WINDOW_SECONDS:-60}
@@ -105,9 +121,10 @@ services:
             RECEIPT_STORAGE_ENDPOINT: http://minio:9000
             RECEIPT_STORAGE_FORCE_PATH_STYLE: ${RECEIPT_STORAGE_FORCE_PATH_STYLE:-true}
             REDIS_URL: redis://redis:6379
+            STAGE_TRANSITION_SNS_TOPIC_ARN: ${STAGE_TRANSITION_SNS_TOPIC_ARN:-}
             STAGE_TRANSITION_SNS_ENDPOINT: http://localstack:4566
             STAGE_TRANSITION_SQS_ENDPOINT: http://localstack:4566
-            STAGE_TRANSITION_SQS_QUEUE_URL: http://localstack:4566/000000000000/expenseflow-stage-transition-events-local
+            STAGE_TRANSITION_SQS_QUEUE_URL: ${STAGE_TRANSITION_SQS_QUEUE_URL:-http://localstack:4566/000000000000/expenseflow-stage-transition-events-local}
             TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE: ${TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE:-50}
             TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS: ${TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS:-30000}
             TIN_EIN_VALIDATION_ENDPOINT_URL: ${TIN_EIN_VALIDATION_ENDPOINT_URL:-https://tin-ein.example.test/tivs}
