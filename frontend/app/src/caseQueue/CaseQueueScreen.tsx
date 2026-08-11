@@ -275,12 +275,16 @@ export function CaseQueueScreen({
         null,
     );
     const [actionError, setActionError] = useState<string | null>(null);
+    const scopedLineItems = useMemo(
+        () => filterApprovalQueueLineItems(query.data ?? [], visibleStages),
+        [query.data, visibleStages],
+    );
     const selectedReportLineItems = useMemo(
         () =>
-            (query.data ?? []).filter(
+            scopedLineItems.filter(
                 (lineItem) => lineItem.expenseReportId === selectedReportId,
             ),
-        [query.data, selectedReportId],
+        [scopedLineItems, selectedReportId],
     );
     const reviewMutation = useMutation({
         mutationFn: async ({
@@ -610,7 +614,7 @@ export function CaseQueueScreen({
                         emptyStateBody={emptyStateBody}
                         emptyStateTitle={emptyStateTitle}
                         filterLabel={filterLabel}
-                        lineItems={query.data ?? []}
+                        lineItems={scopedLineItems}
                         onOpenReview={handleOpenReview}
                         tableLabel={tableLabel}
                         visibleStages={visibleStages}
@@ -725,23 +729,9 @@ function ApprovalQueueLineItemTable({
 }: ApprovalQueueLineItemTableProps): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-    const visibleStageSet = useMemo(
-        () =>
-            visibleStages === undefined ? undefined : new Set(visibleStages),
-        [visibleStages],
-    );
-    const filteredLineItems = useMemo(
-        () =>
-            visibleStageSet === undefined
-                ? lineItems
-                : lineItems.filter((lineItem) =>
-                      visibleStageSet.has(lineItem.currentStage),
-                  ),
-        [lineItems, visibleStageSet],
-    );
     const reportRows = useMemo(
-        () => groupApprovalQueueReports(filteredLineItems),
-        [filteredLineItems],
+        () => groupApprovalQueueReports(lineItems),
+        [lineItems],
     );
     const columns = useMemo<ColumnDef<ApprovalQueueReportRow>[]>(
         () => [
@@ -1633,6 +1623,21 @@ function formatMileageDistance(mileageDistance: number): string {
         maximumFractionDigits: 2,
         minimumFractionDigits: mileageDistance % 1 === 0 ? 0 : 2,
     }).format(mileageDistance)} miles`;
+}
+
+function filterApprovalQueueLineItems(
+    lineItems: ApprovalQueueLineItem[],
+    visibleStages: readonly ExpenseReportStage[] | undefined,
+): ApprovalQueueLineItem[] {
+    if (visibleStages === undefined) {
+        return lineItems;
+    }
+
+    const visibleStageSet = new Set(visibleStages);
+
+    return lineItems.filter((lineItem) =>
+        visibleStageSet.has(lineItem.currentStage),
+    );
 }
 
 function buildApprovalQueueReviewRows(
