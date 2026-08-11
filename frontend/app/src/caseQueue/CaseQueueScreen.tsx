@@ -178,6 +178,30 @@ type TransitionMutationVariables = {
     reason: string;
 };
 type QueueSnapshot = Array<[QueryKey, ApprovalQueueLineItem[] | undefined]>;
+type CaseQueueScreenProps = {
+    emptyStateBody?: string;
+    emptyStateTitle?: string;
+    eyebrow?: string;
+    filterLabel?: string;
+    heading?: string;
+    loadingLabel?: string;
+    tableLabel?: string;
+    visibleStages?: readonly ExpenseReportStage[];
+};
+type ApprovalQueueLineItemTableProps = {
+    emptyStateBody: string;
+    emptyStateTitle: string;
+    filterLabel: string;
+    lineItems: ApprovalQueueLineItem[];
+    onOpenReview: (report: ApprovalQueueReportRow) => void;
+    tableLabel: string;
+    visibleStages?: readonly ExpenseReportStage[];
+};
+
+export const managerApprovalQueueStages = [
+    "Submitted",
+    "Manager Approval",
+] as const satisfies readonly ExpenseReportStage[];
 
 const reviewLineItemRequestSchema = z
     .object({
@@ -234,7 +258,16 @@ export function useApprovalQueueLineItems() {
 /**
  * Renders the Department Manager Approval Queue line-item review table.
  */
-export function CaseQueueScreen(): JSX.Element {
+export function CaseQueueScreen({
+    emptyStateBody = "There are no reports waiting in the Approval Queue.",
+    emptyStateTitle = "No reports waiting for review",
+    eyebrow = "Approval Queue",
+    filterLabel = "Approval Queue filters",
+    heading = "Case Queue",
+    loadingLabel = "Loading Approval Queue",
+    tableLabel = "Approval Queue reports",
+    visibleStages,
+}: CaseQueueScreenProps = {}): JSX.Element {
     const query = useApprovalQueueLineItems();
     const session = useSession();
     const queryClient = useQueryClient();
@@ -242,12 +275,16 @@ export function CaseQueueScreen(): JSX.Element {
         null,
     );
     const [actionError, setActionError] = useState<string | null>(null);
+    const scopedLineItems = useMemo(
+        () => filterApprovalQueueLineItems(query.data ?? [], visibleStages),
+        [query.data, visibleStages],
+    );
     const selectedReportLineItems = useMemo(
         () =>
-            (query.data ?? []).filter(
+            scopedLineItems.filter(
                 (lineItem) => lineItem.expenseReportId === selectedReportId,
             ),
-        [query.data, selectedReportId],
+        [scopedLineItems, selectedReportId],
     );
     const reviewMutation = useMutation({
         mutationFn: async ({
@@ -545,13 +582,13 @@ export function CaseQueueScreen(): JSX.Element {
         <section className="case-queue" aria-labelledby="case-queue-heading">
             <header className="case-queue__header">
                 <div>
-                    <p className="screen-placeholder__label">Approval Queue</p>
-                    <h2 id="case-queue-heading">Case Queue</h2>
+                    <p className="screen-placeholder__label">{eyebrow}</p>
+                    <h2 id="case-queue-heading">{heading}</h2>
                 </div>
             </header>
 
             {query.isPending ? (
-                <LoadingSkeleton label="Loading Approval Queue" rows={6} />
+                <LoadingSkeleton label={loadingLabel} rows={6} />
             ) : query.isError ? (
                 <section
                     className="case-queue-table"
@@ -574,8 +611,13 @@ export function CaseQueueScreen(): JSX.Element {
                         </div>
                     )}
                     <ApprovalQueueLineItemTable
-                        lineItems={query.data ?? []}
+                        emptyStateBody={emptyStateBody}
+                        emptyStateTitle={emptyStateTitle}
+                        filterLabel={filterLabel}
+                        lineItems={scopedLineItems}
                         onOpenReview={handleOpenReview}
+                        tableLabel={tableLabel}
+                        visibleStages={visibleStages}
                     />
                     {selectedReportId === null ||
                     selectedReportLineItems.length === 0 ? null : (
@@ -677,12 +719,14 @@ export function CaseQueueScreen(): JSX.Element {
 }
 
 function ApprovalQueueLineItemTable({
+    emptyStateBody,
+    emptyStateTitle,
+    filterLabel,
     lineItems,
     onOpenReview,
-}: {
-    lineItems: ApprovalQueueLineItem[];
-    onOpenReview: (report: ApprovalQueueReportRow) => void;
-}): JSX.Element {
+    tableLabel,
+    visibleStages,
+}: ApprovalQueueLineItemTableProps): JSX.Element {
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const reportRows = useMemo(
@@ -819,35 +863,34 @@ function ApprovalQueueLineItemTable({
 
     return (
         <>
-            <div
-                className="case-queue-toolbar"
-                aria-label="Approval Queue filters"
-            >
+            <div className="case-queue-toolbar" aria-label={filterLabel}>
                 <div className="case-queue-toolbar__filters">
                     <span>Filter by:</span>
-                    <label>
-                        <span>Stage</span>
-                        <select
-                            aria-label="Filter by stage"
-                            value={stageFilter}
-                            onChange={(event) =>
-                                table
-                                    .getColumn("currentStage")
-                                    ?.setFilterValue(
-                                        event.target.value === "all"
-                                            ? undefined
-                                            : event.target.value,
-                                    )
-                            }
-                        >
-                            <option value="all">Stage: All</option>
-                            {EXPENSE_REPORT_STAGES.map((stage) => (
-                                <option key={stage} value={stage}>
-                                    {stage}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                    {visibleStages === undefined ? (
+                        <label>
+                            <span>Stage</span>
+                            <select
+                                aria-label="Filter by stage"
+                                value={stageFilter}
+                                onChange={(event) =>
+                                    table
+                                        .getColumn("currentStage")
+                                        ?.setFilterValue(
+                                            event.target.value === "all"
+                                                ? undefined
+                                                : event.target.value,
+                                        )
+                                }
+                            >
+                                <option value="all">Stage: All</option>
+                                {EXPENSE_REPORT_STAGES.map((stage) => (
+                                    <option key={stage} value={stage}>
+                                        {stage}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    ) : null}
                     <label className="case-queue-toolbar__check">
                         <input
                             aria-label="Filter to amount over 500"
@@ -893,18 +936,12 @@ function ApprovalQueueLineItemTable({
                 </div>
             </div>
 
-            <section
-                className="case-queue-table"
-                aria-label="Approval Queue reports"
-            >
+            <section className="case-queue-table" aria-label={tableLabel}>
                 {reportRows.length === 0 ? (
-                    <EmptyState
-                        body="There are no reports waiting in the Approval Queue."
-                        title="No reports waiting for review"
-                    />
+                    <EmptyState body={emptyStateBody} title={emptyStateTitle} />
                 ) : (
                     <div className="case-queue-table__frame">
-                        <table aria-label="Approval Queue reports">
+                        <table aria-label={tableLabel}>
                             <thead>
                                 {table.getHeaderGroups().map((headerGroup) => (
                                     <tr key={headerGroup.id}>
@@ -1586,6 +1623,21 @@ function formatMileageDistance(mileageDistance: number): string {
         maximumFractionDigits: 2,
         minimumFractionDigits: mileageDistance % 1 === 0 ? 0 : 2,
     }).format(mileageDistance)} miles`;
+}
+
+function filterApprovalQueueLineItems(
+    lineItems: ApprovalQueueLineItem[],
+    visibleStages: readonly ExpenseReportStage[] | undefined,
+): ApprovalQueueLineItem[] {
+    if (visibleStages === undefined) {
+        return lineItems;
+    }
+
+    const visibleStageSet = new Set(visibleStages);
+
+    return lineItems.filter((lineItem) =>
+        visibleStageSet.has(lineItem.currentStage),
+    );
 }
 
 function buildApprovalQueueReviewRows(

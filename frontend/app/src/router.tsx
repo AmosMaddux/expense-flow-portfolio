@@ -24,7 +24,10 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
-import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
+import {
+    CaseQueueScreen,
+    managerApprovalQueueStages,
+} from "./caseQueue/CaseQueueScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { GlMappingScreen } from "./glMapping/GlMappingScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
@@ -75,8 +78,18 @@ const protectedRoutes = navigationItems.map((item) =>
         component: () =>
             item.path === "/finance-dashboard" ? (
                 <FinanceDashboardScreen />
+            ) : item.path === "/expense-reports" ? (
+                <CaseQueueScreen
+                    eyebrow="Expense Reports"
+                    filterLabel="Expense Reports filters"
+                    heading="Expense Reports"
+                    tableLabel="Expense Reports"
+                />
             ) : item.path === "/approval-queue" ? (
-                <CaseQueueScreen />
+                <CaseQueueScreen
+                    heading="Approval Queue"
+                    visibleStages={managerApprovalQueueStages}
+                />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
             ) : item.path === "/gl-mapping" ? (

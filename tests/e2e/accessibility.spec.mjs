@@ -42,7 +42,7 @@ test.describe("ExpenseFlow accessibility gates", () => {
         await page.getByRole("link", { name: "Approval Queue" }).click();
 
         await expect(
-            page.getByRole("heading", { name: "Case Queue" }),
+            page.getByRole("heading", { name: "Approval Queue" }),
         ).toBeVisible();
         await expect(page.getByLabel("Approval Queue filters")).toBeVisible();
         await expect(
