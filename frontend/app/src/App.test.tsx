@@ -407,7 +407,7 @@ describe("AppShell", () => {
             />,
         );
 
-        expect(screen.getByLabelText("Tenant example1")).not.toBeNull();
+        expect(screen.getByLabelText("Company example1")).not.toBeNull();
     });
 
     test("renders Department Manager navigation without Team & Users", () => {

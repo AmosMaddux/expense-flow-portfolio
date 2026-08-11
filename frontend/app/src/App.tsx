@@ -478,7 +478,7 @@ export function AppShell({
                             aria-label={
                                 tenantDisplayName === undefined
                                     ? undefined
-                                    : `Tenant ${tenantDisplayName}`
+                                    : `Company ${tenantDisplayName}`
                             }
                             className="topbar__tenant"
                         >
@@ -486,7 +486,7 @@ export function AppShell({
                                 signedInRole
                             ) : (
                                 <>
-                                    <span>Tenant</span>
+                                    <span>Company</span>
                                     <strong>{tenantDisplayName}</strong>
                                 </>
                             )}
