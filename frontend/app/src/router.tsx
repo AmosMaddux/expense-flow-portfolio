@@ -80,6 +80,7 @@ const protectedRoutes = navigationItems.map((item) =>
             ) : item.path === "/expense-reports" ? (
                 <CaseQueueScreen
                     eyebrow="Expense Reports"
+                    filterLabel="Expense Reports filters"
                     heading="Expense Reports"
                     tableLabel="Expense Reports"
                 />

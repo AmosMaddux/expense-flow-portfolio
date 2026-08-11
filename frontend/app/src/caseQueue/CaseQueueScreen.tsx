@@ -182,6 +182,7 @@ type CaseQueueScreenProps = {
     emptyStateBody?: string;
     emptyStateTitle?: string;
     eyebrow?: string;
+    filterLabel?: string;
     heading?: string;
     loadingLabel?: string;
     tableLabel?: string;
@@ -190,6 +191,7 @@ type CaseQueueScreenProps = {
 type ApprovalQueueLineItemTableProps = {
     emptyStateBody: string;
     emptyStateTitle: string;
+    filterLabel: string;
     lineItems: ApprovalQueueLineItem[];
     onOpenReview: (report: ApprovalQueueReportRow) => void;
     tableLabel: string;
@@ -260,6 +262,7 @@ export function CaseQueueScreen({
     emptyStateBody = "There are no reports waiting in the Approval Queue.",
     emptyStateTitle = "No reports waiting for review",
     eyebrow = "Approval Queue",
+    filterLabel = "Approval Queue filters",
     heading = "Case Queue",
     loadingLabel = "Loading Approval Queue",
     tableLabel = "Approval Queue reports",
@@ -606,6 +609,7 @@ export function CaseQueueScreen({
                     <ApprovalQueueLineItemTable
                         emptyStateBody={emptyStateBody}
                         emptyStateTitle={emptyStateTitle}
+                        filterLabel={filterLabel}
                         lineItems={query.data ?? []}
                         onOpenReview={handleOpenReview}
                         tableLabel={tableLabel}
@@ -713,6 +717,7 @@ export function CaseQueueScreen({
 function ApprovalQueueLineItemTable({
     emptyStateBody,
     emptyStateTitle,
+    filterLabel,
     lineItems,
     onOpenReview,
     tableLabel,
@@ -868,10 +873,7 @@ function ApprovalQueueLineItemTable({
 
     return (
         <>
-            <div
-                className="case-queue-toolbar"
-                aria-label={`${tableLabel} filters`}
-            >
+            <div className="case-queue-toolbar" aria-label={filterLabel}>
                 <div className="case-queue-toolbar__filters">
                     <span>Filter by:</span>
                     {visibleStages === undefined ? (
