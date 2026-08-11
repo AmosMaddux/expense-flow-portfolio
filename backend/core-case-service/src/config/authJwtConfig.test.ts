@@ -3,7 +3,11 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, test } from "vitest";
 
 import { syntheticRsaPrivateKeyBase64 } from "../testSupport/jwtTestKeys.js";
-import { buildAuthJwks, loadAuthJwtConfig } from "./authJwtConfig.js";
+import {
+    buildAuthJwks,
+    buildAuthOpenIdConfiguration,
+    loadAuthJwtConfig,
+} from "./authJwtConfig.js";
 
 void describe("JWT authentication configuration", () => {
     void test("loads RSA JWT issuer settings and derives a public JWKS", () => {
@@ -16,6 +20,7 @@ void describe("JWT authentication configuration", () => {
 
         expect(config).toMatchObject({
             issuer: "expenseflow-auth-test",
+            audience: "expenseflow-http-api",
             keyId: "synthetic-key-v1",
             accessTokenTtlSeconds: 600,
         });
@@ -41,10 +46,37 @@ void describe("JWT authentication configuration", () => {
 
         expect(config).toMatchObject({
             issuer: "expenseflow-core-case-service",
+            audience: "expenseflow-http-api",
             keyId: "synthetic-key-v1",
             accessTokenTtlSeconds: 900,
         });
         expect(config.privateKey.asymmetricKeyType).toBe("rsa");
+    });
+
+    void test("builds HTTPS issuer metadata for API Gateway JWKS discovery", () => {
+        const config = loadAuthJwtConfig({
+            AUTH_JWT_ISSUER: "https://auth.expenseflow.example.test/v1/",
+            AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
+            AUTH_JWT_KEY_ID: "synthetic-key-v1",
+        });
+
+        expect(buildAuthOpenIdConfiguration(config)).toStrictEqual({
+            issuer: "https://auth.expenseflow.example.test/v1",
+            jwks_uri:
+                "https://auth.expenseflow.example.test/v1/.well-known/jwks.json",
+        });
+    });
+
+    void test("rejects non-HTTPS issuer metadata", () => {
+        const config = loadAuthJwtConfig({
+            AUTH_JWT_ISSUER: "expenseflow-auth-test",
+            AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
+            AUTH_JWT_KEY_ID: "synthetic-key-v1",
+        });
+
+        expect(() => buildAuthOpenIdConfiguration(config)).toThrow(
+            "AUTH_JWT_ISSUER",
+        );
     });
 
     void test("rejects missing or malformed JWT private keys and key IDs", () => {

@@ -26,6 +26,7 @@ from backend.python.main import app, lifespan
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 AUTH_JWT_ISSUER = "expenseflow-core-case-service"
+AUTH_JWT_AUDIENCE = "expenseflow-http-api"
 TENANT_ID = "11111111-1111-4111-8111-111111111111"
 USER_ID = "22222222-2222-4222-8222-222222222222"
 
@@ -550,12 +551,14 @@ def test_auth_verifier_rejects_node_minted_refresh_token(
         {"tenant_id": "not-a-uuid"},
         {"roles": []},
         {"roles": ["Superuser"]},
+        {"aud": "another-api"},
     ],
     ids=[
         "non_uuid_sub",
         "non_uuid_tenant_id",
         "empty_roles",
         "unknown_role",
+        "wrong_audience",
     ],
 )
 def test_auth_verifier_rejects_validly_signed_token_with_malformed_claims(
@@ -858,6 +861,7 @@ def mint_raw_access_token(
     issued_at = int(time.time()) + issued_at_offset_seconds
     payload = {
         "iss": AUTH_JWT_ISSUER,
+        "aud": AUTH_JWT_AUDIENCE,
         "sub": USER_ID,
         "tenant_id": TENANT_ID,
         "roles": ["Employee"],

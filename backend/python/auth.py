@@ -16,6 +16,7 @@ from jwt import InvalidTokenError, PyJWK, PyJWKError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 AUTH_JWT_ISSUER_DEFAULT = "expenseflow-core-case-service"
+AUTH_JWT_AUDIENCE_DEFAULT = "expenseflow-http-api"
 AUTH_JWT_CLOCK_SKEW_SECONDS_DEFAULT = 10
 AUTH_JWT_JWKS_TIMEOUT_SECONDS_DEFAULT = 5
 AUTH_JWT_JWKS_CACHE_TTL_SECONDS_DEFAULT = 300
@@ -55,6 +56,7 @@ class AuthenticatedIdentity(BaseModel):
         default_factory=list, exclude=True
     )
     iss: str
+    aud: str = Field(exclude=True)
     iat: int
     exp: int
     token_use: Literal["access"]
@@ -93,6 +95,7 @@ class AuthJwtVerifierConfig:
     """Hold validated shared JWT verifier settings."""
 
     issuer: str
+    audience: str
     public_keys_by_id: dict[str, Any]
     clock_skew_seconds: int
     jwks_url: str | None = None
@@ -133,12 +136,14 @@ class AuthJwtVerifier:
                 key,
                 algorithms=["RS256"],
                 issuer=self._config.issuer,
+                audience=self._config.audience,
                 leeway=self._config.clock_skew_seconds,
                 options={
                     "require": [
                         "exp",
                         "iat",
                         "iss",
+                        "aud",
                         "sub",
                         "tenant_id",
                         "roles",
@@ -233,6 +238,7 @@ def load_auth_jwt_verifier_config(
     """Read and validate shared JWT verifier settings."""
     env = environment if environment is not None else os.environ
     issuer = read_issuer(env)
+    audience = read_audience(env)
     clock_skew_seconds = read_clock_skew_seconds(env)
     jwks_timeout_seconds = read_jwks_timeout_seconds(env)
     jwks_cache_ttl_seconds = read_jwks_cache_ttl_seconds(env)
@@ -259,6 +265,7 @@ def load_auth_jwt_verifier_config(
 
     return AuthJwtVerifierConfig(
         issuer=issuer,
+        audience=audience,
         public_keys_by_id=public_keys_by_id,
         clock_skew_seconds=clock_skew_seconds,
         jwks_url=jwks_url,
@@ -274,6 +281,14 @@ def read_issuer(env: Mapping[str, str]) -> str:
     if issuer.strip() == "":
         raise AuthJwtConfigurationError("AUTH_JWT_ISSUER cannot be blank.")
     return issuer
+
+
+def read_audience(env: Mapping[str, str]) -> str:
+    """Read the expected shared JWT audience."""
+    audience = env.get("AUTH_JWT_AUDIENCE", AUTH_JWT_AUDIENCE_DEFAULT)
+    if audience.strip() == "":
+        raise AuthJwtConfigurationError("AUTH_JWT_AUDIENCE cannot be blank.")
+    return audience
 
 
 def read_clock_skew_seconds(env: Mapping[str, str]) -> int:

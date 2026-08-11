@@ -76,6 +76,7 @@ services:
             ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-1}
             ARGON2_TIME_COST: ${ARGON2_TIME_COST:-2}
             AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-900}
+            AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-expenseflow-http-api}
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_PRIVATE_KEY_BASE64: ${AUTH_JWT_PRIVATE_KEY_BASE64:?AUTH_JWT_PRIVATE_KEY_BASE64 must be set in .env}
@@ -131,6 +132,7 @@ services:
                 condition: service_started
         environment:
             AUTH_JWT_CLOCK_SKEW_SECONDS: ${AUTH_JWT_CLOCK_SKEW_SECONDS:-10}
+            AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-expenseflow-http-api}
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_JWKS_JSON: ${AUTH_JWT_JWKS_JSON:?AUTH_JWT_JWKS_JSON must be set in .env}

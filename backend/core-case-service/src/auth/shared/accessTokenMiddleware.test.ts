@@ -35,6 +35,7 @@ function buildVerifierConfig() {
 
     return createAccessTokenVerifierConfig(
         config.issuer,
+        config.audience,
         buildAuthJwks(config),
     );
 }
@@ -97,6 +98,16 @@ void describe("shared access token validation", () => {
         ).toThrow(UnauthorizedError);
     });
 
+    void test("rejects a token intended for another audience", () => {
+        expect(() =>
+            verifyAccessToken(
+                buildAccessToken(),
+                { ...buildVerifierConfig(), audience: "another-api" },
+                issuedAt,
+            ),
+        ).toThrow(UnauthorizedError);
+    });
+
     void test("rejects tokens without a matching JWKS kid", () => {
         const token = buildAccessToken();
         const [, encodedPayload, encodedSignature] = token.split(".");
@@ -109,9 +120,15 @@ void describe("shared access token validation", () => {
         expect(() =>
             verifyAccessToken(
                 token,
-                createAccessTokenVerifierConfig("expenseflow-auth-test", {
-                    keys: [{ ...buildConfig().publicJwk, kid: "another-key" }],
-                }),
+                createAccessTokenVerifierConfig(
+                    "expenseflow-auth-test",
+                    "expenseflow-http-api",
+                    {
+                        keys: [
+                            { ...buildConfig().publicJwk, kid: "another-key" },
+                        ],
+                    },
+                ),
                 issuedAt,
             ),
         ).toThrow(UnauthorizedError);
@@ -125,6 +142,7 @@ void describe("shared access token validation", () => {
         });
         const payload = encodeJson({
             iss: "expenseflow-auth-test",
+            aud: "expenseflow-http-api",
             sub: userId,
             tenant_id: tenantId,
             roles: ["Employee"],
@@ -150,7 +168,7 @@ void describe("shared access token validation", () => {
         const config = buildConfig();
 
         expect(() =>
-            createAccessTokenVerifierConfig(config.issuer, {
+            createAccessTokenVerifierConfig(config.issuer, config.audience, {
                 keys: [config.publicJwk, { ...config.publicJwk }],
             }),
         ).toThrow("JWKS key IDs must be unique.");

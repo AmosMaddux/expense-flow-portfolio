@@ -91,6 +91,7 @@ const loginService = createLoginService(
     totpSecretProtector,
     {
         issuer,
+        audience: "expenseflow-http-api",
         privateKey: createPrivateKey(
             Buffer.from(privateKeyBase64, "base64").toString("utf8"),
         ),

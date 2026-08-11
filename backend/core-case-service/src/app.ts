@@ -6,7 +6,11 @@ import { createLoginService } from "./auth/login/loginService.js";
 import { createDrizzleLoginCredentialRepository } from "./auth/login/loginRepository.js";
 import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
 import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
-import { buildAuthJwks, loadAuthJwtConfig } from "./config/authJwtConfig.js";
+import {
+    buildAuthJwks,
+    buildAuthOpenIdConfiguration,
+    loadAuthJwtConfig,
+} from "./config/authJwtConfig.js";
 import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
@@ -29,6 +33,7 @@ const authJwtConfig = loadAuthJwtConfig();
 const authJwks = buildAuthJwks(authJwtConfig);
 const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
     authJwtConfig.issuer,
+    authJwtConfig.audience,
     authJwks,
 );
 loadDefaultGlCodingConfig();
@@ -48,6 +53,16 @@ v1Router.use("/auth", express.json());
 v1Router.get("/.well-known/jwks.json", (_req: Request, res: Response) => {
     res.status(200).json(authJwks);
 });
+
+/**
+ * Publishes issuer metadata so API Gateway can discover the shared JWKS URI.
+ */
+v1Router.get(
+    "/.well-known/openid-configuration",
+    (_req: Request, res: Response) => {
+        res.status(200).json(buildAuthOpenIdConfiguration(authJwtConfig));
+    },
+);
 v1Router.use(
     "/",
     createAuthRouter(

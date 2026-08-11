@@ -2,6 +2,30 @@
 
 These rules apply to all work in this repository.
 
+## AWS Guidance
+
+- Prefer the AWS MCP Server for AWS interactions because it provides sandboxed execution, observability, and audit logging. If unavailable, use the AWS CLI directly.
+- Before starting an AWS task, check whether a relevant AWS skill is available. Load the skill and prefer its guidance over general knowledge.
+- When uncertain about specific AWS details such as API parameters, permissions, limits, or error codes, verify against AWS documentation rather than guessing. State uncertainty explicitly if it cannot be confirmed.
+- Prefer infrastructure as code with AWS CDK or CloudFormation over direct resource-creation commands.
+- Follow AWS Well-Architected Framework principles when working with infrastructure.
+- Do not use em dashes in AWS resource names or descriptions. Use hyphens instead.
+
+### AWS Sandbox Guardrails
+
+- Add `user: muhilramesh` and `env: sandbox` to every taggable AWS resource and to CloudFormation stacks. The `env` value must be exactly `sandbox`.
+- EC2 instances are limited to the `t2.*`, `t3.*`, and `t4g.*` families.
+- RDS instances are limited to the `db.t2.*`, `db.t3.*`, and `db.t4g.*` classes.
+- Do not create services blocked by the account SCP, including Bedrock, SageMaker, Redshift, EMR, MSK/Kafka, OpenSearch, Neptune, DocumentDB, and QuickSight.
+- Do not create long-lived IAM access keys or console profiles for other users.
+- The curriculum-allowed services are EC2/VPC, RDS, ElastiCache, DynamoDB, S3, Lambda, ECS Fargate, ALB, CloudFront, API Gateway, Secrets Manager, SSM Parameter Store, KMS, CloudWatch, X-Ray, limited IAM, STS, ECR, and CloudFormation.
+
+### AWS Secret Safety
+
+- Load the `aws-secrets-manager` skill first for any secret, credential, API key, token, or password task.
+- Do not call `secretsmanager get-secret-value` or `batch-get-secret-value`, and do not access the Secrets Manager Agent daemon directly.
+- Use `{{resolve:secretsmanager:secret-id:SecretString:json-key}}` with `asm-exec` so secrets resolve at runtime without entering agent context.
+
 ## Product Context
 
 - ExpenseFlow Corporate is a multi-tenant SaaS product for mid-to-large corporate finance teams.

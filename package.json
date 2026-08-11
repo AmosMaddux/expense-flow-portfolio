@@ -44,7 +44,8 @@
     "license": "ISC",
     "workspaces": [
         "backend/core-case-service",
-        "frontend/app"
+        "frontend/app",
+        "platform/http-api"
     ],
     "devDependencies": {
         "@axe-core/playwright": "^4.12.1",

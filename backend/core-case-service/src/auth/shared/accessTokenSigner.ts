@@ -32,6 +32,7 @@ export function signAccessToken(
     };
     const payload = {
         iss: config.issuer,
+        aud: config.audience,
         sub: subject.userId,
         tenant_id: subject.tenantId,
         roles: subject.roles,
