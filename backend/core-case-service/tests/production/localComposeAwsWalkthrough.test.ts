@@ -299,6 +299,7 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
         const dynamoDocumentClient = DynamoDBDocumentClient.from(dynamoClient);
         const dynamoProjectionKeysToCleanup: DynamoProjectionKey[] = [];
         let testFailed = false;
+        let cleanupFailure: unknown;
 
         try {
             await assertExpectedAwsAccount(env, stsClient);
@@ -498,17 +499,21 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
                 );
             } catch (cleanupError: unknown) {
                 if (!testFailed) {
-                    throw cleanupError;
+                    cleanupFailure = cleanupError;
+                } else {
+                    const detail =
+                        cleanupError instanceof Error
+                            ? cleanupError.message
+                            : "Unknown cleanup error.";
+                    process.stderr.write(
+                        `SCRUM-146 DynamoDB cleanup failed after test failure: ${detail}\n`,
+                    );
                 }
-
-                const detail =
-                    cleanupError instanceof Error
-                        ? cleanupError.message
-                        : "Unknown cleanup error.";
-                process.stderr.write(
-                    `SCRUM-146 DynamoDB cleanup failed after test failure: ${detail}\n`,
-                );
             }
+        }
+
+        if (cleanupFailure !== undefined) {
+            throw cleanupFailure;
         }
     }, 180_000);
 });
@@ -641,7 +646,9 @@ async function assertAwsPreflight(
     } catch (error: unknown) {
         const detail =
             error instanceof Error ? error.message : "Unknown AWS SDK error.";
-        throw new Error(`${resourceName} preflight failed: ${detail}`);
+        throw new Error(`${resourceName} preflight failed: ${detail}`, {
+            cause: error,
+        });
     }
 }
 

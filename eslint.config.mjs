@@ -57,5 +57,15 @@ export default [
             },
         },
     },
+    {
+        ...tseslint.configs.disableTypeChecked,
+        files: ["backend/core-case-service/tests/production/**/*.ts"],
+        languageOptions: {
+            ...tseslint.configs.disableTypeChecked.languageOptions,
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
     prettier,
 ];
