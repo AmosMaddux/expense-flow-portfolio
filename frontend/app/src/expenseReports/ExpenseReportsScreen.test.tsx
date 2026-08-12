@@ -85,6 +85,7 @@ describe("ExpenseReportsScreen", () => {
                             employeeId: "50000000-0000-4000-8000-000000000191",
                             managerId: null,
                             category: "Travel",
+                            categories: ["Travel"],
                             amount: "742.18",
                             currency: "USD",
                             status: "Manager Approval",
@@ -138,6 +139,7 @@ describe("ExpenseReportsScreen", () => {
                             employeeId: "50000000-0000-4000-8000-000000000191",
                             managerId: null,
                             category: "Travel",
+                            categories: ["Travel"],
                             amount: "742.18",
                             currency: "USD",
                             status: "Manager Approval",
@@ -148,6 +150,7 @@ describe("ExpenseReportsScreen", () => {
                             employeeId: "60000000-0000-4000-8000-000000000192",
                             managerId: null,
                             category: "Travel",
+                            categories: ["Travel"],
                             amount: "245.10",
                             currency: "USD",
                             status: "AP Review",
@@ -158,6 +161,7 @@ describe("ExpenseReportsScreen", () => {
                             employeeId: "70000000-0000-4000-8000-000000000193",
                             managerId: null,
                             category: "Meals",
+                            categories: ["Meals"],
                             amount: "88.34",
                             currency: "USD",
                             status: "Submitted",
@@ -193,7 +197,158 @@ describe("ExpenseReportsScreen", () => {
         expect(screen.queryByText("$88.34")).toBeNull();
     });
 
-    test("opens the report review detail when Review is clicked", async () => {
+    test("filters category selector options while typing", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    createJsonResponse([
+                        createSummary({ category: "Travel" }),
+                        createSummary({
+                            id: "60000000-0000-4000-8000-000000000192",
+                            category: "Meals",
+                            categories: ["Meals"],
+                            amount: "88.34",
+                        }),
+                    ]),
+                ),
+            ) as typeof fetch,
+        );
+
+        await screen.findByText("$742.18");
+
+        fireEvent.change(screen.getByRole("combobox", { name: "Category" }), {
+            target: { value: "tra" },
+        });
+
+        expect(screen.getByRole("button", { name: "Travel" })).toBeTruthy();
+        expect(screen.queryByRole("button", { name: "Meals" })).toBeNull();
+        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+    });
+
+    test("selects and clears a valid category filter", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    createJsonResponse([
+                        createSummary({ category: "Travel" }),
+                        createSummary({
+                            id: "60000000-0000-4000-8000-000000000192",
+                            category: "Meals",
+                            categories: ["Meals"],
+                            amount: "88.34",
+                        }),
+                    ]),
+                ),
+            ) as typeof fetch,
+        );
+
+        await screen.findByText("$742.18");
+
+        fireEvent.change(screen.getByRole("combobox", { name: "Category" }), {
+            target: { value: "tra" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Travel" }));
+
+        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        expect(screen.getByText("$742.18")).toBeTruthy();
+        expect(screen.queryByText("$88.34")).toBeNull();
+
+        fireEvent.click(screen.getByRole("button", { name: "Clear category" }));
+
+        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+        expect(screen.getByText("$88.34")).toBeTruthy();
+    });
+
+    test("matches typed category casing against canonical options", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    createJsonResponse([
+                        createSummary({ category: "Travel" }),
+                        createSummary({
+                            id: "60000000-0000-4000-8000-000000000192",
+                            category: "Meals",
+                            categories: ["Meals"],
+                            amount: "88.34",
+                        }),
+                    ]),
+                ),
+            ) as typeof fetch,
+        );
+
+        await screen.findByText("$742.18");
+
+        fireEvent.change(screen.getByRole("combobox", { name: "Category" }), {
+            target: { value: "tRaVeL" },
+        });
+
+        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        expect(screen.getByText("$742.18")).toBeTruthy();
+        expect(screen.queryByText("$88.34")).toBeNull();
+    });
+
+    test("does not apply unmatched typed category input", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    createJsonResponse([
+                        createSummary({ category: "Travel" }),
+                        createSummary({
+                            id: "60000000-0000-4000-8000-000000000192",
+                            category: "Meals",
+                            categories: ["Meals"],
+                            amount: "88.34",
+                        }),
+                    ]),
+                ),
+            ) as typeof fetch,
+        );
+
+        await screen.findByText("$742.18");
+
+        fireEvent.change(screen.getByRole("combobox", { name: "Category" }), {
+            target: { value: "travelling" },
+        });
+
+        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+        expect(screen.queryByText("No Expense Reports match")).toBeNull();
+        expect(screen.getByText("$742.18")).toBeTruthy();
+        expect(screen.getByText("$88.34")).toBeTruthy();
+    });
+
+    test("filters Multiple reports by underlying category membership", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    createJsonResponse([
+                        createSummary({
+                            category: "Multiple",
+                            categories: ["Meals", "Travel"],
+                        }),
+                        createSummary({
+                            id: "60000000-0000-4000-8000-000000000192",
+                            category: "Mileage",
+                            categories: ["Mileage"],
+                            amount: "88.34",
+                        }),
+                    ]),
+                ),
+            ) as typeof fetch,
+        );
+
+        await screen.findByText("$742.18");
+
+        fireEvent.change(screen.getByRole("combobox", { name: "Category" }), {
+            target: { value: "Travel" },
+        });
+
+        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        expect(screen.getByText("Multiple")).toBeTruthy();
+        expect(screen.getByText("$742.18")).toBeTruthy();
+        expect(screen.queryByText("$88.34")).toBeNull();
+    });
+
+    test("opens the shared report detail modal when Review is clicked", async () => {
         const fetchImplementation = vi.fn((input: RequestInfo | URL) => {
             if (readRequestPath(input) === "/v1/expense-reports") {
                 return Promise.resolve(
@@ -204,9 +359,44 @@ describe("ExpenseReportsScreen", () => {
                             employeeId: "50000000-0000-4000-8000-000000000191",
                             managerId: null,
                             category: "Multiple",
+                            categories: ["Mileage", "Travel"],
                             amount: "754.58",
                             currency: "USD",
                             status: "Manager Approval",
+                        },
+                    ]),
+                );
+            }
+
+            if (readRequestPath(input).endsWith("/audit-entries")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "71000000-0000-4000-8000-000000000191",
+                            tenantId,
+                            expenseReportId: reportId,
+                            actorId: userId,
+                            action: "transition_approved",
+                            stageBeforeAction: "Submitted",
+                            stageAfterProposedAction: "Manager Approval",
+                            denialReason: null,
+                            outcomeReason: null,
+                            createdAt: "2026-07-22T12:00:00.000Z",
+                        },
+                    ]),
+                );
+            }
+
+            if (readRequestPath(input).endsWith("/comments")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "72000000-0000-4000-8000-000000000191",
+                            tenantId,
+                            expenseReportId: reportId,
+                            authorId: userId,
+                            body: "Synthetic report comment.",
+                            createdAt: "2026-07-22T13:00:00.000Z",
                         },
                     ]),
                 );
@@ -257,15 +447,57 @@ describe("ExpenseReportsScreen", () => {
         fireEvent.click(await screen.findByRole("button", { name: "Review" }));
 
         const dialog = await screen.findByRole("dialog", {
-            name: `Report ${reportId.slice(0, 8).toUpperCase()}`,
+            name: `Expense Report ${reportId.slice(0, 8).toUpperCase()}`,
         });
-        await waitFor(() =>
-            expect(within(dialog).getByText("Northstar Hotels")).toBeTruthy(),
+        expect(
+            await within(dialog).findByRole("list", {
+                name: "Expense Report stage progress",
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("complementary", {
+                name: "Expense Report case summary",
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Northstar Hotels \$742\.18 - 6240 Over \$500 Not reviewed/i,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
+                name: /Office to client site \$12\.40 18\.50 mi 6250 Clear Not reviewed/i,
+            }),
         );
-        expect(within(dialog).getByText("Office to client site")).toBeTruthy();
-        expect(within(dialog).getByText("$754.58")).toBeTruthy();
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Audit Trail" }),
+        );
+        expect(
+            await within(dialog).findByText("Transition Approved"),
+        ).toBeTruthy();
+
+        fireEvent.click(within(dialog).getByRole("tab", { name: "Comments" }));
+        expect(
+            await within(dialog).findByText("Synthetic report comment."),
+        ).toBeTruthy();
     });
 });
+
+function createSummary(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+        id: reportId,
+        createdAt: "2026-07-20T14:30:00.000Z",
+        employeeId: "50000000-0000-4000-8000-000000000191",
+        managerId: null,
+        category: "Travel",
+        categories: ["Travel"],
+        amount: "742.18",
+        currency: "USD",
+        status: "Manager Approval",
+        ...overrides,
+    };
+}
 
 function readRequestPath(input: RequestInfo | URL): string {
     if (typeof input === "string") {

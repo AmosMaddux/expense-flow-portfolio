@@ -39,6 +39,7 @@ import {
     findAuditEntriesByExpenseReportId,
     findEmployeeSubmissionDetail,
     findExpenseReportById,
+    findExpenseReportSummaries,
     findCommittedSubmissionByIdempotencyKey,
     findExpenseReportsByOwner,
     insertDraftExpenseContent,
@@ -217,6 +218,56 @@ void describe("expenseReportRepository", () => {
         });
         expect(crossTenantRows).toHaveLength(0);
     });
+
+    void test("summarizes Expense Reports with category membership", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000182";
+        const reportId = "10000000-0000-4000-8000-000000000182";
+        const ownerId = "20000000-0000-4000-8000-000000000182";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner: ownerId,
+            dueDate: "2026-07-31",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000182",
+                tenantId,
+                expenseReportId: reportId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-07-20",
+                category: "Travel",
+                amount: "120.00",
+                currency: "USD",
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000183",
+                tenantId,
+                expenseReportId: reportId,
+                merchant: "Synthetic Bistro",
+                expenseDate: "2026-07-20",
+                category: "Meals",
+                amount: "30.50",
+                currency: "USD",
+            },
+        ]);
+
+        const summaries = await findExpenseReportSummaries(tenantId);
+
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0]).toMatchObject({
+            id: reportId,
+            employeeId: ownerId,
+            category: "Multiple",
+            categories: ["Meals", "Travel"],
+            amount: "150.50",
+            currency: "USD",
+            status: "Manager Approval",
+        });
+    });
+
     void test("orders audit entries by append sequence when timestamps are skewed", async () => {
         const tenantId = "00000000-0000-4000-8000-000000000198";
         const reportId = "10000000-0000-4000-8000-000000000198";

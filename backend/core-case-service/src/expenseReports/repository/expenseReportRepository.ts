@@ -485,7 +485,10 @@ export async function findExpenseReportSummaries(
         });
     }
 
-    const latestMileageRowsBySource = new Map<string, (typeof mileageRows)[0]>();
+    const latestMileageRowsBySource = new Map<
+        string,
+        (typeof mileageRows)[0]
+    >();
     for (const row of mileageRows) {
         const sourceKey = `${row.expenseReportId}:${row.sourceId}`;
         if (!latestMileageRowsBySource.has(sourceKey)) {
@@ -515,6 +518,7 @@ export async function findExpenseReportSummaries(
             employeeId: report.owner,
             managerId: null,
             category: summarizeReportCategory(sources),
+            categories: summarizeReportCategories(sources),
             amount: sumReportAmounts(sources),
             currency: summarizeReportCurrency(sources),
             status: report.currentStage as ExpenseReportSummary["status"],
@@ -4018,16 +4022,26 @@ function appendReportSummarySource(
 function summarizeReportCategory(
     sources: ExpenseReportSummarySource[],
 ): string {
-    const categories = new Set(sources.map((source) => source.category));
-    if (categories.size === 0) {
+    const categories = summarizeReportCategories(sources);
+    if (categories.length === 0) {
         return "Uncategorized";
     }
 
-    if (categories.size === 1) {
-        return sources[0]?.category ?? "Uncategorized";
+    if (categories.length === 1) {
+        return categories[0] ?? "Uncategorized";
     }
 
     return "Multiple";
+}
+
+function summarizeReportCategories(
+    sources: ExpenseReportSummarySource[],
+): string[] {
+    const categories = getUniqueSortedValues(
+        sources.map((source) => source.category),
+    );
+
+    return categories.length === 0 ? ["Uncategorized"] : categories;
 }
 
 function summarizeReportCurrency(
@@ -4048,6 +4062,12 @@ function sumReportAmounts(sources: ExpenseReportSummarySource[]): string {
     );
 
     return centsToDecimalCurrency(cents);
+}
+
+function getUniqueSortedValues(values: string[]): string[] {
+    return [...new Set(values)].sort((firstValue, secondValue) =>
+        firstValue.localeCompare(secondValue),
+    );
 }
 
 function decimalCurrencyToCents(amount: string): number {

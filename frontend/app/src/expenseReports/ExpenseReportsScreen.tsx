@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import {
@@ -11,6 +11,7 @@ import {
     type ExpenseReportStage,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
+import { ExpenseReportDetailDialog } from "./ExpenseReportDetailDialog";
 
 const expenseReportSummarySchema = z
     .object({
@@ -19,6 +20,7 @@ const expenseReportSummarySchema = z
         employeeId: z.uuid(),
         managerId: z.uuid().nullable(),
         category: z.string().min(1),
+        categories: z.array(z.string().min(1)),
         amount: z.string().regex(/^\d+\.\d{2}$/),
         currency: z.string().min(3).max(3),
         status: z.enum(EXPENSE_REPORT_STAGES),
@@ -27,51 +29,7 @@ const expenseReportSummarySchema = z
 
 const expenseReportSummaryListSchema = z.array(expenseReportSummarySchema);
 
-const expenseReportReviewDetailSourceSchema = z
-    .object({
-        id: z.uuid(),
-        date: z.iso.date(),
-        amount: z.string().regex(/^-?\d+\.\d{2}$/),
-        currency: z.string().min(3).max(3),
-        glCode: z.string().nullable(),
-        flaggedLineItem: z.boolean(),
-        reviewAction: z.enum(["approve", "reject"]).nullable(),
-        deductible: z.boolean().nullable(),
-    })
-    .strict();
-
-const expenseReportReviewDetailSchema = z
-    .object({
-        expenseReportId: z.uuid(),
-        owner: z.uuid(),
-        priority: z.enum(["Low", "Normal", "High", "Urgent"]),
-        dueDate: z.iso.date(),
-        status: z.enum(EXPENSE_REPORT_STAGES),
-        onHold: z.boolean(),
-        isOverdue: z.boolean(),
-        lineItems: z.array(
-            expenseReportReviewDetailSourceSchema
-                .extend({
-                    merchant: z.string().min(1),
-                    category: z.string().min(1),
-                })
-                .strict(),
-        ),
-        mileageEntries: z.array(
-            expenseReportReviewDetailSourceSchema
-                .extend({
-                    route: z.string().min(1),
-                    distance: z.string().regex(/^\d+\.\d{2}$/),
-                })
-                .strict(),
-        ),
-    })
-    .strict();
-
 export type ExpenseReportSummary = z.infer<typeof expenseReportSummarySchema>;
-type ExpenseReportReviewDetail = z.infer<
-    typeof expenseReportReviewDetailSchema
->;
 interface ExpenseReportFilters {
     amountMax: string;
     amountMin: string;
@@ -114,21 +72,10 @@ export function ExpenseReportsScreen(): JSX.Element {
     const [selectedReportId, setSelectedReportId] = useState<string | null>(
         null,
     );
-    const detailQuery = useExpenseFlowQuery<ExpenseReportReviewDetail>({
-        enabled: selectedReportId !== null,
-        input:
-            selectedReportId === null
-                ? "/v1/expense-reports"
-                : `/v1/expense-reports/${selectedReportId}/review-detail`,
-        keyParts: ["expense-reports", selectedReportId, "review-detail"],
-        parseResponse: async (response) =>
-            expenseReportReviewDetailSchema.parse(await response.json()),
-        staleTime: 15_000,
-    });
     const categoryOptions = useMemo(
         () =>
             getUniqueSortedValues(
-                (query.data ?? []).map(({ category }) => category),
+                (query.data ?? []).flatMap(({ categories }) => categories),
             ),
         [query.data],
     );
@@ -204,15 +151,9 @@ export function ExpenseReportsScreen(): JSX.Element {
             )}
 
             {selectedReportId === null ? null : (
-                <ExpenseReportReviewDialog
-                    detail={detailQuery.data}
-                    error={detailQuery.error}
-                    isLoading={detailQuery.isPending}
-                    isRetrying={detailQuery.isFetching}
+                <ExpenseReportDetailDialog
                     onClose={() => setSelectedReportId(null)}
-                    onRetry={() => {
-                        void detailQuery.refetch();
-                    }}
+                    reportId={selectedReportId}
                 />
             )}
         </section>
@@ -277,22 +218,11 @@ function ExpenseReportsFilterPanel({
                         value={filters.employee}
                     />
                 </label>
-                <label>
-                    <span>Category</span>
-                    <input
-                        list="expense-report-categories"
-                        onChange={(event) =>
-                            updateFilter("category", event.target.value)
-                        }
-                        placeholder="All categories"
-                        value={filters.category}
-                    />
-                    <datalist id="expense-report-categories">
-                        {categories.map((category) => (
-                            <option key={category} value={category} />
-                        ))}
-                    </datalist>
-                </label>
+                <CategorySelector
+                    categories={categories}
+                    value={filters.category}
+                    onChange={(category) => updateFilter("category", category)}
+                />
                 <label>
                     <span>Min amount</span>
                     <input
@@ -349,6 +279,102 @@ function ExpenseReportsFilterPanel({
                 </Button>
             </div>
         </form>
+    );
+}
+
+function CategorySelector({
+    categories,
+    onChange,
+    value,
+}: {
+    categories: string[];
+    onChange: (category: string) => void;
+    value: string;
+}): JSX.Element {
+    const [inputValue, setInputValue] = useState(value);
+    const [isOpen, setIsOpen] = useState(false);
+    const normalizedInput = inputValue.trim().toLowerCase();
+    const matchingCategories = useMemo(
+        () =>
+            normalizedInput === ""
+                ? categories
+                : categories.filter((category) =>
+                      category.toLowerCase().includes(normalizedInput),
+                  ),
+        [categories, normalizedInput],
+    );
+
+    useEffect(() => {
+        setInputValue(value);
+    }, [value]);
+
+    const chooseCategory = (category: string) => {
+        setInputValue(category);
+        setIsOpen(false);
+        onChange(category);
+    };
+    const clearCategory = () => {
+        setInputValue("");
+        setIsOpen(false);
+        onChange("");
+    };
+
+    return (
+        <div className="expense-reports-filters__category">
+            <label htmlFor="expense-report-category">Category</label>
+            <div>
+                <input
+                    aria-autocomplete="list"
+                    aria-controls="expense-report-category-options"
+                    aria-expanded={isOpen}
+                    id="expense-report-category"
+                    onBlur={() => setIsOpen(false)}
+                    onChange={(event) => {
+                        const nextValue = event.target.value;
+                        const matchedCategory = categories.find(
+                            (category) =>
+                                category.toLowerCase() ===
+                                nextValue.trim().toLowerCase(),
+                        );
+
+                        setInputValue(nextValue);
+                        setIsOpen(true);
+                        onChange(matchedCategory ?? "");
+                    }}
+                    onFocus={() => setIsOpen(true)}
+                    placeholder="All categories"
+                    role="combobox"
+                    type="text"
+                    value={inputValue}
+                />
+                {value === "" && inputValue === "" ? null : (
+                    <button type="button" onClick={clearCategory}>
+                        Clear category
+                    </button>
+                )}
+            </div>
+            {isOpen ? (
+                <ul id="expense-report-category-options" role="listbox">
+                    {matchingCategories.length === 0 ? (
+                        <li>No matching categories</li>
+                    ) : (
+                        matchingCategories.map((category) => (
+                            <li key={category} role="option">
+                                <button
+                                    onMouseDown={(event) =>
+                                        event.preventDefault()
+                                    }
+                                    onClick={() => chooseCategory(category)}
+                                    type="button"
+                                >
+                                    {category}
+                                </button>
+                            </li>
+                        ))
+                    )}
+                </ul>
+            ) : null}
+        </div>
     );
 }
 
@@ -432,139 +458,6 @@ function ExpenseReportsTable({
     );
 }
 
-function ExpenseReportReviewDialog({
-    detail,
-    error,
-    isLoading,
-    isRetrying,
-    onClose,
-    onRetry,
-}: {
-    detail: ExpenseReportReviewDetail | undefined;
-    error: Error | null;
-    isLoading: boolean;
-    isRetrying: boolean;
-    onClose: () => void;
-    onRetry: () => void;
-}): JSX.Element {
-    return (
-        <div className="case-queue-dialog__backdrop">
-            <section
-                aria-labelledby="expense-report-review-heading"
-                className="case-queue-dialog"
-                role="dialog"
-            >
-                <header className="case-queue-dialog__header">
-                    <div>
-                        <p className="screen-placeholder__label">
-                            Report Review
-                        </p>
-                        <h3 id="expense-report-review-heading">
-                            {detail === undefined
-                                ? "Expense Report"
-                                : `Report ${formatReportId(
-                                      detail.expenseReportId,
-                                  )}`}
-                        </h3>
-                    </div>
-                    <button
-                        className="button button--secondary button--compact"
-                        type="button"
-                        onClick={onClose}
-                    >
-                        Close
-                    </button>
-                </header>
-
-                {isLoading ? (
-                    <LoadingSkeleton label="Loading report review" rows={5} />
-                ) : error !== null ? (
-                    <ErrorState
-                        isRetrying={isRetrying}
-                        message={getExpenseReportDetailErrorMessage(error)}
-                        onRetry={onRetry}
-                        title="Unable to load report review"
-                    />
-                ) : detail === undefined ? null : (
-                    <ExpenseReportReviewDetailView detail={detail} />
-                )}
-            </section>
-        </div>
-    );
-}
-
-function ExpenseReportReviewDetailView({
-    detail,
-}: {
-    detail: ExpenseReportReviewDetail;
-}): JSX.Element {
-    const total = calculateReviewDetailTotal(detail);
-
-    return (
-        <>
-            <div className="case-queue-dialog__summary">
-                <span>
-                    Stage
-                    <strong>{detail.status}</strong>
-                </span>
-                <span>
-                    Employee
-                    <strong>{formatPrincipal(detail.owner)}</strong>
-                </span>
-                <span>
-                    Total
-                    <strong>{formatCurrency(total, "USD")}</strong>
-                </span>
-            </div>
-            <div className="case-queue-dialog__table-wrap">
-                <table aria-label="Report review line items">
-                    <thead>
-                        <tr>
-                            <th scope="col">Source</th>
-                            <th scope="col">Date</th>
-                            <th scope="col">Category</th>
-                            <th scope="col">Amount</th>
-                            <th scope="col">GL Code</th>
-                            <th scope="col">Review</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {detail.lineItems.map((item) => (
-                            <tr key={item.id}>
-                                <th scope="row">{item.merchant}</th>
-                                <td>{formatDate(item.date)}</td>
-                                <td>{item.category}</td>
-                                <td>
-                                    {formatCurrency(item.amount, item.currency)}
-                                </td>
-                                <td>{item.glCode ?? "Pending"}</td>
-                                <td>{formatReviewAction(item.reviewAction)}</td>
-                            </tr>
-                        ))}
-                        {detail.mileageEntries.map((entry) => (
-                            <tr key={entry.id}>
-                                <th scope="row">{entry.route}</th>
-                                <td>{formatDate(entry.date)}</td>
-                                <td>Mileage</td>
-                                <td>
-                                    {formatCurrency(
-                                        entry.amount,
-                                        entry.currency,
-                                    )}
-                                </td>
-                                <td>{entry.glCode ?? "Pending"}</td>
-                                <td>
-                                    {formatReviewAction(entry.reviewAction)}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </>
-    );
-}
-
 function PrincipalCell({
     detail,
     label,
@@ -578,15 +471,6 @@ function PrincipalCell({
             <small>{detail}</small>
         </span>
     );
-}
-
-function calculateReviewDetailTotal(detail: ExpenseReportReviewDetail): string {
-    const cents = [...detail.lineItems, ...detail.mileageEntries].reduce(
-        (total, source) => total + decimalCurrencyToCents(source.amount),
-        0,
-    );
-
-    return centsToDecimalCurrency(cents);
 }
 
 function formatDate(value: string): string {
@@ -613,35 +497,6 @@ function formatCurrency(amount: string, currency: string): string {
     }).format(Number(amount));
 }
 
-function formatReviewAction(action: "approve" | "reject" | null): string {
-    if (action === "approve") {
-        return "Approved";
-    }
-
-    if (action === "reject") {
-        return "Rejected";
-    }
-
-    return "Pending";
-}
-
-function decimalCurrencyToCents(amount: string): number {
-    const sign = amount.startsWith("-") ? -1 : 1;
-    const normalizedAmount = amount.replace("-", "");
-    const [dollars = "0", cents = "0"] = normalizedAmount.split(".");
-
-    return sign * (Number(dollars) * 100 + Number(cents.padEnd(2, "0")));
-}
-
-function centsToDecimalCurrency(cents: number): string {
-    const sign = cents < 0 ? "-" : "";
-    const absoluteCents = Math.abs(cents);
-    const dollars = Math.floor(absoluteCents / 100);
-    const remainder = absoluteCents % 100;
-
-    return `${sign}${dollars}.${remainder.toString().padStart(2, "0")}`;
-}
-
 function filterExpenseReports(
     reports: ExpenseReportSummary[],
     filters: ExpenseReportFilters,
@@ -665,7 +520,9 @@ function filterExpenseReports(
                 report.employeeId.toLowerCase().includes(normalizedEmployee) ||
                 employeeLabel.includes(normalizedEmployee)) &&
             (normalizedCategory === "" ||
-                report.category.toLowerCase() === normalizedCategory) &&
+                report.categories.some(
+                    (category) => category.toLowerCase() === normalizedCategory,
+                )) &&
             (minimumAmount === undefined || reportAmount >= minimumAmount) &&
             (maximumAmount === undefined || reportAmount <= maximumAmount) &&
             (filters.statuses.length === 0 ||
@@ -697,12 +554,4 @@ function getExpenseReportsErrorMessage(error: Error | null): string {
     }
 
     return "Expense Reports could not be loaded. Please try again.";
-}
-
-function getExpenseReportDetailErrorMessage(error: Error | null): string {
-    if (error instanceof QueryRequestError) {
-        return error.message;
-    }
-
-    return "The selected Expense Report review could not be loaded.";
 }

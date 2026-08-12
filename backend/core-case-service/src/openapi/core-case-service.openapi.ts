@@ -23,6 +23,7 @@ import {
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
+    ExpenseReportSummaryListSchema,
     FinanceDashboardTrendPointListSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
@@ -99,6 +100,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const expenseReportReviewDetailResponse = registry.register(
         "ExpenseReportReviewDetailResponse",
         ExpenseReportReviewDetailSchema,
+    );
+    const expenseReportSummaryListResponse = registry.register(
+        "ExpenseReportSummaryListResponse",
+        ExpenseReportSummaryListSchema,
     );
     const createMileageEntryRequest = registry.register(
         "CreateMileageEntryRequest",
@@ -880,6 +885,32 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             403: problemJsonResponse("Authenticated role is not permitted."),
             409: problemJsonResponse(
                 "Submission with this idempotency key is already in progress.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/expense-reports",
+        summary: "List Expense Report summaries",
+        description:
+            "Loads internal Expense Report summaries with display category labels and underlying category membership for tenant-scoped review filtering.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Expense Report summaries found.",
+                headers: rateLimitHeaders,
+                content: {
+                    "application/json": {
+                        schema: expenseReportSummaryListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse(
+                "Expense Report access is limited to internal roles.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

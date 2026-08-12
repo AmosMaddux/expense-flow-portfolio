@@ -665,6 +665,7 @@ export const ExpenseReportSummarySchema = z.object({
     employeeId: z.uuid(),
     managerId: z.uuid().nullable(),
     category: z.string().min(1),
+    categories: z.array(z.string().min(1)),
     amount: z.string().regex(/^\d+\.\d{2}$/),
     currency: z.string().min(3).max(3),
     status: z.enum(approvedWorkflowStages),
