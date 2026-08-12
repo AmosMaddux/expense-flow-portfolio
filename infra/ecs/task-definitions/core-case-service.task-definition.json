@@ -126,6 +126,10 @@
                     "value": "false"
                 },
                 {
+                    "name": "RUNTIME_SMOKE_GL_CODING_ENABLED",
+                    "value": "${RUNTIME_SMOKE_GL_CODING_ENABLED}"
+                },
+                {
                     "name": "REDIS_URL",
                     "value": "${REDIS_URL}"
                 },
@@ -178,6 +182,10 @@
                 {
                     "name": "MFA_TOTP_SECRET_ENCRYPTION_KEY",
                     "valueFrom": "${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN}"
+                },
+                {
+                    "name": "RUNTIME_SMOKE_SHARED_SECRET",
+                    "valueFrom": "${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN}"
                 },
                 {
                     "name": "TIN_EIN_VALIDATION_PASSWORD",

@@ -44,7 +44,7 @@
             ],
             "secrets": [
                 {
-                    "name": "AUTH_JWT_PUBLIC_KEYS_JSON",
+                    "name": "AUTH_JWT_JWKS_JSON",
                     "valueFrom": "${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN}"
                 },
                 {
