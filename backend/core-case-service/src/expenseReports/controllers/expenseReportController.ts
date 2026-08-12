@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
 
 import type { RoleName } from "../../db/schema/index.js";
 import {
+    ConfigurationError,
     ConflictError,
     ForbiddenError,
     UnauthorizedError,
@@ -17,6 +19,9 @@ import {
     DraftExpenseSourceParamsSchema,
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
+    InternalSettlePaymentStubBodySchema,
+    InternalSettlePaymentStubHeadersSchema,
+    InternalSettlePaymentStubParamsSchema,
     ReadAllTransactionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
@@ -82,6 +87,12 @@ const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
 const transitionExpenseReportRouteLogName =
     "POST /v1/expense-reports/:id/transitions";
+const internalPaymentStubSettlementRouteLogName =
+    "POST /v1/internal/expense-reports/:id/payment-stub-settlement";
+
+const internalCommandEnvironmentSchema = z.object({
+    CORE_CASE_INTERNAL_COMMAND_TOKEN: z.string().min(32),
+});
 
 /**
  * Handles reads for the signed-in employee's own submission list.
@@ -730,6 +741,80 @@ export async function postExpenseReportSettlement(
 }
 
 /**
+ * Handles trusted internal Issue Payment stub settlement commands.
+ */
+export async function postInternalExpenseReportPaymentStubSettlement(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        verifyInternalCommandTrust(req);
+        const parsedParams = InternalSettlePaymentStubParamsSchema.parse({
+            id: req.params.id,
+        });
+        const parsedHeaders = InternalSettlePaymentStubHeadersSchema.parse({
+            "x-core-case-internal-command-token": req.get(
+                "x-core-case-internal-command-token",
+            ),
+            "idempotency-key": req.get("idempotency-key"),
+            "x-correlation-id": req.get("x-correlation-id"),
+        });
+        const parsedRequest = InternalSettlePaymentStubBodySchema.parse(
+            req.body ?? {},
+        );
+
+        const settleReport = async () =>
+            settleExpenseReportWorkflow({
+                id: parsedParams.id,
+                tenantId: parsedRequest.tenantId,
+                actorId: parsedRequest.actorId,
+                roles: parsedRequest.roles,
+                reason: parsedRequest.reason,
+                correlationId: parsedHeaders["x-correlation-id"],
+                idempotencyKey: parsedHeaders["idempotency-key"],
+            });
+        const requestHash = createIdempotencyRequestHash({
+            command: "internal_payment_stub_settlement",
+            id: parsedParams.id,
+            tenantId: parsedRequest.tenantId,
+            actorId: parsedRequest.actorId,
+            roles: parsedRequest.roles,
+            reason: parsedRequest.reason,
+        });
+        const result = await runIdempotentSubmission({
+            conflictMessage:
+                "An internal Expense Report payment stub settlement with this idempotency key is already in progress.",
+            idempotencyKey: parsedHeaders["idempotency-key"],
+            operation: async () => ({
+                correlationId: parsedHeaders["x-correlation-id"],
+                report: await settleReport(),
+            }),
+            requestHash,
+            store: getDefaultIdempotencyStore(),
+            successStatusCode: 200,
+            tenantId: parsedRequest.tenantId,
+        });
+        const settlement = SubmitExpenseReportOperationResultSchema.parse(
+            result.body,
+        );
+
+        res.set("X-Correlation-Id", settlement.correlationId);
+        res.status(result.statusCode).json(settlement.report);
+    } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "internal_payment_stub_settlement",
+            actorId: undefined,
+            error,
+            expenseReportId: req.params.id,
+            route: internalPaymentStubSettlementRouteLogName,
+            tenantId: undefined,
+        });
+        next(error);
+    }
+}
+
+/**
  * Handles line-item flag clearing after internal review.
  */
 export async function postExpenseReportFlagClear(
@@ -1206,5 +1291,41 @@ function parseOrCreateCorrelationId(req: Request): string {
         StageTransitionCorrelationHeaderSchema.parse({
             correlationId: req.get("x-correlation-id"),
         }).correlationId ?? randomUUID()
+    );
+}
+
+function verifyInternalCommandTrust(req: Request): void {
+    const configuredToken = loadInternalCommandToken();
+    const candidateToken = req.get("x-core-case-internal-command-token");
+    if (
+        candidateToken === undefined ||
+        !secretsMatch(candidateToken, configuredToken)
+    ) {
+        throw new UnauthorizedError(
+            "A valid internal command token is required.",
+        );
+    }
+}
+
+function loadInternalCommandToken(): string {
+    const parsedConfig = internalCommandEnvironmentSchema.safeParse(
+        process.env,
+    );
+    if (!parsedConfig.success) {
+        throw new ConfigurationError(
+            "Core Case internal command token configuration is invalid.",
+        );
+    }
+
+    return parsedConfig.data.CORE_CASE_INTERNAL_COMMAND_TOKEN;
+}
+
+function secretsMatch(candidate: string, expected: string): boolean {
+    const candidateBuffer = Buffer.from(candidate);
+    const expectedBuffer = Buffer.from(expected);
+
+    return (
+        candidateBuffer.length === expectedBuffer.length &&
+        timingSafeEqual(candidateBuffer, expectedBuffer)
     );
 }

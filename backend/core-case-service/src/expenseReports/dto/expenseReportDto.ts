@@ -6,6 +6,7 @@ import {
     employerEinValidationStatuses,
     lineItemReviewActions,
     priorityLevels,
+    roleValues,
 } from "../../db/schema/index.js";
 
 extendZodWithOpenApi(z);
@@ -272,6 +273,34 @@ export const TransitionExpenseReportWorkflowInboundRequestSchema = z
 export const SettleExpenseReportInboundRequestSchema = z
     .object({
         reason: z.string().trim().min(1).optional(),
+    })
+    .strict();
+
+export const InternalSettlePaymentStubParamsSchema = z
+    .object({
+        id: z.uuid(),
+    })
+    .strict();
+
+export const InternalSettlePaymentStubHeadersSchema = z
+    .object({
+        "x-core-case-internal-command-token": z.string().min(1),
+        "idempotency-key": z
+            .string()
+            .trim()
+            .min(1)
+            .max(128)
+            .regex(/^[A-Za-z0-9._:-]+$/),
+        "x-correlation-id": z.uuid(),
+    })
+    .strict();
+
+export const InternalSettlePaymentStubBodySchema = z
+    .object({
+        tenantId: z.uuid(),
+        actorId: z.uuid(),
+        roles: z.array(z.enum(roleValues)).min(1),
+        reason: z.string().trim().min(1),
     })
     .strict();
 
@@ -963,6 +992,18 @@ export type TransitionExpenseReportWorkflowRequest = z.infer<
 
 export type SettleExpenseReportRequest = z.infer<
     typeof SettleExpenseReportInboundRequestSchema
+>;
+
+export type InternalSettlePaymentStubParams = z.infer<
+    typeof InternalSettlePaymentStubParamsSchema
+>;
+
+export type InternalSettlePaymentStubHeaders = z.infer<
+    typeof InternalSettlePaymentStubHeadersSchema
+>;
+
+export type InternalSettlePaymentStubBody = z.infer<
+    typeof InternalSettlePaymentStubBodySchema
 >;
 
 export type StageTransitionCorrelationHeader = z.infer<

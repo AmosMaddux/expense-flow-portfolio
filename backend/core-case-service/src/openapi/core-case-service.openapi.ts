@@ -24,6 +24,9 @@ import {
     ExpenseReportOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
     FinanceDashboardTrendPointListSchema,
+    InternalSettlePaymentStubBodySchema,
+    InternalSettlePaymentStubHeadersSchema,
+    InternalSettlePaymentStubParamsSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     MySubmissionDetailSchema,
@@ -151,6 +154,18 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const settleExpenseReportRequest = registry.register(
         "SettleExpenseReportRequest",
         SettleExpenseReportInboundRequestSchema,
+    );
+    const internalSettlePaymentStubRequest = registry.register(
+        "InternalSettlePaymentStubRequest",
+        InternalSettlePaymentStubBodySchema,
+    );
+    const internalSettlePaymentStubHeaders = registry.register(
+        "InternalSettlePaymentStubHeaders",
+        InternalSettlePaymentStubHeadersSchema,
+    );
+    const internalSettlePaymentStubParams = registry.register(
+        "InternalSettlePaymentStubParams",
+        InternalSettlePaymentStubParamsSchema,
     );
     const reviewExpenseReportLineItemRequest = registry.register(
         "ReviewExpenseReportLineItemRequest",
@@ -1208,6 +1223,54 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Settlement can only start from AP Review and must complete its compensated saga.",
             ),
             429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/internal/expense-reports/{id}/payment-stub-settlement",
+        summary: "Settle an Expense Report from the internal payment command",
+        description:
+            "Accepts trusted internal Issue Payment stub commands and delegates settlement, workflow transitions, audit entries, and outbox writes to Core Case.",
+        request: {
+            params: internalSettlePaymentStubParams,
+            headers: internalSettlePaymentStubHeaders,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: internalSettlePaymentStubRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report settled and reconciled.",
+                headers: {
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by settlement saga events.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed internal settlement command."),
+            401: problemJsonResponse("Valid internal command token required."),
+            403: problemJsonResponse("Command role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Settlement can only start from AP Review and must complete its compensated saga.",
+            ),
             500: problemJsonResponse("Unexpected server error."),
         },
     });

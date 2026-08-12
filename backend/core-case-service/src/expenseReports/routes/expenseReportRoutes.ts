@@ -31,6 +31,7 @@ import {
     patchDraftLineItem,
     patchDraftMileageEntry,
     putReceiptUpload,
+    postInternalExpenseReportPaymentStubSettlement,
 } from "../controllers/expenseReportController.js";
 
 export const expenseReportRouter = Router();
@@ -97,6 +98,10 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/settlement",
     postExpenseReportSettlement,
+);
+expenseReportRouter.post(
+    "/internal/expense-reports/:id/payment-stub-settlement",
+    postInternalExpenseReportPaymentStubSettlement,
 );
 
 expenseReportRouter.post(

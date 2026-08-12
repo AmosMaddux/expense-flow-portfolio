@@ -156,6 +156,7 @@ v1Router.use("/finance-dashboard", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());
+v1Router.use("/internal", express.json());
 if (isGlCodingRuntimeSmokeEnabled()) {
     v1Router.use("/runtime-smoke", createRuntimeSmokeRouter());
 }
