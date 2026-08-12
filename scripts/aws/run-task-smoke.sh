@@ -71,15 +71,17 @@ load_balancer_dns_name() {
 }
 
 public_alb_smoke_base_url() {
-    local alb_dns_name
-
-    if [[ -n "$PUBLIC_ALB_SMOKE_BASE_URL" ]]; then
-        echo "${PUBLIC_ALB_SMOKE_BASE_URL%/}"
-        return 0
+    if [[ -z "$PUBLIC_ALB_SMOKE_BASE_URL" ]]; then
+        echo "PUBLIC_ALB_SMOKE_BASE_URL must be set to the HTTPS hostname covered by PUBLIC_ALB_CERTIFICATE_ARN." >&2
+        return 1
     fi
 
-    alb_dns_name="$(load_balancer_dns_name "$ALB_NAME")"
-    echo "https://$alb_dns_name"
+    if [[ "$PUBLIC_ALB_SMOKE_BASE_URL" != https://* ]]; then
+        echo "PUBLIC_ALB_SMOKE_BASE_URL must start with https:// so the runtime smoke token is never sent over plaintext HTTP." >&2
+        return 1
+    fi
+
+    echo "${PUBLIC_ALB_SMOKE_BASE_URL%/}"
 }
 
 listener_arn_for_port() {

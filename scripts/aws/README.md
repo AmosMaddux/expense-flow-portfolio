@@ -164,12 +164,13 @@ The services are not autoscaled by these scripts. They use `DESIRED_COUNT`, whic
 AWS_PROFILE=expenseflow-smoke scripts/aws/run-task-smoke.sh
 ```
 
-This validates ALB-backed ECS services and calls the public ALB over HTTPS. If the ACM certificate is issued for a custom hostname, set `PUBLIC_ALB_SMOKE_BASE_URL` to that HTTPS origin before running the smoke.
+This validates ALB-backed ECS services and calls the public ALB over HTTPS. `PUBLIC_ALB_SMOKE_BASE_URL` is required and must be the HTTPS hostname covered by the ACM certificate; the AWS-generated ALB DNS name normally will not pass TLS hostname verification.
 If the sandbox AWS Organizations policy still blocks creation of the dedicated
 receipt bucket, run the ALB-only smoke with:
 
 ```bash
 ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE=true \
+PUBLIC_ALB_SMOKE_BASE_URL="https://<certificate-covered-public-hostname>" \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/run-task-smoke.sh
 ```
