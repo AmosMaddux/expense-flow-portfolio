@@ -15,7 +15,7 @@ import {
     type QueryClient,
     type QueryKey,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 
 import { useSession } from "../auth";
@@ -241,26 +241,14 @@ export function CaseQueueScreen(): JSX.Element {
     const [selectedReportId, setSelectedReportId] = useState<string | null>(
         null,
     );
-    const [selectedReportLineItemsSnapshot, setSelectedReportLineItemsSnapshot] =
-        useState<ApprovalQueueLineItem[]>([]);
     const [actionError, setActionError] = useState<string | null>(null);
-    const selectedReportLineItemsFromQueue = useMemo(
+    const selectedReportLineItems = useMemo(
         () =>
             (query.data ?? []).filter(
                 (lineItem) => lineItem.expenseReportId === selectedReportId,
             ),
         [query.data, selectedReportId],
     );
-    const selectedReportLineItems =
-        selectedReportLineItemsFromQueue.length > 0
-            ? selectedReportLineItemsFromQueue
-            : selectedReportLineItemsSnapshot;
-
-    useEffect(() => {
-        if (selectedReportLineItemsFromQueue.length > 0) {
-            setSelectedReportLineItemsSnapshot(selectedReportLineItemsFromQueue);
-        }
-    }, [selectedReportLineItemsFromQueue]);
     const reviewMutation = useMutation({
         mutationFn: async ({
             action,
@@ -501,8 +489,6 @@ export function CaseQueueScreen(): JSX.Element {
             setActionError(null);
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
-            const previousSelectedReportLineItems =
-                selectedReportLineItemsSnapshot;
             setApprovalQueueData(queryClient, (current = []) =>
                 updateQueueReportStageInLineItems(
                     current,
@@ -510,35 +496,18 @@ export function CaseQueueScreen(): JSX.Element {
                     variables.toStage,
                 ),
             );
-            setSelectedReportLineItemsSnapshot((current) =>
-                updateQueueReportStageInLineItems(
-                    current,
-                    variables.expenseReportId,
-                    variables.toStage,
-                ),
-            );
 
-            return { previousLineItems, previousSelectedReportLineItems };
+            return { previousLineItems };
         },
         onError: (error, _variables, context) => {
             restoreApprovalQueueSnapshots(
                 queryClient,
                 context?.previousLineItems,
             );
-            setSelectedReportLineItemsSnapshot(
-                context?.previousSelectedReportLineItems ?? [],
-            );
             setActionError(getQueueActionErrorMessage(error));
         },
         onSuccess: (report) => {
             updateQueueReportStage(queryClient, report);
-            setSelectedReportLineItemsSnapshot((current) =>
-                updateQueueReportStageInLineItems(
-                    current,
-                    report.id,
-                    report.currentStage,
-                ),
-            );
         },
     });
     const isActionPending =
@@ -559,7 +528,6 @@ export function CaseQueueScreen(): JSX.Element {
 
         setActionError(null);
         setSelectedReportId(report.expenseReportId);
-        setSelectedReportLineItemsSnapshot(report.lineItems);
 
         if (
             canManageReviewWorkflow &&
@@ -640,10 +608,7 @@ export function CaseQueueScreen(): JSX.Element {
                                     reason: reason.trim(),
                                 });
                             }}
-                            onClose={() => {
-                                setSelectedReportId(null);
-                                setSelectedReportLineItemsSnapshot([]);
-                            }}
+                            onClose={() => setSelectedReportId(null)}
                             onReviewLineItem={(
                                 lineItem,
                                 sourceType,
