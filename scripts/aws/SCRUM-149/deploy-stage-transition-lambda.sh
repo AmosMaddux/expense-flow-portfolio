@@ -12,8 +12,8 @@ LAMBDA_SECURITY_GROUP_NAME="${LAMBDA_SECURITY_GROUP_NAME:-expenseflow-stage-tran
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
 LAMBDA_REPOSITORY="${LAMBDA_REPOSITORY:-expenseflow-stage-transition-consumer-lambda}"
 IMAGE_TAG="${IMAGE_TAG:-scrum-149-smoke}"
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
-PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-subnet-0aefa6933acb130d5,subnet-0f35fcc094f77ec8b}"
+VPC_ID="${VPC_ID:-}"
+PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
 DATABASE_URL_SECRET_ID="${DATABASE_URL_SECRET_ID:-expenseflow/sandbox/core-case/database-url}"
 LAMBDA_TIMEOUT_SECONDS="${LAMBDA_TIMEOUT_SECONDS:-30}"
 LAMBDA_MEMORY_SIZE="${LAMBDA_MEMORY_SIZE:-512}"
@@ -27,6 +27,16 @@ fi
 
 aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+}
+
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly before deploying the SCRUM-149 Lambda." >&2
+        return 1
+    fi
 }
 
 role_arn() {
@@ -47,6 +57,9 @@ tag_function() {
 }
 
 main() {
+    require_non_empty VPC_ID "$VPC_ID"
+    require_non_empty PRIVATE_SUBNETS "$PRIVATE_SUBNETS"
+
     account_id="$(aws_cli sts get-caller-identity --query Account --output text)"
     image_uri="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com/$LAMBDA_REPOSITORY:$IMAGE_TAG"
     lambda_role_arn="$(role_arn)"

@@ -10,14 +10,17 @@ FUNCTION_NAME="${FUNCTION_NAME:-expenseflow-stage-transition-consumer}"
 LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-expenseflow-stage-transition-consumer-lambda-role}"
 LAMBDA_SECURITY_GROUP_NAME="${LAMBDA_SECURITY_GROUP_NAME:-expenseflow-stage-transition-consumer-lambda-sg}"
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
-STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-report-stage-transitioned-events}"
-STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-report-stage-transitioned-dlq}"
+VPC_ID="${VPC_ID:-}"
+STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
+STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-sandbox-stage-transition-events}"
+STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-sandbox-stage-transition-events-dlq}"
+STAGE_TRANSITION_SQS_MAX_RECEIVE_COUNT="${STAGE_TRANSITION_SQS_MAX_RECEIVE_COUNT:-3}"
 DATABASE_URL_SECRET_ID="${DATABASE_URL_SECRET_ID:-expenseflow/sandbox/core-case/database-url}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 
 TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
 EC2_TAGS="ResourceType=security-group,Tags=[{Key=user,Value=amos-maddux},{Key=env,Value=sandbox},{Key=ticket,Value=SCRUM-149}]"
+SQS_TAGS="user=amos-maddux,env=sandbox,ticket=SCRUM-149"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -32,6 +35,16 @@ account_id() {
     aws_cli sts get-caller-identity --query Account --output text
 }
 
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly before creating SCRUM-149 Lambda resources." >&2
+        return 1
+    fi
+}
+
 aws_arn_prefix() {
     local caller_arn arn_label partition
 
@@ -42,6 +55,36 @@ aws_arn_prefix() {
 
 queue_url() {
     aws_cli sqs get-queue-url --queue-name "$1" --query QueueUrl --output text
+}
+
+topic_arn() {
+    local topic_name="$1"
+    local resolved_topic_arn
+
+    resolved_topic_arn="$(aws_cli sns list-topics \
+        --query "Topics[?ends_with(TopicArn, ':$topic_name')].TopicArn | [0]" \
+        --output text)"
+
+    if [[ -z "$resolved_topic_arn" || "$resolved_topic_arn" == "None" ]]; then
+        echo "Required SNS topic is missing or inaccessible: $topic_name" >&2
+        echo "Run scripts/aws/create-runtime-smoke-resources.sh first, or provide STAGE_TRANSITION_SNS_TOPIC_NAME." >&2
+        return 1
+    fi
+
+    echo "$resolved_topic_arn"
+}
+
+create_or_tag_sqs_queue() {
+    local queue_name="$1"
+    local created_queue_url
+
+    created_queue_url="$(aws_cli sqs create-queue \
+        --queue-name "$queue_name" \
+        --tags "$SQS_TAGS" \
+        --query QueueUrl \
+        --output text)"
+    aws_cli sqs tag-queue --queue-url "$created_queue_url" --tags "$SQS_TAGS"
+    echo "$created_queue_url"
 }
 
 queue_arn() {
@@ -59,6 +102,86 @@ secret_arn() {
         --secret-id "$DATABASE_URL_SECRET_ID" \
         --query ARN \
         --output text
+}
+
+configure_queue_redrive() {
+    local queue_url="$1"
+    local dlq_arn="$2"
+    local attributes_file
+
+    attributes_file="$(mktemp)"
+    DLQ_ARN="$dlq_arn" MAX_RECEIVE_COUNT="$STAGE_TRANSITION_SQS_MAX_RECEIVE_COUNT" node -e "
+const fs = require('fs');
+fs.writeFileSync(process.argv[1], JSON.stringify({
+  RedrivePolicy: JSON.stringify({
+    deadLetterTargetArn: process.env.DLQ_ARN,
+    maxReceiveCount: Number(process.env.MAX_RECEIVE_COUNT)
+  })
+}));
+" "$attributes_file"
+    aws_cli sqs set-queue-attributes \
+        --queue-url "$queue_url" \
+        --attributes "file://$attributes_file"
+    rm -f "$attributes_file"
+}
+
+allow_sns_to_send_to_queue() {
+    local queue_url="$1"
+    local queue_arn="$2"
+    local source_topic_arn="$3"
+    local attributes_file
+
+    attributes_file="$(mktemp)"
+    QUEUE_ARN="$queue_arn" TOPIC_ARN="$source_topic_arn" node -e "
+const fs = require('fs');
+fs.writeFileSync(process.argv[1], JSON.stringify({
+  Policy: JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [{
+      Sid: 'AllowExpenseFlowStageTransitionTopic',
+      Effect: 'Allow',
+      Principal: { Service: 'sns.amazonaws.com' },
+      Action: 'sqs:SendMessage',
+      Resource: process.env.QUEUE_ARN,
+      Condition: {
+        ArnEquals: {
+          'aws:SourceArn': process.env.TOPIC_ARN
+        }
+      }
+    }]
+  })
+}));
+" "$attributes_file"
+    aws_cli sqs set-queue-attributes \
+        --queue-url "$queue_url" \
+        --attributes "file://$attributes_file"
+    rm -f "$attributes_file"
+}
+
+subscribe_queue_to_topic() {
+    local source_topic_arn="$1"
+    local source_queue_arn="$2"
+    local subscription_arn
+
+    subscription_arn="$(aws_cli sns list-subscriptions-by-topic \
+        --topic-arn "$source_topic_arn" \
+        --query "Subscriptions[?Endpoint=='$source_queue_arn'].SubscriptionArn | [0]" \
+        --output text)"
+
+    if [[ -z "$subscription_arn" || "$subscription_arn" == "None" ]]; then
+        subscription_arn="$(aws_cli sns subscribe \
+            --topic-arn "$source_topic_arn" \
+            --protocol sqs \
+            --notification-endpoint "$source_queue_arn" \
+            --attributes RawMessageDelivery=true \
+            --query SubscriptionArn \
+            --output text)"
+    fi
+
+    aws_cli sns set-subscription-attributes \
+        --subscription-arn "$subscription_arn" \
+        --attribute-name RawMessageDelivery \
+        --attribute-value true
 }
 
 create_or_tag_log_group() {
@@ -164,14 +287,23 @@ fs.writeFileSync(process.argv[1], JSON.stringify({
 }
 
 main() {
+    require_non_empty VPC_ID "$VPC_ID"
+    require_non_empty ROLE_PERMISSIONS_BOUNDARY_ARN "$ROLE_PERMISSIONS_BOUNDARY_ARN"
+
     echo "Verifying AWS identity for profile $AWS_PROFILE in $AWS_REGION..."
     aws_cli sts get-caller-identity >/dev/null
 
-    source_queue_url="$(queue_url "$STAGE_TRANSITION_QUEUE_NAME")"
-    dead_letter_queue_url="$(queue_url "$STAGE_TRANSITION_DLQ_NAME")"
+    stage_transition_topic_arn="$(topic_arn "$STAGE_TRANSITION_SNS_TOPIC_NAME")"
+    dead_letter_queue_url="$(create_or_tag_sqs_queue "$STAGE_TRANSITION_DLQ_NAME")"
+    source_queue_url="$(create_or_tag_sqs_queue "$STAGE_TRANSITION_QUEUE_NAME")"
     source_queue_arn="$(queue_arn "$source_queue_url")"
     dead_letter_queue_arn="$(queue_arn "$dead_letter_queue_url")"
     database_secret_arn="$(secret_arn)"
+
+    echo "Configuring stage-transition SQS redrive and SNS subscription..."
+    configure_queue_redrive "$source_queue_url" "$dead_letter_queue_arn"
+    allow_sns_to_send_to_queue "$source_queue_url" "$source_queue_arn" "$stage_transition_topic_arn"
+    subscribe_queue_to_topic "$stage_transition_topic_arn" "$source_queue_arn"
 
     echo "Creating or tagging Lambda log group..."
     create_or_tag_log_group

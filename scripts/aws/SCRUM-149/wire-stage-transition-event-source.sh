@@ -7,9 +7,9 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 
 FUNCTION_NAME="${FUNCTION_NAME:-expenseflow-stage-transition-consumer}"
-STAGE_TRANSITION_TOPIC_NAME="${STAGE_TRANSITION_TOPIC_NAME:-expenseflow-report-stage-transitioned-v1}"
-STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-report-stage-transitioned-events}"
-STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-report-stage-transitioned-dlq}"
+STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
+STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-sandbox-stage-transition-events}"
+STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-sandbox-stage-transition-events-dlq}"
 BATCH_SIZE="${BATCH_SIZE:-10}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
@@ -38,7 +38,7 @@ queue_attribute() {
 
 topic_arn() {
     aws_cli sns list-topics \
-        --query "Topics[?ends_with(TopicArn, ':$STAGE_TRANSITION_TOPIC_NAME')].TopicArn | [0]" \
+        --query "Topics[?ends_with(TopicArn, ':$STAGE_TRANSITION_SNS_TOPIC_NAME')].TopicArn | [0]" \
         --output text
 }
 
@@ -67,7 +67,7 @@ main() {
     stage_transition_topic_arn="$(topic_arn)"
 
     if [[ -z "$stage_transition_topic_arn" || "$stage_transition_topic_arn" == "None" ]]; then
-        echo "Missing SNS topic: $STAGE_TRANSITION_TOPIC_NAME" >&2
+        echo "Missing SNS topic: $STAGE_TRANSITION_SNS_TOPIC_NAME" >&2
         exit 1
     fi
 
@@ -98,7 +98,7 @@ main() {
     fi
 
     echo "Wired $STAGE_TRANSITION_QUEUE_NAME to $FUNCTION_NAME with event source mapping $mapping_uuid"
-    echo "Verified SNS topic exists: $STAGE_TRANSITION_TOPIC_NAME"
+    echo "Verified SNS topic exists: $STAGE_TRANSITION_SNS_TOPIC_NAME"
 }
 
 main "$@"
