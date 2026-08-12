@@ -6,3 +6,10 @@ resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh JwtIssuer=https://core-api.example.invalid/v1 JwtAudience=expenseflow-http-api StageName=v1"
+
+[issue-payment-sandbox.deploy.parameters]
+stack_name = "expenseflow-issue-payment-http-api-sandbox"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh TicketTag=SCRUM-150 HttpApiId=synthetic-http-api-id SharedJwtAuthorizerId=synthetic-authorizer-id StageName=v1 IssuePaymentFunctionName=expenseflow-issue-payment-stub CoreCaseInternalBaseUrl=https://core-case.example.invalid CoreCaseInternalCommandToken=synthetic-core-case-internal-command-token RolePermissionsBoundaryArn=arn:aws:iam::123456789012:policy/TraineeSandboxBoundary"

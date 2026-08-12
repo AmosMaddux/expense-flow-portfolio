@@ -11,6 +11,10 @@ const issuerTemplate = readFileSync(
     fileURLToPath(new URL("../issuer-template.yaml", import.meta.url)),
     "utf8",
 );
+const issuePaymentTemplate = readFileSync(
+    fileURLToPath(new URL("../issue-payment-template.yaml", import.meta.url)),
+    "utf8",
+);
 
 void describe("HTTP API infrastructure template", () => {
     void test("uses a native JWT authorizer with issuer and audience", () => {
@@ -83,5 +87,49 @@ void describe("JWT issuer infrastructure template", () => {
         expect(issuerTemplate).toContain(
             "Role: !GetAtt JwtIssuerFunctionRole.Arn",
         );
+    });
+});
+
+void describe("Issue Payment HTTP API infrastructure template", () => {
+    void test("attaches a protected JWT route to the shared HTTP API", () => {
+        expect(issuePaymentTemplate).toContain("HttpApiId:");
+        expect(issuePaymentTemplate).toContain("SharedJwtAuthorizerId:");
+        expect(issuePaymentTemplate).toContain(
+            "Type: AWS::ApiGatewayV2::Route",
+        );
+        expect(issuePaymentTemplate).toContain(
+            "RouteKey: POST /expense-reports/{id}/settlement",
+        );
+        expect(issuePaymentTemplate).toContain("AuthorizationType: JWT");
+        expect(issuePaymentTemplate).toContain(
+            "AuthorizerId: !Ref SharedJwtAuthorizerId",
+        );
+    });
+
+    void test("configures only Core Case command environment for the Lambda", () => {
+        expect(issuePaymentTemplate).toContain(
+            "Handler: issuePaymentStub.handler",
+        );
+        expect(issuePaymentTemplate).toContain("CORE_CASE_INTERNAL_BASE_URL");
+        expect(issuePaymentTemplate).toContain(
+            "CORE_CASE_INTERNAL_COMMAND_TOKEN",
+        );
+        expect(issuePaymentTemplate).not.toContain("DATABASE_URL_SECRET_ID");
+        expect(issuePaymentTemplate).not.toContain(
+            "secretsmanager:GetSecretValue",
+        );
+    });
+
+    void test("bounds Lambda size, role permissions, retention, and tags", () => {
+        expect(issuePaymentTemplate).toContain("MemorySize: 128");
+        expect(issuePaymentTemplate).toContain("Timeout: 5");
+        expect(issuePaymentTemplate).toContain("RetentionInDays: 14");
+        expect(issuePaymentTemplate).toContain(
+            "PermissionsBoundary: !Ref RolePermissionsBoundaryArn",
+        );
+        expect(issuePaymentTemplate).toContain("logs:CreateLogStream");
+        expect(issuePaymentTemplate).toContain("logs:PutLogEvents");
+        expect(issuePaymentTemplate).toContain("ticket: !Ref TicketTag");
+        expect(issuePaymentTemplate).toContain("user: !Ref UserTag");
     });
 });
