@@ -23,6 +23,8 @@ ALB_SECURITY_GROUP_NAME="${ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-alb-sg}"
 INTERNAL_ALB_SECURITY_GROUP_NAME="${INTERNAL_ALB_SECURITY_GROUP_NAME:-expenseflow-sandbox-internal-alb-sg}"
 ALB_NAME="${ALB_NAME:-expenseflow-sandbox-alb}"
 INTERNAL_ALB_NAME="${INTERNAL_ALB_NAME:-expenseflow-sandbox-internal-alb}"
+PUBLIC_ALB_CERTIFICATE_ARN="${PUBLIC_ALB_CERTIFICATE_ARN:-}"
+RUNTIME_SMOKE_SOURCE_CIDRS="${RUNTIME_SMOKE_SOURCE_CIDRS:-}"
 CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-core-case-tg}"
 INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sbox-int-gl-tg}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
@@ -141,13 +143,32 @@ create_or_tag_cluster() {
     echo "$cluster_arn"
 }
 
+sorted_csv() {
+    tr ',' '\n' <<<"$1" | sed '/^$/d' | sort | paste -sd ',' -
+}
+
+assert_csv_matches() {
+    local label="$1"
+    local actual_csv="$2"
+    local expected_csv="$3"
+    local actual_sorted expected_sorted
+
+    actual_sorted="$(sorted_csv "$actual_csv")"
+    expected_sorted="$(sorted_csv "$expected_csv")"
+
+    if [[ "$actual_sorted" != "$expected_sorted" ]]; then
+        echo "$label mismatch. Existing value is [$actual_sorted], expected [$expected_sorted]." >&2
+        return 1
+    fi
+}
+
 create_or_tag_load_balancer() {
     local load_balancer_name="$1"
     local security_group_id="$2"
     local scheme="$3"
     local subnets_csv="$4"
     local load_balancer_arn
-    local existing_scheme
+    local existing_scheme existing_vpc_id existing_subnets_csv existing_security_groups_csv
 
     load_balancer_arn="$(aws_cli elbv2 describe-load-balancers \
         --names "$load_balancer_name" \
@@ -172,10 +193,28 @@ create_or_tag_load_balancer() {
             --names "$load_balancer_name" \
             --query 'LoadBalancers[0].Scheme' \
             --output text)"
+        existing_vpc_id="$(aws_cli elbv2 describe-load-balancers \
+            --names "$load_balancer_name" \
+            --query 'LoadBalancers[0].VpcId' \
+            --output text)"
+        existing_subnets_csv="$(aws_cli elbv2 describe-load-balancers \
+            --names "$load_balancer_name" \
+            --query 'join(`,`, LoadBalancers[0].AvailabilityZones[].SubnetId)' \
+            --output text)"
+        existing_security_groups_csv="$(aws_cli elbv2 describe-load-balancers \
+            --names "$load_balancer_name" \
+            --query 'join(`,`, LoadBalancers[0].SecurityGroups)' \
+            --output text)"
         if [[ "$existing_scheme" != "$scheme" ]]; then
             echo "Load balancer $load_balancer_name exists with scheme $existing_scheme, expected $scheme." >&2
             return 1
         fi
+        if [[ "$existing_vpc_id" != "$VPC_ID" ]]; then
+            echo "Load balancer $load_balancer_name exists in VPC $existing_vpc_id, expected $VPC_ID." >&2
+            return 1
+        fi
+        assert_csv_matches "Load balancer $load_balancer_name subnets" "$existing_subnets_csv" "$subnets_csv"
+        assert_csv_matches "Load balancer $load_balancer_name security groups" "$existing_security_groups_csv" "$security_group_id"
     fi
 
     aws_cli elbv2 add-tags --resource-arns "$load_balancer_arn" --tags "${ELB_TAGS[@]}"
@@ -186,6 +225,7 @@ create_or_tag_target_group() {
     local target_group_name="$1"
     local port="$2"
     local target_group_arn
+    local existing_vpc_id existing_port existing_protocol existing_target_type
 
     target_group_arn="$(aws_cli elbv2 describe-target-groups \
         --names "$target_group_name" \
@@ -205,6 +245,32 @@ create_or_tag_target_group() {
             --tags "${ELB_TAGS[@]}" \
             --query 'TargetGroups[0].TargetGroupArn' \
             --output text)"
+    else
+        existing_vpc_id="$(aws_cli elbv2 describe-target-groups \
+            --target-group-arns "$target_group_arn" \
+            --query 'TargetGroups[0].VpcId' \
+            --output text)"
+        existing_port="$(aws_cli elbv2 describe-target-groups \
+            --target-group-arns "$target_group_arn" \
+            --query 'TargetGroups[0].Port' \
+            --output text)"
+        existing_protocol="$(aws_cli elbv2 describe-target-groups \
+            --target-group-arns "$target_group_arn" \
+            --query 'TargetGroups[0].Protocol' \
+            --output text)"
+        existing_target_type="$(aws_cli elbv2 describe-target-groups \
+            --target-group-arns "$target_group_arn" \
+            --query 'TargetGroups[0].TargetType' \
+            --output text)"
+
+        if [[ "$existing_vpc_id" != "$VPC_ID" ]]; then
+            echo "Target group $target_group_name exists in VPC $existing_vpc_id, expected $VPC_ID." >&2
+            return 1
+        fi
+        if [[ "$existing_port" != "$port" || "$existing_protocol" != "HTTP" || "$existing_target_type" != "ip" ]]; then
+            echo "Target group $target_group_name exists as $existing_protocol:$existing_port targetType=$existing_target_type, expected HTTP:$port targetType=ip." >&2
+            return 1
+        fi
     fi
 
     if [[ -z "$target_group_arn" || "$target_group_arn" == "None" ]]; then
@@ -212,6 +278,11 @@ create_or_tag_target_group() {
         return 1
     fi
 
+    aws_cli elbv2 modify-target-group \
+        --target-group-arn "$target_group_arn" \
+        --health-check-protocol HTTP \
+        --health-check-path /health \
+        --matcher HttpCode=200 >/dev/null
     aws_cli elbv2 modify-target-group-attributes \
         --target-group-arn "$target_group_arn" \
         --attributes Key=deregistration_delay.timeout_seconds,Value=10 >/dev/null
@@ -247,6 +318,41 @@ create_or_update_http_listener() {
     echo "$listener_arn"
 }
 
+create_or_update_https_listener() {
+    local load_balancer_arn="$1"
+    local certificate_arn="$2"
+    local default_actions="$3"
+    local listener_arn
+
+    listener_arn="$(aws_cli elbv2 describe-listeners \
+        --load-balancer-arn "$load_balancer_arn" \
+        --query 'Listeners[?Port==`443`].ListenerArn | [0]' \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$listener_arn" || "$listener_arn" == "None" ]]; then
+        listener_arn="$(aws_cli elbv2 create-listener \
+            --load-balancer-arn "$load_balancer_arn" \
+            --protocol HTTPS \
+            --port 443 \
+            --certificates CertificateArn="$certificate_arn" \
+            --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 \
+            --default-actions "$default_actions" \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'Listeners[0].ListenerArn' \
+            --output text)"
+    else
+        aws_cli elbv2 modify-listener \
+            --listener-arn "$listener_arn" \
+            --protocol HTTPS \
+            --port 443 \
+            --certificates CertificateArn="$certificate_arn" \
+            --ssl-policy ELBSecurityPolicy-TLS13-1-2-2021-06 \
+            --default-actions "$default_actions" >/dev/null
+    fi
+
+    echo "$listener_arn"
+}
+
 create_or_update_listener_rule() {
     local listener_arn="$1"
     local priority="$2"
@@ -274,6 +380,39 @@ create_or_update_listener_rule() {
             --rule-arn "$rule_arn" \
             --conditions "${conditions[@]}" \
             --actions Type=forward,TargetGroupArn="$target_group_arn" >/dev/null
+    fi
+
+    aws_cli elbv2 add-tags --resource-arns "$rule_arn" --tags "${ELB_TAGS[@]}"
+    echo "$rule_arn"
+}
+
+create_or_update_listener_rule_with_actions() {
+    local listener_arn="$1"
+    local priority="$2"
+    local actions="$3"
+    shift 3
+    local conditions=("$@")
+    local rule_arn
+
+    rule_arn="$(aws_cli elbv2 describe-rules \
+        --listener-arn "$listener_arn" \
+        --query "Rules[?Priority=='$priority'].RuleArn | [0]" \
+        --output text 2>/dev/null || true)"
+
+    if [[ -z "$rule_arn" || "$rule_arn" == "None" ]]; then
+        rule_arn="$(aws_cli elbv2 create-rule \
+            --listener-arn "$listener_arn" \
+            --priority "$priority" \
+            --conditions "${conditions[@]}" \
+            --actions "$actions" \
+            --tags "${ELB_TAGS[@]}" \
+            --query 'Rules[0].RuleArn' \
+            --output text)"
+    else
+        aws_cli elbv2 modify-rule \
+            --rule-arn "$rule_arn" \
+            --conditions "${conditions[@]}" \
+            --actions "$actions" >/dev/null
     fi
 
     aws_cli elbv2 add-tags --resource-arns "$rule_arn" --tags "${ELB_TAGS[@]}"
@@ -548,6 +687,8 @@ main() {
     require_non_empty VPC_ID "$VPC_ID"
     require_non_empty PUBLIC_SUBNETS "$PUBLIC_SUBNETS"
     require_non_empty INTERNAL_SUBNETS "$INTERNAL_SUBNETS"
+    require_non_empty PUBLIC_ALB_CERTIFICATE_ARN "$PUBLIC_ALB_CERTIFICATE_ARN"
+    require_non_empty RUNTIME_SMOKE_SOURCE_CIDRS "$RUNTIME_SMOKE_SOURCE_CIDRS"
     require_non_empty ROLE_PERMISSIONS_BOUNDARY_ARN "$ROLE_PERMISSIONS_BOUNDARY_ARN"
     require_non_loopback_endpoint REDIS_URL "$REDIS_URL"
     require_non_loopback_endpoint CORE_CASE_DATABASE_URL "$CORE_CASE_DATABASE_URL"
@@ -571,6 +712,7 @@ main() {
     alb_sg="$(create_or_tag_security_group "$ALB_SECURITY_GROUP_NAME" "SCRUM-147 internet-facing ALB smoke security group.")"
     internal_alb_sg="$(create_or_tag_security_group "$INTERNAL_ALB_SECURITY_GROUP_NAME" "SCRUM-148 internal GL-coding ALB security group.")"
     authorize_security_group_ingress "$alb_sg" 80 "0.0.0.0/0"
+    authorize_security_group_ingress "$alb_sg" 443 "0.0.0.0/0"
 
     echo "Creating or tagging task security groups..."
     core_case_sg="$(create_or_tag_security_group "$CORE_CASE_SECURITY_GROUP_NAME" "SCRUM-147 Core Case Fargate service security group.")"
@@ -584,12 +726,28 @@ main() {
     echo "Creating or tagging public ALB, target group, and listener rule..."
     alb_arn="$(create_or_tag_load_balancer "$ALB_NAME" "$alb_sg" internet-facing "$PUBLIC_SUBNETS")"
     core_case_target_group_arn="$(create_or_tag_target_group "$CORE_CASE_TARGET_GROUP_NAME" 3000)"
-    listener_arn="$(create_or_update_http_listener "$alb_arn" '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]')"
+    http_listener_arn="$(create_or_update_http_listener "$alb_arn" '[{"Type":"redirect","RedirectConfig":{"Protocol":"HTTPS","Port":"443","StatusCode":"HTTP_301"}}]')"
+    delete_listener_rule_by_priority "$http_listener_arn" 90
+    delete_listener_rule_by_priority "$http_listener_arn" 95
+    delete_listener_rule_by_priority "$http_listener_arn" 100
+    delete_listener_rule_by_priority "$http_listener_arn" 200
+    listener_arn="$(create_or_update_https_listener "$alb_arn" "$PUBLIC_ALB_CERTIFICATE_ARN" '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"404","ContentType":"text/plain","MessageBody":"Not found"}}]')"
+    create_or_update_listener_rule \
+        "$listener_arn" \
+        90 \
+        "$core_case_target_group_arn" \
+        Field=path-pattern,Values='/v1/runtime-smoke/*' \
+        Field=source-ip,Values="$RUNTIME_SMOKE_SOURCE_CIDRS"
+    create_or_update_listener_rule_with_actions \
+        "$listener_arn" \
+        95 \
+        '[{"Type":"fixed-response","FixedResponseConfig":{"StatusCode":"403","ContentType":"text/plain","MessageBody":"Forbidden"}}]' \
+        Field=path-pattern,Values='/v1/runtime-smoke/*'
     create_or_update_listener_rule \
         "$listener_arn" \
         100 \
         "$core_case_target_group_arn" \
-        Field=path-pattern,Values='/v1/*'
+        Field=path-pattern,Values='/v1,/v1/*'
     delete_listener_rule_by_priority "$listener_arn" 200
 
     echo "Creating or tagging internal GL-coding ALB, target group, and listener..."
