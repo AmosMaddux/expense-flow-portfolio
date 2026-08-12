@@ -10,6 +10,7 @@ export default [
             "**/dist/**",
             "**/build/**",
             "**/issuer-build/**",
+            "**/.aws-sam/**",
             "**/coverage/**",
             "**/.lighthouseci/**",
             "**/playwright-report/**",

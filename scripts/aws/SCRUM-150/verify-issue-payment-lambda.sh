@@ -7,10 +7,11 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 
 FUNCTION_NAME="${FUNCTION_NAME:-expenseflow-issue-payment-stub}"
+STACK_NAME="${STACK_NAME:-expenseflow-issue-payment-http-api-sandbox}"
 HTTP_API_ID="${HTTP_API_ID:-}"
 HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
 SHARED_JWT_AUTHORIZER_ID="${SHARED_JWT_AUTHORIZER_ID:-}"
-ROUTE_KEY="${ROUTE_KEY:-POST /expense-reports/{id}/settlement}"
+EXPECTED_ROUTE_KEY="POST /expense-reports/{id}/settlement"
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
@@ -45,6 +46,13 @@ resolve_authorizer_id() {
     aws_cli apigatewayv2 get-authorizers \
         --api-id "$http_api_id" \
         --query "Items[?AuthorizerType=='JWT'].AuthorizerId | [0]" \
+        --output text
+}
+
+resolve_issue_payment_route_id() {
+    aws_cli cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --query "Stacks[0].Outputs[?OutputKey=='IssuePaymentRouteId'].OutputValue | [0]" \
         --output text
 }
 
@@ -143,10 +151,25 @@ main() {
         --output json)"
     require_lambda_environment_safe "$environment_json"
 
-    route_json="$(aws_cli apigatewayv2 get-routes \
+    route_id="$(resolve_issue_payment_route_id)"
+    if [[ -z "$route_id" || "$route_id" == "None" ]]; then
+        echo "Unable to resolve SCRUM-150 Issue Payment route ID from $STACK_NAME." >&2
+        exit 1
+    fi
+
+    route_json="$(aws_cli apigatewayv2 get-route \
         --api-id "$resolved_http_api_id" \
-        --query "Items[?RouteKey=='$ROUTE_KEY'] | [0]" \
+        --route-id "$route_id" \
         --output json)"
+    actual_route_key="$(ROUTE_JSON="$route_json" node --input-type=module -e '
+const route = JSON.parse(process.env.ROUTE_JSON || "null");
+console.log(route?.RouteKey ?? "");
+')"
+    if [[ "$actual_route_key" != "$EXPECTED_ROUTE_KEY" ]]; then
+        echo "Issue Payment route key is not the expected settlement route." >&2
+        exit 1
+    fi
+
     ROUTE_JSON="$route_json" EXPECTED_AUTHORIZER_ID="$resolved_authorizer_id" node --input-type=module -e '
 const route = JSON.parse(process.env.ROUTE_JSON || "null");
 if (route === null) throw new Error("Issue Payment route is missing.");
@@ -186,7 +209,7 @@ console.log(String(route.Target || "").replace(/^integrations\//, ""));
     echo "SCRUM-150 Issue Payment Lambda verification passed."
     echo "Function: $FUNCTION_NAME ($function_state)"
     echo "HTTP API: $resolved_http_api_id"
-    echo "Route: $ROUTE_KEY"
+    echo "Route: $EXPECTED_ROUTE_KEY"
 }
 
 main "$@"

@@ -10,6 +10,8 @@ umask 077
 IDEMPOTENCY_KEY="${IDEMPOTENCY_KEY:-scrum-150-issue-payment-smoke}"
 CORRELATION_ID="${CORRELATION_ID:-70000000-0000-4000-8000-000000001150}"
 SETTLEMENT_REASON="${SETTLEMENT_REASON:-SCRUM-150 synthetic Issue Payment Lambda smoke.}"
+EXPECTED_VALID_STATUS="${EXPECTED_VALID_STATUS:-200}"
+EXPECTED_VALID_PROBLEM_TITLE="${EXPECTED_VALID_PROBLEM_TITLE:-}"
 
 smoke_dir="$(mktemp -d)"
 trap 'rm -rf "${smoke_dir}"' EXIT
@@ -83,16 +85,17 @@ request_api() {
 }
 
 valid_status="$(request_api valid "${VALID_ACCESS_TOKEN}")"
-if [[ "${valid_status}" != "200" ]]; then
-    echo "Expected the valid token to settle through Issue Payment Lambda with 200; received ${valid_status}." >&2
+if [[ "${valid_status}" != "${EXPECTED_VALID_STATUS}" ]]; then
+    echo "Expected the valid token to return ${EXPECTED_VALID_STATUS}; received ${valid_status}." >&2
     exit 1
 fi
-if ! grep -qi "^x-correlation-id: ${CORRELATION_ID}" "${smoke_dir}/valid.headers"; then
-    echo "The valid Issue Payment response did not echo the expected x-correlation-id." >&2
-    exit 1
-fi
+if [[ "${EXPECTED_VALID_STATUS}" == "200" ]]; then
+    if ! grep -qi "^x-correlation-id: ${CORRELATION_ID}" "${smoke_dir}/valid.headers"; then
+        echo "The valid Issue Payment response did not echo the expected x-correlation-id." >&2
+        exit 1
+    fi
 
-SMOKE_BODY_FILE="${smoke_dir}/valid.body" node --input-type=module -e '
+    SMOKE_BODY_FILE="${smoke_dir}/valid.body" node --input-type=module -e '
 import { readFileSync } from "node:fs";
 const bodyFile = process.env.SMOKE_BODY_FILE;
 if (bodyFile === undefined) throw new Error("Smoke response file is missing.");
@@ -101,6 +104,17 @@ if (body?.currentStage !== "Reconciled") {
   throw new Error("Issue Payment smoke did not return a Reconciled Expense Report.");
 }
 '
+elif [[ -n "${EXPECTED_VALID_PROBLEM_TITLE}" ]]; then
+    SMOKE_BODY_FILE="${smoke_dir}/valid.body" EXPECTED_VALID_PROBLEM_TITLE="${EXPECTED_VALID_PROBLEM_TITLE}" node --input-type=module -e '
+import { readFileSync } from "node:fs";
+const bodyFile = process.env.SMOKE_BODY_FILE;
+if (bodyFile === undefined) throw new Error("Smoke response file is missing.");
+const body = JSON.parse(readFileSync(bodyFile, "utf8"));
+if (body?.title !== process.env.EXPECTED_VALID_PROBLEM_TITLE) {
+  throw new Error("Issue Payment smoke did not return the expected problem title.");
+}
+'
+fi
 
 tampered_access_token="$(tamper_token "${VALID_ACCESS_TOKEN}")"
 for rejected_case in expired tampered; do

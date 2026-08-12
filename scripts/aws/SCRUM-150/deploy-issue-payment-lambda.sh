@@ -10,6 +10,8 @@ STACK_NAME="${STACK_NAME:-expenseflow-issue-payment-http-api-sandbox}"
 TEMPLATE_FILE="${TEMPLATE_FILE:-.aws-sam/issue-payment-build/template.yaml}"
 HTTP_API_ID="${HTTP_API_ID:-}"
 HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
+BOOTSTRAP_STACK_NAME="${BOOTSTRAP_STACK_NAME:-expenseflow-platform-bootstrap-sandbox}"
+DEPLOYMENT_ARTIFACT_BUCKET="${DEPLOYMENT_ARTIFACT_BUCKET:-}"
 SHARED_JWT_AUTHORIZER_ID="${SHARED_JWT_AUTHORIZER_ID:-}"
 STAGE_NAME="${STAGE_NAME:-v1}"
 ISSUE_PAYMENT_FUNCTION_NAME="${ISSUE_PAYMENT_FUNCTION_NAME:-expenseflow-issue-payment-stub}"
@@ -67,6 +69,18 @@ resolve_authorizer_id() {
         --output text
 }
 
+resolve_deployment_artifact_bucket() {
+    if [[ -n "$DEPLOYMENT_ARTIFACT_BUCKET" ]]; then
+        echo "$DEPLOYMENT_ARTIFACT_BUCKET"
+        return 0
+    fi
+
+    aws_cli cloudformation describe-stacks \
+        --stack-name "$BOOTSTRAP_STACK_NAME" \
+        --query "Stacks[0].Outputs[?OutputKey=='DeploymentArtifactBucketName'].OutputValue | [0]" \
+        --output text
+}
+
 resolve_security_group_id() {
     if [[ -n "$LAMBDA_SECURITY_GROUP_ID" ]]; then
         echo "$LAMBDA_SECURITY_GROUP_ID"
@@ -114,6 +128,12 @@ main() {
         exit 1
     fi
 
+    deployment_artifact_bucket="$(resolve_deployment_artifact_bucket)"
+    if [[ -z "$deployment_artifact_bucket" || "$deployment_artifact_bucket" == "None" ]]; then
+        echo "Unable to resolve deployment artifact bucket. Set DEPLOYMENT_ARTIFACT_BUCKET or BOOTSTRAP_STACK_NAME." >&2
+        exit 1
+    fi
+
     parameter_overrides=(
         "EnvironmentTag=sandbox"
         "UserTag=muhilramesh"
@@ -141,6 +161,7 @@ main() {
         --region "$AWS_REGION" \
         --profile "$AWS_PROFILE" \
         --capabilities CAPABILITY_IAM \
+        --s3-bucket "$deployment_artifact_bucket" \
         --no-fail-on-empty-changeset \
         --tags user=muhilramesh env=sandbox ticket=SCRUM-150 \
         --parameter-overrides "${parameter_overrides[@]}"
