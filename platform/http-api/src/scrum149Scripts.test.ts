@@ -67,8 +67,15 @@ void describe("SCRUM-149 AWS scripts", () => {
         // Verify the deploy script rejects resolved DATABASE_URL
         expect(deployScript).not.toContain("DATABASE_URL must be resolved");
 
+        // Verify script now enforces the safe pattern: DATABASE_SECRET_ARN in Lambda config
         expect(verifyScript).toContain(
-            "Stage-transition Lambda role must not grant direct database secret reads.",
+            "Stage-transition Lambda must receive DATABASE_SECRET_ARN for secure runtime secret resolution.",
+        );
+        expect(verifyScript).toContain(
+            "Stage-transition Lambda must not expose DATABASE_URL in environment configuration.",
+        );
+        expect(verifyScript).toContain(
+            "Stage-transition Lambda role must grant secretsmanager:GetSecretValue for the database secret ARN.",
         );
         expect(verifyScript).toContain(
             "Stage-transition Lambda must not receive DATABASE_URL_SECRET_ID.",

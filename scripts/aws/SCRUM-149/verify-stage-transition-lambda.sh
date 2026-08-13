@@ -99,8 +99,11 @@ require_lambda_database_environment_safe() {
 
     ENVIRONMENT_JSON="$environment_json" node --input-type=module -e '
 const variables = JSON.parse(process.env.ENVIRONMENT_JSON || "{}");
-if (!("DATABASE_URL" in variables)) {
-  throw new Error("Stage-transition Lambda must receive DATABASE_URL for asm-exec runtime resolution.");
+if (!("DATABASE_SECRET_ARN" in variables)) {
+  throw new Error("Stage-transition Lambda must receive DATABASE_SECRET_ARN for secure runtime secret resolution.");
+}
+if ("DATABASE_URL" in variables) {
+  throw new Error("Stage-transition Lambda must not expose DATABASE_URL in environment configuration.");
 }
 if ("DATABASE_URL_SECRET_ID" in variables) {
   throw new Error("Stage-transition Lambda must not receive DATABASE_URL_SECRET_ID.");
@@ -108,9 +111,15 @@ if ("DATABASE_URL_SECRET_ID" in variables) {
 '
 }
 
-require_role_has_no_database_secret_reads() {
+require_role_has_scoped_database_secret_read() {
     local role_name="$1"
+    local database_secret_arn="$2"
     local policy_names policy_document policy_documents_json
+
+    if [[ -z "$database_secret_arn" ]]; then
+        echo "DATABASE_SECRET_ARN must be provided to verify role permissions." >&2
+        return 1
+    fi
 
     policy_names="$(aws_cli iam list-role-policies \
         --role-name "$role_name" \
@@ -133,11 +142,26 @@ process.stdout.write(JSON.stringify(documents));
         )"
     done
 
-    POLICY_DOCUMENTS_JSON="$policy_documents_json" node --input-type=module -e '
+    POLICY_DOCUMENTS_JSON="$policy_documents_json" DATABASE_SECRET_ARN="$database_secret_arn" node --input-type=module -e '
 const documents = JSON.parse(process.env.POLICY_DOCUMENTS_JSON || "[]");
-const policy = JSON.stringify(documents);
-if (policy.includes("secretsmanager:GetSecretValue")) {
-  throw new Error("Stage-transition Lambda role must not grant direct database secret reads.");
+const secretArn = process.env.DATABASE_SECRET_ARN;
+let found = false;
+for (const doc of documents) {
+  if (doc.Statement) {
+    for (const statement of doc.Statement) {
+      if (statement.Effect === "Allow" && statement.Action?.includes("secretsmanager:GetSecretValue")) {
+        const resources = Array.isArray(statement.Resource) ? statement.Resource : [statement.Resource];
+        if (resources.includes(secretArn)) {
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  if (found) break;
+}
+if (!found) {
+  throw new Error("Stage-transition Lambda role must grant secretsmanager:GetSecretValue for the database secret ARN.");
 }
 '
 }
@@ -410,11 +434,16 @@ main() {
         --output json)"
     require_lambda_database_environment_safe "$environment_json"
 
+    database_secret_arn="$(ENVIRONMENT_JSON="$environment_json" node --input-type=module -e '
+const variables = JSON.parse(process.env.ENVIRONMENT_JSON || "{}");
+process.stdout.write(variables.DATABASE_SECRET_ARN || "");
+')"
+
     role_arn="$(aws_cli lambda get-function-configuration \
         --function-name "$FUNCTION_NAME" \
         --query Role \
         --output text)"
-    require_role_has_no_database_secret_reads "${role_arn##*/}"
+    require_role_has_scoped_database_secret_read "${role_arn##*/}" "$database_secret_arn"
 
     source_queue_url="$(queue_url "$STAGE_TRANSITION_QUEUE_NAME")"
     dead_letter_queue_url="$(queue_url "$STAGE_TRANSITION_DLQ_NAME")"
