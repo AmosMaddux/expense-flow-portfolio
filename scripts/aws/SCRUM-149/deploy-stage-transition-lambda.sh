@@ -14,7 +14,7 @@ LAMBDA_REPOSITORY="${LAMBDA_REPOSITORY:-expenseflow-stage-transition-consumer-la
 IMAGE_TAG="${IMAGE_TAG:-scrum-149-smoke}"
 VPC_ID="${VPC_ID:-}"
 PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
-DATABASE_URL="${DATABASE_URL:-}"
+DATABASE_SECRET_ARN="${DATABASE_SECRET_ARN:-}"
 LAMBDA_TIMEOUT_SECONDS="${LAMBDA_TIMEOUT_SECONDS:-30}"
 LAMBDA_MEMORY_SIZE="${LAMBDA_MEMORY_SIZE:-512}"
 
@@ -39,18 +39,6 @@ require_non_empty() {
     fi
 }
 
-require_resolved_database_url() {
-    require_non_empty DATABASE_URL "$DATABASE_URL"
-
-    DATABASE_URL="$DATABASE_URL" node --input-type=module -e '
-const databaseUrl = process.env.DATABASE_URL ?? "";
-if (databaseUrl.startsWith("{{resolve:") && databaseUrl.includes(":SecretString:")) {
-  throw new Error("DATABASE_URL must be resolved before deployment; run this script under asm-exec instead of passing a dynamic reference to Lambda.");
-}
-new URL(databaseUrl);
-'
-}
-
 role_arn() {
     aws_cli iam get-role --role-name "$LAMBDA_ROLE_NAME" --query 'Role.Arn' --output text
 }
@@ -71,7 +59,7 @@ tag_function() {
 main() {
     require_non_empty VPC_ID "$VPC_ID"
     require_non_empty PRIVATE_SUBNETS "$PRIVATE_SUBNETS"
-    require_resolved_database_url
+    require_non_empty DATABASE_SECRET_ARN "$DATABASE_SECRET_ARN"
 
     account_id="$(aws_cli sts get-caller-identity --query Account --output text)"
     image_uri="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com/$LAMBDA_REPOSITORY:$IMAGE_TAG"
@@ -93,7 +81,7 @@ main() {
             --role "$lambda_role_arn" \
             --timeout "$LAMBDA_TIMEOUT_SECONDS" \
             --memory-size "$LAMBDA_MEMORY_SIZE" \
-            --environment "Variables={DATABASE_URL=$DATABASE_URL}" \
+            --environment "Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}" \
             --vpc-config "SubnetIds=$PRIVATE_SUBNETS,SecurityGroupIds=$lambda_security_group_id" >/dev/null
         aws_cli lambda wait function-updated --function-name "$FUNCTION_NAME"
     else
@@ -105,7 +93,7 @@ main() {
             --architectures x86_64 \
             --timeout "$LAMBDA_TIMEOUT_SECONDS" \
             --memory-size "$LAMBDA_MEMORY_SIZE" \
-            --environment "Variables={DATABASE_URL=$DATABASE_URL}" \
+            --environment "Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}" \
             --vpc-config "SubnetIds=$PRIVATE_SUBNETS,SecurityGroupIds=$lambda_security_group_id" \
             --tags user=muhilramesh,env=sandbox,ticket=SCRUM-149 >/dev/null
         aws_cli lambda wait function-active --function-name "$FUNCTION_NAME"

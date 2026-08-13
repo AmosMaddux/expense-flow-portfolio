@@ -15,7 +15,7 @@ These temporary Bash scripts move the stage-transition event consumer into an SQ
 - SQS max receive count: `3`
 - Verification timeout: `180` seconds
 
-The deploy script requires `DATABASE_URL` to be resolved before it starts, normally by running the script under `asm-exec`. The Lambda handler validates that `DATABASE_URL` is already resolved before DB-backed modules load; it does not call Secrets Manager or accept `DATABASE_URL_SECRET_ID`.
+The deploy script accepts `DATABASE_SECRET_ARN`, which is an AWS Secrets Manager secret ARN (not a credential or resolved value). The Lambda runtime resolves the secret at initialization and validates that the secret contains a valid database URL before loading database-backed modules.
 
 `VPC_ID` and `PRIVATE_SUBNETS` must be supplied explicitly. Use subnets that can reach the Core Case database. The database security group must allow inbound PostgreSQL from the SCRUM-149 Lambda security group.
 
@@ -26,7 +26,7 @@ invocation metrics, assert one row appears in `stage_transition_projection`,
 republish the same event to prove idempotent duplicate handling, publish a
 malformed SQS message, and poll until the failed message reaches the DLQ. The
 behavior verification requires `VERIFY_DATABASE_URL` or `DATABASE_URL` to be
-resolved before the script starts, normally by running it under `asm-exec`.
+resolved before the script starts (for local testing only; production Lambda does not materialize credentials in environment variables).
 
 ## Script Order
 
@@ -35,6 +35,7 @@ Run from the repository root:
 ```bash
 VPC_ID="$VPC_ID" \
 ROLE_PERMISSIONS_BOUNDARY_ARN="$ROLE_PERMISSIONS_BOUNDARY_ARN" \
+DATABASE_SECRET_ARN="$DATABASE_SECRET_ARN" \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/SCRUM-149/create-stage-transition-lambda-resources.sh
 
@@ -43,7 +44,7 @@ scripts/aws/SCRUM-149/package-stage-transition-lambda.sh
 
 VPC_ID="$VPC_ID" \
 PRIVATE_SUBNETS="$PRIVATE_SUBNETS" \
-DATABASE_URL="$DATABASE_URL" \
+DATABASE_SECRET_ARN="$DATABASE_SECRET_ARN" \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/SCRUM-149/deploy-stage-transition-lambda.sh
 

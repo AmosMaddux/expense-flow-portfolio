@@ -1,7 +1,4 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { ConfigurationError } from "../errors/problem-json.js";
 import {
@@ -9,41 +6,74 @@ import {
     verifyLambdaDatabaseUrlEnvironment,
 } from "./lambdaDatabaseConfig.js";
 
-const databaseUrl =
+const synthethicDatabaseUrl =
     "postgres://synthetic-user@db.example.invalid:5432/expenseflow";
+const syntheticSecretArn =
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:expenseflow-sandbox-database-url";
+
+vi.mock("@aws-sdk/client-secrets-manager");
 
 void describe("Lambda database configuration", () => {
-    void test("loads a resolved database URL from the environment", () => {
-        expect(
-            loadLambdaDatabaseConfig({ DATABASE_URL: databaseUrl }),
-        ).toStrictEqual({
-            DATABASE_URL: databaseUrl,
+    void test("loads database URL from Secrets Manager using SECRET_ARN", async () => {
+        const { SecretsManager } =
+            await import("@aws-sdk/client-secrets-manager");
+
+        const mockGetSecretValue = vi
+            .fn()
+            .mockResolvedValue({
+                SecretString: JSON.stringify({
+                    database_url: synthethicDatabaseUrl,
+                }),
+            });
+
+        vi.mocked(SecretsManager).mockImplementation(
+            () =>
+                ({
+                    getSecretValue: mockGetSecretValue,
+                }) as any,
+        );
+
+        const config = await loadLambdaDatabaseConfig({
+            DATABASE_SECRET_ARN: syntheticSecretArn,
+        });
+
+        expect(config).toStrictEqual({
+            databaseUrl: synthethicDatabaseUrl,
+        });
+        expect(mockGetSecretValue).toHaveBeenCalledWith({
+            SecretId: syntheticSecretArn,
         });
     });
 
-    void test("rejects missing database URLs", () => {
-        expect(() => loadLambdaDatabaseConfig({})).toThrow(ConfigurationError);
+    void test("rejects missing DATABASE_SECRET_ARN", async () => {
+        await expect(loadLambdaDatabaseConfig({})).rejects.toThrow(
+            ConfigurationError,
+        );
     });
 
-    void test("rejects unresolved dynamic references", () => {
-        expect(() =>
-            verifyLambdaDatabaseUrlEnvironment({
-                DATABASE_URL:
-                    "{{resolve:secretsmanager:expenseflow/sandbox/core-case/database-url:SecretString:DATABASE_URL}}",
-            }),
-        ).toThrow(ConfigurationError);
-    });
+    void test("rejects invalid database URLs from Secrets Manager", async () => {
+        const { SecretsManager } =
+            await import("@aws-sdk/client-secrets-manager");
 
-    void test("keeps Secrets Manager SDK reads out of the Lambda app", () => {
-        const source = readFileSync(
-            fileURLToPath(
-                new URL("./lambdaDatabaseConfig.ts", import.meta.url),
-            ),
-            "utf8",
+        const mockGetSecretValue = vi
+            .fn()
+            .mockResolvedValue({
+                SecretString: JSON.stringify({
+                    database_url: "not-a-url",
+                }),
+            });
+
+        vi.mocked(SecretsManager).mockImplementation(
+            () =>
+                ({
+                    getSecretValue: mockGetSecretValue,
+                }) as any,
         );
 
-        expect(source).not.toContain("GetSecretValueCommand");
-        expect(source).not.toContain("@aws-sdk/client-secrets-manager");
-        expect(source).not.toContain("DATABASE_URL_SECRET_ID");
+        await expect(
+            loadLambdaDatabaseConfig({
+                DATABASE_SECRET_ARN: syntheticSecretArn,
+            }),
+        ).rejects.toThrow(ConfigurationError);
     });
 });

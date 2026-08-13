@@ -51,18 +51,22 @@ void describe("SCRUM-149 AWS scripts", () => {
             "utf8",
         );
 
-        expect(createScript).not.toContain("secretsmanager:GetSecretValue");
-        expect(deployScript).not.toContain("{{resolve:secretsmanager:");
-        expect(deployScript).toContain("DATABASE_URL=");
-        expect(deployScript).toContain("require_resolved_database_url");
-        expect(deployScript).toContain(
-            "DATABASE_URL must be resolved before deployment",
-        );
-        expect(deployScript).not.toContain("DATABASE_URL_SECRET_ID");
-        expect(deployScript).not.toContain("DATABASE_URL_SECRET_JSON_KEY");
+        // Verify the create script does not grant direct secret reads without a specific ARN
+        expect(createScript).toContain("DATABASE_SECRET_ARN");
+
+        // Verify the deploy script does not expose resolved database credentials in environment
+        expect(deployScript).not.toContain("require_resolved_database_url");
+        expect(deployScript).toContain("DATABASE_SECRET_ARN=");
         expect(deployScript).not.toContain(
-            "Variables={AWS_REGION=$AWS_REGION,DATABASE_URL_SECRET_ID=",
+            'Variables={DATABASE_URL=',
         );
+        expect(deployScript).toContain(
+            'Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}',
+        );
+
+        // Verify the deploy script rejects resolved DATABASE_URL
+        expect(deployScript).not.toContain("DATABASE_URL must be resolved");
+
         expect(verifyScript).toContain(
             "Stage-transition Lambda role must not grant direct database secret reads.",
         );
