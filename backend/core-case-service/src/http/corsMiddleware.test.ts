@@ -15,11 +15,14 @@ type CorsResult = {
     end: ReturnType<typeof vi.fn>;
 };
 
-function runPreflight(origin: string): CorsResult {
+function runPreflight(origin: string, requestedHeaders?: string): CorsResult {
     const headers = new Map<string, string>();
+    const requestHeaders = new Map<string, string>([["origin", origin]]);
+    if (requestedHeaders !== undefined) {
+        requestHeaders.set("access-control-request-headers", requestedHeaders);
+    }
     const request = {
-        header: (name: string) =>
-            name.toLowerCase() === "origin" ? origin : undefined,
+        header: (name: string) => requestHeaders.get(name.toLowerCase()),
         method: "OPTIONS",
     } as Request;
     const end = vi.fn();
@@ -69,6 +72,24 @@ void describe("Core Case CORS middleware", () => {
         expect(result.headers.get("access-control-max-age")).toBe(
             String(corsMaxAgeSeconds),
         );
+    });
+
+    void test("allows every header the SPA sends on idempotent mutations", () => {
+        const requestedHeaders = "authorization,content-type,idempotency-key";
+        const result = runPreflight(
+            "https://spa.example.test",
+            requestedHeaders,
+        );
+
+        const allowedHeaders = (
+            result.headers.get("access-control-allow-headers") ?? ""
+        )
+            .split(",")
+            .map((header) => header.trim().toLowerCase());
+
+        for (const requestedHeader of requestedHeaders.split(",")) {
+            expect(allowedHeaders).toContain(requestedHeader);
+        }
     });
 
     void test("does not grant CORS to another origin", () => {

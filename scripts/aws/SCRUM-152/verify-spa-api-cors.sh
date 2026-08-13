@@ -12,6 +12,7 @@ DISTRIBUTION_ID="${DISTRIBUTION_ID:-}"
 DISTRIBUTION_COMMENT="${DISTRIBUTION_COMMENT:-ExpenseFlow SCRUM-151 sandbox SPA}"
 VALID_ACCESS_TOKEN="${VALID_ACCESS_TOKEN:-}"
 AUTHENTICATED_SMOKE_PATH="${AUTHENTICATED_SMOKE_PATH:-/v1/case-queue/line-items}"
+MUTATION_SMOKE_PATH="${MUTATION_SMOKE_PATH:-/v1/expense-reports}"
 SMOKE_DIR=""
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
@@ -50,17 +51,19 @@ if (!words.includes((process.env.EXPECTED ?? "").toLowerCase())) process.exit(1)
 }
 
 require_backend_origin() {
-    BACKEND_BASE_URL="$BACKEND_BASE_URL" AUTHENTICATED_SMOKE_PATH="$AUTHENTICATED_SMOKE_PATH" node --input-type=module -e '
+    BACKEND_BASE_URL="$BACKEND_BASE_URL" AUTHENTICATED_SMOKE_PATH="$AUTHENTICATED_SMOKE_PATH" MUTATION_SMOKE_PATH="$MUTATION_SMOKE_PATH" node --input-type=module -e '
 const base = process.env.BACKEND_BASE_URL ?? "";
 const url = new URL(base);
 if (url.protocol !== "https:") throw new Error("BACKEND_BASE_URL must use HTTPS.");
 if (base !== url.origin) throw new Error("BACKEND_BASE_URL must not include /v1 or another path.");
 if (!(process.env.AUTHENTICATED_SMOKE_PATH ?? "").startsWith("/v1/")) throw new Error("AUTHENTICATED_SMOKE_PATH must start with /v1/.");
+if (!(process.env.MUTATION_SMOKE_PATH ?? "").startsWith("/v1/")) throw new Error("MUTATION_SMOKE_PATH must start with /v1/.");
 '
 }
 
 main() {
-    local spa_domain spa_origin login_url authenticated_url
+    local spa_domain spa_origin login_url authenticated_url mutation_url
+    local mutation_status mutation_allow_origin mutation_allow_credentials mutation_allow_headers
     local allowed_status denied_status allow_origin allow_credentials allow_methods allow_headers
     local denied_allow_origin deployed_index asset_path deployed_asset auth_status auth_allow_origin auth_allow_credentials
 
@@ -79,6 +82,7 @@ main() {
     spa_origin="https://$spa_domain"
     login_url="$BACKEND_BASE_URL/v1/auth/login"
     authenticated_url="$BACKEND_BASE_URL$AUTHENTICATED_SMOKE_PATH"
+    mutation_url="$BACKEND_BASE_URL$MUTATION_SMOKE_PATH"
 
     SMOKE_DIR="$(mktemp -d)"
     trap 'rm -rf "$SMOKE_DIR"' EXIT
@@ -112,6 +116,27 @@ for (const path of ["/v1/auth/login", "/v1/case-queue/line-items"]) {
     fi
     require_contains_word "$allow_methods" POST
     require_contains_word "$allow_headers" content-type
+
+    # The SPA sends Idempotency-Key on expense submission, draft updates, and
+    # mileage logging, so preflight a real mutation route with the full set.
+    mutation_status="$(curl --silent --show-error --request OPTIONS \
+        --header "Origin: $spa_origin" \
+        --header 'Access-Control-Request-Method: POST' \
+        --header 'Access-Control-Request-Headers: authorization,content-type,idempotency-key' \
+        --dump-header "$SMOKE_DIR/mutation.headers" \
+        --output /dev/null \
+        --write-out '%{http_code}' \
+        "$mutation_url")"
+    mutation_allow_origin="$(header_value access-control-allow-origin "$SMOKE_DIR/mutation.headers")"
+    mutation_allow_credentials="$(header_value access-control-allow-credentials "$SMOKE_DIR/mutation.headers")"
+    mutation_allow_headers="$(header_value access-control-allow-headers "$SMOKE_DIR/mutation.headers")"
+    if [[ "$mutation_status" != "204" || "$mutation_allow_origin" != "$spa_origin" || "$mutation_allow_credentials" != "true" ]]; then
+        echo "Credentialed mutation preflight failed for $MUTATION_SMOKE_PATH." >&2
+        exit 1
+    fi
+    require_contains_word "$mutation_allow_headers" authorization
+    require_contains_word "$mutation_allow_headers" content-type
+    require_contains_word "$mutation_allow_headers" idempotency-key
 
     denied_status="$(curl --silent --show-error --request OPTIONS \
         --header 'Origin: https://untrusted.example.invalid' \
@@ -162,7 +187,7 @@ process.stdout.write(match[1]);
         exit 1
     fi
 
-    echo "SCRUM-152 verification passed: preflight=$allowed_status denied=$denied_status authenticated=$auth_status."
+    echo "SCRUM-152 verification passed: preflight=$allowed_status mutation=$mutation_status denied=$denied_status authenticated=$auth_status."
 }
 
 main "$@"

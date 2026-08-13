@@ -2,7 +2,11 @@ import type { RequestHandler } from "express";
 
 import type { CorsConfig } from "../config/corsConfig.js";
 
-export const corsAllowedHeaders = ["Authorization", "Content-Type"] as const;
+export const corsAllowedHeaders = [
+    "Authorization",
+    "Content-Type",
+    "Idempotency-Key",
+] as const;
 export const corsAllowedMethods = [
     "GET",
     "POST",
