@@ -1,6 +1,8 @@
 data "aws_caller_identity" "current" {}
 
 locals {
+  uses_existing_network = var.network_mode == "existing"
+
   tags = {
     user = "DonovanRodgers"
     env  = "sandbox"
@@ -10,9 +12,26 @@ locals {
   spa_bucket_name                    = "${var.name_prefix}-spa-${local.account_id}-${var.aws_region}"
   receipt_storage_bucket_name        = "${var.name_prefix}-receipts-${local.account_id}-${var.aws_region}"
   dynamodb_expense_report_table_name = "${var.name_prefix}-expense-report"
+
+  existing_vpc_id = local.uses_existing_network ? (
+    var.existing_vpc_id == null ? data.aws_vpc.existing[0].id : var.existing_vpc_id
+  ) : null
+  existing_public_subnet_ids = local.uses_existing_network ? (
+    length(var.existing_public_subnet_ids) == 0 ? data.aws_subnets.existing_public[0].ids : var.existing_public_subnet_ids
+  ) : []
+  existing_private_subnet_ids = local.uses_existing_network ? (
+    length(var.existing_private_subnet_ids) == 0 ? data.aws_subnets.existing_private[0].ids : var.existing_private_subnet_ids
+  ) : []
+
+  vpc_id             = local.uses_existing_network ? local.existing_vpc_id : module.network[0].vpc_id
+  vpc_cidr           = local.uses_existing_network ? data.aws_vpc.selected[0].cidr_block : var.vpc_cidr
+  public_subnet_ids  = local.uses_existing_network ? local.existing_public_subnet_ids : module.network[0].public_subnet_ids
+  private_subnet_ids = local.uses_existing_network ? local.existing_private_subnet_ids : module.network[0].private_subnet_ids
 }
 
 module "network" {
+  count = local.uses_existing_network ? 0 : 1
+
   source = "../../modules/network"
 
   availability_zone_count = var.availability_zone_count
@@ -24,13 +43,14 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  internal_subnet_ids        = module.network.private_subnet_ids
-  name_prefix                = var.name_prefix
-  public_alb_certificate_arn = var.public_alb_certificate_arn
-  public_subnet_ids          = module.network.public_subnet_ids
-  runtime_smoke_source_cidrs = var.runtime_smoke_source_cidrs
-  vpc_cidr                   = var.vpc_cidr
-  vpc_id                     = module.network.vpc_id
+  allow_plain_http_public_api = var.allow_plain_http_public_api
+  internal_subnet_ids         = local.private_subnet_ids
+  name_prefix                 = var.name_prefix
+  public_alb_certificate_arn  = var.public_alb_certificate_arn
+  public_subnet_ids           = local.public_subnet_ids
+  runtime_smoke_source_cidrs  = var.runtime_smoke_source_cidrs
+  vpc_cidr                    = local.vpc_cidr
+  vpc_id                      = local.vpc_id
 }
 
 module "ecs" {
@@ -64,10 +84,10 @@ module "ecs" {
   redis_url                                           = var.redis_url
   role_permissions_boundary_arn                       = var.role_permissions_boundary_arn
   runtime_smoke_gl_coding_enabled                     = var.runtime_smoke_gl_coding_enabled
-  service_subnet_ids                                  = module.network.private_subnet_ids
+  service_subnet_ids                                  = local.private_subnet_ids
   tin_ein_validation_endpoint_url                     = var.tin_ein_validation_endpoint_url
   tin_ein_validation_wsdl_url                         = var.tin_ein_validation_wsdl_url
-  vpc_id                                              = module.network.vpc_id
+  vpc_id                                              = local.vpc_id
 }
 
 module "spa" {

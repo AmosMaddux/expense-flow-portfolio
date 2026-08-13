@@ -193,7 +193,7 @@ resource "aws_lb_listener_rule" "core_case_https" {
 }
 
 resource "aws_lb_listener_rule" "core_case_http" {
-  count = var.public_alb_certificate_arn == null ? 1 : 0
+  count = var.public_alb_certificate_arn == null && var.allow_plain_http_public_api ? 1 : 0
 
   listener_arn = aws_lb_listener.public_http[0].arn
   priority     = 100
@@ -258,7 +258,7 @@ resource "aws_lb_listener_rule" "runtime_smoke_https_block" {
 }
 
 resource "aws_lb_listener_rule" "runtime_smoke_http" {
-  count = var.public_alb_certificate_arn == null && length(var.runtime_smoke_source_cidrs) > 0 ? 1 : 0
+  count = var.public_alb_certificate_arn == null && var.allow_plain_http_public_api && length(var.runtime_smoke_source_cidrs) > 0 ? 1 : 0
 
   listener_arn = aws_lb_listener.public_http[0].arn
   priority     = 50

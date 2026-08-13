@@ -1,6 +1,16 @@
 output "vpc_id" {
-  description = "Terraform-managed sandbox VPC ID."
-  value       = module.network.vpc_id
+  description = "Sandbox VPC ID."
+  value       = local.vpc_id
+}
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs used by the public ALB."
+  value       = local.public_subnet_ids
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used by internal ALB and ECS services."
+  value       = local.private_subnet_ids
 }
 
 output "public_alb_dns_name" {

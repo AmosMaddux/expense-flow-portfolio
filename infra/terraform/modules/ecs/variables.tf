@@ -16,12 +16,22 @@ variable "vpc_id" {
 variable "service_subnet_ids" {
   description = "Subnet IDs for Fargate service placement."
   type        = list(string)
+
+  validation {
+    condition     = length(var.service_subnet_ids) > 0
+    error_message = "service_subnet_ids must include at least one private subnet."
+  }
 }
 
 variable "assign_public_ip" {
   description = "Whether Fargate tasks receive public IP addresses."
   type        = bool
-  default     = true
+  default     = false
+
+  validation {
+    condition     = var.assign_public_ip == false
+    error_message = "Fargate services must not receive public IP addresses."
+  }
 }
 
 variable "public_alb_security_group_id" {

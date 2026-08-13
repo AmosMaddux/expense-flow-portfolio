@@ -16,6 +16,53 @@ variable "name_prefix" {
   default     = "expenseflow-sandbox"
 }
 
+variable "network_mode" {
+  description = "Whether sandbox uses discovered existing networking or creates managed networking."
+  type        = string
+  default     = "existing"
+
+  validation {
+    condition     = contains(["existing", "managed"], var.network_mode)
+    error_message = "network_mode must be either existing or managed."
+  }
+}
+
+variable "existing_vpc_id" {
+  description = "Optional existing sandbox VPC ID. If omitted, Terraform discovers the VPC by tags."
+  type        = string
+  default     = null
+}
+
+variable "existing_vpc_name" {
+  description = "Name tag for the existing sandbox VPC when existing_vpc_id is not supplied."
+  type        = string
+  default     = "project-vpc"
+}
+
+variable "existing_public_subnet_ids" {
+  description = "Optional existing public subnet IDs. If omitted, Terraform discovers them by tag patterns."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_private_subnet_ids" {
+  description = "Optional existing private subnet IDs. If omitted, Terraform discovers them by tag patterns."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_public_subnet_name_patterns" {
+  description = "Name tag patterns used to discover public subnets in the existing sandbox VPC."
+  type        = list(string)
+  default     = ["project-subnet-public*"]
+}
+
+variable "existing_private_subnet_name_patterns" {
+  description = "Name tag patterns used to discover private subnets in the existing sandbox VPC."
+  type        = list(string)
+  default     = ["project-subnet-private*"]
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the Terraform-managed sandbox VPC."
   type        = string
@@ -37,6 +84,12 @@ variable "enable_nat_gateway" {
   description = "Whether to create a NAT gateway for private ECS task egress."
   type        = bool
   default     = true
+}
+
+variable "allow_plain_http_public_api" {
+  description = "Whether to expose /v1 over plaintext HTTP when no ACM certificate is configured."
+  type        = bool
+  default     = false
 }
 
 variable "public_alb_certificate_arn" {

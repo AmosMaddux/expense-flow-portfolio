@@ -3,8 +3,15 @@ aws_region = "us-east-1"
 # Set this for local runs, or export AWS_PROFILE instead.
 # aws_profile = "expenseflow-smoke"
 
+# The sandbox root discovers the existing VPC and subnets by tags by default.
+# Set network_mode = "managed" only when intentionally creating a new VPC.
+# network_mode = "existing"
+
 # Optional. Discovery on 2026-08-13 found no issued ACM certificates in us-east-1.
 # public_alb_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/SYNTHETIC_CERTIFICATE_ID"
+
+# Plain HTTP forwarding is disabled by default when no certificate is configured.
+# allow_plain_http_public_api = false
 
 # Optional. Required by some sandbox IAM policies.
 # role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/SYNTHETIC_BOUNDARY_NAME"

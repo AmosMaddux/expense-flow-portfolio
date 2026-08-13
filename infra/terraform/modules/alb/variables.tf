@@ -60,17 +60,33 @@ variable "vpc_cidr" {
 variable "public_subnet_ids" {
   description = "Subnets for the internet-facing ALB."
   type        = list(string)
+
+  validation {
+    condition     = length(var.public_subnet_ids) > 0
+    error_message = "public_subnet_ids must include at least one public subnet."
+  }
 }
 
 variable "internal_subnet_ids" {
   description = "Subnets for the internal ALB."
   type        = list(string)
+
+  validation {
+    condition     = length(var.internal_subnet_ids) > 0
+    error_message = "internal_subnet_ids must include at least one private subnet."
+  }
 }
 
 variable "public_alb_certificate_arn" {
   description = "Optional ACM certificate ARN for HTTPS on the public ALB."
   type        = string
   default     = null
+}
+
+variable "allow_plain_http_public_api" {
+  description = "Whether to expose /v1 over plaintext HTTP when no ACM certificate is configured."
+  type        = bool
+  default     = false
 }
 
 variable "runtime_smoke_source_cidrs" {
