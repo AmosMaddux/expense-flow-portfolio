@@ -14,7 +14,7 @@ Use the returned `Account` value as `EXPECTED_AWS_ACCOUNT_ID` in `.env`:
 ```bash
 AWS_PROFILE=expenseflow-smoke
 AWS_REGION=us-east-1
-EXPECTED_AWS_ACCOUNT_ID=208096650110
+EXPECTED_AWS_ACCOUNT_ID=REPLACE_WITH_AWS_ACCOUNT_ID
 ```
 
 Run the walkthrough with the profile available to the test process and the
