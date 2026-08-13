@@ -16,6 +16,7 @@ module "network" {
   source = "../../modules/network"
 
   availability_zone_count = var.availability_zone_count
+  enable_nat_gateway      = var.enable_nat_gateway
   name_prefix             = var.name_prefix
   vpc_cidr                = var.vpc_cidr
 }
@@ -23,7 +24,7 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  internal_subnet_ids        = module.network.public_subnet_ids
+  internal_subnet_ids        = module.network.private_subnet_ids
   name_prefix                = var.name_prefix
   public_alb_certificate_arn = var.public_alb_certificate_arn
   public_subnet_ids          = module.network.public_subnet_ids
@@ -35,7 +36,7 @@ module "alb" {
 module "ecs" {
   source = "../../modules/ecs"
 
-  assign_public_ip                                    = true
+  assign_public_ip                                    = false
   auth_jwt_key_id                                     = var.auth_jwt_key_id
   aws_region                                          = var.aws_region
   core_case_auth_jwt_private_key_secret_arn           = var.core_case_auth_jwt_private_key_secret_arn
@@ -63,7 +64,7 @@ module "ecs" {
   redis_url                                           = var.redis_url
   role_permissions_boundary_arn                       = var.role_permissions_boundary_arn
   runtime_smoke_gl_coding_enabled                     = var.runtime_smoke_gl_coding_enabled
-  service_subnet_ids                                  = module.network.public_subnet_ids
+  service_subnet_ids                                  = module.network.private_subnet_ids
   tin_ein_validation_endpoint_url                     = var.tin_ein_validation_endpoint_url
   tin_ein_validation_wsdl_url                         = var.tin_ein_validation_wsdl_url
   vpc_id                                              = module.network.vpc_id

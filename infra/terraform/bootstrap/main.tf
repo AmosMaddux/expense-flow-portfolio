@@ -26,8 +26,6 @@ locals {
     "expenseflow-sandbox-terraform-state-${data.aws_caller_identity.current.account_id}-${var.aws_region}",
   )
 
-  lock_table_name = coalesce(var.lock_table_name, "expenseflow-sandbox-terraform-locks")
-
   tags = {
     user = "DonovanRodgers"
     env  = "sandbox"
@@ -70,20 +68,5 @@ resource "aws_s3_bucket_versioning" "terraform_state" {
 
   versioning_configuration {
     status = "Enabled"
-  }
-}
-
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = local.lock_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  server_side_encryption {
-    enabled = true
   }
 }

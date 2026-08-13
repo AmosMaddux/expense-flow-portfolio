@@ -3,6 +3,50 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "public_alb_name" {
+  description = "Name for the public ALB. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-pub-alb"
+
+  validation {
+    condition     = length(var.public_alb_name) <= 32
+    error_message = "public_alb_name must be 32 characters or fewer."
+  }
+}
+
+variable "internal_alb_name" {
+  description = "Name for the internal ALB. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-int-alb"
+
+  validation {
+    condition     = length(var.internal_alb_name) <= 32
+    error_message = "internal_alb_name must be 32 characters or fewer."
+  }
+}
+
+variable "core_case_target_group_name" {
+  description = "Name for the Core Case target group. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-core-tg"
+
+  validation {
+    condition     = length(var.core_case_target_group_name) <= 32
+    error_message = "core_case_target_group_name must be 32 characters or fewer."
+  }
+}
+
+variable "gl_coding_target_group_name" {
+  description = "Name for the GL-coding target group. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-gl-tg"
+
+  validation {
+    condition     = length(var.gl_coding_target_group_name) <= 32
+    error_message = "gl_coding_target_group_name must be 32 characters or fewer."
+  }
+}
+
 variable "vpc_id" {
   description = "VPC ID for load balancers and target groups."
   type        = string

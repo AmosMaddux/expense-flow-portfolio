@@ -26,6 +26,17 @@ variable "availability_zone_count" {
   description = "Number of availability zones used for VPC subnets."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.availability_zone_count >= 2 && var.availability_zone_count <= 3
+    error_message = "availability_zone_count must be between 2 and 3."
+  }
+}
+
+variable "enable_nat_gateway" {
+  description = "Whether to create a NAT gateway for private ECS task egress."
+  type        = bool
+  default     = true
 }
 
 variable "public_alb_certificate_arn" {
@@ -71,9 +82,14 @@ variable "auth_jwt_key_id" {
 }
 
 variable "redis_url" {
-  description = "ECS-reachable Redis URL."
+  description = "ECS-reachable Redis URL. Terraform does not create Redis in this module."
   type        = string
-  default     = "redis://redis.expenseflow-sandbox.local:6379"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^rediss?://", var.redis_url)) && !can(regex("://([^/@]*@)?(localhost|127\\.0\\.0\\.1)(:|/|$)", var.redis_url))
+    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// URL, not localhost."
+  }
 }
 
 variable "mfa_totp_secret_key_version" {

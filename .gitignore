@@ -29,6 +29,9 @@ test-results/
 *.tfstate
 *.tfstate.*
 *.tfplan
+backend.hcl
+*.auto.tfvars
+terraform.tfvars
 crash.log
 crash.*.log
 override.tf

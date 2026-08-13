@@ -19,3 +19,9 @@ variable "availability_zone_count" {
     error_message = "availability_zone_count must be between 2 and 3."
   }
 }
+
+variable "enable_nat_gateway" {
+  description = "Whether to create a NAT gateway for private subnet egress."
+  type        = bool
+  default     = true
+}

@@ -88,7 +88,12 @@ variable "auth_jwt_key_id" {
 variable "redis_url" {
   description = "ECS-reachable Redis URL."
   type        = string
-  default     = "redis://redis.expenseflow-sandbox.local:6379"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^rediss?://", var.redis_url)) && !can(regex("://([^/@]*@)?(localhost|127\\.0\\.0\\.1)(:|/|$)", var.redis_url))
+    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// URL, not localhost."
+  }
 }
 
 variable "mfa_totp_secret_key_version" {

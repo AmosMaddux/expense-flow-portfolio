@@ -44,26 +44,33 @@ jobs:
         run: terraform -chdir=infra/terraform/environments/sandbox validate
 
       - name: Configure AWS credentials
-        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Init sandbox backend
-        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
-        run: terraform -chdir=infra/terraform/environments/sandbox init -reconfigure
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
+        run: |
+          terraform -chdir=infra/terraform/environments/sandbox init -reconfigure \
+            -backend-config="bucket=${{ vars.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
 
       - name: Terraform plan
-        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
-        run: terraform -chdir=infra/terraform/environments/sandbox plan -input=false -out=sandbox.tfplan
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
+        run: |
+          terraform -chdir=infra/terraform/environments/sandbox plan \
+            -input=false \
+            -out=sandbox.tfplan \
+            -var="redis_url=${{ secrets.SANDBOX_REDIS_URL }}"
 
       - name: Save plan text
-        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
         run: terraform -chdir=infra/terraform/environments/sandbox show -no-color sandbox.tfplan > infra/terraform/environments/sandbox/sandbox.tfplan.txt
 
       - name: Upload plan artifact
-        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-terraform-plan

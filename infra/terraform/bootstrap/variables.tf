@@ -15,9 +15,3 @@ variable "state_bucket_name" {
   type        = string
   default     = null
 }
-
-variable "lock_table_name" {
-  description = "Optional override for the Terraform lock table name."
-  type        = string
-  default     = null
-}

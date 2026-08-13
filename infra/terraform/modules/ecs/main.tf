@@ -120,6 +120,14 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "receipts" {
   }
 }
 
+resource "aws_s3_bucket_versioning" "receipts" {
+  bucket = aws_s3_bucket.receipts.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_sns_topic" "stage_transitions" {
   name = "${var.name_prefix}-stage-transitions"
 }

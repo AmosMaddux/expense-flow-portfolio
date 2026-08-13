@@ -11,11 +11,15 @@ runtime:
 - Private encrypted S3 bucket and CloudFront distribution for the SPA.
 
 The backend uses the remote state resources created by `infra/terraform/bootstrap`.
+Create a local `backend.hcl` from `backend.hcl.example` and fill in the real
+state bucket name before initialization. Do not commit `backend.hcl`.
 
 ```bash
-AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox init
-AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox plan
+AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox init -backend-config=backend.hcl
+AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox plan -var-file=terraform.tfvars
 ```
 
-Secrets must be supplied as Secrets Manager ARNs only. Do not place secret values
-in Terraform files, tfvars, logs, or plan output.
+Secrets must be supplied as Secrets Manager ARNs only. Do not place secret
+values in Terraform files, tfvars, logs, or plan output. The `redis_url` value is
+required and must point to an ECS-reachable Redis endpoint provisioned outside
+this module.

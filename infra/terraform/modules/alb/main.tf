@@ -57,31 +57,31 @@ resource "aws_vpc_security_group_egress_rule" "internal_alb_all" {
 }
 
 resource "aws_lb" "public" {
-  name               = "${var.name_prefix}-public-alb"
+  name               = var.public_alb_name
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.public_alb.id]
   subnets            = var.public_subnet_ids
 
   tags = {
-    Name = "${var.name_prefix}-public-alb"
+    Name = var.public_alb_name
   }
 }
 
 resource "aws_lb" "internal" {
-  name               = "${var.name_prefix}-internal-alb"
+  name               = var.internal_alb_name
   internal           = true
   load_balancer_type = "application"
   security_groups    = [aws_security_group.internal_alb.id]
   subnets            = var.internal_subnet_ids
 
   tags = {
-    Name = "${var.name_prefix}-internal-alb"
+    Name = var.internal_alb_name
   }
 }
 
 resource "aws_lb_target_group" "core_case" {
-  name        = "${var.name_prefix}-core-case-tg"
+  name        = var.core_case_target_group_name
   port        = 3000
   protocol    = "HTTP"
   target_type = "ip"
@@ -100,7 +100,7 @@ resource "aws_lb_target_group" "core_case" {
 }
 
 resource "aws_lb_target_group" "gl_coding" {
-  name        = "${var.name_prefix}-gl-coding-tg"
+  name        = var.gl_coding_target_group_name
   port        = 8001
   protocol    = "HTTP"
   target_type = "ip"
@@ -144,8 +144,13 @@ resource "aws_lb_listener" "public_http" {
   protocol          = "HTTP"
 
   default_action {
-    target_group_arn = aws_lb_target_group.core_case.arn
-    type             = "forward"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not found"
+      status_code  = "404"
+    }
+
+    type = "fixed-response"
   }
 }
 
@@ -187,6 +192,24 @@ resource "aws_lb_listener_rule" "core_case_https" {
   }
 }
 
+resource "aws_lb_listener_rule" "core_case_http" {
+  count = var.public_alb_certificate_arn == null ? 1 : 0
+
+  listener_arn = aws_lb_listener.public_http[0].arn
+  priority     = 100
+
+  action {
+    target_group_arn = aws_lb_target_group.core_case.arn
+    type             = "forward"
+  }
+
+  condition {
+    path_pattern {
+      values = ["/v1", "/v1/*"]
+    }
+  }
+}
+
 resource "aws_lb_listener_rule" "runtime_smoke_https" {
   count = var.public_alb_certificate_arn == null || length(var.runtime_smoke_source_cidrs) == 0 ? 0 : 1
 
@@ -207,6 +230,76 @@ resource "aws_lb_listener_rule" "runtime_smoke_https" {
   condition {
     source_ip {
       values = var.runtime_smoke_source_cidrs
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "runtime_smoke_https_block" {
+  count = var.public_alb_certificate_arn == null ? 0 : 1
+
+  listener_arn = aws_lb_listener.public_https[0].arn
+  priority     = 51
+
+  action {
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+
+    type = "fixed-response"
+  }
+
+  condition {
+    path_pattern {
+      values = ["/v1/runtime-smoke/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "runtime_smoke_http" {
+  count = var.public_alb_certificate_arn == null && length(var.runtime_smoke_source_cidrs) > 0 ? 1 : 0
+
+  listener_arn = aws_lb_listener.public_http[0].arn
+  priority     = 50
+
+  action {
+    target_group_arn = aws_lb_target_group.core_case.arn
+    type             = "forward"
+  }
+
+  condition {
+    path_pattern {
+      values = ["/v1/runtime-smoke/*"]
+    }
+  }
+
+  condition {
+    source_ip {
+      values = var.runtime_smoke_source_cidrs
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "runtime_smoke_http_block" {
+  count = var.public_alb_certificate_arn == null ? 1 : 0
+
+  listener_arn = aws_lb_listener.public_http[0].arn
+  priority     = 51
+
+  action {
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+
+    type = "fixed-response"
+  }
+
+  condition {
+    path_pattern {
+      values = ["/v1/runtime-smoke/*"]
     }
   }
 }
