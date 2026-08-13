@@ -41,7 +41,6 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
-    SettleExpenseReportInboundRequestSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
@@ -150,10 +149,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const transitionExpenseReportWorkflowRequest = registry.register(
         "TransitionExpenseReportWorkflowRequest",
         TransitionExpenseReportWorkflowInboundRequestSchema,
-    );
-    const settleExpenseReportRequest = registry.register(
-        "SettleExpenseReportRequest",
-        SettleExpenseReportInboundRequestSchema,
     );
     const internalSettlePaymentStubRequest = registry.register(
         "InternalSettlePaymentStubRequest",
@@ -1161,66 +1156,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             404: problemJsonResponse("Expense Report not found."),
             409: problemJsonResponse(
                 "Expense Report cannot transition from its current stage or has uncleared flags.",
-            ),
-            429: rateLimitExceededResponse.ref,
-            500: problemJsonResponse("Unexpected server error."),
-        },
-    });
-
-    registry.registerPath({
-        method: "post",
-        path: "/v1/expense-reports/{id}/settlement",
-        summary: "Settle an Expense Report",
-        description:
-            "Coordinates the Issue Payment stub, Paid transition, and Reconciled transition as a compensating settlement saga.",
-        security: [{ bearerAuth: [] }],
-        request: {
-            params: expenseReportIdPathParamsSchema,
-            headers: z.object({
-                "Idempotency-Key": z.string().max(128).openapi({
-                    description:
-                        "Required tenant-scoped key used to replay completed Expense Report settlements.",
-                }),
-                "x-correlation-id": z.uuid().optional().openapi({
-                    description:
-                        "End-to-end request correlation identifier. The service generates one when omitted.",
-                }),
-            }),
-            body: {
-                required: false,
-                content: {
-                    "application/json": {
-                        schema: settleExpenseReportRequest,
-                    },
-                },
-            },
-        },
-        responses: {
-            200: {
-                description: "Expense Report settled and reconciled.",
-                headers: {
-                    ...rateLimitHeaders,
-                    "X-Correlation-Id": {
-                        description:
-                            "Correlation identifier carried by settlement saga events.",
-                        schema: {
-                            type: "string",
-                            format: "uuid",
-                        },
-                    },
-                },
-                content: {
-                    "application/json": {
-                        schema: expenseReportResponse,
-                    },
-                },
-            },
-            400: problemJsonResponse("Malformed settlement request."),
-            401: problemJsonResponse("Valid access token required."),
-            403: problemJsonResponse("Authenticated role is not permitted."),
-            404: problemJsonResponse("Expense Report not found."),
-            409: problemJsonResponse(
-                "Settlement can only start from AP Review and must complete its compensated saga.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

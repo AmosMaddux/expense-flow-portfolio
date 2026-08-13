@@ -11,6 +11,9 @@ STACK_NAME="${STACK_NAME:-expenseflow-issue-payment-http-api-sandbox}"
 HTTP_API_ID="${HTTP_API_ID:-}"
 HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
 SHARED_JWT_AUTHORIZER_ID="${SHARED_JWT_AUTHORIZER_ID:-}"
+SHARED_JWT_AUTHORIZER_NAME="${SHARED_JWT_AUTHORIZER_NAME:-SharedJwtAuthorizer}"
+JWT_ISSUER="${JWT_ISSUER:-}"
+JWT_AUDIENCE="${JWT_AUDIENCE:-}"
 EXPECTED_ROUTE_KEY="POST /expense-reports/{id}/settlement"
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
 
@@ -35,18 +38,73 @@ resolve_http_api_id() {
         --output text
 }
 
-resolve_authorizer_id() {
-    local http_api_id="$1"
+resolve_stack_parameter() {
+    local parameter_key="$1"
 
-    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
-        echo "$SHARED_JWT_AUTHORIZER_ID"
+    aws_cli cloudformation describe-stacks \
+        --stack-name "$HTTP_API_STACK_NAME" \
+        --query "Stacks[0].Parameters[?ParameterKey=='$parameter_key'].ParameterValue | [0]" \
+        --output text
+}
+
+resolve_jwt_issuer() {
+    if [[ -n "$JWT_ISSUER" ]]; then
+        echo "$JWT_ISSUER"
         return 0
     fi
 
-    aws_cli apigatewayv2 get-authorizers \
-        --api-id "$http_api_id" \
-        --query "Items[?AuthorizerType=='JWT'].AuthorizerId | [0]" \
-        --output text
+    resolve_stack_parameter JwtIssuer
+}
+
+resolve_jwt_audience() {
+    if [[ -n "$JWT_AUDIENCE" ]]; then
+        echo "$JWT_AUDIENCE"
+        return 0
+    fi
+
+    resolve_stack_parameter JwtAudience
+}
+
+resolve_authorizer_id() {
+    local http_api_id="$1"
+    local expected_issuer="$2"
+    local expected_audience="$3"
+    local authorizers_json
+
+    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizer \
+            --api-id "$http_api_id" \
+            --authorizer-id "$SHARED_JWT_AUTHORIZER_ID" \
+            --output json)"
+    else
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizers \
+            --api-id "$http_api_id" \
+            --query "Items[?AuthorizerType=='JWT']" \
+            --output json)"
+    fi
+
+    AUTHORIZERS_JSON="$authorizers_json" \
+        EXPECTED_AUTHORIZER_ID="$SHARED_JWT_AUTHORIZER_ID" \
+        EXPECTED_AUTHORIZER_NAME="$SHARED_JWT_AUTHORIZER_NAME" \
+        EXPECTED_JWT_ISSUER="$expected_issuer" \
+        EXPECTED_JWT_AUDIENCE="$expected_audience" \
+        node --input-type=module -e '
+const raw = JSON.parse(process.env.AUTHORIZERS_JSON || "null");
+const authorizers = Array.isArray(raw) ? raw : [raw];
+const matches = authorizers.filter((authorizer) => {
+  const config = authorizer?.JwtConfiguration ?? {};
+  const audience = Array.isArray(config.Audience) ? config.Audience : [];
+  return authorizer?.AuthorizerType === "JWT" &&
+    (!process.env.EXPECTED_AUTHORIZER_ID || authorizer.AuthorizerId === process.env.EXPECTED_AUTHORIZER_ID) &&
+    authorizer?.Name === process.env.EXPECTED_AUTHORIZER_NAME &&
+    config.Issuer === process.env.EXPECTED_JWT_ISSUER &&
+    audience.includes(process.env.EXPECTED_JWT_AUDIENCE);
+});
+if (matches.length !== 1) {
+  throw new Error("Expected exactly one shared JWT authorizer with the configured name, issuer, and audience.");
+}
+process.stdout.write(matches[0].AuthorizerId);
+'
 }
 
 resolve_issue_payment_route_id() {
@@ -73,7 +131,7 @@ require_lambda_environment_safe() {
 const variables = JSON.parse(process.env.ENVIRONMENT_JSON || "{}");
 const required = [
   "CORE_CASE_INTERNAL_BASE_URL",
-  "CORE_CASE_INTERNAL_COMMAND_TOKEN",
+  "CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN",
   "CORE_CASE_INTERNAL_TIMEOUT_MS"
 ];
 for (const key of required) {
@@ -85,40 +143,67 @@ for (const key of Object.keys(variables)) {
   if (key === "DATABASE_URL" || key === "DATABASE_URL_SECRET_ID" || key.includes("DATABASE")) {
     throw new Error(`Forbidden database environment variable is present: ${key}`);
   }
+  if (key === "CORE_CASE_INTERNAL_COMMAND_TOKEN") {
+    throw new Error("Raw internal command token must not be present in Lambda environment.");
+  }
 }
 '
 }
 
-require_role_has_no_secret_access() {
+require_role_has_scoped_secret_access() {
     local role_name="$1"
-    local policy_names policy_document
+    local secret_arn="$2"
+    local policy_names policy_document policy_documents_json
 
     policy_names="$(aws_cli iam list-role-policies \
         --role-name "$role_name" \
         --query 'PolicyNames[]' \
         --output text)"
 
+    policy_documents_json="[]"
     for policy_name in $policy_names; do
         policy_document="$(aws_cli iam get-role-policy \
             --role-name "$role_name" \
             --policy-name "$policy_name" \
             --query PolicyDocument \
             --output json)"
-        POLICY_DOCUMENT="$policy_document" node --input-type=module -e '
-const policy = JSON.stringify(JSON.parse(process.env.POLICY_DOCUMENT || "{}"));
-if (policy.includes("secretsmanager:GetSecretValue")) {
-  throw new Error("Issue Payment Lambda role must not allow secretsmanager:GetSecretValue.");
+        policy_documents_json="$(
+            POLICY_DOCUMENTS_JSON="$policy_documents_json" POLICY_DOCUMENT="$policy_document" node --input-type=module -e '
+const documents = JSON.parse(process.env.POLICY_DOCUMENTS_JSON || "[]");
+documents.push(JSON.parse(process.env.POLICY_DOCUMENT || "{}"));
+process.stdout.write(JSON.stringify(documents));
+'
+        )"
+    done
+
+    POLICY_DOCUMENTS_JSON="$policy_documents_json" SECRET_ARN="$secret_arn" node --input-type=module -e '
+const documents = JSON.parse(process.env.POLICY_DOCUMENTS_JSON || "[]");
+const policy = JSON.stringify(documents);
+if (!process.env.SECRET_ARN) {
+  throw new Error("Issue Payment Lambda token secret ARN is missing from configuration.");
+}
+if (!policy.includes("secretsmanager:GetSecretValue")) {
+  throw new Error("Issue Payment Lambda role must allow scoped secretsmanager:GetSecretValue.");
+}
+if (!policy.includes(process.env.SECRET_ARN)) {
+  throw new Error("Issue Payment Lambda secret read must be scoped to the configured token secret ARN.");
 }
 if (!policy.includes("logs:CreateLogStream") || !policy.includes("logs:PutLogEvents")) {
   throw new Error("Issue Payment Lambda role must include least-privilege log permissions.");
 }
 '
-    done
 }
 
 main() {
     resolved_http_api_id="$(resolve_http_api_id)"
-    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id")"
+    expected_jwt_issuer="$(resolve_jwt_issuer)"
+    expected_jwt_audience="$(resolve_jwt_audience)"
+    if [[ -z "$expected_jwt_issuer" || "$expected_jwt_issuer" == "None" || -z "$expected_jwt_audience" || "$expected_jwt_audience" == "None" ]]; then
+        echo "Unable to resolve JWT issuer/audience. Set JWT_ISSUER and JWT_AUDIENCE or provide HTTP_API_STACK_NAME." >&2
+        exit 1
+    fi
+
+    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id" "$expected_jwt_issuer" "$expected_jwt_audience")"
 
     function_state="$(aws_cli lambda get-function \
         --function-name "$FUNCTION_NAME" \
@@ -150,6 +235,8 @@ main() {
         --query 'Environment.Variables' \
         --output json)"
     require_lambda_environment_safe "$environment_json"
+    core_case_token_secret_arn="$(ENVIRONMENT_JSON="$environment_json" node --input-type=module -e 'const variables = JSON.parse(process.env.ENVIRONMENT_JSON || "{}"); process.stdout.write(variables.CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN || "");')"
+    require_role_has_scoped_secret_access "$role_name" "$core_case_token_secret_arn"
 
     route_id="$(resolve_issue_payment_route_id)"
     if [[ -z "$route_id" || "$route_id" == "None" ]]; then
@@ -203,8 +290,6 @@ console.log(String(route.Target || "").replace(/^integrations\//, ""));
         echo "Expected log group retention to be 14 days, got $retention_days." >&2
         exit 1
     fi
-
-    require_role_has_no_secret_access "$role_name"
 
     echo "SCRUM-150 Issue Payment Lambda verification passed."
     echo "Function: $FUNCTION_NAME ($function_state)"

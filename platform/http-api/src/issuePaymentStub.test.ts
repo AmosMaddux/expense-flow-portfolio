@@ -7,10 +7,32 @@ import { createIssuePaymentStubHandler } from "./issuePaymentStub.js";
 
 const environment = {
     CORE_CASE_INTERNAL_BASE_URL: "https://core-case.internal.example.test",
-    CORE_CASE_INTERNAL_COMMAND_TOKEN:
-        "synthetic-core-case-internal-command-token",
+    CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN:
+        "arn:aws:secretsmanager:us-east-1:000000000000:secret:expenseflow/sandbox/core-case/internal-command-token",
     CORE_CASE_INTERNAL_TIMEOUT_MS: "5000",
 };
+const internalCommandToken = "synthetic-core-case-internal-command-token";
+
+function createTestHandler(
+    input: {
+        environment?: Record<string, string>;
+        fetch?: typeof fetch;
+        secretResolver?: (secretId: string) => Promise<string>;
+    } = {},
+) {
+    const dependencies = {
+        environment: input.environment ?? environment,
+        secretResolver:
+            input.secretResolver ??
+            vi.fn().mockResolvedValue(internalCommandToken),
+    };
+
+    return createIssuePaymentStubHandler(
+        input.fetch === undefined
+            ? dependencies
+            : { ...dependencies, fetch: input.fetch },
+    );
+}
 
 function httpApiEvent(input: {
     body?: unknown;
@@ -81,9 +103,10 @@ void describe("Issue Payment stub Lambda", () => {
                 currentStage: "Reconciled",
             }),
         );
-        const handler = createIssuePaymentStubHandler({
-            environment,
+        const secretResolver = vi.fn().mockResolvedValue(internalCommandToken);
+        const handler = createTestHandler({
             fetch: fetchMock,
+            secretResolver,
         });
 
         const response = await handler(httpApiEvent({}));
@@ -97,13 +120,15 @@ void describe("Issue Payment stub Lambda", () => {
         expect(String(url)).toBe(
             "https://core-case.internal.example.test/v1/internal/expense-reports/60000000-0000-4000-8000-000000000150/payment-stub-settlement",
         );
+        expect(secretResolver).toHaveBeenCalledWith(
+            environment.CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN,
+        );
         expect(init).toMatchObject({
             method: "POST",
             headers: {
                 "content-type": "application/json",
                 "idempotency-key": "issue-payment-150",
-                "x-core-case-internal-command-token":
-                    "synthetic-core-case-internal-command-token",
+                "x-core-case-internal-command-token": internalCommandToken,
                 "x-correlation-id": "70000000-0000-4000-8000-000000000150",
             },
         });
@@ -131,10 +156,7 @@ void describe("Issue Payment stub Lambda", () => {
             .mockResolvedValue(
                 coreCaseResponse(200, { currentStage: "Reconciled" }),
             );
-        const handler = createIssuePaymentStubHandler({
-            environment,
-            fetch: fetchMock,
-        });
+        const handler = createTestHandler({ fetch: fetchMock });
 
         const response = await handler(
             httpApiEvent({
@@ -155,10 +177,7 @@ void describe("Issue Payment stub Lambda", () => {
 
     void test("fails closed when authorizer claims are absent or malformed", async () => {
         const fetchMock = vi.fn();
-        const handler = createIssuePaymentStubHandler({
-            environment,
-            fetch: fetchMock,
-        });
+        const handler = createTestHandler({ fetch: fetchMock });
 
         const missingClaimsResponse = await handler({});
         const malformedClaimsResponse = await handler(
@@ -199,10 +218,7 @@ void describe("Issue Payment stub Lambda", () => {
         },
     ])("returns 400 for $scenario", async ({ override }) => {
         const fetchMock = vi.fn();
-        const handler = createIssuePaymentStubHandler({
-            environment,
-            fetch: fetchMock,
-        });
+        const handler = createTestHandler({ fetch: fetchMock });
 
         const response = await handler(httpApiEvent(override));
 
@@ -216,10 +232,7 @@ void describe("Issue Payment stub Lambda", () => {
 
     void test("returns 400 for malformed JSON bodies", async () => {
         const fetchMock = vi.fn();
-        const handler = createIssuePaymentStubHandler({
-            environment,
-            fetch: fetchMock,
-        });
+        const handler = createTestHandler({ fetch: fetchMock });
         const event = httpApiEvent({});
 
         const response = await handler({ ...event, body: "not-json" });
@@ -244,10 +257,7 @@ void describe("Issue Payment stub Lambda", () => {
                     { "content-type": "application/problem+json" },
                 ),
             );
-            const handler = createIssuePaymentStubHandler({
-                environment,
-                fetch: fetchMock,
-            });
+            const handler = createTestHandler({ fetch: fetchMock });
 
             const response = await handler(httpApiEvent({}));
 
@@ -267,10 +277,7 @@ void describe("Issue Payment stub Lambda", () => {
         const fetchMock = vi
             .fn()
             .mockRejectedValue(new Error("synthetic network failure"));
-        const handler = createIssuePaymentStubHandler({
-            environment,
-            fetch: fetchMock,
-        });
+        const handler = createTestHandler({ fetch: fetchMock });
 
         const response = await handler(httpApiEvent({}));
 
@@ -286,6 +293,7 @@ void describe("Issue Payment stub Lambda", () => {
         const handler = createIssuePaymentStubHandler({
             environment: {},
             fetch: fetchMock,
+            secretResolver: vi.fn(),
         });
 
         const response = await handler(httpApiEvent({}));
@@ -298,7 +306,7 @@ void describe("Issue Payment stub Lambda", () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    void test("does not import database or secret-loading modules", () => {
+    void test("does not import database or database secret-loading modules", () => {
         const source = readFileSync(
             fileURLToPath(new URL("./issuePaymentStub.ts", import.meta.url)),
             "utf8",
@@ -309,6 +317,23 @@ void describe("Issue Payment stub Lambda", () => {
         expect(source).not.toContain("db/client");
         expect(source).not.toContain("pg");
         expect(source).not.toContain("drizzle-orm");
-        expect(source).not.toContain("@aws-sdk/client-secrets-manager");
+    });
+
+    void test("deploy script requires an internal-looking Core Case command URL", () => {
+        const source = readFileSync(
+            fileURLToPath(
+                new URL(
+                    "../../../scripts/aws/SCRUM-150/deploy-issue-payment-lambda.sh",
+                    import.meta.url,
+                ),
+            ),
+            "utf8",
+        );
+
+        expect(source).toContain("require_internal_core_case_base_url");
+        expect(source).toContain("ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL");
+        expect(source).toContain(".execute-api.");
+        expect(source).toContain("internal-");
+        expect(source).toContain("CORE_CASE_INTERNAL_BASE_URL must look like");
     });
 });

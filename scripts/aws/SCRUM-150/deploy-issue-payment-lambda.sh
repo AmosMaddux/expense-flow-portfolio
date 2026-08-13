@@ -13,11 +13,15 @@ HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
 BOOTSTRAP_STACK_NAME="${BOOTSTRAP_STACK_NAME:-expenseflow-platform-bootstrap-sandbox}"
 DEPLOYMENT_ARTIFACT_BUCKET="${DEPLOYMENT_ARTIFACT_BUCKET:-}"
 SHARED_JWT_AUTHORIZER_ID="${SHARED_JWT_AUTHORIZER_ID:-}"
+SHARED_JWT_AUTHORIZER_NAME="${SHARED_JWT_AUTHORIZER_NAME:-SharedJwtAuthorizer}"
+JWT_ISSUER="${JWT_ISSUER:-}"
+JWT_AUDIENCE="${JWT_AUDIENCE:-}"
 STAGE_NAME="${STAGE_NAME:-v1}"
 ISSUE_PAYMENT_FUNCTION_NAME="${ISSUE_PAYMENT_FUNCTION_NAME:-expenseflow-issue-payment-stub}"
 CORE_CASE_INTERNAL_BASE_URL="${CORE_CASE_INTERNAL_BASE_URL:-}"
-CORE_CASE_INTERNAL_COMMAND_TOKEN="${CORE_CASE_INTERNAL_COMMAND_TOKEN:-}"
+CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN="${CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN:-}"
 CORE_CASE_INTERNAL_TIMEOUT_MS="${CORE_CASE_INTERNAL_TIMEOUT_MS:-5000}"
+ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL="${ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL:-false}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
 LAMBDA_SECURITY_GROUP_ID="${LAMBDA_SECURITY_GROUP_ID:-}"
@@ -43,6 +47,35 @@ require_non_empty() {
     fi
 }
 
+require_internal_core_case_base_url() {
+    CORE_CASE_INTERNAL_BASE_URL="$CORE_CASE_INTERNAL_BASE_URL" \
+        ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL="$ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL" \
+        node --input-type=module -e '
+const rawUrl = process.env.CORE_CASE_INTERNAL_BASE_URL;
+const allowPublic = process.env.ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL === "true";
+const url = new URL(rawUrl);
+const hostname = url.hostname.toLowerCase();
+const privateIpv4 =
+  /^10\./.test(hostname) ||
+  /^192\.168\./.test(hostname) ||
+  /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+const internalHostname =
+  hostname.startsWith("internal-") ||
+  hostname.includes(".internal.") ||
+  hostname.endsWith(".internal") ||
+  hostname.endsWith(".local");
+if (hostname === "localhost" || hostname.startsWith("127.")) {
+  throw new Error("CORE_CASE_INTERNAL_BASE_URL must not use loopback networking.");
+}
+if (hostname.includes(".execute-api.") || hostname.endsWith(".amazonaws.com") && !hostname.startsWith("internal-")) {
+  throw new Error("CORE_CASE_INTERNAL_BASE_URL must not target a public AWS endpoint.");
+}
+if (!allowPublic && !privateIpv4 && !internalHostname) {
+  throw new Error("CORE_CASE_INTERNAL_BASE_URL must look like a private/internal service endpoint. Set ALLOW_PUBLIC_CORE_CASE_INTERNAL_BASE_URL=true only for an explicitly guarded internal deployment.");
+}
+'
+}
+
 resolve_http_api_id() {
     if [[ -n "$HTTP_API_ID" ]]; then
         echo "$HTTP_API_ID"
@@ -55,18 +88,73 @@ resolve_http_api_id() {
         --output text
 }
 
-resolve_authorizer_id() {
-    local http_api_id="$1"
+resolve_stack_parameter() {
+    local parameter_key="$1"
 
-    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
-        echo "$SHARED_JWT_AUTHORIZER_ID"
+    aws_cli cloudformation describe-stacks \
+        --stack-name "$HTTP_API_STACK_NAME" \
+        --query "Stacks[0].Parameters[?ParameterKey=='$parameter_key'].ParameterValue | [0]" \
+        --output text
+}
+
+resolve_jwt_issuer() {
+    if [[ -n "$JWT_ISSUER" ]]; then
+        echo "$JWT_ISSUER"
         return 0
     fi
 
-    aws_cli apigatewayv2 get-authorizers \
-        --api-id "$http_api_id" \
-        --query "Items[?AuthorizerType=='JWT'].AuthorizerId | [0]" \
-        --output text
+    resolve_stack_parameter JwtIssuer
+}
+
+resolve_jwt_audience() {
+    if [[ -n "$JWT_AUDIENCE" ]]; then
+        echo "$JWT_AUDIENCE"
+        return 0
+    fi
+
+    resolve_stack_parameter JwtAudience
+}
+
+resolve_authorizer_id() {
+    local http_api_id="$1"
+    local expected_issuer="$2"
+    local expected_audience="$3"
+    local authorizers_json
+
+    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizer \
+            --api-id "$http_api_id" \
+            --authorizer-id "$SHARED_JWT_AUTHORIZER_ID" \
+            --output json)"
+    else
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizers \
+            --api-id "$http_api_id" \
+            --query "Items[?AuthorizerType=='JWT']" \
+            --output json)"
+    fi
+
+    AUTHORIZERS_JSON="$authorizers_json" \
+        EXPECTED_AUTHORIZER_ID="$SHARED_JWT_AUTHORIZER_ID" \
+        EXPECTED_AUTHORIZER_NAME="$SHARED_JWT_AUTHORIZER_NAME" \
+        EXPECTED_JWT_ISSUER="$expected_issuer" \
+        EXPECTED_JWT_AUDIENCE="$expected_audience" \
+        node --input-type=module -e '
+const raw = JSON.parse(process.env.AUTHORIZERS_JSON || "null");
+const authorizers = Array.isArray(raw) ? raw : [raw];
+const matches = authorizers.filter((authorizer) => {
+  const config = authorizer?.JwtConfiguration ?? {};
+  const audience = Array.isArray(config.Audience) ? config.Audience : [];
+  return authorizer?.AuthorizerType === "JWT" &&
+    (!process.env.EXPECTED_AUTHORIZER_ID || authorizer.AuthorizerId === process.env.EXPECTED_AUTHORIZER_ID) &&
+    authorizer?.Name === process.env.EXPECTED_AUTHORIZER_NAME &&
+    config.Issuer === process.env.EXPECTED_JWT_ISSUER &&
+    audience.includes(process.env.EXPECTED_JWT_AUDIENCE);
+});
+if (matches.length !== 1) {
+  throw new Error("Expected exactly one shared JWT authorizer with the configured name, issuer, and audience.");
+}
+process.stdout.write(matches[0].AuthorizerId);
+'
 }
 
 resolve_deployment_artifact_bucket() {
@@ -100,7 +188,8 @@ resolve_security_group_id() {
 main() {
     require_non_empty ROLE_PERMISSIONS_BOUNDARY_ARN "$ROLE_PERMISSIONS_BOUNDARY_ARN"
     require_non_empty CORE_CASE_INTERNAL_BASE_URL "$CORE_CASE_INTERNAL_BASE_URL"
-    require_non_empty CORE_CASE_INTERNAL_COMMAND_TOKEN "$CORE_CASE_INTERNAL_COMMAND_TOKEN"
+    require_non_empty CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN "$CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN"
+    require_internal_core_case_base_url
 
     if [[ ! -f "$TEMPLATE_FILE" ]]; then
         echo "Built SAM template is missing: $TEMPLATE_FILE. Run package-issue-payment-lambda.sh first." >&2
@@ -108,11 +197,18 @@ main() {
     fi
 
     resolved_http_api_id="$(resolve_http_api_id)"
-    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id")"
     if [[ -z "$resolved_http_api_id" || "$resolved_http_api_id" == "None" ]]; then
         echo "Unable to resolve HTTP API ID. Set HTTP_API_ID or HTTP_API_STACK_NAME." >&2
         exit 1
     fi
+    expected_jwt_issuer="$(resolve_jwt_issuer)"
+    expected_jwt_audience="$(resolve_jwt_audience)"
+    if [[ -z "$expected_jwt_issuer" || "$expected_jwt_issuer" == "None" || -z "$expected_jwt_audience" || "$expected_jwt_audience" == "None" ]]; then
+        echo "Unable to resolve JWT issuer/audience. Set JWT_ISSUER and JWT_AUDIENCE or provide HTTP_API_STACK_NAME." >&2
+        exit 1
+    fi
+
+    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id" "$expected_jwt_issuer" "$expected_jwt_audience")"
     if [[ -z "$resolved_authorizer_id" || "$resolved_authorizer_id" == "None" ]]; then
         echo "Unable to resolve shared JWT authorizer for HTTP API $resolved_http_api_id." >&2
         exit 1
@@ -143,7 +239,7 @@ main() {
         "StageName=$STAGE_NAME"
         "IssuePaymentFunctionName=$ISSUE_PAYMENT_FUNCTION_NAME"
         "CoreCaseInternalBaseUrl=$CORE_CASE_INTERNAL_BASE_URL"
-        "CoreCaseInternalCommandToken=$CORE_CASE_INTERNAL_COMMAND_TOKEN"
+        "CoreCaseInternalCommandTokenSecretArn=$CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN"
         "CoreCaseInternalTimeoutMs=$CORE_CASE_INTERNAL_TIMEOUT_MS"
         "RolePermissionsBoundaryArn=$ROLE_PERMISSIONS_BOUNDARY_ARN"
     )

@@ -15,12 +15,11 @@ STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-
 STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-sandbox-stage-transition-events}"
 STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-sandbox-stage-transition-events-dlq}"
 STAGE_TRANSITION_SQS_MAX_RECEIVE_COUNT="${STAGE_TRANSITION_SQS_MAX_RECEIVE_COUNT:-3}"
-DATABASE_URL_SECRET_ID="${DATABASE_URL_SECRET_ID:-expenseflow/sandbox/core-case/database-url}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 
-TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
-EC2_TAGS="ResourceType=security-group,Tags=[{Key=user,Value=amos-maddux},{Key=env,Value=sandbox},{Key=ticket,Value=SCRUM-149}]"
-SQS_TAGS="user=amos-maddux,env=sandbox,ticket=SCRUM-149"
+TAGS=(Key=user,Value=muhilramesh Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
+EC2_TAGS="ResourceType=security-group,Tags=[{Key=user,Value=muhilramesh},{Key=env,Value=sandbox},{Key=ticket,Value=SCRUM-149}]"
+SQS_TAGS="user=muhilramesh,env=sandbox,ticket=SCRUM-149"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -94,13 +93,6 @@ queue_arn() {
         --queue-url "$url" \
         --attribute-names QueueArn \
         --query 'Attributes.QueueArn' \
-        --output text
-}
-
-secret_arn() {
-    aws_cli secretsmanager describe-secret \
-        --secret-id "$DATABASE_URL_SECRET_ID" \
-        --query ARN \
         --output text
 }
 
@@ -192,7 +184,7 @@ create_or_tag_log_group() {
     aws_cli logs put-retention-policy --log-group-name "$LAMBDA_LOG_GROUP" --retention-in-days 14
     aws_cli logs tag-resource \
         --resource-arn "$log_group_arn" \
-        --tags user=amos-maddux,env=sandbox,ticket=SCRUM-149
+        --tags user=muhilramesh,env=sandbox,ticket=SCRUM-149
 }
 
 create_or_tag_security_group() {
@@ -237,7 +229,6 @@ write_lambda_policy() {
     local policy_file="$1"
     local source_queue_arn="$2"
     local dead_letter_queue_arn="$3"
-    local database_secret_arn="$4"
 
     ARN_PREFIX="$(aws_arn_prefix)" \
         ACCOUNT_ID="$(account_id)" \
@@ -245,7 +236,6 @@ write_lambda_policy() {
         LAMBDA_LOG_GROUP="$LAMBDA_LOG_GROUP" \
         SOURCE_QUEUE_ARN="$source_queue_arn" \
         DEAD_LETTER_QUEUE_ARN="$dead_letter_queue_arn" \
-        DATABASE_SECRET_ARN="$database_secret_arn" \
         node -e "
 const fs = require('fs');
 const arnPrefix = process.env.ARN_PREFIX;
@@ -273,11 +263,6 @@ fs.writeFileSync(process.argv[1], JSON.stringify({
     },
     {
       Effect: 'Allow',
-      Action: ['secretsmanager:GetSecretValue'],
-      Resource: process.env.DATABASE_SECRET_ARN
-    },
-    {
-      Effect: 'Allow',
       Action: ['ec2:CreateNetworkInterface', 'ec2:DescribeNetworkInterfaces', 'ec2:DeleteNetworkInterface', 'ec2:AssignPrivateIpAddresses', 'ec2:UnassignPrivateIpAddresses'],
       Resource: '*'
     }
@@ -298,7 +283,6 @@ main() {
     source_queue_url="$(create_or_tag_sqs_queue "$STAGE_TRANSITION_QUEUE_NAME")"
     source_queue_arn="$(queue_arn "$source_queue_url")"
     dead_letter_queue_arn="$(queue_arn "$dead_letter_queue_url")"
-    database_secret_arn="$(secret_arn)"
 
     echo "Configuring stage-transition SQS redrive and SNS subscription..."
     configure_queue_redrive "$source_queue_url" "$dead_letter_queue_arn"
@@ -315,7 +299,7 @@ main() {
     create_or_tag_lambda_role
 
     policy_file="$(mktemp)"
-    write_lambda_policy "$policy_file" "$source_queue_arn" "$dead_letter_queue_arn" "$database_secret_arn"
+    write_lambda_policy "$policy_file" "$source_queue_arn" "$dead_letter_queue_arn"
     aws_cli iam put-role-policy \
         --role-name "$LAMBDA_ROLE_NAME" \
         --policy-name expenseflow-scrum-149-stage-transition-consumer \

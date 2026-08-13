@@ -1,4 +1,8 @@
-import express, { type Request, type Response } from "express";
+import express, {
+    type NextFunction,
+    type Request,
+    type Response,
+} from "express";
 import { apiReference } from "@scalar/express-api-reference";
 
 import { createAuthRouter } from "./auth/login/loginRoutes.js";
@@ -12,6 +16,7 @@ import {
     loadAuthJwtConfig,
 } from "./config/authJwtConfig.js";
 import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
+import { loadInternalRoutesConfig } from "./config/internalRoutesConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import {
@@ -21,7 +26,10 @@ import {
 import { loadPasswordHashConfig } from "./config/passwordHashConfig.js";
 import { loadRateLimitConfig } from "./config/rateLimitConfig.js";
 import { db } from "./db/client.js";
-import { problemJsonErrorHandler } from "./errors/problem-json.js";
+import {
+    NotFoundError,
+    problemJsonErrorHandler,
+} from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
@@ -42,6 +50,22 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
 );
 loadDefaultGlCodingConfig();
 const v1Router = express.Router();
+
+/**
+ * Blocks trusted command routes unless this process is explicitly deployed for internal traffic.
+ */
+export function requireInternalRoutesEnabled(
+    _req: Request,
+    _res: Response,
+    next: NextFunction,
+): void {
+    if (!loadInternalRoutesConfig().enabled) {
+        next(new NotFoundError("Internal routes are not enabled."));
+        return;
+    }
+
+    next();
+}
 
 /*
 Read each line as: "for any request whose URL starts with path, run this next."
@@ -156,6 +180,7 @@ v1Router.use("/finance-dashboard", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());
+v1Router.use("/internal", requireInternalRoutesEnabled);
 v1Router.use("/internal", express.json());
 if (isGlCodingRuntimeSmokeEnabled()) {
     v1Router.use("/runtime-smoke", createRuntimeSmokeRouter());

@@ -1,3 +1,7 @@
+import {
+    GetSecretValueCommand,
+    SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
 import { z, ZodError } from "zod";
 
 import {
@@ -42,7 +46,7 @@ const issuePaymentStubBodySchema = z
 
 const environmentSchema = z.object({
     CORE_CASE_INTERNAL_BASE_URL: z.url(),
-    CORE_CASE_INTERNAL_COMMAND_TOKEN: z.string().min(32),
+    CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN: z.string().trim().min(1),
     CORE_CASE_INTERNAL_TIMEOUT_MS: z.coerce
         .number()
         .int()
@@ -59,10 +63,12 @@ const httpApiResponseSchema = z.object({
 
 type HttpApiResponse = z.infer<typeof httpApiResponseSchema>;
 type IssuePaymentStubFetch = typeof fetch;
+type IssuePaymentSecretResolver = (secretId: string) => Promise<string>;
 
 export type IssuePaymentStubHandlerDependencies = {
     fetch?: IssuePaymentStubFetch;
     environment?: NodeJS.ProcessEnv;
+    secretResolver?: IssuePaymentSecretResolver;
 };
 
 class BadRequestError extends Error {
@@ -108,6 +114,9 @@ export function createIssuePaymentStubHandler(
                 commandFetch: dependencies.fetch ?? fetch,
                 environment,
                 request,
+                secretResolver:
+                    dependencies.secretResolver ??
+                    resolveCoreCaseInternalCommandToken,
             });
         } catch (error: unknown) {
             return mapErrorToResponse(error);
@@ -223,6 +232,7 @@ async function forwardIssuePaymentCommand(input: {
         idempotencyKey: string;
         reason: string;
     };
+    secretResolver: IssuePaymentSecretResolver;
 }): Promise<HttpApiResponse> {
     const coreCaseResponse = await fetchCoreCaseCommand(input);
     const coreCaseBody = await coreCaseResponse.text();
@@ -268,10 +278,14 @@ async function fetchCoreCaseCommand(input: {
         idempotencyKey: string;
         reason: string;
     };
+    secretResolver: IssuePaymentSecretResolver;
 }): Promise<Response> {
     const endpointUrl = new URL(
         `/v1/internal/expense-reports/${input.request.expenseReportId}/payment-stub-settlement`,
         `${input.environment.CORE_CASE_INTERNAL_BASE_URL.replace(/\/$/, "")}/`,
+    );
+    const internalCommandToken = await input.secretResolver(
+        input.environment.CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN,
     );
 
     try {
@@ -280,8 +294,7 @@ async function fetchCoreCaseCommand(input: {
             headers: {
                 "content-type": "application/json",
                 "idempotency-key": input.request.idempotencyKey,
-                [internalCommandTokenHeader]:
-                    input.environment.CORE_CASE_INTERNAL_COMMAND_TOKEN,
+                [internalCommandTokenHeader]: internalCommandToken,
                 "x-correlation-id": input.request.correlationId,
             },
             body: JSON.stringify({
@@ -300,6 +313,22 @@ async function fetchCoreCaseCommand(input: {
             "Core Case could not be reached for Issue Payment settlement.",
         );
     }
+}
+
+async function resolveCoreCaseInternalCommandToken(
+    secretId: string,
+): Promise<string> {
+    const client = new SecretsManagerClient({});
+    const response = await client.send(
+        new GetSecretValueCommand({ SecretId: secretId }),
+    );
+    const parsedSecret = z.string().min(32).safeParse(response.SecretString);
+
+    if (!parsedSecret.success) {
+        throw new Error("Core Case internal command token secret is invalid.");
+    }
+
+    return parsedSecret.data;
 }
 
 function mapErrorToResponse(error: unknown): HttpApiResponse {

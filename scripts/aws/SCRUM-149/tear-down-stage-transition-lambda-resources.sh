@@ -56,7 +56,7 @@ require_queue_tags() {
 
     is_owned="$(aws_cli sqs list-queue-tags \
         --queue-url "$queue_url" \
-        --query "Tags.user == 'amos-maddux' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
+        --query "Tags.user == 'muhilramesh' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -71,7 +71,7 @@ require_lambda_tags() {
 
     is_owned="$(aws_cli lambda list-tags \
         --resource "$function_arn" \
-        --query "Tags.user == 'amos-maddux' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
+        --query "Tags.user == 'muhilramesh' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -85,7 +85,7 @@ require_role_tags() {
 
     is_owned="$(aws_cli iam list-role-tags \
         --role-name "$LAMBDA_ROLE_NAME" \
-        --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && contains(Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
+        --query "contains(Tags[?Key=='user'].Value, 'muhilramesh') && contains(Tags[?Key=='env'].Value, 'sandbox') && contains(Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -100,7 +100,7 @@ require_security_group_tags() {
 
     is_owned="$(aws_cli ec2 describe-security-groups \
         --group-ids "$group_id" \
-        --query "contains(SecurityGroups[0].Tags[?Key=='user'].Value, 'amos-maddux') && contains(SecurityGroups[0].Tags[?Key=='env'].Value, 'sandbox') && contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
+        --query "contains(SecurityGroups[0].Tags[?Key=='user'].Value, 'muhilramesh') && contains(SecurityGroups[0].Tags[?Key=='env'].Value, 'sandbox') && contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then

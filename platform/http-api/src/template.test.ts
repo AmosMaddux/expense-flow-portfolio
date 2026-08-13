@@ -15,6 +15,37 @@ const issuePaymentTemplate = readFileSync(
     fileURLToPath(new URL("../issue-payment-template.yaml", import.meta.url)),
     "utf8",
 );
+const issuePaymentDeployScript = readFileSync(
+    fileURLToPath(
+        new URL(
+            "../../../scripts/aws/SCRUM-150/deploy-issue-payment-lambda.sh",
+            import.meta.url,
+        ),
+    ),
+    "utf8",
+);
+const issuePaymentCreateResourcesScript = readFileSync(
+    fileURLToPath(
+        new URL(
+            "../../../scripts/aws/SCRUM-150/create-issue-payment-lambda-resources.sh",
+            import.meta.url,
+        ),
+    ),
+    "utf8",
+);
+const issuePaymentVerifyScript = readFileSync(
+    fileURLToPath(
+        new URL(
+            "../../../scripts/aws/SCRUM-150/verify-issue-payment-lambda.sh",
+            import.meta.url,
+        ),
+    ),
+    "utf8",
+);
+const samconfigExample = readFileSync(
+    fileURLToPath(new URL("../samconfig.toml.example", import.meta.url)),
+    "utf8",
+);
 
 void describe("HTTP API infrastructure template", () => {
     void test("uses a native JWT authorizer with issuer and audience", () => {
@@ -112,11 +143,46 @@ void describe("Issue Payment HTTP API infrastructure template", () => {
         );
         expect(issuePaymentTemplate).toContain("CORE_CASE_INTERNAL_BASE_URL");
         expect(issuePaymentTemplate).toContain(
-            "CORE_CASE_INTERNAL_COMMAND_TOKEN",
+            "CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN",
+        );
+        expect(issuePaymentTemplate).not.toContain(
+            "CORE_CASE_INTERNAL_COMMAND_TOKEN:",
         );
         expect(issuePaymentTemplate).not.toContain("DATABASE_URL_SECRET_ID");
-        expect(issuePaymentTemplate).not.toContain(
-            "secretsmanager:GetSecretValue",
+        expect(issuePaymentTemplate).toContain("secretsmanager:GetSecretValue");
+        expect(issuePaymentTemplate).toContain(
+            "Resource: !Ref CoreCaseInternalCommandTokenSecretArn",
+        );
+    });
+
+    void test("keeps the raw Core Case command token out of deploy surfaces", () => {
+        expect(issuePaymentDeployScript).toContain(
+            "CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN",
+        );
+        expect(samconfigExample).toContain(
+            "CoreCaseInternalCommandTokenSecretArn",
+        );
+        expect(issuePaymentDeployScript).not.toMatch(
+            /CORE_CASE_INTERNAL_COMMAND_TOKEN=/,
+        );
+        expect(samconfigExample).not.toMatch(/CoreCaseInternalCommandToken=/);
+    });
+
+    void test("validates the shared JWT authorizer before deployment", () => {
+        const scrum150ScriptSource = [
+            issuePaymentCreateResourcesScript,
+            issuePaymentDeployScript,
+            issuePaymentVerifyScript,
+        ].join("\n");
+
+        expect(scrum150ScriptSource).not.toContain(
+            "Items[?AuthorizerType=='JWT'].AuthorizerId | [0]",
+        );
+        expect(scrum150ScriptSource).toContain("SHARED_JWT_AUTHORIZER_NAME");
+        expect(scrum150ScriptSource).toContain("EXPECTED_JWT_ISSUER");
+        expect(scrum150ScriptSource).toContain("EXPECTED_JWT_AUDIENCE");
+        expect(scrum150ScriptSource).toContain(
+            "Expected exactly one shared JWT authorizer with the configured name, issuer, and audience.",
         );
     });
 

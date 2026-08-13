@@ -12,4 +12,4 @@ stack_name = "expenseflow-issue-payment-http-api-sandbox"
 resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
-parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh TicketTag=SCRUM-150 HttpApiId=synthetic-http-api-id SharedJwtAuthorizerId=synthetic-authorizer-id StageName=v1 IssuePaymentFunctionName=expenseflow-issue-payment-stub CoreCaseInternalBaseUrl=https://core-case.example.invalid CoreCaseInternalCommandToken=synthetic-core-case-internal-command-token RolePermissionsBoundaryArn=REPLACE_WITH_BOUNDARY_ARN"
+parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh TicketTag=SCRUM-150 HttpApiId=synthetic-http-api-id SharedJwtAuthorizerId=synthetic-authorizer-id StageName=v1 IssuePaymentFunctionName=expenseflow-issue-payment-stub CoreCaseInternalBaseUrl=https://internal-core-case.expenseflow-sandbox.local CoreCaseInternalCommandTokenSecretArn=arn:aws:secretsmanager:us-east-1:000000000000:secret:expenseflow/sandbox/core-case/internal-command-token RolePermissionsBoundaryArn=REPLACE_WITH_BOUNDARY_ARN"

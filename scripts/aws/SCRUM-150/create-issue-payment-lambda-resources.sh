@@ -9,6 +9,9 @@ ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 HTTP_API_ID="${HTTP_API_ID:-}"
 HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
 SHARED_JWT_AUTHORIZER_ID="${SHARED_JWT_AUTHORIZER_ID:-}"
+SHARED_JWT_AUTHORIZER_NAME="${SHARED_JWT_AUTHORIZER_NAME:-SharedJwtAuthorizer}"
+JWT_ISSUER="${JWT_ISSUER:-}"
+JWT_AUDIENCE="${JWT_AUDIENCE:-}"
 VPC_ID="${VPC_ID:-}"
 LAMBDA_SECURITY_GROUP_ID="${LAMBDA_SECURITY_GROUP_ID:-}"
 LAMBDA_SECURITY_GROUP_NAME="${LAMBDA_SECURITY_GROUP_NAME:-expenseflow-issue-payment-lambda-sg}"
@@ -37,18 +40,73 @@ resolve_http_api_id() {
         --output text
 }
 
-resolve_authorizer_id() {
-    local http_api_id="$1"
+resolve_stack_parameter() {
+    local parameter_key="$1"
 
-    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
-        echo "$SHARED_JWT_AUTHORIZER_ID"
+    aws_cli cloudformation describe-stacks \
+        --stack-name "$HTTP_API_STACK_NAME" \
+        --query "Stacks[0].Parameters[?ParameterKey=='$parameter_key'].ParameterValue | [0]" \
+        --output text
+}
+
+resolve_jwt_issuer() {
+    if [[ -n "$JWT_ISSUER" ]]; then
+        echo "$JWT_ISSUER"
         return 0
     fi
 
-    aws_cli apigatewayv2 get-authorizers \
-        --api-id "$http_api_id" \
-        --query "Items[?AuthorizerType=='JWT'].AuthorizerId | [0]" \
-        --output text
+    resolve_stack_parameter JwtIssuer
+}
+
+resolve_jwt_audience() {
+    if [[ -n "$JWT_AUDIENCE" ]]; then
+        echo "$JWT_AUDIENCE"
+        return 0
+    fi
+
+    resolve_stack_parameter JwtAudience
+}
+
+resolve_authorizer_id() {
+    local http_api_id="$1"
+    local expected_issuer="$2"
+    local expected_audience="$3"
+    local authorizers_json
+
+    if [[ -n "$SHARED_JWT_AUTHORIZER_ID" ]]; then
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizer \
+            --api-id "$http_api_id" \
+            --authorizer-id "$SHARED_JWT_AUTHORIZER_ID" \
+            --output json)"
+    else
+        authorizers_json="$(aws_cli apigatewayv2 get-authorizers \
+            --api-id "$http_api_id" \
+            --query "Items[?AuthorizerType=='JWT']" \
+            --output json)"
+    fi
+
+    AUTHORIZERS_JSON="$authorizers_json" \
+        EXPECTED_AUTHORIZER_ID="$SHARED_JWT_AUTHORIZER_ID" \
+        EXPECTED_AUTHORIZER_NAME="$SHARED_JWT_AUTHORIZER_NAME" \
+        EXPECTED_JWT_ISSUER="$expected_issuer" \
+        EXPECTED_JWT_AUDIENCE="$expected_audience" \
+        node --input-type=module -e '
+const raw = JSON.parse(process.env.AUTHORIZERS_JSON || "null");
+const authorizers = Array.isArray(raw) ? raw : [raw];
+const matches = authorizers.filter((authorizer) => {
+  const config = authorizer?.JwtConfiguration ?? {};
+  const audience = Array.isArray(config.Audience) ? config.Audience : [];
+  return authorizer?.AuthorizerType === "JWT" &&
+    (!process.env.EXPECTED_AUTHORIZER_ID || authorizer.AuthorizerId === process.env.EXPECTED_AUTHORIZER_ID) &&
+    authorizer?.Name === process.env.EXPECTED_AUTHORIZER_NAME &&
+    config.Issuer === process.env.EXPECTED_JWT_ISSUER &&
+    audience.includes(process.env.EXPECTED_JWT_AUDIENCE);
+});
+if (matches.length !== 1) {
+  throw new Error("Expected exactly one shared JWT authorizer with the configured name, issuer, and audience.");
+}
+process.stdout.write(matches[0].AuthorizerId);
+'
 }
 
 create_or_tag_security_group() {
@@ -93,7 +151,14 @@ main() {
         exit 1
     fi
 
-    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id")"
+    expected_jwt_issuer="$(resolve_jwt_issuer)"
+    expected_jwt_audience="$(resolve_jwt_audience)"
+    if [[ -z "$expected_jwt_issuer" || "$expected_jwt_issuer" == "None" || -z "$expected_jwt_audience" || "$expected_jwt_audience" == "None" ]]; then
+        echo "Unable to resolve JWT issuer/audience. Set JWT_ISSUER and JWT_AUDIENCE or provide HTTP_API_STACK_NAME." >&2
+        exit 1
+    fi
+
+    resolved_authorizer_id="$(resolve_authorizer_id "$resolved_http_api_id" "$expected_jwt_issuer" "$expected_jwt_audience")"
     if [[ -z "$resolved_authorizer_id" || "$resolved_authorizer_id" == "None" ]]; then
         echo "Unable to resolve a shared JWT authorizer for HTTP API $resolved_http_api_id." >&2
         exit 1

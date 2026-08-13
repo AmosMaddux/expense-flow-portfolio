@@ -74,6 +74,10 @@
                     "value": "60"
                 },
                 {
+                    "name": "CORE_CASE_INTERNAL_ROUTES_ENABLED",
+                    "value": "${CORE_CASE_INTERNAL_ROUTES_ENABLED}"
+                },
+                {
                     "name": "DYNAMODB_EXPENSE_REPORT_TABLE",
                     "value": "${DYNAMODB_EXPENSE_REPORT_TABLE}"
                 },

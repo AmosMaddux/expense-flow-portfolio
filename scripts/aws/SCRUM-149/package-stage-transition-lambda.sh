@@ -8,7 +8,7 @@ ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 LAMBDA_REPOSITORY="${LAMBDA_REPOSITORY:-expenseflow-stage-transition-consumer-lambda}"
 IMAGE_TAG="${IMAGE_TAG:-scrum-149-smoke}"
 
-TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
+TAGS=(Key=user,Value=muhilramesh Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
