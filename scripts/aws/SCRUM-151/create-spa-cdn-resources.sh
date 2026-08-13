@@ -8,7 +8,7 @@ ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 
 SPA_BUCKET_NAME="${SPA_BUCKET_NAME:-}"
 CREATE_SPA_BUCKET="${CREATE_SPA_BUCKET:-true}"
-OAC_NAME="${OAC_NAME:-expenseflow-sandbox-spa-oac}"
+OAC_NAME="${OAC_NAME:-}"
 DISTRIBUTION_COMMENT="${DISTRIBUTION_COMMENT:-ExpenseFlow SCRUM-151 sandbox SPA}"
 CACHE_POLICY_ID="${CACHE_POLICY_ID:-658327ea-f89d-4fab-a63d-7e88639e58f6}"
 
@@ -23,6 +23,15 @@ aws_cli() {
 
 account_id() {
     aws_cli sts get-caller-identity --query Account --output text
+}
+
+resolve_oac_name() {
+    if [[ -n "$OAC_NAME" ]]; then
+        echo "$OAC_NAME"
+        return
+    fi
+
+    echo "expenseflow-scrum-151-$(account_id)-spa-oac"
 }
 
 resolve_bucket_name() {
@@ -103,18 +112,28 @@ NODE
 }
 
 create_or_find_oac() {
-    local oac_id
+    local oac_name="$1"
+    local oac_id oac_config
 
     oac_id="$(aws_cli cloudfront list-origin-access-controls \
-        --query "OriginAccessControlList.Items[?Name=='$OAC_NAME'].Id | [0]" \
+        --query "OriginAccessControlList.Items[?Name=='$oac_name'].Id | [0]" \
         --output text)"
 
     if [[ -z "$oac_id" || "$oac_id" == "None" ]]; then
         oac_id="$(aws_cli cloudfront create-origin-access-control \
             --origin-access-control-config \
-            "Name=$OAC_NAME,Description=SCRUM-151 private S3 SPA origin,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=s3" \
+            "Name=$oac_name,Description=SCRUM-151 private S3 SPA origin,SigningProtocol=sigv4,SigningBehavior=always,OriginAccessControlOriginType=s3" \
             --query 'OriginAccessControl.Id' \
+            --output text)" || return 1
+    else
+        oac_config="$(aws_cli cloudfront get-origin-access-control \
+            --id "$oac_id" \
+            --query 'OriginAccessControl.OriginAccessControlConfig.[SigningBehavior,SigningProtocol,OriginAccessControlOriginType]' \
             --output text)"
+        if [[ "$oac_config" != $'always\tsigv4\ts3' ]]; then
+            echo "Refusing to reuse OAC $oac_id because it is not configured for always-signed SigV4 S3 requests." >&2
+            return 1
+        fi
     fi
 
     echo "$oac_id"
@@ -211,7 +230,12 @@ const config = {
     Logging: { Enabled: false, IncludeCookies: false, Bucket: "", Prefix: "" },
     PriceClass: "PriceClass_100",
     Enabled: true,
-    ViewerCertificate: { CloudFrontDefaultCertificate: true },
+    ViewerCertificate: {
+        CloudFrontDefaultCertificate: true,
+        SSLSupportMethod: "vip",
+        MinimumProtocolVersion: "TLSv1",
+        CertificateSource: "cloudfront",
+    },
     Restrictions: {
         GeoRestriction: { RestrictionType: "none", Quantity: 0 },
     },
@@ -253,7 +277,10 @@ NODE
         distribution_id_value="$(aws_cli cloudfront create-distribution-with-tags \
             --distribution-config-with-tags "file://$tagged_config_file" \
             --query 'Distribution.Id' \
-            --output text)"
+            --output text)" || {
+            rm -f "$config_file" "$tagged_config_file"
+            return 1
+        }
         rm -f "$tagged_config_file"
     else
         require_distribution_owned "$distribution_id_value"
@@ -266,10 +293,13 @@ NODE
             --query ETag \
             --output text)"
         write_distribution_config "$config_file" "$bucket_name" "$oac_id" "$caller_reference"
-        aws_cli cloudfront update-distribution \
+        if ! aws_cli cloudfront update-distribution \
             --id "$distribution_id_value" \
             --if-match "$etag" \
-            --distribution-config "file://$config_file" >/dev/null
+            --distribution-config "file://$config_file" >/dev/null; then
+            rm -f "$config_file"
+            return 1
+        fi
         distribution_arn="$(aws_cli cloudfront get-distribution \
             --id "$distribution_id_value" \
             --query 'Distribution.ARN' \
@@ -341,11 +371,18 @@ main() {
     echo "Creating or securing private SPA bucket $bucket_name..."
     create_or_secure_bucket "$bucket_name"
 
-    echo "Creating or finding CloudFront OAC $OAC_NAME..."
-    oac_id="$(create_or_find_oac)"
+    oac_name="$(resolve_oac_name)"
+    echo "Creating or finding CloudFront OAC $oac_name..."
+    if ! oac_id="$(create_or_find_oac "$oac_name")"; then
+        echo "Could not create or validate CloudFront OAC $oac_name." >&2
+        return 1
+    fi
 
     echo "Creating or updating the SPA CloudFront distribution..."
-    distribution_id_value="$(create_or_update_distribution "$bucket_name" "$oac_id")"
+    if ! distribution_id_value="$(create_or_update_distribution "$bucket_name" "$oac_id")"; then
+        echo "Could not create or update the SCRUM-151 CloudFront distribution." >&2
+        return 1
+    fi
     write_bucket_policy "$bucket_name" "$distribution_id_value"
 
     distribution_domain="$(aws_cli cloudfront get-distribution \

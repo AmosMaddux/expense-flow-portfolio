@@ -7,7 +7,7 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 CONFIRM_RESOURCE_TEARDOWN="${CONFIRM_RESOURCE_TEARDOWN:-}"
 
 SPA_BUCKET_NAME="${SPA_BUCKET_NAME:-}"
-OAC_NAME="${OAC_NAME:-expenseflow-sandbox-spa-oac}"
+OAC_NAME="${OAC_NAME:-}"
 DISTRIBUTION_COMMENT="${DISTRIBUTION_COMMENT:-ExpenseFlow SCRUM-151 sandbox SPA}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" ]]; then
@@ -35,6 +35,42 @@ resolve_bucket_name() {
 
 account_id() {
     aws_cli sts get-caller-identity --query Account --output text
+}
+
+resolve_oac_name() {
+    if [[ -n "$OAC_NAME" ]]; then
+        echo "$OAC_NAME"
+        return
+    fi
+
+    echo "expenseflow-scrum-151-$(account_id)-spa-oac"
+}
+
+require_oac_unused() {
+    local oac_id="$1"
+    local referencing_distribution_ids
+
+    referencing_distribution_ids="$(aws_cli cloudfront list-distributions \
+        --query "DistributionList.Items[?Origins.Items[?OriginAccessControlId=='$oac_id']].Id" \
+        --output text)"
+    if [[ -n "$referencing_distribution_ids" && "$referencing_distribution_ids" != "None" ]]; then
+        echo "Refusing to delete OAC $oac_id because distributions still reference it: $referencing_distribution_ids" >&2
+        return 1
+    fi
+}
+
+require_oac_config() {
+    local oac_id="$1"
+    local oac_config
+
+    oac_config="$(aws_cli cloudfront get-origin-access-control \
+        --id "$oac_id" \
+        --query 'OriginAccessControl.OriginAccessControlConfig.[SigningBehavior,SigningProtocol,OriginAccessControlOriginType]' \
+        --output text)"
+    if [[ "$oac_config" != $'always\tsigv4\ts3' ]]; then
+        echo "Refusing to delete OAC $oac_id because its configuration does not match SCRUM-151." >&2
+        return 1
+    fi
 }
 
 require_distribution_tags() {
@@ -144,10 +180,13 @@ NODE
         aws_cli cloudfront delete-distribution --id "$distribution_id_value" --if-match "$etag"
     fi
 
+    oac_name="$(resolve_oac_name)"
     oac_id="$(aws_cli cloudfront list-origin-access-controls \
-        --query "OriginAccessControlList.Items[?Name=='$OAC_NAME'].Id | [0]" \
+        --query "OriginAccessControlList.Items[?Name=='$oac_name'].Id | [0]" \
         --output text)"
     if [[ -n "$oac_id" && "$oac_id" != "None" ]]; then
+        require_oac_config "$oac_id"
+        require_oac_unused "$oac_id"
         oac_etag="$(aws_cli cloudfront get-origin-access-control \
             --id "$oac_id" \
             --query ETag \

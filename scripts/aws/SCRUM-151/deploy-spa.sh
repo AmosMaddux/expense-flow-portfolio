@@ -46,6 +46,48 @@ resolve_distribution_id() {
         --output text
 }
 
+require_bucket_approved() {
+    local bucket_name="$1"
+    local is_approved
+
+    is_approved="$(aws_cli s3api get-bucket-tagging \
+        --bucket "$bucket_name" \
+        --query "contains(TagSet[?Key=='user'].Value, 'muhilramesh') && contains(TagSet[?Key=='env'].Value, 'sandbox') && (contains(TagSet[?Key=='scrum-151-owned'].Value, 'true') || contains(TagSet[?Key=='scrum-151-consumer'].Value, 'true'))" \
+        --output text 2>/dev/null || true)"
+    if [[ "$is_approved" != "True" ]]; then
+        echo "Refusing to deploy because bucket $bucket_name is not approved for SCRUM-151." >&2
+        return 1
+    fi
+}
+
+require_distribution_matches_bucket() {
+    local distribution_id_value="$1"
+    local bucket_name="$2"
+    local distribution_arn is_owned matching_origin_count
+
+    distribution_arn="$(aws_cli cloudfront get-distribution \
+        --id "$distribution_id_value" \
+        --query 'Distribution.ARN' \
+        --output text)"
+    is_owned="$(aws_cli cloudfront list-tags-for-resource \
+        --resource "$distribution_arn" \
+        --query "contains(Tags.Items[?Key=='user'].Value, 'muhilramesh') && contains(Tags.Items[?Key=='env'].Value, 'sandbox') && contains(Tags.Items[?Key=='ticket'].Value, 'SCRUM-151')" \
+        --output text)"
+    if [[ "$is_owned" != "True" ]]; then
+        echo "Refusing to deploy because distribution $distribution_id_value lacks SCRUM-151 ownership tags." >&2
+        return 1
+    fi
+
+    matching_origin_count="$(aws_cli cloudfront get-distribution \
+        --id "$distribution_id_value" \
+        --query "length(Distribution.DistributionConfig.Origins.Items[?DomainName=='$bucket_name.s3.$AWS_REGION.amazonaws.com' && OriginAccessControlId!=''])" \
+        --output text)"
+    if [[ "$matching_origin_count" != "1" ]]; then
+        echo "Refusing to deploy because distribution $distribution_id_value does not have one OAC-backed origin for bucket $bucket_name." >&2
+        return 1
+    fi
+}
+
 main() {
     echo "Building the Vite SPA..."
     VITE_API_BASE_URL="$VITE_API_BASE_URL" npm --workspace frontend/app run build
@@ -61,6 +103,9 @@ main() {
         echo "Missing SCRUM-151 CloudFront distribution. Run create-spa-cdn-resources.sh first." >&2
         exit 1
     fi
+
+    require_bucket_approved "$bucket_name"
+    require_distribution_matches_bucket "$distribution_id_value" "$bucket_name"
 
     echo "Syncing the Vite build to private bucket $bucket_name..."
     aws_cli s3 sync "$BUILD_DIRECTORY" "s3://$bucket_name" \

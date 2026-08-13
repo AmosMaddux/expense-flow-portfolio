@@ -8,11 +8,13 @@ These Bash scripts build the Vite SPA, sync it to a private S3 bucket, serve it 
 - AWS region: `us-east-1`
 - S3 bucket: `expenseflow-sandbox-spa-<account-id>-us-east-1`
 - CloudFront comment: `ExpenseFlow SCRUM-151 sandbox SPA`
-- OAC name: `expenseflow-sandbox-spa-oac`
+- OAC name: `expenseflow-scrum-151-<account-id>-spa-oac`
 - SCRUM-151-owned resource tags: `user=muhilramesh`, `env=sandbox`, `ticket=SCRUM-151`
 - SPA fallback: CloudFront `403` and `404` responses return `/index.html` with HTTP `200`
 
 The bucket blocks all public access and grants `s3:GetObject` only to the ticket's CloudFront distribution through a source-ARN-scoped bucket policy. Existing dependency-bucket tags and policy statements are preserved. The distribution redirects HTTP to HTTPS and uses AWS's managed `CachingOptimized` cache policy.
+
+Before `s3 sync --delete`, the deployment script verifies the bucket's SCRUM-151 approval tags, the distribution's ownership tags, and that the distribution has exactly one matching OAC-backed origin. OAC reuse also requires the expected always-signed SigV4 S3 configuration. Teardown refuses to delete an OAC while any distribution still references it.
 
 ## Prerequisites
 
