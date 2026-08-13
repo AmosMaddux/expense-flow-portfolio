@@ -7038,6 +7038,141 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         });
     });
 
+    void test("lists tenant-scoped Expense Report summaries for Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000166";
+        const otherTenantId = "40000000-0000-4000-8000-000000000167";
+        const owner = "50000000-0000-4000-8000-000000000166";
+        const managerId = "52000000-0000-4000-8000-000000000166";
+        const financeAdminId = "51000000-0000-4000-8000-000000000166";
+
+        await db.insert(expenseReport).values([
+            {
+                id: "60000000-0000-4000-8000-000000000166",
+                tenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "Manager Approval",
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000167",
+                tenantId: otherTenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "Manager Approval",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000166",
+                tenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000166",
+                merchant: "Synthetic Rail",
+                amount: "120.00",
+                currency: "USD",
+                category: "Travel",
+                expenseDate: "2026-07-20",
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000167",
+                tenantId: otherTenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000167",
+                merchant: "Synthetic Rail",
+                amount: "120.00",
+                currency: "USD",
+                category: "Travel",
+                expenseDate: "2026-07-20",
+            },
+        ]);
+        await db.insert(glCodingResult).values({
+            id: "30000000-0000-4000-8000-000000000168",
+            submissionId: "30000000-0000-4000-8000-000000000169",
+            tenantId,
+            expenseReportId: "60000000-0000-4000-8000-000000000166",
+            sourceType: "line_item",
+            sourceId: "30000000-0000-4000-8000-000000000166",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "120.00",
+            currency: "USD",
+            lineItemReviewAction: "approve",
+            lineItemReviewedBy: managerId,
+            lineItemReviewedAt: new Date("2026-07-21T12:00:00.000Z"),
+            codedAt: new Date("2026-07-20T12:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/expense-reports", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = (await response.json()) as {
+            items?: Array<{
+                id?: string;
+                employeeId?: string;
+                managerId?: string | null;
+                category?: string;
+                categories?: string[];
+                amount?: string;
+                status?: string;
+            }>;
+            nextCursor?: string | null;
+        };
+
+        expect(response.status).toBe(200);
+        expect(body.items).toHaveLength(1);
+        expect(body.items?.[0]).toMatchObject({
+            id: "60000000-0000-4000-8000-000000000166",
+            employeeId: owner,
+            managerId,
+            category: "Travel",
+            categories: ["Travel"],
+            amount: "120.00",
+            status: "Manager Approval",
+        });
+        expect(body.nextCursor).toBeNull();
+        expect(
+            body.items?.some(
+                (summary) =>
+                    summary.id === "60000000-0000-4000-8000-000000000167",
+            ),
+        ).toBe(false);
+    });
+
+    void test.each([["Department Manager" as const], ["Employee" as const]])(
+        "returns 403 for Expense Report summaries with %s",
+        async (role) => {
+            const tenantId = "40000000-0000-4000-8000-000000000168";
+            const actorId = "51000000-0000-4000-8000-000000000168";
+
+            const response = await requestApp("/v1/expense-reports", {
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        role,
+                    ]),
+                },
+            });
+            const body = (await response.json()) as {
+                detail?: string;
+                status?: number;
+                title?: string;
+            };
+
+            expect(response.status).toBe(403);
+            expect(response.headers.get("content-type")).toContain(
+                "application/problem+json",
+            );
+            expect(body).toMatchObject({
+                title: "Forbidden",
+                status: 403,
+                detail: "Expense Reports access is limited to Finance Admins.",
+            });
+        },
+    );
+
     void test("lists tenant-scoped All Transactions for Finance Admins", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000160";
         const otherTenantId = "40000000-0000-4000-8000-000000000161";

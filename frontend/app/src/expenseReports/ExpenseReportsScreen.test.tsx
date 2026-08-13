@@ -43,6 +43,13 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+function createSummaryPage(
+    items: unknown[],
+    nextCursor: string | null = null,
+): { items: unknown[]; nextCursor: string | null } {
+    return { items, nextCursor };
+}
+
 function createNoRetryQueryClient(): QueryClient {
     return new QueryClient({
         defaultOptions: {
@@ -78,19 +85,22 @@ describe("ExpenseReportsScreen", () => {
         renderExpenseReportsScreen(
             vi.fn(() =>
                 Promise.resolve(
-                    createJsonResponse([
-                        {
-                            id: reportId,
-                            createdAt: "2026-07-20T14:30:00.000Z",
-                            employeeId: "50000000-0000-4000-8000-000000000191",
-                            managerId: null,
-                            category: "Travel",
-                            categories: ["Travel"],
-                            amount: "742.18",
-                            currency: "USD",
-                            status: "Manager Approval",
-                        },
-                    ]),
+                    createJsonResponse(
+                        createSummaryPage([
+                            {
+                                id: reportId,
+                                createdAt: "2026-07-20T14:30:00.000Z",
+                                employeeId:
+                                    "50000000-0000-4000-8000-000000000191",
+                                managerId: null,
+                                category: "Travel",
+                                categories: ["Travel"],
+                                amount: "742.18",
+                                currency: "USD",
+                                status: "Manager Approval",
+                            },
+                        ]),
+                    ),
                 ),
             ) as typeof fetch,
         );
@@ -128,11 +138,79 @@ describe("ExpenseReportsScreen", () => {
         ).toBeTruthy();
     });
 
-    test("filters report summaries by date employee category amount and multiple statuses", async () => {
+    test("renders assigned manager ids without an Employee prefix", async () => {
         renderExpenseReportsScreen(
             vi.fn(() =>
                 Promise.resolve(
-                    createJsonResponse([
+                    createJsonResponse(
+                        createSummaryPage([
+                            createSummary({
+                                managerId:
+                                    "51000000-0000-4000-8000-000000000191",
+                            }),
+                        ]),
+                    ),
+                ),
+            ) as typeof fetch,
+        );
+
+        const row = await screen.findByRole("row", {
+            name: /Manager 51000000 Travel \$742\.18 Manager Approval/i,
+        });
+
+        expect(within(row).getByText("Manager 51000000")).toBeTruthy();
+        expect(within(row).queryByText("Employee 51000000")).toBeNull();
+    });
+
+    test("loads the next server page with the returned cursor", async () => {
+        const fetchImplementation = vi.fn((input: RequestInfo | URL) => {
+            const query = new URL(
+                typeof input === "string"
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url,
+                "http://localhost",
+            ).searchParams;
+
+            if (query.get("cursor") === "synthetic-cursor") {
+                return Promise.resolve(
+                    createJsonResponse(
+                        createSummaryPage([
+                            createSummary({
+                                id: "60000000-0000-4000-8000-000000000192",
+                                amount: "88.34",
+                            }),
+                        ]),
+                    ),
+                );
+            }
+
+            return Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([createSummary()], "synthetic-cursor"),
+                ),
+            );
+        }) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
+
+        expect(await screen.findByText("$742.18")).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+        await waitFor(() => {
+            expect(
+                readLastRequestQuery(fetchImplementation).get("cursor"),
+            ).toBe("synthetic-cursor");
+        });
+        expect(await screen.findByText("$88.34")).toBeTruthy();
+    });
+
+    test("filters report summaries by date employee category amount and multiple statuses", async () => {
+        const fetchImplementation = vi.fn(() =>
+            Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([
                         {
                             id: reportId,
                             createdAt: "2026-07-20T14:30:00.000Z",
@@ -168,48 +246,56 @@ describe("ExpenseReportsScreen", () => {
                         },
                     ]),
                 ),
-            ) as typeof fetch,
-        );
+            ),
+        ) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
 
         expect(await screen.findByText("$742.18")).toBeTruthy();
 
-        fireEvent.change(screen.getByLabelText("Date"), {
-            target: { value: "2026-07-20" },
-        });
-        fireEvent.change(screen.getByLabelText("Employee"), {
-            target: { value: "50000000" },
-        });
-        fireEvent.change(screen.getByLabelText("Category"), {
-            target: { value: "Travel" },
-        });
-        fireEvent.change(screen.getByLabelText("Min amount"), {
-            target: { value: "500" },
-        });
-        fireEvent.change(screen.getByLabelText("Max amount"), {
-            target: { value: "800" },
-        });
-        fireEvent.click(screen.getByLabelText("Manager Approval"));
-        fireEvent.click(screen.getByLabelText("AP Review"));
+        const changeFilter = async (label: string, value: string) => {
+            fireEvent.change(await screen.findByLabelText(label), {
+                target: { value },
+            });
+        };
 
-        expect(screen.getByText("Showing 1 of 3")).toBeTruthy();
-        expect(screen.getByText("$742.18")).toBeTruthy();
-        expect(screen.queryByText("$245.10")).toBeNull();
-        expect(screen.queryByText("$88.34")).toBeNull();
+        await changeFilter("Date", "2026-07-20");
+        await changeFilter("Employee", "50000000");
+        await changeFilter("Category", "Travel");
+        await changeFilter("Min amount", "500");
+        await changeFilter("Max amount", "800");
+        fireEvent.click(await screen.findByLabelText("Manager Approval"));
+        fireEvent.click(await screen.findByLabelText("AP Review"));
+
+        await waitFor(() => {
+            const query = readLastRequestQuery(fetchImplementation);
+
+            expect(query.get("date")).toBe("2026-07-20");
+            expect(query.get("employee")).toBe("50000000");
+            expect(query.get("category")).toBe("Travel");
+            expect(query.get("amountMin")).toBe("500");
+            expect(query.get("amountMax")).toBe("800");
+            expect(query.getAll("status")).toEqual([
+                "Manager Approval",
+                "AP Review",
+            ]);
+        });
     });
 
     test("filters category selector options while typing", async () => {
         renderExpenseReportsScreen(
             vi.fn(() =>
                 Promise.resolve(
-                    createJsonResponse([
-                        createSummary({ category: "Travel" }),
-                        createSummary({
-                            id: "60000000-0000-4000-8000-000000000192",
-                            category: "Meals",
-                            categories: ["Meals"],
-                            amount: "88.34",
-                        }),
-                    ]),
+                    createJsonResponse(
+                        createSummaryPage([
+                            createSummary({ category: "Travel" }),
+                            createSummary({
+                                id: "60000000-0000-4000-8000-000000000192",
+                                category: "Meals",
+                                categories: ["Meals"],
+                                amount: "88.34",
+                            }),
+                        ]),
+                    ),
                 ),
             ) as typeof fetch,
         );
@@ -222,14 +308,14 @@ describe("ExpenseReportsScreen", () => {
 
         expect(screen.getByRole("button", { name: "Travel" })).toBeTruthy();
         expect(screen.queryByRole("button", { name: "Meals" })).toBeNull();
-        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+        expect(screen.getByText("Showing 2")).toBeTruthy();
     });
 
     test("selects and clears a valid category filter", async () => {
-        renderExpenseReportsScreen(
-            vi.fn(() =>
-                Promise.resolve(
-                    createJsonResponse([
+        const fetchImplementation = vi.fn(() =>
+            Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([
                         createSummary({ category: "Travel" }),
                         createSummary({
                             id: "60000000-0000-4000-8000-000000000192",
@@ -239,8 +325,9 @@ describe("ExpenseReportsScreen", () => {
                         }),
                     ]),
                 ),
-            ) as typeof fetch,
-        );
+            ),
+        ) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
 
         await screen.findByText("$742.18");
 
@@ -249,21 +336,31 @@ describe("ExpenseReportsScreen", () => {
         });
         fireEvent.click(screen.getByRole("button", { name: "Travel" }));
 
-        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        await waitFor(() => {
+            expect(
+                readLastRequestQuery(fetchImplementation).get("category"),
+            ).toBe("Travel");
+        });
         expect(screen.getByText("$742.18")).toBeTruthy();
-        expect(screen.queryByText("$88.34")).toBeNull();
 
-        fireEvent.click(screen.getByRole("button", { name: "Clear category" }));
+        const clearCategoryButton = await screen.findByRole("button", {
+            name: "Clear category",
+        });
+        fireEvent.click(clearCategoryButton);
 
-        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+        await waitFor(() => {
+            expect(
+                screen.getByRole("combobox", { name: "Category" }),
+            ).toHaveProperty("value", "");
+        });
         expect(screen.getByText("$88.34")).toBeTruthy();
     });
 
     test("matches typed category casing against canonical options", async () => {
-        renderExpenseReportsScreen(
-            vi.fn(() =>
-                Promise.resolve(
-                    createJsonResponse([
+        const fetchImplementation = vi.fn(() =>
+            Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([
                         createSummary({ category: "Travel" }),
                         createSummary({
                             id: "60000000-0000-4000-8000-000000000192",
@@ -273,8 +370,9 @@ describe("ExpenseReportsScreen", () => {
                         }),
                     ]),
                 ),
-            ) as typeof fetch,
-        );
+            ),
+        ) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
 
         await screen.findByText("$742.18");
 
@@ -282,16 +380,19 @@ describe("ExpenseReportsScreen", () => {
             target: { value: "tRaVeL" },
         });
 
-        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        await waitFor(() => {
+            expect(
+                readLastRequestQuery(fetchImplementation).get("category"),
+            ).toBe("Travel");
+        });
         expect(screen.getByText("$742.18")).toBeTruthy();
-        expect(screen.queryByText("$88.34")).toBeNull();
     });
 
     test("does not apply unmatched typed category input", async () => {
-        renderExpenseReportsScreen(
-            vi.fn(() =>
-                Promise.resolve(
-                    createJsonResponse([
+        const fetchImplementation = vi.fn(() =>
+            Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([
                         createSummary({ category: "Travel" }),
                         createSummary({
                             id: "60000000-0000-4000-8000-000000000192",
@@ -301,8 +402,9 @@ describe("ExpenseReportsScreen", () => {
                         }),
                     ]),
                 ),
-            ) as typeof fetch,
-        );
+            ),
+        ) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
 
         await screen.findByText("$742.18");
 
@@ -310,17 +412,20 @@ describe("ExpenseReportsScreen", () => {
             target: { value: "travelling" },
         });
 
-        expect(screen.getByText("Showing 2 of 2")).toBeTruthy();
+        expect(readLastRequestQuery(fetchImplementation).has("category")).toBe(
+            false,
+        );
+        expect(screen.getByText("Showing 2")).toBeTruthy();
         expect(screen.queryByText("No Expense Reports match")).toBeNull();
         expect(screen.getByText("$742.18")).toBeTruthy();
         expect(screen.getByText("$88.34")).toBeTruthy();
     });
 
     test("filters Multiple reports by underlying category membership", async () => {
-        renderExpenseReportsScreen(
-            vi.fn(() =>
-                Promise.resolve(
-                    createJsonResponse([
+        const fetchImplementation = vi.fn(() =>
+            Promise.resolve(
+                createJsonResponse(
+                    createSummaryPage([
                         createSummary({
                             category: "Multiple",
                             categories: ["Meals", "Travel"],
@@ -333,8 +438,9 @@ describe("ExpenseReportsScreen", () => {
                         }),
                     ]),
                 ),
-            ) as typeof fetch,
-        );
+            ),
+        ) as typeof fetch;
+        renderExpenseReportsScreen(fetchImplementation);
 
         await screen.findByText("$742.18");
 
@@ -342,29 +448,35 @@ describe("ExpenseReportsScreen", () => {
             target: { value: "Travel" },
         });
 
-        expect(screen.getByText("Showing 1 of 2")).toBeTruthy();
+        await waitFor(() => {
+            expect(
+                readLastRequestQuery(fetchImplementation).get("category"),
+            ).toBe("Travel");
+        });
         expect(screen.getByText("Multiple")).toBeTruthy();
         expect(screen.getByText("$742.18")).toBeTruthy();
-        expect(screen.queryByText("$88.34")).toBeNull();
     });
 
     test("opens the shared report detail modal when Review is clicked", async () => {
         const fetchImplementation = vi.fn((input: RequestInfo | URL) => {
             if (readRequestPath(input) === "/v1/expense-reports") {
                 return Promise.resolve(
-                    createJsonResponse([
-                        {
-                            id: reportId,
-                            createdAt: "2026-07-20T14:30:00.000Z",
-                            employeeId: "50000000-0000-4000-8000-000000000191",
-                            managerId: null,
-                            category: "Multiple",
-                            categories: ["Mileage", "Travel"],
-                            amount: "754.58",
-                            currency: "USD",
-                            status: "Manager Approval",
-                        },
-                    ]),
+                    createJsonResponse(
+                        createSummaryPage([
+                            {
+                                id: reportId,
+                                createdAt: "2026-07-20T14:30:00.000Z",
+                                employeeId:
+                                    "50000000-0000-4000-8000-000000000191",
+                                managerId: null,
+                                category: "Multiple",
+                                categories: ["Mileage", "Travel"],
+                                amount: "754.58",
+                                currency: "USD",
+                                status: "Manager Approval",
+                            },
+                        ]),
+                    ),
                 );
             }
 
@@ -509,4 +621,24 @@ function readRequestPath(input: RequestInfo | URL): string {
     }
 
     return new URL(input.url, "http://localhost").pathname;
+}
+
+function readLastRequestQuery(
+    fetchImplementation: typeof fetch,
+): URLSearchParams {
+    const mock = vi.mocked(fetchImplementation);
+    const lastCall = mock.mock.calls.at(-1);
+    if (lastCall === undefined) {
+        throw new Error("Expected fetch to be called.");
+    }
+
+    const input = lastCall[0];
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://localhost")
+            : input instanceof URL
+              ? input
+              : new URL(input.url, "http://localhost");
+
+    return url.searchParams;
 }

@@ -366,6 +366,58 @@ const ReadAllTransactionsFilterSchema = z.object({
         .optional(),
 });
 
+const ExpenseReportSummaryCursorSchema = z
+    .object({
+        createdAt: z.iso.datetime({ offset: true }),
+        id: z.uuid(),
+    })
+    .strict();
+
+const ReadExpenseReportSummariesFilterSchema = z
+    .object({
+        amountMax: z
+            .string()
+            .regex(/^\d+(\.\d{1,2})?$/)
+            .optional(),
+        amountMin: z
+            .string()
+            .regex(/^\d+(\.\d{1,2})?$/)
+            .optional(),
+        category: z.string().trim().min(1).optional(),
+        date: z.iso.date().optional(),
+        employee: z.string().trim().min(1).max(128).optional(),
+        status: z
+            .preprocess(
+                (value) =>
+                    value === undefined
+                        ? undefined
+                        : Array.isArray(value)
+                          ? value
+                          : [value],
+                z
+                    .array(z.enum(approvedWorkflowStages))
+                    .max(approvedWorkflowStages.length),
+            )
+            .optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+        cursor: z
+            .string()
+            .trim()
+            .min(1)
+            .refine(isValidExpenseReportSummaryCursor)
+            .optional(),
+    })
+    .refine(
+        (request) =>
+            request.amountMin === undefined ||
+            request.amountMax === undefined ||
+            Number(request.amountMin) <= Number(request.amountMax),
+        {
+            message: "amountMin must be less than or equal to amountMax.",
+            path: ["amountMin"],
+        },
+    );
+
 function containsControlCharacter(value: string): boolean {
     for (const character of value) {
         const codePoint = character.codePointAt(0);
@@ -421,6 +473,26 @@ function isValidAllTransactionsCursor(cursor: string): boolean {
         return false;
     }
 }
+
+function isValidExpenseReportSummaryCursor(cursor: string): boolean {
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        return ExpenseReportSummaryCursorSchema.safeParse(parsed).success;
+    } catch {
+        return false;
+    }
+}
+
+export const ReadExpenseReportSummariesInboundRequestSchema =
+    ReadExpenseReportSummariesFilterSchema.extend({
+        tenantId: z.uuid(),
+    }).strict();
+
+export const ReadExpenseReportSummariesQuerySchema =
+    ReadExpenseReportSummariesFilterSchema.strict();
 
 export const ReadAllTransactionsInboundRequestSchema =
     ReadAllTransactionsFilterSchema.extend({
@@ -675,6 +747,11 @@ export const ExpenseReportSummaryListSchema = z.array(
     ExpenseReportSummarySchema,
 );
 
+export const ExpenseReportSummaryPageSchema = z.object({
+    items: ExpenseReportSummaryListSchema,
+    nextCursor: z.string().nullable(),
+});
+
 export const MySubmissionSchema = z.object({
     id: z.uuid(),
     dueDate: z.iso.date(),
@@ -857,6 +934,8 @@ export const expenseReportSummarySchema = ExpenseReportSummarySchema;
 
 export const expenseReportSummaryListSchema = ExpenseReportSummaryListSchema;
 
+export const expenseReportSummaryPageSchema = ExpenseReportSummaryPageSchema;
+
 export const readCaseQueueStageRollupsRequestSchema =
     ReadCaseQueueStageRollupsInboundRequestSchema;
 
@@ -873,6 +952,12 @@ export const readAllTransactionsRequestSchema =
     ReadAllTransactionsInboundRequestSchema;
 
 export const readAllTransactionsQuerySchema = ReadAllTransactionsQuerySchema;
+
+export const readExpenseReportSummariesRequestSchema =
+    ReadExpenseReportSummariesInboundRequestSchema;
+
+export const readExpenseReportSummariesQuerySchema =
+    ReadExpenseReportSummariesQuerySchema;
 
 export const readPolicyReferenceRequestSchema =
     ReadPolicyReferenceInboundRequestSchema;
@@ -1019,6 +1104,10 @@ export type ExpenseReportReviewDetail = z.infer<
 
 export type ExpenseReportSummary = z.infer<typeof ExpenseReportSummarySchema>;
 
+export type ExpenseReportSummaryPage = z.infer<
+    typeof ExpenseReportSummaryPageSchema
+>;
+
 export type ReadCaseQueueStageRollupsParams = z.infer<
     typeof ReadCaseQueueStageRollupsInboundRequestSchema
 >;
@@ -1045,6 +1134,18 @@ export type ParsedReadAllTransactionsParams = z.infer<
 
 export type ReadAllTransactionsQuery = z.infer<
     typeof ReadAllTransactionsQuerySchema
+>;
+
+export type ReadExpenseReportSummariesParams = z.input<
+    typeof ReadExpenseReportSummariesInboundRequestSchema
+>;
+
+export type ParsedReadExpenseReportSummariesParams = z.infer<
+    typeof ReadExpenseReportSummariesInboundRequestSchema
+>;
+
+export type ReadExpenseReportSummariesQuery = z.infer<
+    typeof ReadExpenseReportSummariesQuerySchema
 >;
 
 export type ReadPolicyReferenceRequest = z.infer<

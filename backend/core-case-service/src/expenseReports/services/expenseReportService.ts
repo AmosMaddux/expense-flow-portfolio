@@ -64,7 +64,7 @@ import {
     CaseCommentOutboundResponseSchema,
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
-    ExpenseReportSummaryListSchema,
+    ExpenseReportSummaryPageSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -81,11 +81,14 @@ import {
     type ExpenseReportResponse,
     type ExpenseReportReviewDetail,
     type ExpenseReportSummary,
+    type ExpenseReportSummaryPage,
     type GetExpenseReportRequest,
     type MileageConfigResponse,
     type MileageEntryResponse,
     type ReceiptUploadMetadataRequest,
     type ReceiptUploadResponse,
+    ReadExpenseReportSummariesInboundRequestSchema,
+    type ReadExpenseReportSummariesParams,
     type ReviewExpenseReportLineItemRequest,
     type ReviewExpenseReportSourceParams,
     type SettleExpenseReportRequest,
@@ -202,16 +205,30 @@ export async function readExpenseReportReviewDetail(request: {
 /**
  * Reads tenant-scoped Expense Report summaries for internal workspaces.
  */
-export async function readExpenseReportSummaries(request: {
-    tenantId: string;
-    roles: RoleName[];
-}): Promise<ExpenseReportSummary[]> {
-    if (!canReviewWorkflow(request.roles)) {
+export async function readExpenseReportSummaries(
+    request: {
+        tenantId: string;
+        roles: RoleName[];
+    } & ReadExpenseReportSummariesParams,
+): Promise<ExpenseReportSummaryPage> {
+    if (!request.roles.includes("Finance Admin")) {
         throw new ForbiddenError();
     }
 
-    return ExpenseReportSummaryListSchema.parse(
-        await findExpenseReportSummaries(request.tenantId),
+    const parsedRequest = ReadExpenseReportSummariesInboundRequestSchema.parse({
+        amountMax: request.amountMax,
+        amountMin: request.amountMin,
+        category: request.category,
+        cursor: request.cursor,
+        date: request.date,
+        employee: request.employee,
+        limit: request.limit,
+        status: request.status,
+        tenantId: request.tenantId,
+    });
+
+    return ExpenseReportSummaryPageSchema.parse(
+        await findExpenseReportSummaries(parsedRequest),
     );
 }
 

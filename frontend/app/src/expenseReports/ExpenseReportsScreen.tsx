@@ -28,9 +28,20 @@ const expenseReportSummarySchema = z
     .strict();
 
 const expenseReportSummaryListSchema = z.array(expenseReportSummarySchema);
+const expenseReportSummaryPageSchema = z
+    .object({
+        items: expenseReportSummaryListSchema,
+        nextCursor: z.string().nullable(),
+    })
+    .strict();
 
 export type ExpenseReportSummary = z.infer<typeof expenseReportSummarySchema>;
-interface ExpenseReportFilters {
+type ExpenseReportSummaryPage = z.infer<typeof expenseReportSummaryPageSchema>;
+type LoadedExpenseReportPage = {
+    cursor: string | null;
+    page: ExpenseReportSummaryPage;
+};
+export interface ExpenseReportFilters {
     amountMax: string;
     amountMin: string;
     category: string;
@@ -51,12 +62,21 @@ const emptyExpenseReportFilters: ExpenseReportFilters = {
 /**
  * Fetches internal Expense Report summaries for the authenticated tenant.
  */
-export function useExpenseReports() {
-    return useExpenseFlowQuery<ExpenseReportSummary[]>({
-        input: "/v1/expense-reports",
-        keyParts: ["expense-reports"],
+export function useExpenseReports(
+    filters: ExpenseReportFilters,
+    cursor: string | null,
+) {
+    const queryString = createExpenseReportsQueryString(filters, cursor);
+    const input =
+        queryString.length === 0
+            ? "/v1/expense-reports"
+            : `/v1/expense-reports?${queryString}`;
+
+    return useExpenseFlowQuery<ExpenseReportSummaryPage>({
+        input,
+        keyParts: ["expense-reports", filters, cursor],
         parseResponse: async (response) =>
-            expenseReportSummaryListSchema.parse(await response.json()),
+            expenseReportSummaryPageSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -65,25 +85,56 @@ export function useExpenseReports() {
  * Renders the internal Expense Reports list and review detail drawer.
  */
 export function ExpenseReportsScreen(): JSX.Element {
-    const query = useExpenseReports();
     const [filters, setFilters] = useState<ExpenseReportFilters>(
         emptyExpenseReportFilters,
     );
+    const [cursor, setCursor] = useState<string | null>(null);
+    const [loadedPages, setLoadedPages] = useState<LoadedExpenseReportPage[]>(
+        [],
+    );
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [selectedReportId, setSelectedReportId] = useState<string | null>(
         null,
+    );
+    const query = useExpenseReports(filters, cursor);
+    const displayedPages = useMemo(
+        () =>
+            deriveDisplayedExpenseReportPages(loadedPages, cursor, query.data),
+        [cursor, loadedPages, query.data],
+    );
+    const reports = useMemo(
+        () => displayedPages.flatMap((loadedPage) => loadedPage.page.items),
+        [displayedPages],
     );
     const categoryOptions = useMemo(
         () =>
             getUniqueSortedValues(
-                (query.data ?? []).flatMap(({ categories }) => categories),
+                reports.flatMap(({ categories }) => categories),
             ),
-        [query.data],
-    );
-    const filteredReports = useMemo(
-        () => filterExpenseReports(query.data ?? [], filters),
-        [filters, query.data],
+        [reports],
     );
     const hasActiveFilters = hasExpenseReportFilters(filters);
+    const resetPagination = () => {
+        setCursor(null);
+        setNextCursor(null);
+        setLoadedPages([]);
+    };
+    const updateFilters = (nextFilters: ExpenseReportFilters) => {
+        resetPagination();
+        setFilters(nextFilters);
+    };
+
+    useEffect(() => {
+        const page = query.data;
+        if (page === undefined) {
+            return;
+        }
+
+        setLoadedPages((currentPages) =>
+            appendExpenseReportPage(currentPages, cursor, page),
+        );
+        setNextCursor(page.nextCursor);
+    }, [cursor, query.data]);
 
     return (
         <section
@@ -114,7 +165,7 @@ export function ExpenseReportsScreen(): JSX.Element {
                     }}
                     title="Unable to load Expense Reports"
                 />
-            ) : query.data.length === 0 ? (
+            ) : reports.length === 0 && !hasActiveFilters ? (
                 <EmptyState
                     body="Expense Reports will appear here after employees create drafts or submit reports."
                     title="No Expense Reports yet"
@@ -124,27 +175,42 @@ export function ExpenseReportsScreen(): JSX.Element {
                     <ExpenseReportsFilterPanel
                         categories={categoryOptions}
                         filters={filters}
-                        resultCount={filteredReports.length}
-                        totalCount={query.data.length}
-                        onChange={setFilters}
+                        resultCount={reports.length}
+                        onChange={updateFilters}
                         onClear={() =>
-                            setFilters({ ...emptyExpenseReportFilters })
+                            updateFilters({ ...emptyExpenseReportFilters })
                         }
                     />
-                    {filteredReports.length === 0 ? (
+                    {reports.length === 0 ? (
                         <EmptyState
                             body="Adjust or clear the filters to see matching Expense Reports."
                             title="No Expense Reports match"
                         />
                     ) : (
                         <ExpenseReportsTable
-                            reports={filteredReports}
+                            reports={reports}
                             onOpenReview={setSelectedReportId}
                         />
                     )}
-                    {hasActiveFilters ? null : (
+                    {nextCursor === null ? null : (
+                        <div className="expense-reports__pagination">
+                            <Button
+                                disabled={query.isFetching}
+                                onClick={() => setCursor(nextCursor)}
+                                type="button"
+                                variant="secondary"
+                            >
+                                Load more
+                            </Button>
+                        </div>
+                    )}
+                    {hasActiveFilters ? (
                         <span className="expense-reports__result-summary">
-                            Showing all {query.data.length} Expense Reports.
+                            Showing {reports.length} matching Expense Reports.
+                        </span>
+                    ) : (
+                        <span className="expense-reports__result-summary">
+                            Showing {reports.length} Expense Reports.
                         </span>
                     )}
                 </>
@@ -166,14 +232,12 @@ function ExpenseReportsFilterPanel({
     onChange,
     onClear,
     resultCount,
-    totalCount,
 }: {
     categories: string[];
     filters: ExpenseReportFilters;
     onChange: (filters: ExpenseReportFilters) => void;
     onClear: () => void;
     resultCount: number;
-    totalCount: number;
 }): JSX.Element {
     const updateFilter = (
         key: Exclude<keyof ExpenseReportFilters, "statuses">,
@@ -266,9 +330,7 @@ function ExpenseReportsFilterPanel({
                 ))}
             </fieldset>
             <div className="expense-reports-filters__footer">
-                <span aria-live="polite">
-                    Showing {resultCount} of {totalCount}
-                </span>
+                <span aria-live="polite">Showing {resultCount}</span>
                 <Button
                     onClick={onClear}
                     size="sm"
@@ -424,7 +486,7 @@ function ExpenseReportsTable({
                                             Pending assignment
                                         </span>
                                     ) : (
-                                        formatPrincipal(report.managerId)
+                                        formatManager(report.managerId)
                                     )}
                                 </td>
                                 <td>{report.category}</td>
@@ -486,6 +548,10 @@ function formatPrincipal(value: string): string {
     return `Employee ${value.slice(0, 8)}`;
 }
 
+function formatManager(value: string): string {
+    return `Manager ${value.slice(0, 8)}`;
+}
+
 function formatReportId(value: string): string {
     return value.slice(0, 8).toUpperCase();
 }
@@ -497,44 +563,91 @@ function formatCurrency(amount: string, currency: string): string {
     }).format(Number(amount));
 }
 
-function filterExpenseReports(
-    reports: ExpenseReportSummary[],
-    filters: ExpenseReportFilters,
-): ExpenseReportSummary[] {
-    const normalizedEmployee = filters.employee.trim().toLowerCase();
-    const normalizedCategory = filters.category.trim().toLowerCase();
-    const minimumAmount =
-        filters.amountMin === "" ? undefined : Number(filters.amountMin);
-    const maximumAmount =
-        filters.amountMax === "" ? undefined : Number(filters.amountMax);
-
-    return reports.filter((report) => {
-        const reportAmount = Number(report.amount);
-        const employeeLabel = formatPrincipal(report.employeeId).toLowerCase();
-
-        return (
-            (filters.date === "" ||
-                report.createdAt.slice(0, "yyyy-mm-dd".length) ===
-                    filters.date) &&
-            (normalizedEmployee === "" ||
-                report.employeeId.toLowerCase().includes(normalizedEmployee) ||
-                employeeLabel.includes(normalizedEmployee)) &&
-            (normalizedCategory === "" ||
-                report.categories.some(
-                    (category) => category.toLowerCase() === normalizedCategory,
-                )) &&
-            (minimumAmount === undefined || reportAmount >= minimumAmount) &&
-            (maximumAmount === undefined || reportAmount <= maximumAmount) &&
-            (filters.statuses.length === 0 ||
-                filters.statuses.includes(report.status))
-        );
-    });
-}
-
 function getUniqueSortedValues(values: string[]): string[] {
     return [...new Set(values)].sort((firstValue, secondValue) =>
         firstValue.localeCompare(secondValue),
     );
+}
+
+function appendExpenseReportPage(
+    loadedPages: LoadedExpenseReportPage[],
+    cursor: string | null,
+    page: ExpenseReportSummaryPage,
+): LoadedExpenseReportPage[] {
+    const existingPageIndex = loadedPages.findIndex(
+        (loadedPage) => loadedPage.cursor === cursor,
+    );
+
+    if (existingPageIndex === -1) {
+        return [...loadedPages, { cursor, page }];
+    }
+
+    const nextPage = loadedPages[existingPageIndex + 1];
+    const shouldKeepFollowingPages =
+        nextPage === undefined || nextPage.cursor === page.nextCursor;
+    const updatedPages = loadedPages
+        .slice(0, existingPageIndex + 1)
+        .map((loadedPage, index) =>
+            index === existingPageIndex ? { cursor, page } : loadedPage,
+        );
+
+    return shouldKeepFollowingPages
+        ? [...updatedPages, ...loadedPages.slice(existingPageIndex + 1)]
+        : updatedPages;
+}
+
+function deriveDisplayedExpenseReportPages(
+    loadedPages: LoadedExpenseReportPage[],
+    cursor: string | null,
+    page: ExpenseReportSummaryPage | undefined,
+): LoadedExpenseReportPage[] {
+    if (
+        page === undefined ||
+        loadedPages.some((loadedPage) => loadedPage.cursor === cursor)
+    ) {
+        return loadedPages;
+    }
+
+    return [...loadedPages, { cursor, page }];
+}
+
+export function createExpenseReportsQueryString(
+    filters: ExpenseReportFilters,
+    cursor: string | null = null,
+): string {
+    const queryString = new URLSearchParams();
+    const category = filters.category.trim();
+    const employee = filters.employee.trim();
+
+    if (filters.amountMax.length > 0) {
+        queryString.set("amountMax", filters.amountMax);
+    }
+
+    if (filters.amountMin.length > 0) {
+        queryString.set("amountMin", filters.amountMin);
+    }
+
+    if (category.length > 0) {
+        queryString.set("category", category);
+    }
+
+    if (filters.date.length > 0) {
+        queryString.set("date", filters.date);
+    }
+
+    if (employee.length > 0) {
+        queryString.set("employee", employee);
+    }
+
+    for (const status of filters.statuses) {
+        queryString.append("status", status);
+    }
+
+    if (cursor !== null) {
+        queryString.set("cursor", cursor);
+    }
+
+    return queryString.toString();
 }
 
 function hasExpenseReportFilters(filters: ExpenseReportFilters): boolean {

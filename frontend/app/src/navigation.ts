@@ -27,7 +27,7 @@ export const navigationItems = [
     {
         label: "Expense Reports",
         path: "/expense-reports",
-        allowedRoles: internalRoles,
+        allowedRoles: financeAdminOnlyRoles,
     },
     {
         label: "All Transactions",

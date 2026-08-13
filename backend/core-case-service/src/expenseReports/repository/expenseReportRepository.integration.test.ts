@@ -223,6 +223,7 @@ void describe("expenseReportRepository", () => {
         const tenantId = "00000000-0000-4000-8000-000000000182";
         const reportId = "10000000-0000-4000-8000-000000000182";
         const ownerId = "20000000-0000-4000-8000-000000000182";
+        const managerId = "40000000-0000-4000-8000-000000000182";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -253,19 +254,138 @@ void describe("expenseReportRepository", () => {
                 currency: "USD",
             },
         ]);
+        await db.insert(glCodingResult).values({
+            id: "40000000-0000-4000-8000-000000000183",
+            submissionId: "40000000-0000-4000-8000-000000000184",
+            tenantId,
+            expenseReportId: reportId,
+            sourceType: "line_item",
+            sourceId: "30000000-0000-4000-8000-000000000182",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "120.00",
+            currency: "USD",
+            lineItemReviewAction: "approve",
+            lineItemReviewedBy: managerId,
+            lineItemReviewedAt: new Date("2026-07-21T12:00:00.000Z"),
+            codedAt: new Date("2026-07-20T12:00:00.000Z"),
+        });
 
-        const summaries = await findExpenseReportSummaries(tenantId);
+        const summaries = await findExpenseReportSummaries({
+            tenantId,
+            limit: 50,
+        });
 
-        expect(summaries).toHaveLength(1);
-        expect(summaries[0]).toMatchObject({
+        expect(summaries.items).toHaveLength(1);
+        expect(summaries.items[0]).toMatchObject({
             id: reportId,
             employeeId: ownerId,
+            managerId,
             category: "Multiple",
             categories: ["Meals", "Travel"],
             amount: "150.50",
             currency: "USD",
             status: "Manager Approval",
         });
+        expect(summaries.nextCursor).toBeNull();
+    });
+
+    void test("filters and cursor-paginates Expense Report summaries before loading a page", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000955";
+        const newerReportId = "10000000-0000-4000-8000-000000000955";
+        const olderReportId = "10000000-0000-4000-8000-000000000956";
+        const excludedReportId = "10000000-0000-4000-8000-000000000957";
+        const ownerId = "20000000-0000-4000-8000-000000000955";
+
+        await db.insert(expenseReport).values([
+            {
+                id: newerReportId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-07-21",
+                currentStage: "Manager Approval",
+                createdAt: new Date("2026-07-21T12:00:00.000Z"),
+            },
+            {
+                id: olderReportId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-07-21",
+                currentStage: "Manager Approval",
+                createdAt: new Date("2026-07-21T11:00:00.000Z"),
+            },
+            {
+                id: excludedReportId,
+                tenantId,
+                owner: ownerId,
+                dueDate: "2026-07-21",
+                currentStage: "Manager Approval",
+                createdAt: new Date("2026-07-21T13:00:00.000Z"),
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000955",
+                tenantId,
+                expenseReportId: newerReportId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-07-21",
+                category: "Travel",
+                amount: "120.00",
+                currency: "USD",
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000956",
+                tenantId,
+                expenseReportId: olderReportId,
+                merchant: "Synthetic Rail",
+                expenseDate: "2026-07-21",
+                category: "Travel",
+                amount: "110.00",
+                currency: "USD",
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000957",
+                tenantId,
+                expenseReportId: excludedReportId,
+                merchant: "Synthetic Bistro",
+                expenseDate: "2026-07-21",
+                category: "Meals",
+                amount: "120.00",
+                currency: "USD",
+            },
+        ]);
+
+        const firstPage = await findExpenseReportSummaries({
+            tenantId,
+            category: "Travel",
+            date: "2026-07-21",
+            amountMin: "100",
+            amountMax: "130",
+            status: ["Manager Approval"],
+            limit: 1,
+        });
+        const secondPage = await findExpenseReportSummaries({
+            tenantId,
+            category: "Travel",
+            date: "2026-07-21",
+            amountMin: "100",
+            amountMax: "130",
+            status: ["Manager Approval"],
+            limit: 1,
+            cursor: firstPage.nextCursor ?? undefined,
+        });
+
+        expect(firstPage.items.map((summary) => summary.id)).toEqual([
+            newerReportId,
+        ]);
+        expect(firstPage.nextCursor).not.toBeNull();
+        expect(secondPage.items.map((summary) => summary.id)).toEqual([
+            olderReportId,
+        ]);
+        expect(secondPage.nextCursor).toBeNull();
     });
 
     void test("orders audit entries by append sequence when timestamps are skewed", async () => {

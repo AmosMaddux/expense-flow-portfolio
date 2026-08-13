@@ -18,6 +18,7 @@ import {
     GetExpenseReportInboundRequestSchema,
     IdempotentSubmissionHeaderSchema,
     ReadAllTransactionsQuerySchema,
+    ReadExpenseReportSummariesQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
@@ -544,8 +545,19 @@ export async function getExpenseReports(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireInternalCaseQueueAccess(auth);
+        requireFinanceAdminExpenseReportsAccess(auth);
+        const parsedQuery = ReadExpenseReportSummariesQuerySchema.parse({
+            amountMax: req.query.amountMax,
+            amountMin: req.query.amountMin,
+            category: req.query.category,
+            cursor: req.query.cursor,
+            date: req.query.date,
+            employee: req.query.employee,
+            limit: req.query.limit,
+            status: req.query.status,
+        });
         const reports = await readExpenseReportSummaries({
+            ...parsedQuery,
             tenantId: auth.tenantId,
             roles: auth.roles,
         });
@@ -1173,6 +1185,18 @@ function requireFinanceAdminAllTransactionsAccess(
 
     throw new ForbiddenError(
         "All Transactions access is limited to Finance Admins.",
+    );
+}
+
+function requireFinanceAdminExpenseReportsAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Expense Reports access is limited to Finance Admins.",
     );
 }
 

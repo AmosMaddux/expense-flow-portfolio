@@ -23,7 +23,7 @@ import {
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
-    ExpenseReportSummaryListSchema,
+    ExpenseReportSummaryPageSchema,
     FinanceDashboardTrendPointListSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
@@ -33,6 +33,7 @@ import {
     ReadAllTransactionsQuerySchema,
     ReadCaseQueueStageRollupsQuerySchema,
     ReadFinanceDashboardTrendQuerySchema,
+    ReadExpenseReportSummariesQuerySchema,
     ReadMySubmissionsQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -101,9 +102,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "ExpenseReportReviewDetailResponse",
         ExpenseReportReviewDetailSchema,
     );
-    const expenseReportSummaryListResponse = registry.register(
-        "ExpenseReportSummaryListResponse",
-        ExpenseReportSummaryListSchema,
+    const expenseReportSummaryPage = registry.register(
+        "ExpenseReportSummaryPage",
+        ExpenseReportSummaryPageSchema,
     );
     const createMileageEntryRequest = registry.register(
         "CreateMileageEntryRequest",
@@ -236,6 +237,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const readAllTransactionsRequest = registry.register(
         "ReadAllTransactionsRequest",
         ReadAllTransactionsQuerySchema,
+    );
+    const readExpenseReportSummariesRequest = registry.register(
+        "ReadExpenseReportSummariesRequest",
+        ReadExpenseReportSummariesQuerySchema,
     );
     const allTransactionPage = registry.register(
         "AllTransactionPage",
@@ -896,21 +901,25 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/expense-reports",
         summary: "List Expense Report summaries",
         description:
-            "Loads internal Expense Report summaries with display category labels and underlying category membership for tenant-scoped review filtering.",
+            "Loads a cursor-paginated page of Finance Admin Expense Report summaries with server-side filters, display category labels, and underlying category membership.",
         security: [{ bearerAuth: [] }],
+        request: {
+            query: readExpenseReportSummariesRequest,
+        },
         responses: {
             200: {
-                description: "Expense Report summaries found.",
+                description: "Expense Report summary page found.",
                 headers: rateLimitHeaders,
                 content: {
                     "application/json": {
-                        schema: expenseReportSummaryListResponse,
+                        schema: expenseReportSummaryPage,
                     },
                 },
             },
+            400: problemJsonResponse("Malformed Expense Report list request."),
             401: problemJsonResponse("Valid access token required."),
             403: problemJsonResponse(
-                "Expense Report access is limited to internal roles.",
+                "Expense Reports access is limited to Finance Admins.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

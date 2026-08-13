@@ -6,10 +6,12 @@ import {
     desc,
     eq,
     inArray,
+    isNotNull,
     isNull,
     lt,
     notExists,
     or,
+    sql,
 } from "drizzle-orm";
 
 import { db } from "../../db/client.js";
@@ -42,6 +44,8 @@ import type {
     ApprovalQueueLineItemResponse,
     ExpenseReportReviewDetail,
     ExpenseReportSummary,
+    ExpenseReportSummaryPage,
+    ParsedReadExpenseReportSummariesParams,
     TransitionExpenseReportStageRequest,
 } from "../dto/expenseReportDto.js";
 import { isExpenseReportWorkflowEdge } from "../domain/expenseReportWorkflow.js";
@@ -63,6 +67,13 @@ type ExpenseReportSummarySource = {
     category: string;
     amount: string;
     currency: string;
+};
+type ExpenseReportSummaryCursor = {
+    createdAt: string;
+    id: string;
+};
+type ExpenseReportSummaryRow = ExpenseReportSummary & {
+    cursorCreatedAt: string;
 };
 type StageTransitionEventContext = {
     correlationId: string;
@@ -418,112 +429,153 @@ export async function findExpenseReportReviewDetail(
  * Reads tenant-scoped Expense Report summaries for the internal reports page.
  */
 export async function findExpenseReportSummaries(
-    tenantId: string,
-): Promise<ExpenseReportSummary[]> {
-    const reports = await db
-        .select()
-        .from(expenseReport)
-        .where(eq(expenseReport.tenantId, tenantId))
-        .orderBy(desc(expenseReport.createdAt), desc(expenseReport.id));
+    params: ParsedReadExpenseReportSummariesParams,
+): Promise<ExpenseReportSummaryPage> {
+    const cursor = parseExpenseReportSummaryCursor(params.cursor);
+    const filters = [sql`${expenseReport.tenantId} = ${params.tenantId}`];
 
-    if (reports.length === 0) {
-        return [];
+    if (params.date !== undefined) {
+        filters.push(sql`${expenseReport.createdAt}::date = ${params.date}`);
     }
 
-    const reportIds = reports.map((report) => report.id);
-    const [lineItemRows, mileageRows] = await Promise.all([
-        db
-            .select({
-                expenseReportId: lineItem.expenseReportId,
-                category: lineItem.category,
-                amount: lineItem.amount,
-                currency: lineItem.currency,
-            })
-            .from(lineItem)
-            .where(
-                and(
-                    eq(lineItem.tenantId, tenantId),
-                    inArray(lineItem.expenseReportId, reportIds),
-                ),
-            ),
-        db
-            .select({
-                expenseReportId: glCodingResult.expenseReportId,
-                sourceId: glCodingResult.sourceId,
-                amount: glCodingResult.amount,
-                currency: glCodingResult.currency,
-            })
-            .from(glCodingResult)
-            .innerJoin(
-                mileageEntry,
-                and(
-                    eq(mileageEntry.tenantId, glCodingResult.tenantId),
-                    eq(mileageEntry.id, glCodingResult.sourceId),
-                    eq(
-                        mileageEntry.expenseReportId,
-                        glCodingResult.expenseReportId,
-                    ),
-                ),
+    if (params.employee !== undefined) {
+        filters.push(
+            sql`${expenseReport.owner}::text ilike ${`%${params.employee}%`}`,
+        );
+    }
+
+    if (params.status !== undefined && params.status.length > 0) {
+        filters.push(
+            sql`${expenseReport.currentStage} in (${sql.join(
+                params.status.map((status) => sql`${status}`),
+                sql`, `,
+            )})`,
+        );
+    }
+
+    if (params.category !== undefined) {
+        filters.push(sql`exists (
+            select 1
+            from unnest(coalesce(report_rollup.categories, array['Uncategorized']::text[])) as category_filter(category)
+            where lower(category_filter.category) = lower(${params.category})
+        )`);
+    }
+
+    if (params.amountMin !== undefined) {
+        filters.push(
+            sql`coalesce(report_rollup.amount, 0) >= ${params.amountMin}::numeric`,
+        );
+    }
+
+    if (params.amountMax !== undefined) {
+        filters.push(
+            sql`coalesce(report_rollup.amount, 0) <= ${params.amountMax}::numeric`,
+        );
+    }
+
+    if (cursor !== undefined) {
+        filters.push(sql`(
+            ${expenseReport.createdAt} < ${cursor.createdAt}::timestamptz
+            or (
+                ${expenseReport.createdAt} = ${cursor.createdAt}::timestamptz
+                and ${expenseReport.id} < ${cursor.id}
             )
-            .where(
-                and(
-                    eq(glCodingResult.tenantId, tenantId),
-                    eq(glCodingResult.sourceType, "mileage"),
-                    inArray(glCodingResult.expenseReportId, reportIds),
-                ),
+        )`);
+    }
+
+    const result = await db.execute(sql`
+        with latest_mileage as (
+            select distinct on (
+                ${glCodingResult.expenseReportId},
+                ${glCodingResult.sourceId}
             )
-            .orderBy(desc(glCodingResult.codedAt), desc(glCodingResult.id)),
-    ]);
-    const sourcesByReportId = new Map<string, ExpenseReportSummarySource[]>();
+                ${glCodingResult.expenseReportId} as expense_report_id,
+                ${glCodingResult.amount} as amount,
+                ${glCodingResult.currency} as currency
+            from ${glCodingResult}
+            inner join ${mileageEntry}
+                on ${mileageEntry.tenantId} = ${glCodingResult.tenantId}
+                and ${mileageEntry.id} = ${glCodingResult.sourceId}
+                and ${mileageEntry.expenseReportId} = ${glCodingResult.expenseReportId}
+            where ${glCodingResult.tenantId} = ${params.tenantId}
+                and ${glCodingResult.sourceType} = 'mileage'
+                and ${glCodingResult.amount} is not null
+                and ${glCodingResult.currency} is not null
+            order by
+                ${glCodingResult.expenseReportId},
+                ${glCodingResult.sourceId},
+                ${glCodingResult.codedAt} desc,
+                ${glCodingResult.id} desc
+        ),
+        report_sources as (
+            select
+                ${lineItem.expenseReportId} as expense_report_id,
+                ${lineItem.category} as category,
+                ${lineItem.amount} as amount,
+                ${lineItem.currency} as currency
+            from ${lineItem}
+            where ${lineItem.tenantId} = ${params.tenantId}
+            union all
+            select
+                latest_mileage.expense_report_id,
+                'Mileage'::text as category,
+                latest_mileage.amount,
+                latest_mileage.currency
+            from latest_mileage
+        ),
+        report_rollup as (
+            select
+                report_sources.expense_report_id,
+                array_agg(distinct report_sources.category) as categories,
+                sum(report_sources.amount) as amount,
+                case
+                    when count(distinct report_sources.currency) = 1
+                        then min(report_sources.currency)
+                    else 'USD'
+                end as currency
+            from report_sources
+            group by report_sources.expense_report_id
+        )
+        select
+            ${expenseReport.id} as id,
+            ${expenseReport.createdAt} as "createdAt",
+            ${expenseReport.createdAt} as "cursorCreatedAt",
+            ${expenseReport.owner} as "employeeId",
+            latest_manager.manager_id as "managerId",
+            coalesce(report_rollup.categories, array['Uncategorized']::text[]) as categories,
+            coalesce(report_rollup.amount, 0) as amount,
+            coalesce(report_rollup.currency, 'USD') as currency,
+            ${expenseReport.currentStage} as status
+        from ${expenseReport}
+        left join report_rollup
+            on report_rollup.expense_report_id = ${expenseReport.id}
+        left join lateral (
+            select ${glCodingResult.lineItemReviewedBy} as manager_id
+            from ${glCodingResult}
+            where ${glCodingResult.tenantId} = ${expenseReport.tenantId}
+                and ${glCodingResult.expenseReportId} = ${expenseReport.id}
+                and ${glCodingResult.lineItemReviewedBy} is not null
+            order by
+                ${glCodingResult.lineItemReviewedAt} desc,
+                ${glCodingResult.id} desc
+            limit 1
+        ) latest_manager on true
+        where ${sql.join(filters, sql` and `)}
+        order by ${expenseReport.createdAt} desc, ${expenseReport.id} desc
+        limit ${params.limit + 1}
+    `);
+    const rows = result.rows.map(toExpenseReportSummaryRow);
+    const pageRows = rows.slice(0, params.limit);
 
-    for (const row of lineItemRows) {
-        appendReportSummarySource(sourcesByReportId, {
-            expenseReportId: row.expenseReportId,
-            category: row.category,
-            amount: row.amount,
-            currency: row.currency,
-        });
-    }
-
-    const latestMileageRowsBySource = new Map<
-        string,
-        (typeof mileageRows)[0]
-    >();
-    for (const row of mileageRows) {
-        const sourceKey = `${row.expenseReportId}:${row.sourceId}`;
-        if (!latestMileageRowsBySource.has(sourceKey)) {
-            latestMileageRowsBySource.set(sourceKey, row);
-        }
-    }
-
-    for (const row of latestMileageRowsBySource.values()) {
-        if (row.amount === null || row.currency === null) {
-            continue;
-        }
-
-        appendReportSummarySource(sourcesByReportId, {
-            expenseReportId: row.expenseReportId,
-            category: "Mileage",
-            amount: row.amount,
-            currency: row.currency,
-        });
-    }
-
-    return reports.map((report) => {
-        const sources = sourcesByReportId.get(report.id) ?? [];
-
-        return {
-            id: report.id,
-            createdAt: report.createdAt,
-            employeeId: report.owner,
-            managerId: null,
-            category: summarizeReportCategory(sources),
-            categories: summarizeReportCategories(sources),
-            amount: sumReportAmounts(sources),
-            currency: summarizeReportCurrency(sources),
-            status: report.currentStage as ExpenseReportSummary["status"],
-        };
-    });
+    return {
+        items: pageRows.map(toPublicExpenseReportSummary),
+        nextCursor:
+            rows.length > params.limit
+                ? createExpenseReportSummaryCursor(
+                      pageRows[pageRows.length - 1],
+                  )
+                : null,
+    };
 }
 
 /**
@@ -4032,6 +4084,126 @@ function summarizeReportCategory(
     }
 
     return "Multiple";
+}
+
+function summarizeReportCategoryNames(categories: string[]): string {
+    if (categories.length === 0) {
+        return "Uncategorized";
+    }
+
+    if (categories.length === 1) {
+        return categories[0] ?? "Uncategorized";
+    }
+
+    return "Multiple";
+}
+
+function toExpenseReportSummaryRow(
+    row: Record<string, unknown>,
+): ExpenseReportSummaryRow {
+    const categories = toStringArray(row.categories);
+    const status = row.status;
+
+    if (
+        typeof status !== "string" ||
+        !approvedWorkflowStages.includes(status as ExpenseReportStage)
+    ) {
+        throw new Error(
+            "Expense Report summary query returned an unknown status.",
+        );
+    }
+
+    return {
+        id: String(row.id),
+        createdAt: toDate(row.createdAt),
+        employeeId: String(row.employeeId),
+        managerId: typeof row.managerId === "string" ? row.managerId : null,
+        category: summarizeReportCategoryNames(categories),
+        categories,
+        amount: Number(row.amount).toFixed(2),
+        currency: String(row.currency),
+        status: status as ExpenseReportSummary["status"],
+        cursorCreatedAt: toDate(row.cursorCreatedAt).toISOString(),
+    };
+}
+
+function toPublicExpenseReportSummary(
+    row: ExpenseReportSummaryRow,
+): ExpenseReportSummary {
+    return {
+        id: row.id,
+        createdAt: row.createdAt,
+        employeeId: row.employeeId,
+        managerId: row.managerId,
+        category: row.category,
+        categories: row.categories,
+        amount: row.amount,
+        currency: row.currency,
+        status: row.status,
+    };
+}
+
+function createExpenseReportSummaryCursor(
+    report: ExpenseReportSummaryRow | undefined,
+): string | null {
+    if (report === undefined) {
+        return null;
+    }
+
+    return Buffer.from(
+        JSON.stringify({
+            createdAt: report.cursorCreatedAt,
+            id: report.id,
+        } satisfies ExpenseReportSummaryCursor),
+    ).toString("base64url");
+}
+
+function parseExpenseReportSummaryCursor(
+    cursor: string | undefined,
+): ExpenseReportSummaryCursor | undefined {
+    if (cursor === undefined) {
+        return undefined;
+    }
+
+    try {
+        const parsed = JSON.parse(
+            Buffer.from(cursor, "base64url").toString("utf8"),
+        ) as unknown;
+
+        if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "createdAt" in parsed &&
+            "id" in parsed &&
+            typeof parsed.createdAt === "string" &&
+            typeof parsed.id === "string"
+        ) {
+            return {
+                createdAt: parsed.createdAt,
+                id: parsed.id,
+            };
+        }
+    } catch {
+        // Fall through to the generic cursor error below.
+    }
+
+    throw new Error("Invalid Expense Report summary cursor.");
+}
+
+function toDate(value: unknown): Date {
+    if (value instanceof Date) {
+        return value;
+    }
+
+    return new Date(String(value));
+}
+
+function toStringArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return getUniqueSortedValues(value.map((item) => String(item)));
+    }
+
+    return ["Uncategorized"];
 }
 
 function summarizeReportCategories(
