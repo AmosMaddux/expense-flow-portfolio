@@ -2,7 +2,7 @@ data "aws_caller_identity" "current" {}
 
 locals {
   tags = {
-    user = "muhilramesh"
+    user = "DonovanRodgers"
     env  = "sandbox"
   }
 

@@ -12,5 +12,5 @@ The stack creates an encrypted, versioned S3 bucket and an encrypted DynamoDB
 table. The sandbox backend uses the S3 bucket with Terraform's native S3 lockfile
 support. Both resources receive the required sandbox tags:
 
-- `user=muhilramesh`
+- `user=DonovanRodgers`
 - `env=sandbox`

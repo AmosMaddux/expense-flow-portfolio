@@ -29,7 +29,7 @@ locals {
   lock_table_name = coalesce(var.lock_table_name, "expenseflow-sandbox-terraform-locks")
 
   tags = {
-    user = "muhilramesh"
+    user = "DonovanRodgers"
     env  = "sandbox"
   }
 }
