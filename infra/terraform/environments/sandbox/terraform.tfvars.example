@@ -1,0 +1,18 @@
+aws_region = "us-east-1"
+
+# Set this for local runs, or export AWS_PROFILE instead.
+# aws_profile = "expenseflow-smoke"
+
+# Optional. Discovery on 2026-08-13 found no issued ACM certificates in us-east-1.
+# public_alb_certificate_arn = "arn:aws:acm:us-east-1:208096650110:certificate/example"
+
+# Optional. Required by some sandbox IAM policies.
+# role_permissions_boundary_arn = "arn:aws:iam::208096650110:policy/example-boundary"
+
+# Use immutable pushed images when deploying runnable services.
+# core_case_image_uri = "208096650110.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-core-case-service@sha256:..."
+# gl_coding_image_uri = "208096650110.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-gl-coding-service@sha256:..."
+
+# Use Secrets Manager ARNs only. Do not put secret values in tfvars.
+# core_case_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:208096650110:secret:expenseflow/sandbox/core-case/database-url-example"
+# gl_coding_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:208096650110:secret:expenseflow/sandbox/gl-coding/database-url-example"

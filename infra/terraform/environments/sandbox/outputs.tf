@@ -1,0 +1,39 @@
+output "vpc_id" {
+  description = "Terraform-managed sandbox VPC ID."
+  value       = module.network.vpc_id
+}
+
+output "public_alb_dns_name" {
+  description = "Public ALB DNS name for Core Case routes."
+  value       = module.alb.public_alb_dns_name
+}
+
+output "internal_alb_dns_name" {
+  description = "Internal ALB DNS name for GL-coding."
+  value       = module.alb.internal_alb_dns_name
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster name."
+  value       = module.ecs.cluster_name
+}
+
+output "core_case_repository_url" {
+  description = "Core Case ECR repository URL."
+  value       = module.ecs.core_case_repository_url
+}
+
+output "gl_coding_repository_url" {
+  description = "GL-coding ECR repository URL."
+  value       = module.ecs.gl_coding_repository_url
+}
+
+output "spa_bucket_name" {
+  description = "Private S3 bucket for SPA assets."
+  value       = module.spa.bucket_name
+}
+
+output "spa_cloudfront_domain_name" {
+  description = "CloudFront domain name for the SPA."
+  value       = module.spa.cloudfront_domain_name
+}

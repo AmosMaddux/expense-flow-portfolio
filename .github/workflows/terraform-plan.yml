@@ -1,0 +1,70 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/terraform-plan.yml"
+      - "infra/terraform/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sandbox:
+    name: Sandbox Terraform
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.6
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Init bootstrap for validation
+        run: terraform -chdir=infra/terraform/bootstrap init -backend=false
+
+      - name: Validate bootstrap
+        run: terraform -chdir=infra/terraform/bootstrap validate
+
+      - name: Init sandbox for validation
+        run: terraform -chdir=infra/terraform/environments/sandbox init -backend=false
+
+      - name: Validate sandbox
+        run: terraform -chdir=infra/terraform/environments/sandbox validate
+
+      - name: Configure AWS credentials
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Init sandbox backend
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        run: terraform -chdir=infra/terraform/environments/sandbox init -reconfigure
+
+      - name: Terraform plan
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        run: terraform -chdir=infra/terraform/environments/sandbox plan -input=false -out=sandbox.tfplan
+
+      - name: Save plan text
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        run: terraform -chdir=infra/terraform/environments/sandbox show -no-color sandbox.tfplan > infra/terraform/environments/sandbox/sandbox.tfplan.txt
+
+      - name: Upload plan artifact
+        if: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-terraform-plan
+          path: infra/terraform/environments/sandbox/sandbox.tfplan.txt
