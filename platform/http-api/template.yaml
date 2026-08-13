@@ -25,6 +25,10 @@ Parameters:
         Type: String
         Default: v1
         AllowedPattern: "^[a-zA-Z0-9_-]+$"
+    SpaOrigin:
+        Type: String
+        Description: Exact HTTPS origin of the CloudFront-hosted SPA.
+        AllowedPattern: "^https://[a-zA-Z0-9.-]+$"
 
 Resources:
     SharedJwtHttpApi:
@@ -37,6 +41,20 @@ Resources:
             FailOnWarnings: true
             PropagateTags: true
             StageName: !Ref StageName
+            CorsConfiguration:
+                AllowHeaders:
+                    - Authorization
+                    - Content-Type
+                AllowMethods:
+                    - GET
+                    - POST
+                    - PUT
+                    - PATCH
+                    - DELETE
+                    - OPTIONS
+                AllowOrigins:
+                    - !Ref SpaOrigin
+                MaxAge: 300
             Auth:
                 DefaultAuthorizer: SharedJwtAuthorizer
                 Authorizers:
@@ -120,3 +138,6 @@ Outputs:
     ProtectedClaimsProbeUrl:
         Description: Protected route used by the JWT gateway smoke test.
         Value: !Sub https://${SharedJwtHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/auth-context
+    SpaOrigin:
+        Description: Sole browser origin allowed by the HTTP API CORS policy.
+        Value: !Ref SpaOrigin

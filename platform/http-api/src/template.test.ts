@@ -67,6 +67,22 @@ void describe("HTTP API infrastructure template", () => {
         expect(template).not.toContain("Authorizer: NONE");
     });
 
+    void test("allows preflight only for the configured SPA origin", () => {
+        expect(template).toContain("SpaOrigin:");
+        expect(template).toContain(
+            'AllowedPattern: "^https://[a-zA-Z0-9.-]+$"',
+        );
+        expect(template).toMatch(
+            /CorsConfiguration:[\s\S]*AllowHeaders:[\s\S]*- Authorization[\s\S]*- Content-Type/,
+        );
+        expect(template).toMatch(
+            /AllowOrigins:[\s\S]*- !Ref SpaOrigin[\s\S]*MaxAge: 300/,
+        );
+        expect(template).not.toContain(
+            "AllowOrigins:\n                    - '*'",
+        );
+    });
+
     void test("propagates the required sandbox ownership tags", () => {
         expect(template).toContain("EnvironmentTag:");
         expect(template).toContain("UserTag:");
