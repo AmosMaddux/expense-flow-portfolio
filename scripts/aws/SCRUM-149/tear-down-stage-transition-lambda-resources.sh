@@ -10,8 +10,9 @@ FUNCTION_NAME="${FUNCTION_NAME:-expenseflow-stage-transition-consumer}"
 LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-expenseflow-stage-transition-consumer-lambda-role}"
 LAMBDA_SECURITY_GROUP_NAME="${LAMBDA_SECURITY_GROUP_NAME:-expenseflow-stage-transition-consumer-lambda-sg}"
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
-STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-report-stage-transitioned-events}"
+VPC_ID="${VPC_ID:-}"
+STAGE_TRANSITION_QUEUE_NAME="${STAGE_TRANSITION_QUEUE_NAME:-expenseflow-sandbox-stage-transition-events}"
+STAGE_TRANSITION_DLQ_NAME="${STAGE_TRANSITION_DLQ_NAME:-expenseflow-sandbox-stage-transition-events-dlq}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" ]]; then
     echo "Refusing to run destructive teardown with AWS_PROFILE=$AWS_PROFILE. Use the dedicated $EXPECTED_PROFILE sandbox profile." >&2
@@ -31,6 +32,13 @@ queue_url() {
     aws_cli sqs get-queue-url --queue-name "$1" --query QueueUrl --output text
 }
 
+queue_url_if_exists() {
+    aws_cli sqs get-queue-url \
+        --queue-name "$1" \
+        --query QueueUrl \
+        --output text 2>/dev/null || true
+}
+
 queue_arn() {
     local url="$1"
 
@@ -41,13 +49,29 @@ queue_arn() {
         --output text
 }
 
+require_queue_tags() {
+    local queue_name="$1"
+    local queue_url="$2"
+    local is_owned
+
+    is_owned="$(aws_cli sqs list-queue-tags \
+        --queue-url "$queue_url" \
+        --query "Tags.user == 'muhilramesh' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
+        --output text)"
+
+    if [[ "$is_owned" != "True" ]]; then
+        echo "Refusing to delete SQS queue $queue_name because SCRUM-149 ownership tags are missing." >&2
+        return 1
+    fi
+}
+
 require_lambda_tags() {
     local function_arn="$1"
     local is_owned
 
     is_owned="$(aws_cli lambda list-tags \
         --resource "$function_arn" \
-        --query "Tags.user == 'amos-maddux' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
+        --query "Tags.user == 'muhilramesh' && Tags.env == 'sandbox' && Tags.ticket == 'SCRUM-149'" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -61,7 +85,7 @@ require_role_tags() {
 
     is_owned="$(aws_cli iam list-role-tags \
         --role-name "$LAMBDA_ROLE_NAME" \
-        --query "contains(Tags[?Key=='user'].Value, 'amos-maddux') && contains(Tags[?Key=='env'].Value, 'sandbox') && contains(Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
+        --query "contains(Tags[?Key=='user'].Value, 'muhilramesh') && contains(Tags[?Key=='env'].Value, 'sandbox') && contains(Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -76,7 +100,7 @@ require_security_group_tags() {
 
     is_owned="$(aws_cli ec2 describe-security-groups \
         --group-ids "$group_id" \
-        --query "contains(SecurityGroups[0].Tags[?Key=='user'].Value, 'amos-maddux') && contains(SecurityGroups[0].Tags[?Key=='env'].Value, 'sandbox') && contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
+        --query "contains(SecurityGroups[0].Tags[?Key=='user'].Value, 'muhilramesh') && contains(SecurityGroups[0].Tags[?Key=='env'].Value, 'sandbox') && contains(SecurityGroups[0].Tags[?Key=='ticket'].Value, 'SCRUM-149')" \
         --output text)"
 
     if [[ "$is_owned" != "True" ]]; then
@@ -125,9 +149,14 @@ delete_function() {
 
 delete_security_group() {
     local group_id
+    local filters=(Name=group-name,Values="$LAMBDA_SECURITY_GROUP_NAME")
+
+    if [[ -n "$VPC_ID" ]]; then
+        filters=(Name=vpc-id,Values="$VPC_ID" "${filters[@]}")
+    fi
 
     group_id="$(aws_cli ec2 describe-security-groups \
-        --filters Name=vpc-id,Values="$VPC_ID" Name=group-name,Values="$LAMBDA_SECURITY_GROUP_NAME" \
+        --filters "${filters[@]}" \
         --query 'SecurityGroups[0].GroupId' \
         --output text 2>/dev/null || true)"
 
@@ -137,6 +166,19 @@ delete_security_group() {
 
     require_security_group_tags "$group_id"
     aws_cli ec2 delete-security-group --group-id "$group_id" >/dev/null
+}
+
+delete_queue_if_owned() {
+    local queue_name="$1"
+    local resolved_queue_url
+
+    resolved_queue_url="$(queue_url_if_exists "$queue_name")"
+    if [[ -z "$resolved_queue_url" || "$resolved_queue_url" == "None" ]]; then
+        return 0
+    fi
+
+    require_queue_tags "$queue_name" "$resolved_queue_url"
+    aws_cli sqs delete-queue --queue-url "$resolved_queue_url" >/dev/null
 }
 
 delete_role() {
@@ -169,16 +211,20 @@ delete_role() {
 }
 
 main() {
-    source_queue_url="$(queue_url "$STAGE_TRANSITION_QUEUE_NAME")"
-    source_queue_arn="$(queue_arn "$source_queue_url")"
+    source_queue_url="$(queue_url_if_exists "$STAGE_TRANSITION_QUEUE_NAME")"
 
-    delete_event_source_mapping "$source_queue_arn"
+    if [[ -n "$source_queue_url" && "$source_queue_url" != "None" ]]; then
+        source_queue_arn="$(queue_arn "$source_queue_url")"
+        delete_event_source_mapping "$source_queue_arn"
+    fi
     delete_function
     aws_cli logs delete-log-group --log-group-name "$LAMBDA_LOG_GROUP" >/dev/null 2>&1 || true
     delete_security_group
     delete_role
+    delete_queue_if_owned "$STAGE_TRANSITION_QUEUE_NAME"
+    delete_queue_if_owned "$STAGE_TRANSITION_DLQ_NAME"
 
-    echo "Deleted SCRUM-149 Lambda resources. Donovan's SNS/SQS/DLQ/VPC resources were left intact."
+    echo "Deleted SCRUM-149 Lambda and SQS resources. Shared SCRUM-147 SNS and VPC resources were left intact."
 }
 
 main "$@"

@@ -62,6 +62,7 @@ void describe("app", () => {
             1,
         ).toString("base64");
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        delete process.env.CORE_CASE_INTERNAL_ROUTES_ENABLED;
         app = (await import("./app.js")).app;
     });
 
@@ -189,6 +190,30 @@ void describe("app", () => {
 
     void test("does not mount runtime smoke routes by default", async () => {
         const response = await requestApp("/v1/runtime-smoke/gl-coding");
+
+        expect(response.status).toBe(404);
+    });
+
+    void test("does not mount internal command routes by default", async () => {
+        const response = await requestApp(
+            "/v1/internal/expense-reports/60000000-0000-4000-8000-000000000150/payment-stub-settlement",
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "synthetic-internal-disabled",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000150",
+                },
+                body: JSON.stringify({
+                    tenantId: "40000000-0000-4000-8000-000000000150",
+                    actorId: "50000000-0000-4000-8000-000000000150",
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic disabled internal route.",
+                }),
+            },
+        );
 
         expect(response.status).toBe(404);
     });

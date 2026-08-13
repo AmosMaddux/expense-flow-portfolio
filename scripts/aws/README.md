@@ -242,3 +242,35 @@ scripts/aws/tear-down-runtime-smoke-resources.sh
 ```
 
 The teardown script scales down and deletes ECS services, stops remaining smoke tasks, deletes public and internal ALB listeners/rules, deletes both ALBs and target groups, deregisters and deletes task-definition revisions where AWS permits it, deletes the ECS cluster, deletes ECR repositories and pushed images, force-deletes the Secrets Manager entries, deletes CloudWatch log groups, deletes security groups, removes IAM role policies and roles, and deletes rendered task-definition output under `/tmp`.
+
+## Ticket Teardown Orchestrator
+
+The master ticket teardown script discovers `tear-down-*.sh` scripts under
+`scripts/aws/SCRUM-*` directories and runs them newest ticket first. Each ticket
+script still receives its own `CONFIRM_RESOURCE_TEARDOWN=<ticket>` value.
+
+Preview without deleting resources:
+
+```bash
+CONFIRM_ALL_SCRUM_RESOURCE_TEARDOWN=ALL-SCRUM \
+DRY_RUN=true \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/tear-down-scrum-ticket-resources.sh
+```
+
+Run all discovered ticket teardowns:
+
+```bash
+CONFIRM_ALL_SCRUM_RESOURCE_TEARDOWN=ALL-SCRUM \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/tear-down-scrum-ticket-resources.sh
+```
+
+Limit teardown to selected tickets:
+
+```bash
+CONFIRM_ALL_SCRUM_RESOURCE_TEARDOWN=ALL-SCRUM \
+TICKETS=SCRUM-150,SCRUM-149 \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/tear-down-scrum-ticket-resources.sh
+```

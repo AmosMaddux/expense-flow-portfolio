@@ -47,35 +47,36 @@ Secrets Manager-backed runtime smoke token.
 
 Replace these placeholders before registration:
 
-| Placeholder | Type | Used by |
-| --- | --- | --- |
-| `${AWS_REGION}` | Config | Both task definitions |
-| `${AUTH_JWT_KEY_ID}` | Config | Both services |
-| `${CORE_CASE_IMAGE_URI}` | ECR image URI or digest | Core Case |
-| `${GL_CODING_IMAGE_URI}` | ECR image URI or digest | GL-coding |
-| `${ECS_TASK_EXECUTION_ROLE_ARN}` | IAM role ARN | Both task definitions |
-| `${CORE_CASE_TASK_ROLE_ARN}` | IAM role ARN | Core Case |
-| `${GL_CODING_TASK_ROLE_ARN}` | IAM role ARN | GL-coding |
-| `${CORE_CASE_LOG_GROUP_NAME}` | CloudWatch Logs group | Core Case |
-| `${GL_CODING_LOG_GROUP_NAME}` | CloudWatch Logs group | GL-coding |
-| `${CORE_CASE_DATABASE_URL_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${GL_CODING_DATABASE_URL_SECRET_ARN}` | Secrets Manager ARN | GL-coding |
-| `${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN}` | Secrets Manager ARN | GL-coding |
-| `${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN}` | Secrets Manager ARN | Core Case |
-| `${DYNAMODB_EXPENSE_REPORT_TABLE}` | Config | Core Case |
-| `${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX}` | Config | Core Case |
-| `${GL_CODING_SERVICE_BASE_URL}` | Config | Core Case |
-| `${MFA_TOTP_SECRET_KEY_VERSION}` | Config | Core Case |
-| `${RECEIPT_STORAGE_BUCKET}` | Config | Core Case |
-| `${REDIS_URL}` | Config | Core Case |
-| `${RUNTIME_SMOKE_GL_CODING_ENABLED}` | Config | Core Case |
-| `${STAGE_TRANSITION_SNS_TOPIC_ARN}` | Config | Core Case |
-| `${TIN_EIN_VALIDATION_ENDPOINT_URL}` | Config | Core Case |
-| `${TIN_EIN_VALIDATION_WSDL_URL}` | Config | Core Case |
+| Placeholder                                              | Type                    | Used by               |
+| -------------------------------------------------------- | ----------------------- | --------------------- |
+| `${AWS_REGION}`                                          | Config                  | Both task definitions |
+| `${AUTH_JWT_KEY_ID}`                                     | Config                  | Both services         |
+| `${CORE_CASE_IMAGE_URI}`                                 | ECR image URI or digest | Core Case             |
+| `${GL_CODING_IMAGE_URI}`                                 | ECR image URI or digest | GL-coding             |
+| `${ECS_TASK_EXECUTION_ROLE_ARN}`                         | IAM role ARN            | Both task definitions |
+| `${CORE_CASE_TASK_ROLE_ARN}`                             | IAM role ARN            | Core Case             |
+| `${GL_CODING_TASK_ROLE_ARN}`                             | IAM role ARN            | GL-coding             |
+| `${CORE_CASE_LOG_GROUP_NAME}`                            | CloudWatch Logs group   | Core Case             |
+| `${GL_CODING_LOG_GROUP_NAME}`                            | CloudWatch Logs group   | GL-coding             |
+| `${CORE_CASE_DATABASE_URL_SECRET_ARN}`                   | Secrets Manager ARN     | Core Case             |
+| `${GL_CODING_DATABASE_URL_SECRET_ARN}`                   | Secrets Manager ARN     | GL-coding             |
+| `${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN}`           | Secrets Manager ARN     | Core Case             |
+| `${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN}`      | Secrets Manager ARN     | GL-coding             |
+| `${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN}` | Secrets Manager ARN     | Core Case             |
+| `${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN}`           | Secrets Manager ARN     | Core Case             |
+| `${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN}`    | Secrets Manager ARN     | Core Case             |
+| `${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN}`    | Secrets Manager ARN     | Core Case             |
+| `${DYNAMODB_EXPENSE_REPORT_TABLE}`                       | Config                  | Core Case             |
+| `${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX}`                | Config                  | Core Case             |
+| `${CORE_CASE_INTERNAL_ROUTES_ENABLED}`                   | Config                  | Core Case             |
+| `${GL_CODING_SERVICE_BASE_URL}`                          | Config                  | Core Case             |
+| `${MFA_TOTP_SECRET_KEY_VERSION}`                         | Config                  | Core Case             |
+| `${RECEIPT_STORAGE_BUCKET}`                              | Config                  | Core Case             |
+| `${REDIS_URL}`                                           | Config                  | Core Case             |
+| `${RUNTIME_SMOKE_GL_CODING_ENABLED}`                     | Config                  | Core Case             |
+| `${STAGE_TRANSITION_SNS_TOPIC_ARN}`                      | Config                  | Core Case             |
+| `${TIN_EIN_VALIDATION_ENDPOINT_URL}`                     | Config                  | Core Case             |
+| `${TIN_EIN_VALIDATION_WSDL_URL}`                         | Config                  | Core Case             |
 
 The Node Core Case task receives the JWT signing private key through
 `AUTH_JWT_PRIVATE_KEY_BASE64`. Verifier services receive
@@ -83,3 +84,8 @@ The Node Core Case task receives the JWT signing private key through
 RS256/JWKS migration direction. Do not place key material, database URLs, or
 external credentials in image layers, task-definition environment values, logs,
 or documentation.
+
+Core Case internal command routes are disabled unless
+`CORE_CASE_INTERNAL_ROUTES_ENABLED=true` is rendered into a deployment that is
+reachable only through the intended internal listener or security groups. Public
+ALB-backed service tasks should keep the default `false` value.

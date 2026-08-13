@@ -43,12 +43,14 @@ const localComposeAwsEnvSchema = z
         AWS_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
         AWS_SESSION_TOKEN: z.string().trim().min(1).optional(),
         EXPECTED_AWS_ACCOUNT_ID: z.string().regex(/^\d{12}$/),
+        CORE_CASE_INTERNAL_ROUTES_ENABLED: z.literal("true"),
         STAGE_TRANSITION_SNS_TOPIC_ARN: z.string().trim().min(1),
         STAGE_TRANSITION_SQS_QUEUE_URL: z.url(),
         STAGE_TRANSITION_SQS_DLQ_URL: z.url(),
         DYNAMODB_EXPENSE_REPORT_TABLE: z.string().trim().min(1),
         DYNAMODB_EXPENSE_REPORT_TENANT_INDEX: z.string().trim().min(1),
         DATABASE_URL: z.url(),
+        CORE_CASE_INTERNAL_COMMAND_TOKEN: z.string().min(32),
     })
     .passthrough();
 
@@ -150,8 +152,11 @@ const updateDeductibilityRequestSchema = z
     })
     .strict();
 
-const settleExpenseReportRequestSchema = z
+const internalPaymentStubSettlementRequestSchema = z
     .object({
+        tenantId: z.uuid(),
+        actorId: z.uuid(),
+        roles: z.tuple([z.literal("Finance Admin")]),
         reason: z.string().min(1),
     })
     .strict();
@@ -299,6 +304,7 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
         const dynamoDocumentClient = DynamoDBDocumentClient.from(dynamoClient);
         const dynamoProjectionKeysToCleanup: DynamoProjectionKey[] = [];
         let testFailed = false;
+        let cleanupFailure: unknown;
 
         try {
             await assertExpectedAwsAccount(env, stsClient);
@@ -419,14 +425,19 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
 
             const settled = await postJson(
                 env,
-                `/v1/expense-reports/${created.id}/settlement`,
-                financeAdmin.accessToken,
-                settleExpenseReportRequestSchema.parse({
+                `/v1/internal/expense-reports/${created.id}/payment-stub-settlement`,
+                undefined,
+                internalPaymentStubSettlementRequestSchema.parse({
+                    tenantId: e2eWalkthroughTenantId,
+                    actorId: financeAdmin.userId,
+                    roles: ["Finance Admin"],
                     reason: "Synthetic SCRUM-146 payment issued.",
                 }),
                 expenseReportResponseSchema,
                 {
                     "idempotency-key": `scrum-146-settle-${randomUUID()}`,
+                    "x-core-case-internal-command-token":
+                        env.CORE_CASE_INTERNAL_COMMAND_TOKEN,
                     "x-correlation-id": transitionCorrelationIds[3],
                 },
             );
@@ -498,17 +509,21 @@ describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
                 );
             } catch (cleanupError: unknown) {
                 if (!testFailed) {
-                    throw cleanupError;
+                    cleanupFailure = cleanupError;
+                } else {
+                    const detail =
+                        cleanupError instanceof Error
+                            ? cleanupError.message
+                            : "Unknown cleanup error.";
+                    process.stderr.write(
+                        `SCRUM-146 DynamoDB cleanup failed after test failure: ${detail}\n`,
+                    );
                 }
-
-                const detail =
-                    cleanupError instanceof Error
-                        ? cleanupError.message
-                        : "Unknown cleanup error.";
-                process.stderr.write(
-                    `SCRUM-146 DynamoDB cleanup failed after test failure: ${detail}\n`,
-                );
             }
+        }
+
+        if (cleanupFailure !== undefined) {
+            throw cleanupFailure;
         }
     }, 180_000);
 });
@@ -641,7 +656,9 @@ async function assertAwsPreflight(
     } catch (error: unknown) {
         const detail =
             error instanceof Error ? error.message : "Unknown AWS SDK error.";
-        throw new Error(`${resourceName} preflight failed: ${detail}`);
+        throw new Error(`${resourceName} preflight failed: ${detail}`, {
+            cause: error,
+        });
     }
 }
 

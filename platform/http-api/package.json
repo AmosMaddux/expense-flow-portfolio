@@ -5,9 +5,10 @@
     "type": "module",
     "scripts": {
         "build": "tsc --build",
-        "build:lambda": "esbuild src/claimsProbe.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=build/claimsProbe.js && esbuild src/jwtIssuer.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=issuer-build/jwtIssuer.js"
+        "build:lambda": "esbuild src/claimsProbe.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=build/claimsProbe.js && esbuild src/issuePaymentStub.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=build/issuePaymentStub.js && esbuild src/jwtIssuer.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=issuer-build/jwtIssuer.js"
     },
     "dependencies": {
+        "@aws-sdk/client-secrets-manager": "^3.1097.0",
         "zod": "^4.4.3"
     }
 }

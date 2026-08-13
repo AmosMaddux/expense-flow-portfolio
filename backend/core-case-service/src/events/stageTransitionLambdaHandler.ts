@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { hydrateLambdaDatabaseUrlEnvironment } from "../config/lambdaSecretsConfig.js";
+import {
+    loadLambdaDatabaseConfig,
+    verifyLambdaDatabaseUrlEnvironment,
+} from "../config/lambdaDatabaseConfig.js";
 
 const sqsLambdaRecordSchema = z.object({
     body: z.string().trim().min(1),
@@ -24,7 +27,7 @@ export type StageTransitionLambdaLogger = {
 };
 
 export type StageTransitionLambdaHandlerDependencies = {
-    hydrateDatabaseUrl?: () => Promise<void>;
+    verifyDatabaseUrl?: () => Promise<void>;
     logger?: StageTransitionLambdaLogger;
     processEventBody?: (body: string) => Promise<unknown>;
 };
@@ -79,9 +82,15 @@ async function processStageTransitionRecord(
         return;
     }
 
-    await (
-        dependencies.hydrateDatabaseUrl ?? hydrateLambdaDatabaseUrlEnvironment
-    )();
+    // Verify and load database configuration from Secrets Manager
+    const verificationFn =
+        dependencies.verifyDatabaseUrl ?? verifyLambdaDatabaseUrlEnvironment;
+    await verificationFn();
+
+    // Populate DATABASE_URL for the db client before importing event processor
+    const dbConfig = await loadLambdaDatabaseConfig();
+    process.env.DATABASE_URL = dbConfig.databaseUrl;
+
     const { processStageTransitionEventBody } =
         await import("./stageTransitionEventProcessor.js");
     await processStageTransitionEventBody(body);

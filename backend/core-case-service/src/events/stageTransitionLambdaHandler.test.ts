@@ -128,11 +128,11 @@ void describe("stage-transition Lambda handler", () => {
         expect(logger.recordFailed).toHaveBeenCalledOnce();
     });
 
-    void test("uses an injected processor without hydrating the database URL", async () => {
-        const hydrateDatabaseUrl = vi.fn().mockResolvedValue(undefined);
+    void test("uses an injected processor without verifying the database URL", async () => {
+        const verifyDatabaseUrl = vi.fn().mockResolvedValue(undefined);
         const processEventBody = vi.fn().mockResolvedValue(undefined);
         const handler = createStageTransitionLambdaHandler({
-            hydrateDatabaseUrl,
+            verifyDatabaseUrl,
             processEventBody,
         });
 
@@ -145,7 +145,7 @@ void describe("stage-transition Lambda handler", () => {
             ]),
         );
 
-        expect(hydrateDatabaseUrl).not.toHaveBeenCalled();
+        expect(verifyDatabaseUrl).not.toHaveBeenCalled();
         expect(processEventBody).toHaveBeenCalledOnce();
     });
 

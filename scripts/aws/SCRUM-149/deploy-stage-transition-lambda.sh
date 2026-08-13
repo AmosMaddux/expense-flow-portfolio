@@ -12,13 +12,13 @@ LAMBDA_SECURITY_GROUP_NAME="${LAMBDA_SECURITY_GROUP_NAME:-expenseflow-stage-tran
 LAMBDA_LOG_GROUP="${LAMBDA_LOG_GROUP:-/aws/lambda/$FUNCTION_NAME}"
 LAMBDA_REPOSITORY="${LAMBDA_REPOSITORY:-expenseflow-stage-transition-consumer-lambda}"
 IMAGE_TAG="${IMAGE_TAG:-scrum-149-smoke}"
-VPC_ID="${VPC_ID:-vpc-07d74aa9f23a0a4d5}"
-PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-subnet-0aefa6933acb130d5,subnet-0f35fcc094f77ec8b}"
-DATABASE_URL_SECRET_ID="${DATABASE_URL_SECRET_ID:-expenseflow/sandbox/core-case/database-url}"
+VPC_ID="${VPC_ID:-}"
+PRIVATE_SUBNETS="${PRIVATE_SUBNETS:-}"
+DATABASE_SECRET_ARN="${DATABASE_SECRET_ARN:-}"
 LAMBDA_TIMEOUT_SECONDS="${LAMBDA_TIMEOUT_SECONDS:-30}"
 LAMBDA_MEMORY_SIZE="${LAMBDA_MEMORY_SIZE:-512}"
 
-TAGS=(Key=user,Value=amos-maddux Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
+TAGS=(Key=user,Value=muhilramesh Key=env,Value=sandbox Key=ticket,Value=SCRUM-149)
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -27,6 +27,16 @@ fi
 
 aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+}
+
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly before deploying the SCRUM-149 Lambda." >&2
+        return 1
+    fi
 }
 
 role_arn() {
@@ -43,10 +53,14 @@ security_group_id() {
 tag_function() {
     local function_arn="$1"
 
-    aws_cli lambda tag-resource --resource "$function_arn" --tags user=amos-maddux,env=sandbox,ticket=SCRUM-149
+    aws_cli lambda tag-resource --resource "$function_arn" --tags user=muhilramesh,env=sandbox,ticket=SCRUM-149
 }
 
 main() {
+    require_non_empty VPC_ID "$VPC_ID"
+    require_non_empty PRIVATE_SUBNETS "$PRIVATE_SUBNETS"
+    require_non_empty DATABASE_SECRET_ARN "$DATABASE_SECRET_ARN"
+
     account_id="$(aws_cli sts get-caller-identity --query Account --output text)"
     image_uri="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com/$LAMBDA_REPOSITORY:$IMAGE_TAG"
     lambda_role_arn="$(role_arn)"
@@ -67,7 +81,7 @@ main() {
             --role "$lambda_role_arn" \
             --timeout "$LAMBDA_TIMEOUT_SECONDS" \
             --memory-size "$LAMBDA_MEMORY_SIZE" \
-            --environment "Variables={AWS_REGION=$AWS_REGION,DATABASE_URL_SECRET_ID=$DATABASE_URL_SECRET_ID}" \
+            --environment "Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}" \
             --vpc-config "SubnetIds=$PRIVATE_SUBNETS,SecurityGroupIds=$lambda_security_group_id" >/dev/null
         aws_cli lambda wait function-updated --function-name "$FUNCTION_NAME"
     else
@@ -79,9 +93,9 @@ main() {
             --architectures x86_64 \
             --timeout "$LAMBDA_TIMEOUT_SECONDS" \
             --memory-size "$LAMBDA_MEMORY_SIZE" \
-            --environment "Variables={AWS_REGION=$AWS_REGION,DATABASE_URL_SECRET_ID=$DATABASE_URL_SECRET_ID}" \
+            --environment "Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}" \
             --vpc-config "SubnetIds=$PRIVATE_SUBNETS,SecurityGroupIds=$lambda_security_group_id" \
-            --tags user=amos-maddux,env=sandbox,ticket=SCRUM-149 >/dev/null
+            --tags user=muhilramesh,env=sandbox,ticket=SCRUM-149 >/dev/null
         aws_cli lambda wait function-active --function-name "$FUNCTION_NAME"
     fi
 

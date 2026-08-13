@@ -294,6 +294,9 @@ void describe("Expense Report routes", () => {
         ).toString("base64");
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
         process.env.MILEAGE_REIMBURSEMENT_RATE = "0.70";
+        process.env.CORE_CASE_INTERNAL_COMMAND_TOKEN =
+            "synthetic-core-case-internal-command-token";
+        process.env.CORE_CASE_INTERNAL_ROUTES_ENABLED = "true";
         app = (await import("../../app.js")).app;
     });
 
@@ -3173,13 +3176,11 @@ void describe("Expense Report routes", () => {
         );
     });
 
-    void test("settles an AP Review report idempotently and replays the original correlation", async () => {
+    void test("does not expose the old public settlement route", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000210";
         const owner = "50000000-0000-4000-8000-000000000210";
         const financeAdminId = "51000000-0000-4000-8000-000000000210";
         const reportId = "60000000-0000-4000-8000-000000000210";
-        const correlationId = "70000000-0000-4000-8000-000000000210";
-        const replayCorrelationId = "70000000-0000-4000-8000-000000000211";
 
         await db.insert(expenseReport).values({
             id: reportId,
@@ -3201,40 +3202,66 @@ void describe("Expense Report routes", () => {
                     ),
                     "content-type": "application/json",
                     "idempotency-key": "expense-settle-210",
-                    "x-correlation-id": correlationId,
                 },
                 body: JSON.stringify({
                     reason: "synthetic settlement complete",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(outboxRows).toHaveLength(0);
+    });
+
+    void test("settles an AP Review report from a trusted internal payment command", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000220";
+        const owner = "50000000-0000-4000-8000-000000000220";
+        const financeAdminId = "51000000-0000-4000-8000-000000000220";
+        const reportId = "60000000-0000-4000-8000-000000000220";
+        const correlationId = "70000000-0000-4000-8000-000000000220";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-220",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: financeAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
                 }),
             },
         );
         const body = (await response.json()) as { currentStage?: string };
-        await db
-            .delete(tenantRateLimitWindow)
-            .where(eq(tenantRateLimitWindow.tenantId, tenantId));
-
-        const replayResponse = await requestApp(
-            `/v1/expense-reports/${reportId}/settlement`,
-            {
-                method: "POST",
-                headers: {
-                    authorization: authorizationHeader(
-                        tenantId,
-                        financeAdminId,
-                        ["Finance Admin"],
-                    ),
-                    "content-type": "application/json",
-                    "idempotency-key": "expense-settle-210",
-                    "x-correlation-id": replayCorrelationId,
-                },
-                body: JSON.stringify({
-                    reason: "synthetic settlement complete",
-                }),
-            },
-        );
-        const replayBody = (await replayResponse.json()) as {
-            currentStage?: string;
-        };
         const settlementRows = await db
             .select()
             .from(expenseReportSettlement)
@@ -3245,44 +3272,397 @@ void describe("Expense Report routes", () => {
             .where(eq(stageTransitionOutbox.expenseReportId, reportId));
 
         expect(response.status).toBe(200);
-        expect(replayResponse.status).toBe(200);
         expect(response.headers.get("x-correlation-id")).toBe(correlationId);
-        expect(replayResponse.headers.get("x-correlation-id")).toBe(
-            correlationId,
-        );
         expect(body.currentStage).toBe("Reconciled");
-        expect(replayBody.currentStage).toBe("Reconciled");
         expect(settlementRows).toHaveLength(1);
         expect(settlementRows[0]).toMatchObject({
             tenantId,
             expenseReportId: reportId,
-            idempotencyKey: "expense-settle-210",
+            idempotencyKey: "internal-expense-settle-220",
             correlationId,
             status: "reconciled",
         });
         expect(settlementRows[0]?.paymentId).toMatch(/^synthetic-payment-/);
         expect(outboxRows).toHaveLength(2);
-        expect(outboxRows).toContainEqual(
-            expect.objectContaining({
-                tenantId,
-                expenseReportId: reportId,
-                idempotencyKey: "expense-settle-210",
-                fromStage: "AP Review",
-                toStage: "Paid",
-            }),
-        );
-        expect(outboxRows).toContainEqual(
-            expect.objectContaining({
-                tenantId,
-                expenseReportId: reportId,
-                idempotencyKey: "expense-settle-210",
-                fromStage: "Paid",
-                toStage: "Reconciled",
-            }),
-        );
     });
 
-    void test("does not settle another tenant's Expense Report", async () => {
+    void test("rejects an internal payment command without the trust token", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000221";
+        const owner = "50000000-0000-4000-8000-000000000221";
+        const financeAdminId = "51000000-0000-4000-8000-000000000221";
+        const reportId = "60000000-0000-4000-8000-000000000221";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-221",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000221",
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: financeAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+        expect(response.status).toBe(401);
+        expect(settlementRows).toHaveLength(0);
+    });
+
+    void test("rejects an internal payment command with an invalid trust token", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000222";
+        const owner = "50000000-0000-4000-8000-000000000222";
+        const financeAdminId = "51000000-0000-4000-8000-000000000222";
+        const reportId = "60000000-0000-4000-8000-000000000222";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-222",
+                    "x-core-case-internal-command-token":
+                        "synthetic-invalid-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000222",
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: financeAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+        expect(response.status).toBe(401);
+        expect(settlementRows).toHaveLength(0);
+    });
+
+    void test("keeps Core Case role gating for trusted internal payment commands", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000223";
+        const owner = "50000000-0000-4000-8000-000000000223";
+        const employeeId = "51000000-0000-4000-8000-000000000223";
+        const reportId = "60000000-0000-4000-8000-000000000223";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-223",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000223",
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: employeeId,
+                    roles: ["Employee"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+        expect(response.status).toBe(403);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+    });
+
+    void test("replays trusted internal payment commands by idempotency key", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000224";
+        const owner = "50000000-0000-4000-8000-000000000224";
+        const financeAdminId = "51000000-0000-4000-8000-000000000224";
+        const reportId = "60000000-0000-4000-8000-000000000224";
+        const correlationId = "70000000-0000-4000-8000-000000000224";
+        const replayCorrelationId = "70000000-0000-4000-8000-000000000225";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const requestBody = {
+            tenantId,
+            actorId: financeAdminId,
+            roles: ["Finance Admin"],
+            reason: "Synthetic payment Lambda settlement complete.",
+        };
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-224",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": correlationId,
+                },
+                body: JSON.stringify(requestBody),
+            },
+        );
+        const replayResponse = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-224",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": replayCorrelationId,
+                },
+                body: JSON.stringify(requestBody),
+            },
+        );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+
+        expect(response.status).toBe(200);
+        expect(replayResponse.status).toBe(200);
+        expect(response.headers.get("x-correlation-id")).toBe(correlationId);
+        expect(replayResponse.headers.get("x-correlation-id")).toBe(
+            correlationId,
+        );
+        expect(settlementRows).toHaveLength(1);
+    });
+
+    void test("conflicts when an internal idempotency key is reused with changed command identity", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000226";
+        const owner = "50000000-0000-4000-8000-000000000226";
+        const financeAdminId = "51000000-0000-4000-8000-000000000226";
+        const otherFinanceAdminId = "51000000-0000-4000-8000-000000000227";
+        const reportId = "60000000-0000-4000-8000-000000000226";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const firstResponse = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-226",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000226",
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: financeAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const changedResponse = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-226",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000227",
+                },
+                body: JSON.stringify({
+                    tenantId,
+                    actorId: otherFinanceAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+
+        expect(firstResponse.status).toBe(200);
+        expect(changedResponse.status).toBe(409);
+    });
+
+    void test("does not honor caller-supplied tenant or actor identity without internal trust", async () => {
+        const owningTenantId = "40000000-0000-4000-8000-000000000228";
+        const spoofedTenantId = "40000000-0000-4000-8000-000000000229";
+        const owner = "50000000-0000-4000-8000-000000000228";
+        const financeAdminId = "51000000-0000-4000-8000-000000000228";
+        const spoofedActorId = "51000000-0000-4000-8000-000000000229";
+        const reportId = "60000000-0000-4000-8000-000000000228";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId: owningTenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(
+                        owningTenantId,
+                        financeAdminId,
+                        ["Finance Admin"],
+                    ),
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-228",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000228",
+                },
+                body: JSON.stringify({
+                    tenantId: spoofedTenantId,
+                    actorId: spoofedActorId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(eq(expenseReport.id, reportId));
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(401);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(0);
+        expect(outboxRows).toHaveLength(0);
+    });
+
+    void test("does not settle another tenant's Expense Report through the trusted internal route", async () => {
+        const owningTenantId = "40000000-0000-4000-8000-000000000230";
+        const commandTenantId = "40000000-0000-4000-8000-000000000231";
+        const owner = "50000000-0000-4000-8000-000000000230";
+        const financeAdminId = "51000000-0000-4000-8000-000000000231";
+        const reportId = "60000000-0000-4000-8000-000000000230";
+
+        await db.insert(expenseReport).values({
+            id: reportId,
+            tenantId: owningTenantId,
+            owner,
+            dueDate: "2026-08-18",
+            currentStage: "AP Review",
+        });
+
+        const response = await requestApp(
+            `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "internal-expense-settle-230",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000230",
+                },
+                body: JSON.stringify({
+                    tenantId: commandTenantId,
+                    actorId: financeAdminId,
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic payment Lambda settlement complete.",
+                }),
+            },
+        );
+        const [persistedReport] = await db
+            .select()
+            .from(expenseReport)
+            .where(
+                and(
+                    eq(expenseReport.tenantId, owningTenantId),
+                    eq(expenseReport.id, reportId),
+                ),
+            );
+        const settlementRows = await db
+            .select()
+            .from(expenseReportSettlement)
+            .where(eq(expenseReportSettlement.expenseReportId, reportId));
+        const transitionRows = await db
+            .select()
+            .from(stageTransition)
+            .where(eq(stageTransition.expenseReportId, reportId));
+        const outboxRows = await db
+            .select()
+            .from(stageTransitionOutbox)
+            .where(eq(stageTransitionOutbox.expenseReportId, reportId));
+
+        expect(response.status).toBe(404);
+        expect(persistedReport?.currentStage).toBe("AP Review");
+        expect(settlementRows).toHaveLength(0);
+        expect(transitionRows).toHaveLength(0);
+        expect(outboxRows).toHaveLength(0);
+    });
+
+    void test("keeps the removed public settlement route from settling another tenant's Expense Report", async () => {
         const owningTenantId = "40000000-0000-4000-8000-000000000213";
         const requestingTenantId = "40000000-0000-4000-8000-000000000214";
         const owner = "50000000-0000-4000-8000-000000000213";
@@ -3377,20 +3757,22 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
 
         try {
             const response = await requestApp(
-                `/v1/expense-reports/${reportId}/settlement`,
+                `/v1/internal/expense-reports/${reportId}/payment-stub-settlement`,
                 {
                     method: "POST",
                     headers: {
-                        authorization: authorizationHeader(
-                            tenantId,
-                            financeAdminId,
-                            ["Finance Admin"],
-                        ),
                         "content-type": "application/json",
                         "idempotency-key": "expense-settle-212",
+                        "x-core-case-internal-command-token":
+                            "synthetic-core-case-internal-command-token",
                         "x-correlation-id": correlationId,
                     },
-                    body: JSON.stringify({}),
+                    body: JSON.stringify({
+                        tenantId,
+                        actorId: financeAdminId,
+                        roles: ["Finance Admin"],
+                        reason: "Synthetic payment Lambda settlement complete.",
+                    }),
                 },
             );
             const [persistedReport] = await db

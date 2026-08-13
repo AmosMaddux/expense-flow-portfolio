@@ -208,11 +208,7 @@ export async function readCurrentE2eAccountTotpCode(
 
     try {
         await waitForUsefulTotpInterval();
-        return await readCurrentE2eTotpCode(
-            database,
-            e2eTenantId,
-            accountName,
-        );
+        return await readCurrentE2eTotpCode(database, e2eTenantId, accountName);
     } finally {
         await pool.end();
     }
