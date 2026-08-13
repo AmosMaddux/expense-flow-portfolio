@@ -6,13 +6,10 @@ AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 
-HTTP_API_STACK_NAME="${HTTP_API_STACK_NAME:-expenseflow-http-api-sandbox}"
-BOOTSTRAP_STACK_NAME="${BOOTSTRAP_STACK_NAME:-expenseflow-platform-bootstrap-sandbox}"
-DEPLOYMENT_ARTIFACT_BUCKET="${DEPLOYMENT_ARTIFACT_BUCKET:-}"
-PACKAGED_TEMPLATE_FILE="${PACKAGED_TEMPLATE_FILE:-.aws-sam/scrum-152-packaged-template.yaml}"
+BACKEND_BASE_URL="${BACKEND_BASE_URL:-}"
 DISTRIBUTION_ID="${DISTRIBUTION_ID:-}"
 DISTRIBUTION_COMMENT="${DISTRIBUTION_COMMENT:-ExpenseFlow SCRUM-151 sandbox SPA}"
-DEPLOY_SPA="${DEPLOY_SPA:-true}"
+CHECK_DIR=""
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -21,26 +18,6 @@ fi
 
 aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
-}
-
-stack_parameter() {
-    local parameter_key="$1"
-    aws_cli cloudformation describe-stacks \
-        --stack-name "$HTTP_API_STACK_NAME" \
-        --query "Stacks[0].Parameters[?ParameterKey=='$parameter_key'].ParameterValue | [0]" \
-        --output text
-}
-
-resolve_deployment_artifact_bucket() {
-    if [[ -n "$DEPLOYMENT_ARTIFACT_BUCKET" ]]; then
-        echo "$DEPLOYMENT_ARTIFACT_BUCKET"
-        return
-    fi
-
-    aws_cli cloudformation describe-stacks \
-        --stack-name "$BOOTSTRAP_STACK_NAME" \
-        --query "Stacks[0].Outputs[?OutputKey=='DeploymentArtifactBucketName'].OutputValue | [0]" \
-        --output text
 }
 
 resolve_distribution_id() {
@@ -52,6 +29,15 @@ resolve_distribution_id() {
     aws_cli cloudfront list-distributions \
         --query "DistributionList.Items[?Comment=='$DISTRIBUTION_COMMENT'].Id | [0]" \
         --output text
+}
+
+require_backend_origin() {
+    BACKEND_BASE_URL="$BACKEND_BASE_URL" node --input-type=module -e '
+const value = process.env.BACKEND_BASE_URL ?? "";
+const url = new URL(value);
+if (url.protocol !== "https:") throw new Error("BACKEND_BASE_URL must use HTTPS.");
+if (value !== url.origin) throw new Error("BACKEND_BASE_URL must be an origin without /v1 or another path.");
+'
 }
 
 require_distribution_approved() {
@@ -68,9 +54,30 @@ require_distribution_approved() {
     fi
 }
 
+require_core_case_surface() {
+    local openapi_file="$1"
+
+    curl --silent --show-error --fail \
+        --output "$openapi_file" \
+        "$BACKEND_BASE_URL/v1/openapi.json"
+    OPENAPI_FILE="$openapi_file" node --input-type=module -e '
+import { readFileSync } from "node:fs";
+const document = JSON.parse(readFileSync(process.env.OPENAPI_FILE, "utf8"));
+for (const path of ["/v1/auth/login", "/v1/case-queue/line-items"]) {
+  if (document.paths?.[path] === undefined) throw new Error(`Core Case OpenAPI is missing ${path}.`);
+}
+'
+}
+
 main() {
     local distribution_json distribution_arn distribution_domain spa_origin
-    local jwt_issuer jwt_audience stage_name artifact_bucket api_id api_endpoint api_base_url
+    local preflight_status allow_origin allow_credentials
+
+    if [[ -z "$BACKEND_BASE_URL" ]]; then
+        echo "BACKEND_BASE_URL is required and must be the certificate-valid public Core Case ALB origin." >&2
+        exit 1
+    fi
+    require_backend_origin
 
     DISTRIBUTION_ID="$(resolve_distribution_id)"
     if [[ -z "$DISTRIBUTION_ID" || "$DISTRIBUTION_ID" == "None" ]]; then
@@ -83,60 +90,34 @@ main() {
     require_distribution_approved "$distribution_arn"
     spa_origin="https://$distribution_domain"
 
-    jwt_issuer="$(stack_parameter JwtIssuer)"
-    jwt_audience="$(stack_parameter JwtAudience)"
-    stage_name="$(stack_parameter StageName)"
-    if [[ -z "$jwt_issuer" || "$jwt_issuer" == "None" || -z "$jwt_audience" || "$jwt_audience" == "None" ]]; then
-        echo "Unable to preserve the deployed stack's JWT issuer and audience." >&2
+    CHECK_DIR="$(mktemp -d)"
+    trap 'rm -rf "$CHECK_DIR"' EXIT
+    require_core_case_surface "$CHECK_DIR/openapi.json"
+
+    preflight_status="$(curl --silent --show-error --request OPTIONS \
+        --header "Origin: $spa_origin" \
+        --header 'Access-Control-Request-Method: POST' \
+        --header 'Access-Control-Request-Headers: content-type' \
+        --dump-header "$CHECK_DIR/preflight.headers" \
+        --output /dev/null \
+        --write-out '%{http_code}' \
+        "$BACKEND_BASE_URL/v1/auth/login")"
+    allow_origin="$(awk 'BEGIN { IGNORECASE=1 } /^access-control-allow-origin:/ { sub("^[^:]+:[[:space:]]*", ""); sub("\\r$", ""); print; exit }' "$CHECK_DIR/preflight.headers")"
+    allow_credentials="$(awk 'BEGIN { IGNORECASE=1 } /^access-control-allow-credentials:/ { sub("^[^:]+:[[:space:]]*", ""); sub("\\r$", ""); print; exit }' "$CHECK_DIR/preflight.headers")"
+    if [[ "$preflight_status" != "204" || "$allow_origin" != "$spa_origin" || "$allow_credentials" != "true" ]]; then
+        echo "Core Case is not deployed with the SCRUM-152 credentialed CORS policy for $spa_origin." >&2
         exit 1
     fi
-    if [[ -z "$stage_name" || "$stage_name" == "None" ]]; then
-        stage_name="v1"
-    fi
 
-    npm --workspace platform/http-api run build:lambda
-    artifact_bucket="$(resolve_deployment_artifact_bucket)"
-    if [[ -z "$artifact_bucket" || "$artifact_bucket" == "None" ]]; then
-        echo "Unable to resolve the deployment artifact bucket." >&2
-        exit 1
-    fi
-    mkdir -p "$(dirname "$PACKAGED_TEMPLATE_FILE")"
-    aws_cli cloudformation package \
-        --template-file platform/http-api/template.yaml \
-        --s3-bucket "$artifact_bucket" \
-        --output-template-file "$PACKAGED_TEMPLATE_FILE"
-    aws_cli cloudformation deploy \
-        --template-file "$PACKAGED_TEMPLATE_FILE" \
-        --stack-name "$HTTP_API_STACK_NAME" \
-        --capabilities CAPABILITY_IAM \
-        --no-fail-on-empty-changeset \
-        --tags user=muhilramesh env=sandbox ticket=SCRUM-152 \
-        --parameter-overrides \
-            EnvironmentTag=sandbox \
-            UserTag=muhilramesh \
-            JwtIssuer="$jwt_issuer" \
-            JwtAudience="$jwt_audience" \
-            StageName="$stage_name" \
-            SpaOrigin="$spa_origin"
+    AWS_PROFILE="$AWS_PROFILE" \
+        AWS_REGION="$AWS_REGION" \
+        DISTRIBUTION_ID="$DISTRIBUTION_ID" \
+        VITE_API_BASE_URL="$BACKEND_BASE_URL" \
+        scripts/aws/SCRUM-151/deploy-spa.sh
 
-    api_id="$(aws_cli cloudformation describe-stacks \
-        --stack-name "$HTTP_API_STACK_NAME" \
-        --query "Stacks[0].Outputs[?OutputKey=='HttpApiId'].OutputValue | [0]" \
-        --output text)"
-    api_endpoint="$(aws_cli apigatewayv2 get-api --api-id "$api_id" --query ApiEndpoint --output text)"
-    api_base_url="$api_endpoint/$stage_name"
-
-    if [[ "$DEPLOY_SPA" == "true" ]]; then
-        AWS_PROFILE="$AWS_PROFILE" \
-            AWS_REGION="$AWS_REGION" \
-            DISTRIBUTION_ID="$DISTRIBUTION_ID" \
-            VITE_API_BASE_URL="$api_base_url" \
-            scripts/aws/SCRUM-151/deploy-spa.sh
-    fi
-
-    echo "SCRUM-152 deployment completed."
+    echo "SCRUM-152 SPA deployment completed."
     echo "SPA origin: $spa_origin"
-    echo "API base URL: $api_base_url"
+    echo "Core Case base URL: $BACKEND_BASE_URL"
 }
 
 main "$@"

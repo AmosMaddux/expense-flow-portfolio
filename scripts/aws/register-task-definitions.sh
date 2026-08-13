@@ -112,6 +112,7 @@ export AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
 export MFA_TOTP_SECRET_KEY_VERSION="${MFA_TOTP_SECRET_KEY_VERSION:-scrum-147-synthetic-v1}"
 export CORE_CASE_INTERNAL_ROUTES_ENABLED="${CORE_CASE_INTERNAL_ROUTES_ENABLED:-false}"
 export RUNTIME_SMOKE_GL_CODING_ENABLED="${RUNTIME_SMOKE_GL_CODING_ENABLED:-false}"
+export SPA_ORIGIN="${SPA_ORIGIN:-}"
 export GL_CODING_SERVICE_BASE_URL="${GL_CODING_SERVICE_BASE_URL:-}"
 export DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 export DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
@@ -124,6 +125,7 @@ require_non_loopback_endpoint GL_CODING_SERVICE_BASE_URL "$GL_CODING_SERVICE_BAS
 require_non_loopback_endpoint REDIS_URL "$REDIS_URL"
 require_non_loopback_endpoint CORE_CASE_DATABASE_URL "${CORE_CASE_DATABASE_URL:-}"
 require_non_loopback_endpoint GL_CODING_DATABASE_URL "${GL_CODING_DATABASE_URL:-}"
+require_non_empty SPA_ORIGIN "$SPA_ORIGIN"
 
 if [[ "$VALIDATE_RENDER_ONLY" == "true" ]]; then
     require_non_empty STAGE_TRANSITION_SNS_TOPIC_ARN "${STAGE_TRANSITION_SNS_TOPIC_ARN:-}"

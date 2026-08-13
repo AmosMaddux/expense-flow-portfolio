@@ -27,11 +27,8 @@ sam deploy --guided \
     UserTag=muhilramesh \
     JwtIssuer=https://core-api.example.invalid/v1 \
     JwtAudience=expenseflow-http-api \
-    StageName=v1 \
-    SpaOrigin=https://spa.example.invalid
+    StageName=v1
 ```
-
-`SpaOrigin` must be the exact HTTPS CloudFront origin. API Gateway answers preflight requests and allows browser requests only from that origin with the configured methods and `Authorization` or `Content-Type` headers.
 
 The command returns `ProtectedClaimsProbeUrl`. No deployment is performed by repository tests.
 
