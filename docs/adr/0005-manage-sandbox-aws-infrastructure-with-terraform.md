@@ -26,14 +26,11 @@ The sandbox root composes reusable modules:
 - `modules/ecs` provisions the ECS Fargate cluster, task definitions, ECS services, ECR repositories, CloudWatch log groups, IAM roles, task security groups, SNS topic, encrypted and versioned receipt bucket, and encrypted DynamoDB Expense Report read-projection table.
 - `modules/spa` provisions the private encrypted SPA S3 bucket, CloudFront origin access control, CloudFront distribution, SPA fallback responses, and a source-ARN-scoped bucket policy.
 
-The Terraform provider applies default sandbox tags to taggable resources:
-
-- `user=DonovanRodgers`
-- `env=sandbox`
+Terraform applies sandbox tags directly to taggable resources. The `env` tag is always `sandbox`. The `user` tag is derived from the AWS caller identity by default, with a `resource_owner` override available for CI or shared-credential applies.
 
 Secrets are represented as Secrets Manager ARN inputs only. Terraform files and tfvars must not contain database URLs, credentials, keys, tokens, or other secret values. Redis is an explicit required input because this Terraform module does not create ElastiCache, Route 53 private hosted zones, or service discovery records.
 
-The public ALB supports an optional ACM certificate ARN. When a certificate is supplied, HTTP redirects to HTTPS and `/v1` plus `/v1/*` route to Core Case through HTTPS listener rules. Runtime smoke paths have an allowlisted forward rule followed immediately by an explicit fixed `403` rule so non-allowlisted requests cannot fall through to broader `/v1/*` forwarding. When no certificate is supplied, the sandbox can still produce a reviewable plan and a basic HTTP listener for early infrastructure validation with the same runtime smoke blocking behavior.
+The public ALB supports an optional ACM certificate ARN. When a certificate is supplied, HTTP redirects to HTTPS and `/v1` plus `/v1/*` route to Core Case through HTTPS listener rules. Runtime smoke paths have an allowlisted forward rule followed immediately by an explicit fixed `403` rule so non-allowlisted requests cannot fall through to broader `/v1/*` forwarding. When no certificate is supplied, the sandbox can still produce a reviewable plan and a basic HTTP listener for early infrastructure validation with the same runtime smoke blocking behavior. Runtime smoke CIDRs over HTTP require `allow_plain_http_public_api=true` so plaintext exposure is an explicit plan-time decision.
 
 Backend ECS tasks and the internal GL-coding ALB run in private subnets with public IP assignment disabled for tasks. Private subnet egress is provided through NAT so tasks can reach required AWS APIs and external dependencies without being directly internet-routable. Security group ingress follows the service path: public ALB to Core Case tasks, Core Case tasks to the internal ALB, and the internal ALB to GL-coding tasks. The internal ALB is not open to the full VPC CIDR.
 

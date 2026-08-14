@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "tags" {
+  description = "Tags applied to taggable ECS resources."
+  type        = map(string)
+  default     = {}
+}
+
 variable "aws_region" {
   description = "AWS region for ECS runtime configuration."
   type        = string
@@ -101,6 +107,7 @@ variable "redis_url" {
   nullable    = false
 
   validation {
+    # Keep this validation aligned with ../../environments/sandbox/variables.tf.
     condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
     error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
   }

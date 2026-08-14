@@ -13,7 +13,7 @@ These rules apply to all work in this repository.
 
 ### AWS Sandbox Guardrails
 
-- Add `user: DonovanRodgers` and `env: sandbox` to every taggable AWS resource and to CloudFormation stacks. The `env` value must be exactly `sandbox`.
+   - Add `env: sandbox` and a `user` owner tag to every taggable AWS resource and to CloudFormation stacks. Terraform-managed sandbox resources must derive `user` from the AWS caller identity unless `resource_owner` is explicitly supplied. The `env` value must be exactly `sandbox`.
 - EC2 instances are limited to the `t2.*`, `t3.*`, and `t4g.*` families.
 - RDS instances are limited to the `db.t2.*`, `db.t3.*`, and `db.t4g.*` classes.
 - Do not create services blocked by the account SCP, including Bedrock, SageMaker, Redshift, EMR, MSK/Kafka, OpenSearch, Neptune, DocumentDB, and QuickSight.

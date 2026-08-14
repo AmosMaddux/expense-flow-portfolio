@@ -11,17 +11,17 @@ resource "aws_vpc" "this" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-vpc"
-  }
+  })
 }
 
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-igw"
-  }
+  })
 }
 
 resource "aws_subnet" "public" {
@@ -32,10 +32,10 @@ resource "aws_subnet" "public" {
   cidr_block              = cidrsubnet(var.vpc_cidr, 4, each.value)
   map_public_ip_on_launch = true
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-public-${each.key}"
     Tier = "public"
-  }
+  })
 }
 
 resource "aws_subnet" "private" {
@@ -45,10 +45,10 @@ resource "aws_subnet" "private" {
   availability_zone = each.key
   cidr_block        = cidrsubnet(var.vpc_cidr, 4, each.value + 8)
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-private-${each.key}"
     Tier = "private"
-  }
+  })
 }
 
 resource "aws_route_table" "public" {
@@ -59,9 +59,9 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.this.id
   }
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-public-rt"
-  }
+  })
 }
 
 resource "aws_route_table_association" "public" {
@@ -76,9 +76,9 @@ resource "aws_eip" "nat" {
 
   domain = "vpc"
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-nat-eip"
-  }
+  })
 }
 
 resource "aws_nat_gateway" "this" {
@@ -87,9 +87,9 @@ resource "aws_nat_gateway" "this" {
   allocation_id = aws_eip.nat[0].id
   subnet_id     = values(aws_subnet.public)[0].id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-nat"
-  }
+  })
 
   depends_on = [aws_internet_gateway.this]
 }
@@ -106,9 +106,9 @@ resource "aws_route_table" "private" {
     }
   }
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-private-rt"
-  }
+  })
 }
 
 resource "aws_route_table_association" "private" {

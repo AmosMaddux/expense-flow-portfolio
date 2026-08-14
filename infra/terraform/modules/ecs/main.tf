@@ -47,6 +47,7 @@ locals {
 resource "aws_ecr_repository" "core_case" {
   name                 = "${var.name_prefix}-core-case-service"
   image_tag_mutability = "MUTABLE"
+  tags                 = var.tags
 
   encryption_configuration {
     encryption_type = "AES256"
@@ -60,6 +61,7 @@ resource "aws_ecr_repository" "core_case" {
 resource "aws_ecr_repository" "gl_coding" {
   name                 = "${var.name_prefix}-gl-coding-service"
   image_tag_mutability = "MUTABLE"
+  tags                 = var.tags
 
   encryption_configuration {
     encryption_type = "AES256"
@@ -73,15 +75,18 @@ resource "aws_ecr_repository" "gl_coding" {
 resource "aws_cloudwatch_log_group" "core_case" {
   name              = local.core_case_log_group_name
   retention_in_days = var.log_retention_days
+  tags              = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "gl_coding" {
   name              = local.gl_coding_log_group_name
   retention_in_days = var.log_retention_days
+  tags              = var.tags
 }
 
 resource "aws_ecs_cluster" "this" {
   name = var.name_prefix
+  tags = var.tags
 
   setting {
     name  = "containerInsights"
@@ -91,6 +96,7 @@ resource "aws_ecs_cluster" "this" {
 
 resource "aws_s3_bucket" "receipts" {
   bucket = var.receipt_storage_bucket_name
+  tags   = var.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "receipts" {
@@ -130,6 +136,7 @@ resource "aws_s3_bucket_versioning" "receipts" {
 
 resource "aws_sns_topic" "stage_transitions" {
   name = "${var.name_prefix}-stage-transitions"
+  tags = var.tags
 }
 
 resource "aws_dynamodb_table" "expense_report_projection" {
@@ -137,6 +144,7 @@ resource "aws_dynamodb_table" "expense_report_projection" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "tenantId"
   range_key    = "id"
+  tags         = var.tags
 
   attribute {
     name = "tenantId"
@@ -170,6 +178,7 @@ resource "aws_iam_role" "execution" {
   name                 = "${var.name_prefix}-ecs-task-execution-role"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume_role.json
   permissions_boundary = var.role_permissions_boundary_arn
+  tags                 = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "execution_managed" {
@@ -198,12 +207,14 @@ resource "aws_iam_role" "core_case_task" {
   name                 = "${var.name_prefix}-core-case-task-role"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume_role.json
   permissions_boundary = var.role_permissions_boundary_arn
+  tags                 = var.tags
 }
 
 resource "aws_iam_role" "gl_coding_task" {
   name                 = "${var.name_prefix}-gl-coding-task-role"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume_role.json
   permissions_boundary = var.role_permissions_boundary_arn
+  tags                 = var.tags
 }
 
 data "aws_iam_policy_document" "core_case_runtime" {
@@ -253,9 +264,9 @@ resource "aws_security_group" "core_case" {
   description = "Controls traffic to Core Case ECS tasks."
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-core-case-task-sg"
-  }
+  })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "core_case_from_public_alb" {
@@ -285,9 +296,9 @@ resource "aws_security_group" "gl_coding" {
   description = "Controls traffic to GL-coding ECS tasks."
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-gl-coding-task-sg"
-  }
+  })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "gl_coding_from_internal_alb" {
@@ -312,6 +323,7 @@ resource "aws_ecs_task_definition" "core_case" {
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.core_case_task.arn
+  tags                     = var.tags
 
   runtime_platform {
     cpu_architecture        = "X86_64"
@@ -397,6 +409,7 @@ resource "aws_ecs_task_definition" "gl_coding" {
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.gl_coding_task.arn
+  tags                     = var.tags
 
   runtime_platform {
     cpu_architecture        = "X86_64"
@@ -450,6 +463,7 @@ resource "aws_ecs_service" "core_case" {
   launch_type                       = "FARGATE"
   platform_version                  = "LATEST"
   enable_ecs_managed_tags           = true
+  tags                              = var.tags
 
   load_balancer {
     container_name   = "core-case-service"
@@ -473,6 +487,7 @@ resource "aws_ecs_service" "gl_coding" {
   launch_type                       = "FARGATE"
   platform_version                  = "LATEST"
   enable_ecs_managed_tags           = true
+  tags                              = var.tags
 
   load_balancer {
     container_name   = "gl-coding-service"

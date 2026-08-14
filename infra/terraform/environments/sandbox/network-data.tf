@@ -80,6 +80,8 @@ data "aws_route_table" "existing_by_id" {
 }
 
 locals {
+  existing_nat_gateway_enabled = local.uses_existing_network && var.enable_nat_gateway && length(local.public_subnet_ids) > 0
+
   existing_explicit_route_table_subnet_pairs = local.uses_existing_network && var.enable_nat_gateway ? flatten([
     for route_table in data.aws_route_table.existing_by_id : [
       for association in route_table.associations : {
@@ -112,30 +114,30 @@ locals {
 }
 
 resource "aws_eip" "existing_nat" {
-  count = local.uses_existing_network && var.enable_nat_gateway ? 1 : 0
+  count = local.existing_nat_gateway_enabled ? 1 : 0
 
   domain = "vpc"
 
-  tags = {
+  tags = merge(local.tags, {
     Name = "${var.name_prefix}-existing-vpc-nat-eip"
-  }
+  })
 }
 
 resource "aws_nat_gateway" "existing" {
-  count = local.uses_existing_network && var.enable_nat_gateway && length(local.public_subnet_ids) > 0 ? 1 : 0
+  count = local.existing_nat_gateway_enabled ? 1 : 0
 
   allocation_id = aws_eip.existing_nat[0].id
   subnet_id     = local.public_subnet_ids[0]
 
-  tags = {
+  tags = merge(local.tags, {
     Name = "${var.name_prefix}-existing-vpc-nat"
-  }
+  })
 
   depends_on = [terraform_data.existing_network_discovery]
 }
 
 resource "aws_route" "existing_private_nat" {
-  for_each = local.uses_existing_network && var.enable_nat_gateway ? toset(local.existing_private_route_table_ids_for_nat) : toset([])
+  for_each = local.existing_nat_gateway_enabled ? toset(local.existing_private_route_table_ids_for_nat) : toset([])
 
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.existing[0].id

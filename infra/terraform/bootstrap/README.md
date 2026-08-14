@@ -9,8 +9,7 @@ AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/bootstrap apply
 ```
 
 The stack creates an encrypted, versioned S3 bucket for remote Terraform state.
-The sandbox backend uses Terraform's native S3 lockfile support. The bucket
-receives the required sandbox tags:
-
-- `user=DonovanRodgers`
-- `env=sandbox`
+The sandbox backend uses Terraform's native S3 lockfile support. The bucket is
+tagged with `env=sandbox` and a `user` value derived from the AWS caller
+identity. Set `resource_owner` only when CI or a shared credential needs an
+explicit owner override.

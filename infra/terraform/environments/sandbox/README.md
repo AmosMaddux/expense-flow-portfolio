@@ -20,6 +20,10 @@ services use private subnets with public task IP assignment disabled. A NAT
 gateway is created for private subnet egress unless `enable_nat_gateway=false`
 is supplied.
 
+Taggable resources receive `env=sandbox` and a `user` owner tag derived from
+the AWS caller identity. Set `resource_owner` only when CI or a shared
+credential needs an explicit owner override.
+
 ```bash
 AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox init -backend-config=backend.hcl
 AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox plan -var-file=terraform.tfvars
@@ -32,4 +36,6 @@ this module.
 
 Plaintext public HTTP does not forward application traffic by default. Set
 `allow_plain_http_public_api=true` only for a temporary sandbox test where
-exposing `/v1` over HTTP is explicitly accepted.
+exposing `/v1` over HTTP is explicitly accepted. If no certificate is configured,
+runtime smoke CIDR allowlists over HTTP also require
+`allow_plain_http_public_api=true` so the intent is explicit at plan time.

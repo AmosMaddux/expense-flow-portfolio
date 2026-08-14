@@ -12,10 +12,6 @@ terraform {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
-
-  default_tags {
-    tags = local.tags
-  }
 }
 
 data "aws_caller_identity" "current" {}
@@ -26,14 +22,18 @@ locals {
     "expenseflow-sandbox-terraform-state-${data.aws_caller_identity.current.account_id}-${var.aws_region}",
   )
 
+  # Keep this tag derivation aligned with ../environments/sandbox/main.tf.
+  caller_name = try(regex("(user|assumed-role)/([^/@]+)", data.aws_caller_identity.current.arn)[1], "unknown")
+
   tags = {
-    user = "DonovanRodgers"
+    user = coalesce(var.resource_owner, local.caller_name)
     env  = "sandbox"
   }
 }
 
 resource "aws_s3_bucket" "terraform_state" {
   bucket = local.state_bucket_name
+  tags   = local.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "terraform_state" {

@@ -3,8 +3,17 @@ resource "aws_security_group" "public_alb" {
   description = "Controls inbound traffic to the public ExpenseFlow ALB."
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-public-alb-sg"
+  })
+}
+
+resource "terraform_data" "runtime_smoke_http_configuration" {
+  lifecycle {
+    precondition {
+      condition     = var.public_alb_certificate_arn != null || var.allow_plain_http_public_api || length(var.runtime_smoke_source_cidrs) == 0
+      error_message = "runtime_smoke_source_cidrs requires allow_plain_http_public_api=true when no public_alb_certificate_arn is configured."
+    }
   }
 }
 
@@ -37,9 +46,9 @@ resource "aws_security_group" "internal_alb" {
   description = "Controls inbound traffic to the internal GL-coding ALB."
   vpc_id      = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.name_prefix}-internal-alb-sg"
-  }
+  })
 }
 
 resource "aws_vpc_security_group_egress_rule" "internal_alb_all" {
@@ -55,9 +64,9 @@ resource "aws_lb" "public" {
   security_groups    = [aws_security_group.public_alb.id]
   subnets            = var.public_subnet_ids
 
-  tags = {
+  tags = merge(var.tags, {
     Name = var.public_alb_name
-  }
+  })
 }
 
 resource "aws_lb" "internal" {
@@ -67,9 +76,9 @@ resource "aws_lb" "internal" {
   security_groups    = [aws_security_group.internal_alb.id]
   subnets            = var.internal_subnet_ids
 
-  tags = {
+  tags = merge(var.tags, {
     Name = var.internal_alb_name
-  }
+  })
 }
 
 resource "aws_lb_target_group" "core_case" {
@@ -89,6 +98,10 @@ resource "aws_lb_target_group" "core_case" {
     timeout             = 5
     unhealthy_threshold = 3
   }
+
+  tags = merge(var.tags, {
+    Name = var.core_case_target_group_name
+  })
 }
 
 resource "aws_lb_target_group" "gl_coding" {
@@ -108,6 +121,10 @@ resource "aws_lb_target_group" "gl_coding" {
     timeout             = 5
     unhealthy_threshold = 3
   }
+
+  tags = merge(var.tags, {
+    Name = var.gl_coding_target_group_name
+  })
 }
 
 resource "aws_lb_listener" "public_http_redirect" {

@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "tags" {
+  description = "Tags applied to taggable networking resources."
+  type        = map(string)
+  default     = {}
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the sandbox VPC."
   type        = string

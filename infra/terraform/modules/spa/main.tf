@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 data "aws_iam_policy_document" "bucket" {
   statement {
     actions   = ["s3:GetObject"]
@@ -20,6 +18,7 @@ data "aws_iam_policy_document" "bucket" {
 
 resource "aws_s3_bucket" "this" {
   bucket = var.bucket_name
+  tags   = var.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "this" {
@@ -63,6 +62,7 @@ resource "aws_cloudfront_distribution" "this" {
   comment             = "${var.name_prefix} SPA"
   price_class         = "PriceClass_100"
   is_ipv6_enabled     = true
+  tags                = var.tags
 
   origin {
     domain_name              = aws_s3_bucket.this.bucket_regional_domain_name

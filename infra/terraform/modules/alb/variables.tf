@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "tags" {
+  description = "Tags applied to taggable ALB resources."
+  type        = map(string)
+  default     = {}
+}
+
 variable "public_alb_name" {
   description = "Name for the public ALB. AWS requires 32 characters or fewer."
   type        = string
@@ -85,7 +91,7 @@ variable "allow_plain_http_public_api" {
 }
 
 variable "runtime_smoke_source_cidrs" {
-  description = "Optional source CIDRs allowed to reach runtime smoke routes through HTTPS."
+  description = "Optional source CIDRs allowed to reach runtime smoke routes."
   type        = list(string)
   default     = []
 }

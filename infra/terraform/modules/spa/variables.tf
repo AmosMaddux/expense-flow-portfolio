@@ -3,6 +3,12 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "tags" {
+  description = "Tags applied to taggable SPA resources."
+  type        = map(string)
+  default     = {}
+}
+
 variable "bucket_name" {
   description = "Name for the private SPA S3 bucket."
   type        = string

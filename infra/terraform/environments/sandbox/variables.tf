@@ -10,6 +10,17 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "resource_owner" {
+  description = "Optional owner tag override. When null, Terraform derives the owner from the AWS caller identity."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.resource_owner == null ? true : trimspace(var.resource_owner) != ""
+    error_message = "resource_owner must be null or a non-empty string."
+  }
+}
+
 variable "name_prefix" {
   description = "Prefix used for sandbox infrastructure names."
   type        = string
@@ -99,7 +110,7 @@ variable "public_alb_certificate_arn" {
 }
 
 variable "runtime_smoke_source_cidrs" {
-  description = "Optional CIDRs allowed to reach runtime smoke routes through HTTPS."
+  description = "Optional CIDRs allowed to reach runtime smoke routes."
   type        = list(string)
   default     = []
 }
@@ -140,6 +151,7 @@ variable "redis_url" {
   nullable    = false
 
   validation {
+    # Keep this validation aligned with ../../modules/ecs/variables.tf.
     condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
     error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
   }

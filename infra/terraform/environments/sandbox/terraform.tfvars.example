@@ -3,6 +3,9 @@ aws_region = "us-east-1"
 # Set this for local runs, or export AWS_PROFILE instead.
 # aws_profile = "expenseflow-smoke"
 
+# Optional. Leave unset to derive the user tag from the AWS caller identity.
+# resource_owner = "synthetic.owner"
+
 # The sandbox root discovers the existing VPC and subnets by tags by default.
 # Set network_mode = "managed" only when intentionally creating a new VPC.
 # network_mode = "existing"

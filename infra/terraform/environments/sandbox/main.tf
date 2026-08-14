@@ -3,8 +3,11 @@ data "aws_caller_identity" "current" {}
 locals {
   uses_existing_network = var.network_mode == "existing"
 
+  # Keep this tag derivation aligned with ../../bootstrap/main.tf.
+  caller_name = try(regex("(user|assumed-role)/([^/@]+)", data.aws_caller_identity.current.arn)[1], "unknown")
+
   tags = {
-    user = "DonovanRodgers"
+    user = coalesce(var.resource_owner, local.caller_name)
     env  = "sandbox"
   }
 
@@ -37,6 +40,7 @@ module "network" {
   availability_zone_count = var.availability_zone_count
   enable_nat_gateway      = var.enable_nat_gateway
   name_prefix             = var.name_prefix
+  tags                    = local.tags
   vpc_cidr                = var.vpc_cidr
 }
 
@@ -49,6 +53,7 @@ module "alb" {
   public_alb_certificate_arn  = var.public_alb_certificate_arn
   public_subnet_ids           = local.public_subnet_ids
   runtime_smoke_source_cidrs  = var.runtime_smoke_source_cidrs
+  tags                        = local.tags
   vpc_id                      = local.vpc_id
 }
 
@@ -86,6 +91,7 @@ module "ecs" {
   service_subnet_ids                                  = local.private_subnet_ids
   tin_ein_validation_endpoint_url                     = var.tin_ein_validation_endpoint_url
   tin_ein_validation_wsdl_url                         = var.tin_ein_validation_wsdl_url
+  tags                                                = local.tags
   vpc_id                                              = local.vpc_id
 }
 
@@ -94,4 +100,5 @@ module "spa" {
 
   bucket_name = local.spa_bucket_name
   name_prefix = var.name_prefix
+  tags        = local.tags
 }
