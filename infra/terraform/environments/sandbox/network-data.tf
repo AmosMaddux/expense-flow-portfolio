@@ -64,6 +64,11 @@ resource "terraform_data" "existing_network_discovery" {
       condition     = length(local.private_subnet_ids) > 0
       error_message = "Existing network discovery found no private subnets. Supply existing_private_subnet_ids or update existing_private_subnet_name_patterns."
     }
+
+    precondition {
+      condition     = length(local.existing_private_subnets_using_main_route_table) == 0
+      error_message = "Existing private subnet discovery found one or more private subnets using the VPC main route table. Terraform will not mutate the main route table. Supply existing_private_route_table_ids or explicitly associate private subnets with dedicated private route tables."
+    }
   }
 }
 
@@ -82,7 +87,11 @@ data "aws_route_table" "existing_by_id" {
 locals {
   existing_nat_gateway_enabled = local.uses_existing_network && var.enable_nat_gateway && length(local.public_subnet_ids) > 0
 
-  existing_explicit_route_table_subnet_pairs = local.uses_existing_network && var.enable_nat_gateway ? flatten([
+  # When explicit route table IDs are provided, use them directly for NAT routes.
+  # Otherwise, discover route tables explicitly associated with private subnets.
+  existing_private_route_table_ids_from_var = length(var.existing_private_route_table_ids) > 0 ? var.existing_private_route_table_ids : []
+
+  existing_explicit_route_table_subnet_pairs = local.uses_existing_network && var.enable_nat_gateway && length(local.existing_private_route_table_ids_from_var) == 0 ? flatten([
     for route_table in data.aws_route_table.existing_by_id : [
       for association in route_table.associations : {
         route_table_id = route_table.id
@@ -102,15 +111,17 @@ locals {
     if contains(local.private_subnet_ids, pair.subnet_id)
   ])
 
-  existing_private_subnets_using_main_route_table = local.uses_existing_network && var.enable_nat_gateway ? setsubtract(
+  # Identify private subnets that would rely on the main route table (discovery failure case).
+  existing_private_subnets_using_main_route_table = local.uses_existing_network && var.enable_nat_gateway && length(local.existing_private_route_table_ids_from_var) == 0 ? setsubtract(
     toset(local.private_subnet_ids),
     toset(local.existing_private_subnets_with_explicit_route_tables),
   ) : toset([])
 
-  existing_private_route_table_ids_for_nat = local.uses_existing_network && var.enable_nat_gateway ? distinct(concat(
-    local.existing_private_explicit_route_table_ids,
-    length(local.existing_private_subnets_using_main_route_table) > 0 ? [data.aws_vpc.selected[0].main_route_table_id] : [],
-  )) : []
+  # Route tables for NAT: use explicit variable if provided, otherwise discovered explicit route tables only.
+  # Never include main_route_table_id.
+  existing_private_route_table_ids_for_nat = local.uses_existing_network && var.enable_nat_gateway ? (
+    length(local.existing_private_route_table_ids_from_var) > 0 ? local.existing_private_route_table_ids_from_var : local.existing_private_explicit_route_table_ids
+  ) : []
 }
 
 resource "aws_eip" "existing_nat" {

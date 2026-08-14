@@ -62,6 +62,12 @@ variable "existing_private_subnet_ids" {
   default     = []
 }
 
+variable "existing_private_route_table_ids" {
+  description = "Optional existing private route table IDs that Terraform may manage NAT routes for. If omitted, Terraform discovers private route tables explicitly associated with private subnets."
+  type        = list(string)
+  default     = []
+}
+
 variable "existing_public_subnet_name_patterns" {
   description = "Name tag patterns used to discover public subnets in the existing sandbox VPC."
   type        = list(string)

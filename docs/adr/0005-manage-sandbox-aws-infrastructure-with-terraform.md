@@ -20,7 +20,7 @@ Terraform is split into a bootstrap root and a sandbox environment root. The boo
 
 The sandbox root composes reusable modules:
 
-- The sandbox root discovers the existing sandbox VPC, public subnets, private subnets, and private route tables by tags. `modules/network` remains available for managed VPC creation when explicitly selected.
+- The sandbox root discovers the existing sandbox VPC, public subnets, and private subnets by tags. The VPC main route table is treated as read-only shared infrastructure and is never modified by Terraform. Private subnet egress routing is added only to explicitly provided route table IDs or to private route tables that are explicitly associated with private subnets. If a private subnet would rely on the VPC main route table for egress, Terraform fails with a precondition error until route table ownership is made explicit via variable input. `modules/network` remains available for managed VPC creation when explicitly selected.
 - Private subnet egress is provided through a NAT gateway so ECS tasks can pull images, write logs, and fetch runtime configuration without public IP addresses.
 - `modules/alb` provisions the public Core Case ALB, internal GL-coding ALB, target groups, listeners, listener rules, and ALB security groups. ALB and target group names use compact defaults with Terraform validation for AWS length limits.
 - `modules/ecs` provisions the ECS Fargate cluster, task definitions, ECS services, ECR repositories, CloudWatch log groups, IAM roles, task security groups, SNS topic, encrypted and versioned receipt bucket, and encrypted DynamoDB Expense Report read-projection table.
@@ -47,6 +47,8 @@ Networking, ALB, ECS, runtime dependencies, and SPA hosting can now be reviewed 
 Data stores created in this Terraform scope explicitly enforce encryption at rest. This includes the Terraform state bucket, SPA bucket, receipt bucket, and Expense Report DynamoDB projection table. The receipt bucket also enables object versioning for audit recovery.
 
 The implementation consumes the existing sandbox VPC by default. Any decision to create a fresh Terraform-managed VPC must be made explicitly with the sandbox network mode variable.
+
+**Networking ownership boundary:** Terraform treats the VPC main route table as shared infrastructure and off-limits for modification. This prevents accidental mutations to routing for unrelated subnets when pre-existing VPC resources are consumed. When private subnets rely on the main route table, Terraform fails closed with a clear error rather than silently adding NAT egress routes to shared infrastructure. This boundary can be overridden by explicitly providing private route table IDs via variable, allowing operators to intentionally scope NAT routes to known private networks.
 
 The current ECS service definitions can create infrastructure before runnable images and all secret ARNs are supplied, but a successful Terraform apply does not by itself prove that the application services can pass health checks. Image publishing, secret creation, database reachability, Redis reachability, and service smoke checks remain separate release activities. NAT gateway cost is accepted for this sandbox module so backend tasks can remain private; future work may replace some NAT traffic with VPC endpoints.
 
