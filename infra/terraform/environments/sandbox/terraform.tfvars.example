@@ -44,3 +44,7 @@ aws_region = "us-east-1"
 # Optional. Sizing for the Core Case RDS instance. Defaults are sandbox-cheap.
 # db_instance_class = "db.t3.micro"
 # db_allocated_storage = 20
+
+# Optional. Sizing for the GL-coding RDS instance. Defaults are sandbox-cheap.
+# gl_coding_db_instance_class = "db.t3.micro"
+# gl_coding_db_allocated_storage = 20
