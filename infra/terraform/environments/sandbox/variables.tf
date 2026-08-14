@@ -217,6 +217,12 @@ variable "core_case_runtime_smoke_shared_secret_arn" {
   default     = null
 }
 
+variable "gl_coding_internal_auth_secret_arn" {
+  description = "Optional Secrets Manager ARN for GL-coding internal authentication. When configured, Core Case must authenticate with this secret when calling GL-coding. The secret value should be a minimum of 32 characters for cryptographic security."
+  type        = string
+  default     = null
+}
+
 variable "core_case_tin_ein_validation_password_secret_arn" {
   description = "Secrets Manager ARN for TIN/EIN validation password."
   type        = string

@@ -20,6 +20,7 @@ locals {
     var.core_case_runtime_smoke_shared_secret_arn,
     var.core_case_tin_ein_validation_password_secret_arn,
     var.core_case_tin_ein_validation_username_secret_arn,
+    var.gl_coding_internal_auth_secret_arn,
   ])
 
   gl_coding_secret_arns = compact([
@@ -36,6 +37,7 @@ locals {
     var.core_case_runtime_smoke_shared_secret_arn == null ? [] : [{ name = "RUNTIME_SMOKE_SHARED_SECRET", valueFrom = var.core_case_runtime_smoke_shared_secret_arn }],
     var.core_case_tin_ein_validation_password_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_PASSWORD", valueFrom = var.core_case_tin_ein_validation_password_secret_arn }],
     var.core_case_tin_ein_validation_username_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_USERNAME", valueFrom = var.core_case_tin_ein_validation_username_secret_arn }],
+    var.gl_coding_internal_auth_secret_arn == null ? [] : [{ name = "GL_CODING_INTERNAL_AUTH_SECRET", valueFrom = var.gl_coding_internal_auth_secret_arn }],
   )
 
   gl_coding_secrets = concat(

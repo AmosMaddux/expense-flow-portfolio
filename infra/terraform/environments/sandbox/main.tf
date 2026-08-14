@@ -47,14 +47,15 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  allow_plain_http_public_api = var.allow_plain_http_public_api
-  internal_subnet_ids         = local.private_subnet_ids
-  name_prefix                 = var.name_prefix
-  public_alb_certificate_arn  = var.public_alb_certificate_arn
-  public_subnet_ids           = local.public_subnet_ids
-  runtime_smoke_source_cidrs  = var.runtime_smoke_source_cidrs
-  tags                        = local.tags
-  vpc_id                      = local.vpc_id
+  allow_plain_http_public_api        = var.allow_plain_http_public_api
+  gl_coding_internal_auth_secret_arn = var.gl_coding_internal_auth_secret_arn
+  internal_subnet_ids                = local.private_subnet_ids
+  name_prefix                        = var.name_prefix
+  public_alb_certificate_arn         = var.public_alb_certificate_arn
+  public_subnet_ids                  = local.public_subnet_ids
+  runtime_smoke_source_cidrs         = var.runtime_smoke_source_cidrs
+  tags                               = local.tags
+  vpc_id                             = local.vpc_id
 }
 
 module "ecs" {
@@ -78,6 +79,7 @@ module "ecs" {
   gl_coding_auth_jwt_public_keys_json_secret_arn      = var.gl_coding_auth_jwt_public_keys_json_secret_arn
   gl_coding_database_url_secret_arn                   = var.gl_coding_database_url_secret_arn
   gl_coding_image_uri                                 = var.gl_coding_image_uri
+  gl_coding_internal_auth_secret_arn                  = var.gl_coding_internal_auth_secret_arn
   gl_coding_target_group_arn                          = module.alb.gl_coding_target_group_arn
   internal_alb_dns_name                               = module.alb.internal_alb_dns_name
   internal_alb_security_group_id                      = module.alb.internal_alb_security_group_id

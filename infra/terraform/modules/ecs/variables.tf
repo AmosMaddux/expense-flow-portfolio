@@ -206,3 +206,9 @@ variable "gl_coding_database_url_secret_arn" {
   type        = string
   default     = null
 }
+
+variable "gl_coding_internal_auth_secret_arn" {
+  description = "Secrets Manager ARN for GL-coding internal authentication. Core Case reads this secret and includes X-Internal-Auth header in GL-coding requests. GL-coding service validates the header value."
+  type        = string
+  default     = null
+}

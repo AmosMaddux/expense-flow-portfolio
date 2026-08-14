@@ -95,3 +95,9 @@ variable "runtime_smoke_source_cidrs" {
   type        = list(string)
   default     = []
 }
+
+variable "gl_coding_internal_auth_secret_arn" {
+  description = "Optional Secrets Manager ARN for GL-coding internal authentication. Core Case must include the corresponding header when calling GL-coding. When supplied, the ALB enforces explicit routing rules."
+  type        = string
+  default     = null
+}

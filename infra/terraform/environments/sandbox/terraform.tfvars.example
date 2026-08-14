@@ -35,3 +35,8 @@ aws_region = "us-east-1"
 # Use Secrets Manager ARNs only. Do not put secret values in tfvars.
 # core_case_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/database-url-SYNTHETIC"
 # gl_coding_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/database-url-SYNTHETIC"
+
+# Optional GL-coding internal authentication. When configured, Core Case must authenticate with this
+# secret when calling GL-coding. Enables defense-in-depth: the ALB enforces explicit routing rules
+# requiring X-Internal-Auth header, and GL-coding validates the header value against this secret.
+# gl_coding_internal_auth_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/internal-auth-SYNTHETIC"

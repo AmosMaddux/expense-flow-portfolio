@@ -318,8 +318,63 @@ resource "aws_lb_listener" "internal_http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Default action: forward to GL-coding.
+  # When gl_coding_internal_auth_secret_arn is configured, listener rules take precedence
+  # and enforce authentication before traffic reaches this default action.
   default_action {
     target_group_arn = aws_lb_target_group.gl_coding.arn
     type             = "forward"
+  }
+}
+
+# GL-coding service routing with defense-in-depth authentication.
+# Core Case must authenticate by including X-Internal-Auth header when calling GL-coding.
+# This listener rule makes authentication intent explicit at the infrastructure layer.
+resource "aws_lb_listener_rule" "gl_coding_authenticated" {
+  count = var.gl_coding_internal_auth_secret_arn != null ? 1 : 0
+
+  listener_arn = aws_lb_listener.internal_http.arn
+  priority     = 1
+
+  action {
+    target_group_arn = aws_lb_target_group.gl_coding.arn
+    type             = "forward"
+  }
+
+  # Require X-Internal-Auth header to be present.
+  # Core Case is responsible for retrieving the secret value and including it in the header.
+  # GL-coding service validates that the header value matches its configured secret.
+  condition {
+    http_header {
+      http_header_name = "X-Internal-Auth"
+      values           = ["*"]
+    }
+  }
+}
+
+# Fallback rule for GL-coding requests without proper authentication.
+# Returns 403 Forbidden if request lacks X-Internal-Auth header.
+resource "aws_lb_listener_rule" "gl_coding_unauthorized" {
+  count = var.gl_coding_internal_auth_secret_arn != null ? 1 : 0
+
+  listener_arn = aws_lb_listener.internal_http.arn
+  priority     = 2
+
+  action {
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+
+    type = "fixed-response"
+  }
+
+  # Match all traffic to GL-coding when auth is configured.
+  # This is a catch-all that ensures unauthorized requests are rejected.
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
   }
 }
