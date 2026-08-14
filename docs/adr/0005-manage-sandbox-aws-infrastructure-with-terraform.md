@@ -50,6 +50,10 @@ The implementation consumes the existing sandbox VPC by default. Any decision to
 
 **Networking ownership boundary:** Terraform treats the VPC main route table as shared infrastructure and off-limits for modification. This prevents accidental mutations to routing for unrelated subnets when pre-existing VPC resources are consumed. When private subnets rely on the main route table, Terraform fails closed with a clear error rather than silently adding NAT egress routes to shared infrastructure. This boundary can be overridden by explicitly providing private route table IDs via variable, allowing operators to intentionally scope NAT routes to known private networks.
 
+**Troubleshooting main route table detection:** If Terraform fails with an error about private subnets using the VPC main route table, operators have two options:
+1. **Preferred**: Explicitly associate private subnets with dedicated private route tables in AWS, then rerun `terraform plan`. Terraform will discover the explicit associations.
+2. **Override**: Supply route table IDs via `existing_private_route_table_ids` variable if explicit associations are not feasible. Obtain route table IDs using AWS CLI: `aws ec2 describe-route-tables --filters Name=vpc-id,Values=vpc-xxx`. Ensure provided IDs are not the main route table; Terraform will reject that configuration at plan time.
+
 The current ECS service definitions can create infrastructure before runnable images and all secret ARNs are supplied, but a successful Terraform apply does not by itself prove that the application services can pass health checks. Image publishing, secret creation, database reachability, Redis reachability, and service smoke checks remain separate release activities. NAT gateway cost is accepted for this sandbox module so backend tasks can remain private; future work may replace some NAT traffic with VPC endpoints.
 
 ## Alternatives Considered

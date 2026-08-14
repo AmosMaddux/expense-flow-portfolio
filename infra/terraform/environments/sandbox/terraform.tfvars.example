@@ -10,6 +10,12 @@ aws_region = "us-east-1"
 # Set network_mode = "managed" only when intentionally creating a new VPC.
 # network_mode = "existing"
 
+# Optional private route table IDs. When omitted, Terraform discovers private route tables explicitly
+# associated with private subnets. If discovery would use the VPC main route table, Terraform fails
+# with a clear error and requires explicit override below.
+# Obtain route table IDs from AWS: aws ec2 describe-route-tables --filters Name=vpc-id,Values=vpc-xxx
+# existing_private_route_table_ids = ["rtb-private-1", "rtb-private-2"]
+
 # Optional. Discovery on 2026-08-13 found no issued ACM certificates in us-east-1.
 # public_alb_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/SYNTHETIC_CERTIFICATE_ID"
 

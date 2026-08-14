@@ -63,7 +63,7 @@ variable "existing_private_subnet_ids" {
 }
 
 variable "existing_private_route_table_ids" {
-  description = "Optional existing private route table IDs that Terraform may manage NAT routes for. If omitted, Terraform discovers private route tables explicitly associated with private subnets."
+  description = "Optional existing private route table IDs that Terraform may manage NAT routes for. Omitting or leaving empty enables automatic discovery of private route tables explicitly associated with private subnets."
   type        = list(string)
   default     = []
 }

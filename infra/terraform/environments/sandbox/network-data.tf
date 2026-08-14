@@ -66,20 +66,31 @@ resource "terraform_data" "existing_network_discovery" {
     }
 
     precondition {
+      condition     = length(var.existing_private_route_table_ids) == 0 || !contains(var.existing_private_route_table_ids, data.aws_vpc.selected[0].main_route_table_id)
+      error_message = "existing_private_route_table_ids must not include the VPC main route table (${data.aws_vpc.selected[0].main_route_table_id}). Supply only dedicated private route table IDs."
+    }
+
+    precondition {
       condition     = length(local.existing_private_subnets_using_main_route_table) == 0
-      error_message = "Existing private subnet discovery found one or more private subnets using the VPC main route table. Terraform will not mutate the main route table. Supply existing_private_route_table_ids or explicitly associate private subnets with dedicated private route tables."
+      error_message = "Private subnets ${local.existing_private_subnets_using_main_route_table} are using the VPC main route table. Terraform will not mutate it. Supply existing_private_route_table_ids with dedicated private route tables or explicitly associate these subnets with dedicated route tables in AWS."
     }
   }
 }
 
 data "aws_route_tables" "existing" {
-  count = local.uses_existing_network && var.enable_nat_gateway ? 1 : 0
+  count = local.should_discover_route_tables ? 1 : 0
 
   vpc_id = local.existing_vpc_id
+
+  # Filter to only non-main route tables to avoid querying thousands of associations if VPC is large.
+  filter {
+    name   = "association.main"
+    values = ["false"]
+  }
 }
 
 data "aws_route_table" "existing_by_id" {
-  for_each = local.uses_existing_network && var.enable_nat_gateway ? toset(data.aws_route_tables.existing[0].ids) : toset([])
+  for_each = local.should_discover_route_tables ? toset(data.aws_route_tables.existing[0].ids) : toset([])
 
   route_table_id = each.value
 }
@@ -87,11 +98,14 @@ data "aws_route_table" "existing_by_id" {
 locals {
   existing_nat_gateway_enabled = local.uses_existing_network && var.enable_nat_gateway && length(local.public_subnet_ids) > 0
 
+  # Helper condition: should we discover route tables? Only when explicit override is not provided.
+  should_discover_route_tables = local.uses_existing_network && var.enable_nat_gateway && length(var.existing_private_route_table_ids) == 0
+
   # When explicit route table IDs are provided, use them directly for NAT routes.
   # Otherwise, discover route tables explicitly associated with private subnets.
   existing_private_route_table_ids_from_var = length(var.existing_private_route_table_ids) > 0 ? var.existing_private_route_table_ids : []
 
-  existing_explicit_route_table_subnet_pairs = local.uses_existing_network && var.enable_nat_gateway && length(local.existing_private_route_table_ids_from_var) == 0 ? flatten([
+  existing_explicit_route_table_subnet_pairs = local.should_discover_route_tables ? flatten([
     for route_table in data.aws_route_table.existing_by_id : [
       for association in route_table.associations : {
         route_table_id = route_table.id
@@ -112,13 +126,14 @@ locals {
   ])
 
   # Identify private subnets that would rely on the main route table (discovery failure case).
-  existing_private_subnets_using_main_route_table = local.uses_existing_network && var.enable_nat_gateway && length(local.existing_private_route_table_ids_from_var) == 0 ? setsubtract(
+  existing_private_subnets_using_main_route_table = local.should_discover_route_tables ? setsubtract(
     toset(local.private_subnet_ids),
     toset(local.existing_private_subnets_with_explicit_route_tables),
   ) : toset([])
 
   # Route tables for NAT: use explicit variable if provided, otherwise discovered explicit route tables only.
-  # Never include main_route_table_id.
+  # Never include main_route_table_id because it is shared infrastructure. Adding routes to it risks affecting
+  # unrelated subnets and violates the ownership boundary established by this Terraform root.
   existing_private_route_table_ids_for_nat = local.uses_existing_network && var.enable_nat_gateway ? (
     length(local.existing_private_route_table_ids_from_var) > 0 ? local.existing_private_route_table_ids_from_var : local.existing_private_explicit_route_table_ids
   ) : []
