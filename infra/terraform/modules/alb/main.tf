@@ -17,18 +17,24 @@ resource "terraform_data" "runtime_smoke_http_configuration" {
   }
 }
 
+#tfsec:ignore:aws-vpc-no-public-ingress-sgr Public sandbox API ingress is required for external employee portal smoke testing, owner platform-security, review by 2026-12-31
 resource "aws_vpc_security_group_ingress_rule" "public_alb_http" {
+  #checkov:skip=CKV_AWS_260: Public sandbox API accepts HTTP for certificate-free smoke testing, owner platform-security, review by 2026-12-31
   security_group_id = aws_security_group.public_alb.id
+  description       = "Allow public HTTP traffic to the sandbox API."
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = 80
   ip_protocol       = "tcp"
   to_port           = 80
 }
 
+#tfsec:ignore:aws-vpc-no-public-ingress-sgr Public sandbox API ingress is required for external employee portal testing, owner platform-security, review by 2026-12-31
 resource "aws_vpc_security_group_ingress_rule" "public_alb_https" {
+  #checkov:skip=CKV_AWS_260: Public sandbox API accepts HTTPS from internet clients, owner platform-security, review by 2026-12-31
   count = var.public_alb_certificate_arn == null ? 0 : 1
 
   security_group_id = aws_security_group.public_alb.id
+  description       = "Allow public HTTPS traffic to the sandbox API."
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = 443
   ip_protocol       = "tcp"
@@ -36,7 +42,9 @@ resource "aws_vpc_security_group_ingress_rule" "public_alb_https" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "public_alb_all" {
+  #checkov:skip=CKV_AWS_382: ALB egress remains unrestricted in sandbox until service endpoint ranges are modeled, owner platform-security, review by 2026-12-31
   security_group_id = aws_security_group.public_alb.id
+  description       = "Allow public ALB egress to service targets."
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
@@ -52,17 +60,25 @@ resource "aws_security_group" "internal_alb" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "internal_alb_all" {
+  #checkov:skip=CKV_AWS_382: Internal ALB egress remains unrestricted in sandbox until target endpoint ranges are modeled, owner platform-security, review by 2026-12-31
   security_group_id = aws_security_group.internal_alb.id
+  description       = "Allow internal ALB egress to service targets."
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
 
+#tfsec:ignore:aws-elb-alb-not-public Public API must be internet-facing in sandbox, owner platform-security, review by 2026-12-31
 resource "aws_lb" "public" {
-  name               = var.public_alb_name
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.public_alb.id]
-  subnets            = var.public_subnet_ids
+  #checkov:skip=CKV2_AWS_20: HTTP listener is retained for certificate-free sandbox smoke testing, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_28: Public sandbox ALB WAF is deferred until managed rule cost and ownership are approved, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_150: Sandbox ALB deletion protection is disabled so ephemeral environments can be torn down, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_91: Sandbox ALB access logs are deferred until a dedicated log bucket is provisioned, owner platform-security, review by 2026-12-31
+  name                       = var.public_alb_name
+  internal                   = false
+  load_balancer_type         = "application"
+  drop_invalid_header_fields = true
+  security_groups            = [aws_security_group.public_alb.id]
+  subnets                    = var.public_subnet_ids
 
   tags = merge(var.tags, {
     Name = var.public_alb_name
@@ -70,11 +86,15 @@ resource "aws_lb" "public" {
 }
 
 resource "aws_lb" "internal" {
-  name               = var.internal_alb_name
-  internal           = true
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.internal_alb.id]
-  subnets            = var.internal_subnet_ids
+  #checkov:skip=CKV2_AWS_20: Internal GL-coding ALB uses HTTP only inside private subnets with application-layer auth, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_150: Sandbox internal ALB deletion protection is disabled so ephemeral environments can be torn down, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_91: Sandbox internal ALB access logs are deferred until a dedicated log bucket is provisioned, owner platform-security, review by 2026-12-31
+  name                       = var.internal_alb_name
+  internal                   = true
+  load_balancer_type         = "application"
+  drop_invalid_header_fields = true
+  security_groups            = [aws_security_group.internal_alb.id]
+  subnets                    = var.internal_subnet_ids
 
   tags = merge(var.tags, {
     Name = var.internal_alb_name
@@ -82,7 +102,7 @@ resource "aws_lb" "internal" {
 }
 
 resource "aws_lb_target_group" "core_case" {
-  name        = var.core_case_target_group_name
+  #checkov:skip=CKV_AWS_378: Core Case target group uses HTTP behind the ALB in private service networking, owner platform-security, review by 2026-12-31  name        = var.core_case_target_group_name
   port        = 3000
   protocol    = "HTTP"
   target_type = "ip"
@@ -105,7 +125,7 @@ resource "aws_lb_target_group" "core_case" {
 }
 
 resource "aws_lb_target_group" "gl_coding" {
-  name        = var.gl_coding_target_group_name
+  #checkov:skip=CKV_AWS_378: GL-coding target group uses HTTP behind the internal ALB in private service networking, owner platform-security, review by 2026-12-31  name        = var.gl_coding_target_group_name
   port        = 8001
   protocol    = "HTTP"
   target_type = "ip"
@@ -127,7 +147,9 @@ resource "aws_lb_target_group" "gl_coding" {
   })
 }
 
+#tfsec:ignore:aws-elb-http-not-used HTTP listener only redirects to HTTPS when a certificate is configured, owner platform-security, review by 2026-12-31
 resource "aws_lb_listener" "public_http_redirect" {
+  #checkov:skip=CKV_AWS_2: HTTP listener only redirects to HTTPS when a certificate is configured, owner platform-security, review by 2026-12-31
   count = var.public_alb_certificate_arn == null ? 0 : 1
 
   load_balancer_arn = aws_lb.public.arn
@@ -145,7 +167,10 @@ resource "aws_lb_listener" "public_http_redirect" {
   }
 }
 
+#tfsec:ignore:aws-elb-http-not-used Plain HTTP is allowed only for certificate-free sandbox smoke testing, owner platform-security, review by 2026-12-31
 resource "aws_lb_listener" "public_http" {
+  #checkov:skip=CKV_AWS_103: Plain HTTP is allowed only for certificate-free sandbox smoke testing, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_2: Plain HTTP is allowed only for certificate-free sandbox smoke testing, owner platform-security, review by 2026-12-31
   count = var.public_alb_certificate_arn == null ? 1 : 0
 
   load_balancer_arn = aws_lb.public.arn
@@ -313,7 +338,10 @@ resource "aws_lb_listener_rule" "runtime_smoke_http_block" {
   }
 }
 
+#tfsec:ignore:aws-elb-http-not-used Internal GL-coding traffic stays inside private subnets and uses application-layer auth, owner platform-security, review by 2026-12-31
 resource "aws_lb_listener" "internal_http" {
+  #checkov:skip=CKV_AWS_103: Internal GL-coding listener uses HTTP only inside private subnets with application-layer auth, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_2: Internal GL-coding traffic stays inside private subnets and uses application-layer auth, owner platform-security, review by 2026-12-31
   load_balancer_arn = aws_lb.internal.arn
   port              = 80
   protocol          = "HTTP"

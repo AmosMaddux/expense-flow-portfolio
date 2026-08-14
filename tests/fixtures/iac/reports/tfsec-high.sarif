@@ -1,0 +1,29 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tfsec",
+          "rules": [
+            {
+              "id": "aws-vpc-no-public-ingress-sgr",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "aws-vpc-no-public-ingress-sgr",
+          "level": "error",
+          "message": {
+            "text": "Synthetic high-severity public ingress finding."
+          }
+        }
+      ]
+    }
+  ]
+}

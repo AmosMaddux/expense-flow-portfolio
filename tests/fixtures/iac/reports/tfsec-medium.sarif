@@ -1,0 +1,29 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tfsec",
+          "rules": [
+            {
+              "id": "aws-s3-enable-versioning",
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "aws-s3-enable-versioning",
+          "level": "warning",
+          "message": {
+            "text": "Synthetic medium-severity versioning finding."
+          }
+        }
+      ]
+    }
+  ]
+}
