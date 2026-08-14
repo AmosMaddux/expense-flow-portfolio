@@ -12,3 +12,4 @@ ADRs must use only synthetic examples and must not include customer data, tenant
 - [0002. Polyglot Service Split Placeholder](0002-polyglot-service-split-placeholder.md)
 - [0003. Use storage per bounded context](0003-storage-per-bounded-context.md)
 - [0004. Run containerized services on ECS Fargate](0004-run-containerized-services-on-ecs-fargate.md)
+- [0005. Manage sandbox AWS infrastructure with Terraform](0005-manage-sandbox-aws-infrastructure-with-terraform.md)

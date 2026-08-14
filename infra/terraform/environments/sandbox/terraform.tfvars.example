@@ -1,0 +1,42 @@
+aws_region = "us-east-1"
+
+# Set this for local runs, or export AWS_PROFILE instead.
+# aws_profile = "expenseflow-smoke"
+
+# Optional. Leave unset to derive the user tag from the AWS caller identity.
+# resource_owner = "synthetic.owner"
+
+# The sandbox root discovers the existing VPC and subnets by tags by default.
+# Set network_mode = "managed" only when intentionally creating a new VPC.
+# network_mode = "existing"
+
+# Optional private route table IDs. When omitted, Terraform discovers private route tables explicitly
+# associated with private subnets. If discovery would use the VPC main route table, Terraform fails
+# with a clear error and requires explicit override below.
+# Obtain route table IDs from AWS: aws ec2 describe-route-tables --filters Name=vpc-id,Values=vpc-xxx
+# existing_private_route_table_ids = ["rtb-private-1", "rtb-private-2"]
+
+# Optional. Discovery on 2026-08-13 found no issued ACM certificates in us-east-1.
+# public_alb_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/SYNTHETIC_CERTIFICATE_ID"
+
+# Plain HTTP forwarding is disabled by default when no certificate is configured.
+# allow_plain_http_public_api = false
+
+# Optional. Required by some sandbox IAM policies.
+# role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/SYNTHETIC_BOUNDARY_NAME"
+
+# Use immutable pushed images when deploying runnable services.
+# core_case_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-core-case-service@sha256:SYNTHETIC_DIGEST"
+# gl_coding_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-gl-coding-service@sha256:SYNTHETIC_DIGEST"
+
+# Required. Terraform does not create Redis in this module.
+# redis_url = "rediss://redis.example.internal:6379"
+
+# Use Secrets Manager ARNs only. Do not put secret values in tfvars.
+# core_case_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/database-url-SYNTHETIC"
+# gl_coding_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/database-url-SYNTHETIC"
+
+# Optional GL-coding internal authentication. When configured, Core Case must authenticate with this
+# secret when calling GL-coding. Enables defense-in-depth: the ALB enforces explicit routing rules
+# requiring X-Internal-Auth header, and GL-coding validates the header value against this secret.
+# gl_coding_internal_auth_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/internal-auth-SYNTHETIC"

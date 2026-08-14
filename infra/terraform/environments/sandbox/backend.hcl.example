@@ -1,0 +1,2 @@
+bucket = "expenseflow-sandbox-terraform-state-ACCOUNT-ID-REGION"
+region = "us-east-1"
