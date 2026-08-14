@@ -16,6 +16,7 @@ import {
     loadAuthJwtConfig,
 } from "./config/authJwtConfig.js";
 import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
+import { loadCorsConfig } from "./config/corsConfig.js";
 import { loadInternalRoutesConfig } from "./config/internalRoutesConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
@@ -35,6 +36,7 @@ import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
 import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
+import { createCorsMiddleware } from "./http/corsMiddleware.js";
 import {
     createRuntimeSmokeRouter,
     isGlCodingRuntimeSmokeEnabled,
@@ -49,6 +51,7 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
     authJwks,
 );
 loadDefaultGlCodingConfig();
+app.use(createCorsMiddleware(loadCorsConfig()));
 const v1Router = express.Router();
 
 /**

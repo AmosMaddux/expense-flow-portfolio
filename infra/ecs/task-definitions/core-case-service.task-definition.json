@@ -142,6 +142,10 @@
                     "value": "${STAGE_TRANSITION_SNS_TOPIC_ARN}"
                 },
                 {
+                    "name": "SPA_ORIGIN",
+                    "value": "${SPA_ORIGIN}"
+                },
+                {
                     "name": "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE",
                     "value": "50"
                 },

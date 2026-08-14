@@ -109,6 +109,7 @@ CORE_CASE_DATABASE_URL="$CORE_CASE_DATABASE_URL" \
 GL_CODING_DATABASE_URL="$GL_CODING_DATABASE_URL" \
 GL_CODING_SERVICE_BASE_URL="$GL_CODING_SERVICE_BASE_URL" \
 REDIS_URL="$REDIS_URL" \
+SPA_ORIGIN="https://dzw2h7jwg14u1.cloudfront.net" \
 RUNTIME_SMOKE_GL_CODING_ENABLED=true \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/register-task-definitions.sh
@@ -135,6 +136,7 @@ CORE_CASE_DATABASE_URL="postgres://db-user:db-pass@postgres.expenseflow-sandbox.
 GL_CODING_DATABASE_URL="postgres://db-user:db-pass@postgres.expenseflow-sandbox.local:5432/expenseflow_sandbox" \
 GL_CODING_SERVICE_BASE_URL="http://internal-gl-coding-alb.expenseflow-sandbox.local" \
 REDIS_URL="redis://redis.expenseflow-sandbox.local:6379" \
+SPA_ORIGIN="https://spa.example.invalid" \
 STAGE_TRANSITION_SNS_TOPIC_ARN="synthetic-stage-transition-topic-ref" \
 VALIDATE_RENDER_ONLY=true \
 scripts/aws/register-task-definitions.sh

@@ -75,6 +75,7 @@ Replace these placeholders before registration:
 | `${REDIS_URL}`                                           | Config                  | Core Case             |
 | `${RUNTIME_SMOKE_GL_CODING_ENABLED}`                     | Config                  | Core Case             |
 | `${STAGE_TRANSITION_SNS_TOPIC_ARN}`                      | Config                  | Core Case             |
+| `${SPA_ORIGIN}`                                         | HTTPS origin            | Core Case             |
 | `${TIN_EIN_VALIDATION_ENDPOINT_URL}`                     | Config                  | Core Case             |
 | `${TIN_EIN_VALIDATION_WSDL_URL}`                         | Config                  | Core Case             |
 
@@ -89,3 +90,5 @@ Core Case internal command routes are disabled unless
 `CORE_CASE_INTERNAL_ROUTES_ENABLED=true` is rendered into a deployment that is
 reachable only through the intended internal listener or security groups. Public
 ALB-backed service tasks should keep the default `false` value.
+
+`SPA_ORIGIN` is the exact CloudFront HTTPS origin permitted to make credentialed browser requests. Do not use a wildcard or include a path.
