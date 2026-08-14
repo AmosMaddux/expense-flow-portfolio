@@ -1,19 +1,25 @@
+locals {
+  service_name_underscored = replace(var.service_name, "-", "_")
+  database_name            = coalesce(var.database_name, local.service_name_underscored)
+  master_username          = coalesce(var.master_username, "${local.service_name_underscored}_admin")
+}
+
 resource "aws_db_subnet_group" "this" {
-  name       = "${var.name_prefix}-db-subnet-group"
+  name       = "${var.name_prefix}-${var.service_name}-db-subnet-group"
   subnet_ids = var.private_subnet_ids
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-db-subnet-group"
+    Name = "${var.name_prefix}-${var.service_name}-db-subnet-group"
   })
 }
 
 resource "aws_security_group" "this" {
-  name        = "${var.name_prefix}-db-sg"
-  description = "Controls inbound traffic to the Core Case PostgreSQL instance."
+  name        = "${var.name_prefix}-${var.service_name}-db-sg"
+  description = "Controls inbound traffic to the ${var.service_name} PostgreSQL instance."
   vpc_id      = var.vpc_id
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-db-sg"
+    Name = "${var.name_prefix}-${var.service_name}-db-sg"
   })
 }
 
@@ -34,12 +40,12 @@ resource "aws_vpc_security_group_egress_rule" "db_all" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier     = "${var.name_prefix}-core-case-db"
+  identifier     = "${var.name_prefix}-${var.service_name}-db"
   engine         = "postgres"
   engine_version = var.engine_version
   instance_class = var.instance_class
-  db_name        = var.database_name
-  username       = var.master_username
+  db_name        = local.database_name
+  username       = local.master_username
   tags           = var.tags
 
   allocated_storage = var.allocated_storage

@@ -98,7 +98,7 @@ module "ecs" {
   vpc_id                                              = local.vpc_id
 }
 
-module "database" {
+module "database_core_case" {
   source = "../../modules/database"
 
   allocated_storage          = var.db_allocated_storage
@@ -106,6 +106,18 @@ module "database" {
   instance_class             = var.db_instance_class
   name_prefix                = var.name_prefix
   private_subnet_ids         = local.private_subnet_ids
+  service_name               = "core-case"
+  tags                       = local.tags
+  vpc_id                     = local.vpc_id
+}
+
+module "database_gl_coding" {
+  source = "../../modules/database"
+
+  allowed_security_group_ids = [module.ecs.gl_coding_security_group_id]
+  name_prefix                = var.name_prefix
+  private_subnet_ids         = local.private_subnet_ids
+  service_name               = "gl-coding"
   tags                       = local.tags
   vpc_id                     = local.vpc_id
 }

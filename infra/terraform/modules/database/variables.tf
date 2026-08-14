@@ -34,16 +34,26 @@ variable "allowed_security_group_ids" {
   }
 }
 
-variable "database_name" {
-  description = "Name of the default database created on the instance."
+variable "service_name" {
+  description = "Short service identifier used in resource names, e.g. \"core-case\" or \"gl-coding\"."
   type        = string
-  default     = "core_case"
+
+  validation {
+    condition     = trimspace(var.service_name) != ""
+    error_message = "service_name must not be empty."
+  }
+}
+
+variable "database_name" {
+  description = "Name of the default database created on the instance. Defaults to service_name with hyphens replaced by underscores."
+  type        = string
+  default     = null
 }
 
 variable "master_username" {
-  description = "Master username for the RDS instance."
+  description = "Master username for the RDS instance. Defaults to \"<service_name>_admin\" with hyphens replaced by underscores."
   type        = string
-  default     = "core_case_admin"
+  default     = null
 }
 
 variable "engine_version" {

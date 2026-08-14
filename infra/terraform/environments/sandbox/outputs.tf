@@ -90,10 +90,10 @@ output "dynamodb_expense_report_tenant_index_name" {
 
 output "core_case_db_endpoint" {
   description = "Connection endpoint (host:port) for the Core Case database."
-  value       = module.database.db_endpoint
+  value       = module.database_core_case.db_endpoint
 }
 
 output "core_case_db_master_user_secret_arn" {
   description = "Secrets Manager ARN of the RDS-managed master user secret for the Core Case database."
-  value       = module.database.master_user_secret_arn
+  value       = module.database_core_case.master_user_secret_arn
 }
