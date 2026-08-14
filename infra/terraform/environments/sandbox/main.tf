@@ -101,7 +101,9 @@ module "ecs" {
 module "database" {
   source = "../../modules/database"
 
+  allocated_storage          = var.db_allocated_storage
   allowed_security_group_ids = [module.ecs.core_case_security_group_id]
+  instance_class             = var.db_instance_class
   name_prefix                = var.name_prefix
   private_subnet_ids         = local.private_subnet_ids
   tags                       = local.tags

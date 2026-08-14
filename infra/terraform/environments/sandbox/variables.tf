@@ -246,3 +246,15 @@ variable "gl_coding_database_url_secret_arn" {
   type        = string
   default     = null
 }
+
+variable "db_instance_class" {
+  description = "RDS instance class for the Core Case database."
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "Allocated storage in GiB for the Core Case database."
+  type        = number
+  default     = 20
+}
