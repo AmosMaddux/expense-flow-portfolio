@@ -140,8 +140,8 @@ variable "redis_url" {
   nullable    = false
 
   validation {
-    condition     = can(regex("^rediss?://", var.redis_url)) && !can(regex("://([^/@]*@)?(localhost|127\\.0\\.0\\.1)(:|/|$)", var.redis_url))
-    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// URL, not localhost."
+    condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
+    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
   }
 }
 

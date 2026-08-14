@@ -52,11 +52,6 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block allowed to reach the internal ALB."
-  type        = string
-}
-
 variable "public_subnet_ids" {
   description = "Subnets for the internet-facing ALB."
   type        = list(string)

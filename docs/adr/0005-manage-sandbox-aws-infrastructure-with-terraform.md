@@ -35,7 +35,7 @@ Secrets are represented as Secrets Manager ARN inputs only. Terraform files and 
 
 The public ALB supports an optional ACM certificate ARN. When a certificate is supplied, HTTP redirects to HTTPS and `/v1` plus `/v1/*` route to Core Case through HTTPS listener rules. Runtime smoke paths have an allowlisted forward rule followed immediately by an explicit fixed `403` rule so non-allowlisted requests cannot fall through to broader `/v1/*` forwarding. When no certificate is supplied, the sandbox can still produce a reviewable plan and a basic HTTP listener for early infrastructure validation with the same runtime smoke blocking behavior.
 
-Backend ECS tasks and the internal GL-coding ALB run in private subnets with public IP assignment disabled for tasks. Private subnet egress is provided through NAT so tasks can reach required AWS APIs and external dependencies without being directly internet-routable.
+Backend ECS tasks and the internal GL-coding ALB run in private subnets with public IP assignment disabled for tasks. Private subnet egress is provided through NAT so tasks can reach required AWS APIs and external dependencies without being directly internet-routable. Security group ingress follows the service path: public ALB to Core Case tasks, Core Case tasks to the internal ALB, and the internal ALB to GL-coding tasks. The internal ALB is not open to the full VPC CIDR.
 
 CI will run Terraform formatting and validation for both roots. When AWS role credentials are configured for the repository, CI will initialize the sandbox remote backend and produce a reviewable Terraform plan artifact for pull requests.
 

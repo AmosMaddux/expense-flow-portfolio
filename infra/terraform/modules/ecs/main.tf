@@ -272,6 +272,14 @@ resource "aws_vpc_security_group_egress_rule" "core_case_all" {
   ip_protocol       = "-1"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_core_case" {
+  security_group_id            = var.internal_alb_security_group_id
+  referenced_security_group_id = aws_security_group.core_case.id
+  from_port                    = 80
+  ip_protocol                  = "tcp"
+  to_port                      = 80
+}
+
 resource "aws_security_group" "gl_coding" {
   name        = "${var.name_prefix}-gl-coding-task-sg"
   description = "Controls traffic to GL-coding ECS tasks."

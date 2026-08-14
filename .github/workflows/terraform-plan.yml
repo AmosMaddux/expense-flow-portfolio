@@ -67,11 +67,11 @@ jobs:
 
       - name: Save plan text
         if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
-        run: terraform -chdir=infra/terraform/environments/sandbox show -no-color sandbox.tfplan > infra/terraform/environments/sandbox/sandbox.tfplan.txt
+        run: terraform -chdir=infra/terraform/environments/sandbox show -no-color sandbox.tfplan > "$RUNNER_TEMP/sandbox.tfplan.txt"
 
       - name: Upload plan artifact
         if: ${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-terraform-plan
-          path: infra/terraform/environments/sandbox/sandbox.tfplan.txt
+          path: ${{ runner.temp }}/sandbox.tfplan.txt

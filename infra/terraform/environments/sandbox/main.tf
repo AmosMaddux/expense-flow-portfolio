@@ -49,7 +49,6 @@ module "alb" {
   public_alb_certificate_arn  = var.public_alb_certificate_arn
   public_subnet_ids           = local.public_subnet_ids
   runtime_smoke_source_cidrs  = var.runtime_smoke_source_cidrs
-  vpc_cidr                    = local.vpc_cidr
   vpc_id                      = local.vpc_id
 }
 
