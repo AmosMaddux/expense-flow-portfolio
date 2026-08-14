@@ -72,7 +72,7 @@ resource "terraform_data" "existing_network_discovery" {
 
     precondition {
       condition     = length(local.existing_private_subnets_using_main_route_table) == 0
-      error_message = "Private subnets ${local.existing_private_subnets_using_main_route_table} are using the VPC main route table. Terraform will not mutate it. Supply existing_private_route_table_ids with dedicated private route tables or explicitly associate these subnets with dedicated route tables in AWS."
+      error_message = "Private subnets ${join(", ", local.existing_private_subnets_using_main_route_table)} are using the VPC main route table. Terraform will not mutate it. Supply existing_private_route_table_ids with dedicated private route tables or explicitly associate these subnets with dedicated route tables in AWS."
     }
   }
 }
