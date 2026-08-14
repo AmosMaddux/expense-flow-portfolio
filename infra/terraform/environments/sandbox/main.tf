@@ -98,6 +98,16 @@ module "ecs" {
   vpc_id                                              = local.vpc_id
 }
 
+module "database" {
+  source = "../../modules/database"
+
+  allowed_security_group_ids = [module.ecs.core_case_security_group_id]
+  name_prefix                = var.name_prefix
+  private_subnet_ids         = local.private_subnet_ids
+  tags                       = local.tags
+  vpc_id                     = local.vpc_id
+}
+
 module "spa" {
   source = "../../modules/spa"
 
