@@ -258,3 +258,15 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
 }
+
+variable "gl_coding_db_instance_class" {
+  description = "RDS instance class for the GL-coding database."
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "gl_coding_db_allocated_storage" {
+  description = "Allocated storage in GiB for the GL-coding database."
+  type        = number
+  default     = 20
+}

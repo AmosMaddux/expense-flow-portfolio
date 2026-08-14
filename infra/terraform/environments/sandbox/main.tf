@@ -114,7 +114,9 @@ module "database_core_case" {
 module "database_gl_coding" {
   source = "../../modules/database"
 
+  allocated_storage          = var.gl_coding_db_allocated_storage
   allowed_security_group_ids = [module.ecs.gl_coding_security_group_id]
+  instance_class             = var.gl_coding_db_instance_class
   name_prefix                = var.name_prefix
   private_subnet_ids         = local.private_subnet_ids
   service_name               = "gl-coding"
