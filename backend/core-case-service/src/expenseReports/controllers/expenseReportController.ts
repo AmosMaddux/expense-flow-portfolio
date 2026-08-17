@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
@@ -23,6 +24,7 @@ import {
     InternalSettlePaymentStubHeadersSchema,
     InternalSettlePaymentStubParamsSchema,
     ReadAllTransactionsQuerySchema,
+    ReceiptFileParamsSchema,
     ReadExpenseReportSummariesQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
@@ -70,6 +72,7 @@ import {
     readExpenseReportAuditEntries,
     readExpenseReportComments,
     readExpenseReportReviewDetail,
+    readReceiptFile,
     readExpenseReportSummaries,
     readMileageConfig,
     reviewExpenseReportLineItem,
@@ -1053,6 +1056,43 @@ export async function getExpenseReportReviewDetail(
 }
 
 /**
+ * Handles Finance Admin receipt-file reads for report-detail previews.
+ */
+export async function getExpenseReportReceiptFile(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const parsedParams = ReceiptFileParamsSchema.parse({
+            id: req.params.id,
+            receiptId: req.params.receiptId,
+        });
+        const file = await readReceiptFile({
+            expenseReportId: parsedParams.id,
+            receiptId: parsedParams.receiptId,
+            tenantId: auth.tenantId,
+        });
+
+        res.setHeader("Content-Type", file.contentType);
+        res.setHeader(
+            "Content-Disposition",
+            `inline; filename="${sanitizeHeaderFilename(file.filename)}"`,
+        );
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (file.contentLength !== null) {
+            res.setHeader("Content-Length", String(file.contentLength));
+        }
+        res.status(200);
+        await pipeline(file.content, res);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
  * Handles Audit Trail reads for an Expense Report case.
  */
 export async function getExpenseReportAuditEntries(
@@ -1268,6 +1308,17 @@ function requireEmployeeAccess(auth: NonNullable<Request["auth"]>): void {
             "This action is limited to the Employee Portal.",
         );
     }
+}
+
+function sanitizeHeaderFilename(filename: string | null): string {
+    const fallback = "receipt";
+    if (filename === null) {
+        return fallback;
+    }
+
+    const sanitized = filename.replace(/["\r\n\\]/gu, "_").trim();
+
+    return sanitized.length === 0 ? fallback : sanitized;
 }
 
 function parseIdempotencyKey(req: Request): string {

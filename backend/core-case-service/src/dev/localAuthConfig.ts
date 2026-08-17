@@ -180,7 +180,9 @@ export function getLocalAuthAccount(
 /**
  * Resolves a local auth CLI account argument to a fixed synthetic identity name.
  */
-export function resolveLocalAuthAccountName(value: string): LocalAuthAccountName {
+export function resolveLocalAuthAccountName(
+    value: string,
+): LocalAuthAccountName {
     const accountName = localAuthAccountNameSchema.safeParse(value);
     if (accountName.success) {
         return accountName.data;

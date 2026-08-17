@@ -34,6 +34,7 @@ import {
     findDraftExpenseContent,
     findExpenseReportById,
     findExpenseReportReviewDetail,
+    findReceiptFileMetadata,
     findExpenseReportSummaries,
     abandonUnpaidExpenseReportSettlementClaim,
     claimExpenseReportSettlement,
@@ -122,6 +123,13 @@ export type ExpenseReportSubmissionDependencies =
 export type SubmitExpenseReportResult = {
     correlationId: string;
     report: ExpenseReportResponse;
+};
+
+export type ReceiptFileResponse = {
+    content: NodeJS.ReadableStream;
+    contentLength: number | null;
+    contentType: string;
+    filename: string | null;
 };
 
 /**
@@ -243,6 +251,36 @@ export async function readApprovalQueueLineItems(request: {
     }
 
     return findApprovalQueueLineItems(request.tenantId);
+}
+
+/**
+ * Opens a tenant-scoped receipt stream for an internal review surface.
+ */
+export async function readReceiptFile(request: {
+    expenseReportId: string;
+    receiptId: string;
+    tenantId: string;
+}): Promise<ReceiptFileResponse> {
+    const receipt = await findReceiptFileMetadata(
+        request.tenantId,
+        request.expenseReportId,
+        request.receiptId,
+    );
+    if (receipt === undefined) {
+        throw new NotFoundError("Receipt not found.");
+    }
+
+    const storedFile = await getDefaultReceiptStorage().read(receipt.objectKey);
+
+    return {
+        content: storedFile.content,
+        contentLength: storedFile.contentLength ?? receipt.sizeBytes,
+        contentType:
+            receipt.contentType ??
+            storedFile.contentType ??
+            "application/octet-stream",
+        filename: receipt.filename,
+    };
 }
 
 /**

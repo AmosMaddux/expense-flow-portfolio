@@ -7,7 +7,6 @@ const financeAdminNavigationLabels = [
     "Expense Reports",
     "All Transactions",
     "Approval Queue",
-    "Receipts",
     "Policy Reference",
     "GL Mapping",
     "Team & Users",
@@ -15,7 +14,6 @@ const financeAdminNavigationLabels = [
 
 const departmentManagerNavigationLabels = [
     "Approval Queue",
-    "Receipts",
     "Policy Reference",
     "GL Mapping",
 ];

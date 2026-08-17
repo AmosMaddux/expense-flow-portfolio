@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
+import { Readable } from "node:stream";
 
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -122,6 +123,7 @@ const redisClientMock = vi.hoisted(() => ({
     }),
 }));
 const receiptStorageMock = vi.hoisted(() => ({
+    read: vi.fn(),
     put: vi.fn().mockResolvedValue({
         objectKey: "synthetic/receipt-object",
     }),
@@ -276,6 +278,12 @@ void describe("Expense Report routes", () => {
         redisClientMock.get.mockClear();
         redisClientMock.set.mockClear();
         redisClientMock.incr.mockClear();
+        receiptStorageMock.read.mockReset();
+        receiptStorageMock.read.mockResolvedValue({
+            content: Readable.from(["synthetic receipt image"]),
+            contentLength: 23,
+            contentType: "image/png",
+        });
         receiptStorageMock.put.mockClear();
         receiptStorageMock.verify.mockClear();
         stageTransitionPublishMock.mockClear();
@@ -1714,6 +1722,127 @@ void describe("Expense Report routes", () => {
             },
             expect.any(Buffer),
         );
+    });
+
+    void test("serves tenant-scoped receipt images to internal reviewers", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000245";
+        const owner = "50000000-0000-4000-8000-000000000245";
+        const financeAdmin = "50000000-0000-4000-8000-000000000246";
+        const departmentManager = "50000000-0000-4000-8000-000000000247";
+        const report = await db
+            .insert(expenseReport)
+            .values({
+                tenantId,
+                owner,
+                dueDate: "2026-08-25",
+                priority: "Normal",
+                currentStage: "AP Review",
+            })
+            .returning({ id: expenseReport.id });
+        const expenseReportId = report[0]?.id;
+        if (expenseReportId === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+        const receiptId = "81000000-0000-4000-8000-000000000245";
+        await db.insert(receiptMetadata).values({
+            id: receiptId,
+            tenantId,
+            expenseReportId,
+            lineItemId: null,
+            merchant: "Synthetic Receipt Preview",
+            receiptDate: "2026-07-21",
+            amount: "42.10",
+            blobReference: {
+                objectKey: "synthetic/receipt-preview-object",
+                filename: "synthetic-preview.png",
+                contentType: "image/png",
+                sizeBytes: 23,
+            },
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, financeAdmin, [
+                        "Finance Admin",
+                    ]),
+                },
+            },
+        );
+        const bodyText = new TextDecoder().decode(await response.arrayBuffer());
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("image/png");
+        expect(response.headers.get("content-disposition")).toBe(
+            'inline; filename="synthetic-preview.png"',
+        );
+        expect(bodyText).toBe("synthetic receipt image");
+        expect(receiptStorageMock.read).toHaveBeenCalledWith(
+            "synthetic/receipt-preview-object",
+        );
+
+        const managerResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        departmentManager,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
+        expect(managerResponse.status).toBe(200);
+
+        const otherFinanceTenantId = "40000000-0000-4000-8000-000000000246";
+        const otherManagerTenantId = "40000000-0000-4000-8000-000000000247";
+        const employeeTenantId = "40000000-0000-4000-8000-000000000248";
+        const otherTenantFinanceAdmin = "50000000-0000-4000-8000-000000000248";
+        const otherTenantDepartmentManager =
+            "50000000-0000-4000-8000-000000000249";
+        receiptStorageMock.read.mockClear();
+        const otherTenantFinanceResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherFinanceTenantId,
+                        otherTenantFinanceAdmin,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const otherTenantManagerResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherManagerTenantId,
+                        otherTenantDepartmentManager,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
+        const employeeResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        employeeTenantId,
+                        owner,
+                        ["Employee"],
+                    ),
+                },
+            },
+        );
+        expect(otherTenantFinanceResponse.status).toBe(404);
+        expect(otherTenantManagerResponse.status).toBe(404);
+        expect(employeeResponse.status).toBe(403);
+        expect(receiptStorageMock.read).not.toHaveBeenCalled();
     });
 
     void test("deduplicates retried mileage additions", async () => {

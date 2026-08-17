@@ -1,10 +1,8 @@
+import { SecretsManager } from "@aws-sdk/client-secrets-manager";
 import { describe, expect, test, vi } from "vitest";
 
 import { ConfigurationError } from "../errors/problem-json.js";
-import {
-    loadLambdaDatabaseConfig,
-    verifyLambdaDatabaseUrlEnvironment,
-} from "./lambdaDatabaseConfig.js";
+import { loadLambdaDatabaseConfig } from "./lambdaDatabaseConfig.js";
 
 const synthethicDatabaseUrl =
     "postgres://synthetic-user@db.example.invalid:5432/expenseflow";
@@ -15,22 +13,17 @@ vi.mock("@aws-sdk/client-secrets-manager");
 
 void describe("Lambda database configuration", () => {
     void test("loads database URL from Secrets Manager using SECRET_ARN", async () => {
-        const { SecretsManager } =
-            await import("@aws-sdk/client-secrets-manager");
-
-        const mockGetSecretValue = vi
-            .fn()
-            .mockResolvedValue({
-                SecretString: JSON.stringify({
-                    database_url: synthethicDatabaseUrl,
-                }),
-            });
+        const mockGetSecretValue = vi.fn().mockResolvedValue({
+            SecretString: JSON.stringify({
+                database_url: synthethicDatabaseUrl,
+            }),
+        });
 
         vi.mocked(SecretsManager).mockImplementation(
             () =>
                 ({
                     getSecretValue: mockGetSecretValue,
-                }) as any,
+                }) as unknown as SecretsManager,
         );
 
         const config = await loadLambdaDatabaseConfig({
@@ -52,22 +45,17 @@ void describe("Lambda database configuration", () => {
     });
 
     void test("rejects invalid database URLs from Secrets Manager", async () => {
-        const { SecretsManager } =
-            await import("@aws-sdk/client-secrets-manager");
-
-        const mockGetSecretValue = vi
-            .fn()
-            .mockResolvedValue({
-                SecretString: JSON.stringify({
-                    database_url: "not-a-url",
-                }),
-            });
+        const mockGetSecretValue = vi.fn().mockResolvedValue({
+            SecretString: JSON.stringify({
+                database_url: "not-a-url",
+            }),
+        });
 
         vi.mocked(SecretsManager).mockImplementation(
             () =>
                 ({
                     getSecretValue: mockGetSecretValue,
-                }) as any,
+                }) as unknown as SecretsManager,
         );
 
         await expect(

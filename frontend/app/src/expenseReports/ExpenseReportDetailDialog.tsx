@@ -1,4 +1,10 @@
-import { useState, type FormEvent } from "react";
+import {
+    useEffect,
+    useState,
+    type FormEvent,
+    type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import {
     useMutation,
     useQueryClient,
@@ -30,6 +36,16 @@ const expenseReportReviewDetailSourceSchema = z.object({
     deductible: z.boolean().nullable(),
 });
 
+const expenseReportReviewDetailReceiptSchema = z.object({
+    id: z.string().uuid(),
+    lineItemId: z.string().uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
+});
+
 const expenseReportReviewDetailSchema = z.object({
     expenseReportId: z.string().uuid(),
     owner: z.string().uuid(),
@@ -50,6 +66,7 @@ const expenseReportReviewDetailSchema = z.object({
             distance: z.string().regex(/^\d+\.\d{2}$/),
         }),
     ),
+    receipts: z.array(expenseReportReviewDetailReceiptSchema).default([]),
 });
 
 const auditEntrySchema = z.object({
@@ -152,9 +169,13 @@ export function useExpenseReportComments(
  * Renders the shared internal Expense Report detail modal.
  */
 export function ExpenseReportDetailDialog({
+    auditActionFormat = "title",
+    mileageUnitLabel = "mi",
     onClose,
     reportId,
 }: {
+    auditActionFormat?: "raw" | "title";
+    mileageUnitLabel?: "mi" | "miles";
     onClose: () => void;
     reportId: string;
 }): JSX.Element {
@@ -242,7 +263,7 @@ export function ExpenseReportDetailDialog({
                 <header className="case-queue-dialog__header">
                     <div>
                         <p className="screen-placeholder__label">
-                            Report Detail
+                            Report Review
                         </p>
                         <h3 id="expense-report-detail-dialog-heading">
                             Expense Report {formatReportId(reportId)}
@@ -326,9 +347,15 @@ export function ExpenseReportDetailDialog({
                             onChange={setActiveTab}
                         />
                         {activeTab === "line-items" ? (
-                            <LineItemsTab report={report} />
+                            <LineItemsTab
+                                mileageUnitLabel={mileageUnitLabel}
+                                report={report}
+                            />
                         ) : activeTab === "audit-trail" ? (
-                            <AuditTrailTab query={auditQuery} />
+                            <AuditTrailTab
+                                actionFormat={auditActionFormat}
+                                query={auditQuery}
+                            />
                         ) : (
                             <CommentsTab
                                 body={commentBody}
@@ -349,7 +376,7 @@ export function ExpenseReportDetailDialog({
                         type="button"
                         variant="secondary"
                     >
-                        Exit
+                        Close
                     </Button>
                 </footer>
             </section>
@@ -389,49 +416,306 @@ function CaseDetailTabs({
 }
 
 function LineItemsTab({
+    mileageUnitLabel,
     report,
 }: {
+    mileageUnitLabel: "mi" | "miles";
     report: ExpenseReportReviewDetail;
 }): JSX.Element {
     return (
-        <div className="case-queue-dialog__table-wrap" role="tabpanel">
-            <table aria-label="Expense Report review line items">
-                <thead>
-                    <tr>
-                        <th scope="col">Merchant</th>
-                        <th scope="col">Amount</th>
-                        <th scope="col">Mileage</th>
-                        <th scope="col">GL Code</th>
-                        <th scope="col">Flag</th>
-                        <th scope="col">Review Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {buildReportDetailRows(report).map((row) => (
-                        <tr key={row.id}>
-                            <th scope="row">{row.merchant}</th>
-                            <td>{formatCurrency(row.amount, row.currency)}</td>
-                            <td>{row.mileage}</td>
-                            <td>{row.glCode ?? "Unmapped"}</td>
-                            <td>
-                                {row.flaggedLineItem ? (
-                                    <Badge tone="warning">Over $500</Badge>
-                                ) : (
-                                    <Badge tone="success">Clear</Badge>
-                                )}
-                            </td>
-                            <td>{formatReviewAction(row.reviewAction)}</td>
+        <div role="tabpanel">
+            <div className="case-queue-dialog__table-wrap">
+                <table aria-label="Report review line items">
+                    <thead>
+                        <tr>
+                            <th scope="col">Merchant</th>
+                            <th scope="col">Amount</th>
+                            <th scope="col">Mileage</th>
+                            <th scope="col">GL Code</th>
+                            <th scope="col">Flag</th>
+                            <th scope="col">Review Status</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {buildReportDetailRows(report, mileageUnitLabel).map(
+                            (row) => (
+                                <tr key={row.id}>
+                                    <th scope="row">{row.merchant}</th>
+                                    <td>
+                                        {formatCurrency(
+                                            row.amount,
+                                            row.currency,
+                                        )}
+                                    </td>
+                                    <td>{row.mileage}</td>
+                                    <td>{row.glCode ?? "Unmapped"}</td>
+                                    <td>
+                                        {row.flaggedLineItem ? (
+                                            <Badge tone="warning">
+                                                Over $500
+                                            </Badge>
+                                        ) : (
+                                            <Badge tone="success">Clear</Badge>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {formatReviewAction(row.reviewAction)}
+                                    </td>
+                                </tr>
+                            ),
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <ReceiptGallery
+                expenseReportId={report.expenseReportId}
+                receipts={report.receipts}
+            />
         </div>
     );
 }
 
+function ReceiptGallery({
+    expenseReportId,
+    receipts,
+}: {
+    expenseReportId: string;
+    receipts: ExpenseReportReviewDetail["receipts"];
+}): JSX.Element {
+    return (
+        <section className="receipt-gallery" aria-labelledby="receipt-heading">
+            <header className="receipt-gallery__header">
+                <h4 id="receipt-heading">
+                    Receipt Attachments ({receipts.length})
+                </h4>
+            </header>
+
+            {receipts.length === 0 ? (
+                <EmptyState
+                    body="No uploaded receipts are attached to this Expense Report."
+                    title="No receipts uploaded"
+                />
+            ) : (
+                <div className="receipt-gallery__grid">
+                    {receipts.map((receipt) => (
+                        <article
+                            className="receipt-gallery__item"
+                            key={receipt.id}
+                        >
+                            <span className="receipt-gallery__select">
+                                <ReceiptPreview
+                                    contentType={receipt.contentType}
+                                    merchant={receipt.merchant}
+                                    url={buildReceiptFileUrl(
+                                        expenseReportId,
+                                        receipt.id,
+                                    )}
+                                />
+                                <span className="receipt-gallery__meta">
+                                    <strong>{receipt.merchant}</strong>
+                                    <span className="receipt-gallery__filename">
+                                        {receipt.filename ?? "Receipt file"}
+                                    </span>
+                                    <span>
+                                        {formatDate(receipt.receiptDate)}
+                                    </span>
+                                    <span>
+                                        {formatCurrency(
+                                            receipt.amount.toFixed(2),
+                                            "USD",
+                                        )}
+                                    </span>
+                                    <small>
+                                        {receipt.contentType ?? "Receipt"} /{" "}
+                                        {receipt.lineItemId === null
+                                            ? "Unlinked receipt"
+                                            : "Linked receipt"}
+                                    </small>
+                                </span>
+                            </span>
+                        </article>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function ReceiptPreview({
+    contentType,
+    merchant,
+    url,
+}: {
+    contentType: string | null;
+    merchant: string;
+    url: string;
+}): JSX.Element {
+    const session = useSession();
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const [hasPreviewError, setHasPreviewError] = useState(false);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            if (
+                objectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [objectUrl]);
+
+    const loadReceiptPreview = async (): Promise<boolean> => {
+        if (objectUrl !== null) {
+            return true;
+        }
+        if (!canLoadReceiptObjectPreview()) {
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        }
+
+        setIsPreviewLoading(true);
+        try {
+            const response = await session.authenticatedFetch(url);
+            if (!response.ok) {
+                throw new Error("Receipt preview request failed.");
+            }
+
+            const blob = await response.blob();
+            const nextObjectUrl = URL.createObjectURL(blob);
+            setObjectUrl(nextObjectUrl);
+            setHasPreviewError(false);
+            return true;
+        } catch {
+            setObjectUrl(null);
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        } finally {
+            setIsPreviewLoading(false);
+        }
+    };
+
+    const handleLoadPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        await loadReceiptPreview();
+    };
+
+    const handleExpandPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        const didLoadPreview = await loadReceiptPreview();
+        if (didLoadPreview) {
+            setIsExpanded(true);
+        }
+    };
+
+    if (isPreviewableReceipt(contentType)) {
+        const hasLoadedPreview = objectUrl !== null && !hasPreviewError;
+
+        return (
+            <span className="receipt-gallery__preview">
+                {hasLoadedPreview && isImageReceipt(contentType) ? (
+                    <img
+                        alt={`Receipt image for ${merchant}`}
+                        src={objectUrl}
+                    />
+                ) : hasLoadedPreview && contentType === "application/pdf" ? (
+                    <iframe
+                        src={objectUrl}
+                        title={`Receipt PDF for ${merchant}`}
+                    />
+                ) : (
+                    <>
+                        <span>
+                            {isPreviewLoading
+                                ? "Loading"
+                                : getReceiptPreviewLabel(contentType)}
+                        </span>
+                        <button
+                            aria-label={`Load receipt preview for ${merchant}`}
+                            className="receipt-gallery__load"
+                            disabled={isPreviewLoading}
+                            type="button"
+                            onClick={(event) => {
+                                void handleLoadPreview(event);
+                            }}
+                        >
+                            Load Receipt
+                        </button>
+                    </>
+                )}
+                {hasLoadedPreview ? (
+                    <button
+                        aria-label={`Expand receipt preview for ${merchant}`}
+                        className="receipt-gallery__expand"
+                        type="button"
+                        onClick={(event) => {
+                            void handleExpandPreview(event);
+                        }}
+                    >
+                        <span aria-hidden="true" />
+                    </button>
+                ) : null}
+                {hasLoadedPreview && isExpanded && document.body
+                    ? createPortal(
+                          <div
+                              aria-label={`Expanded receipt preview for ${merchant}`}
+                              aria-modal="true"
+                              className="receipt-gallery__lightbox"
+                              role="dialog"
+                              onClick={(event) => event.stopPropagation()}
+                          >
+                              <button
+                                  aria-label="Close expanded receipt preview"
+                                  className="receipt-gallery__lightbox-close"
+                                  type="button"
+                                  onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIsExpanded(false);
+                                  }}
+                              >
+                                  X
+                              </button>
+                              <div className="receipt-gallery__lightbox-content">
+                                  {isImageReceipt(contentType) ? (
+                                      <img
+                                          alt={`Expanded receipt image for ${merchant}`}
+                                          src={objectUrl}
+                                      />
+                                  ) : (
+                                      <iframe
+                                          src={objectUrl}
+                                          title={`Expanded receipt PDF for ${merchant}`}
+                                      />
+                                  )}
+                              </div>
+                          </div>,
+                          document.body,
+                      )
+                    : null}
+            </span>
+        );
+    }
+
+    return (
+        <span className="receipt-gallery__preview receipt-gallery__preview--file">
+            <span>{contentType === "application/pdf" ? "PDF" : "FILE"}</span>
+        </span>
+    );
+}
+
 function AuditTrailTab({
+    actionFormat,
     query,
 }: {
+    actionFormat: "raw" | "title";
     query: UseQueryResult<AuditEntry[], Error>;
 }): JSX.Element {
     if (query.isPending) {
@@ -473,7 +757,9 @@ function AuditTrailTab({
                     <time dateTime={entry.createdAt}>
                         {formatDateTime(entry.createdAt)}
                     </time>
-                    <strong>{formatAuditAction(entry.action)}</strong>
+                    <strong>
+                        {formatAuditAction(entry.action, actionFormat)}
+                    </strong>
                     <span>
                         {entry.stageBeforeAction} to{" "}
                         {entry.stageAfterProposedAction}
@@ -626,6 +912,7 @@ type ReportDetailRow = {
 
 function buildReportDetailRows(
     report: ExpenseReportReviewDetail,
+    mileageUnitLabel: "mi" | "miles",
 ): ReportDetailRow[] {
     return [
         ...report.lineItems.map((lineItem) => ({
@@ -643,7 +930,7 @@ function buildReportDetailRows(
             merchant: entry.route,
             amount: entry.amount,
             currency: entry.currency,
-            mileage: `${entry.distance} mi`,
+            mileage: `${entry.distance} ${mileageUnitLabel}`,
             glCode: entry.glCode,
             flaggedLineItem: entry.flaggedLineItem,
             reviewAction: entry.reviewAction,
@@ -683,7 +970,46 @@ function formatReviewAction(
     return "Not reviewed";
 }
 
-function formatAuditAction(action: string): string {
+function getReceiptPreviewLabel(contentType: string | null): string {
+    if (contentType === "application/pdf") {
+        return "PDF";
+    }
+
+    if (isImageReceipt(contentType)) {
+        return "IMG";
+    }
+
+    return "FILE";
+}
+
+function isPreviewableReceipt(contentType: string | null): boolean {
+    return isImageReceipt(contentType) || contentType === "application/pdf";
+}
+
+function isImageReceipt(contentType: string | null): boolean {
+    return (
+        contentType === "image/png" ||
+        contentType === "image/jpeg" ||
+        contentType === "image/webp"
+    );
+}
+
+function canLoadReceiptObjectPreview(): boolean {
+    return (
+        typeof URL.createObjectURL === "function" &&
+        !navigator.userAgent.toLowerCase().includes("jsdom")
+    );
+}
+
+function buildReceiptFileUrl(expenseReportId: string, receiptId: string): string {
+    return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
+}
+
+function formatAuditAction(action: string, format: "raw" | "title"): string {
+    if (format === "raw") {
+        return action;
+    }
+
     return action
         .split("_")
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

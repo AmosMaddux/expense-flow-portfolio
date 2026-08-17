@@ -14,8 +14,16 @@ import {
     type Query,
     type QueryClient,
     type QueryKey,
+    type UseQueryResult,
 } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import {
+    useEffect,
+    useMemo,
+    useState,
+    type FormEvent,
+    type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { z } from "zod";
 
 import { useSession } from "../auth";
@@ -153,6 +161,8 @@ type ApprovalQueueReviewRow =
       };
 type FlagFilter = "all" | "flagged" | "clear";
 type ReportDetailTab = "line-items" | "policy-checks";
+type ApprovalQueueReviewDialogTab =
+    ReportDetailTab | "audit-trail" | "comments";
 type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
 type LineItemMutationVariables = {
     lineItem: ApprovalQueueLineItem;
@@ -239,8 +249,37 @@ const expenseReportTransitionResponseSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
 });
+const auditEntrySchema = z.object({
+    id: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    expenseReportId: z.string().uuid(),
+    actorId: z.string().uuid(),
+    action: z.string().min(1),
+    stageBeforeAction: z.enum(EXPENSE_REPORT_STAGES),
+    stageAfterProposedAction: z.enum(EXPENSE_REPORT_STAGES),
+    denialReason: z.string().nullable(),
+    outcomeReason: z.string().nullable(),
+    createdAt: z.string().datetime({ offset: true }),
+});
+const caseCommentSchema = z.object({
+    id: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    expenseReportId: z.string().uuid(),
+    authorId: z.string().uuid(),
+    body: z.string().min(1),
+    createdAt: z.string().datetime({ offset: true }),
+});
+const auditEntryListSchema = z.array(auditEntrySchema);
+const caseCommentListSchema = z.array(caseCommentSchema);
+const createCaseCommentRequestSchema = z
+    .object({
+        body: z.string().trim().min(1).max(5_000),
+    })
+    .strict();
 
 const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
+type ApprovalQueueAuditEntry = z.infer<typeof auditEntrySchema>;
+type ApprovalQueueCaseComment = z.infer<typeof caseCommentSchema>;
 
 /**
  * Fetches authenticated Approval Queue line items for the current tenant.
@@ -251,6 +290,40 @@ export function useApprovalQueueLineItems() {
         keyParts: approvalQueueLineItemKeyParts,
         parseResponse: async (response) =>
             approvalQueueLineItemListSchema.parse(await response.json()),
+        staleTime: 30_000,
+    });
+}
+
+/**
+ * Fetches tenant-scoped Audit Trail entries for a report review dialog.
+ */
+export function useExpenseReportAuditEntries(
+    expenseReportId: string,
+    enabled = true,
+) {
+    return useExpenseFlowQuery<ApprovalQueueAuditEntry[]>({
+        enabled,
+        input: `/v1/expense-reports/${expenseReportId}/audit-entries`,
+        keyParts: ["expense-report-audit-entries", expenseReportId],
+        parseResponse: async (response) =>
+            auditEntryListSchema.parse(await response.json()),
+        staleTime: 30_000,
+    });
+}
+
+/**
+ * Fetches tenant-scoped comments for a report review dialog.
+ */
+export function useExpenseReportComments(
+    expenseReportId: string,
+    enabled = true,
+) {
+    return useExpenseFlowQuery<ApprovalQueueCaseComment[]>({
+        enabled,
+        input: `/v1/expense-reports/${expenseReportId}/comments`,
+        keyParts: ["expense-report-comments", expenseReportId],
+        parseResponse: async (response) =>
+            caseCommentListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -1017,7 +1090,7 @@ function ApprovalQueueLineItemTable({
     );
 }
 
-function ApprovalQueueReviewDialog({
+export function ApprovalQueueReviewDialog({
     canManageReviewWorkflow,
     isActionPending,
     lineItems,
@@ -1025,6 +1098,7 @@ function ApprovalQueueReviewDialog({
     onClearFlag,
     onClose,
     onReviewLineItem,
+    reportTitleLabel = "Report",
     onSendBackReport,
     onToggleDeductibility,
 }: {
@@ -1040,6 +1114,7 @@ function ApprovalQueueReviewDialog({
         sourceId: string,
         action: LineItemReviewAction,
     ) => void;
+    reportTitleLabel?: "Expense Report" | "Report";
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
     onToggleDeductibility: (
         lineItem: ApprovalQueueLineItem,
@@ -1048,12 +1123,73 @@ function ApprovalQueueReviewDialog({
         deductible: boolean,
     ) => void;
 }): JSX.Element {
-    const [activeTab, setActiveTab] = useState<ReportDetailTab>("line-items");
+    const [activeTab, setActiveTab] =
+        useState<ApprovalQueueReviewDialogTab>("line-items");
     const reportLineItem = lineItems[0];
-    const [activeLineItemId, setActiveLineItemId] = useState<string | null>(
+    const expenseReportId = reportLineItem.expenseReportId;
+    const session = useSession();
+    const queryClient = useQueryClient();
+    const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(
         null,
     );
+    const [hoveredLineItemId, setHoveredLineItemId] = useState<string | null>(
+        null,
+    );
+    const activeLineItemId = hoveredLineItemId ?? selectedLineItemId;
     const [receiptView, setReceiptView] = useState<"grid" | "list">("grid");
+    const [commentBody, setCommentBody] = useState("");
+    const [commentError, setCommentError] = useState<string | null>(null);
+    const auditQuery = useExpenseReportAuditEntries(
+        expenseReportId,
+        activeTab === "audit-trail",
+    );
+    const commentsQuery = useExpenseReportComments(
+        expenseReportId,
+        activeTab === "comments",
+    );
+    const commentsQueryFilter = {
+        predicate: (cachedQuery: Query) =>
+            cachedQuery.queryKey.includes("expense-report-comments") &&
+            cachedQuery.queryKey.includes(expenseReportId),
+    };
+    const commentMutation = useMutation({
+        mutationFn: async (body: string) => {
+            const requestBody = createCaseCommentRequestSchema.parse({ body });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${expenseReportId}/comments`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return caseCommentSchema.parse(await response.json());
+        },
+        onMutate: async () => {
+            await queryClient.cancelQueries(commentsQueryFilter);
+        },
+        onError: (error) => {
+            setCommentError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (comment) => {
+            setCommentBody("");
+            setCommentError(null);
+            queryClient.setQueriesData<ApprovalQueueCaseComment[]>(
+                commentsQueryFilter,
+                (current = []) =>
+                    current.some(
+                        (cachedComment) => cachedComment.id === comment.id,
+                    )
+                        ? current
+                        : [...current, comment],
+            );
+        },
+    });
     const {
         canAdvanceReport,
         canClearPolicyChecks,
@@ -1090,13 +1226,27 @@ function ApprovalQueueReviewDialog({
         0,
     );
     const mileageTotal = calculateReportMileageTotal(lineItems);
+    const handleSubmitComment = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const parsed = createCaseCommentRequestSchema.safeParse({
+            body: commentBody,
+        });
+        if (!parsed.success) {
+            setCommentError("Enter a comment before posting.");
+            return;
+        }
+
+        setCommentError(null);
+        commentMutation.mutate(parsed.data.body);
+    };
+
     function handleReceiptSelect(receipt: ApprovalQueueReceipt): void {
         if (receipt.lineItemId === null) {
             return;
         }
 
         const linkedLineItemId = receipt.lineItemId;
-        setActiveLineItemId(linkedLineItemId);
+        setSelectedLineItemId(linkedLineItemId);
         window.requestAnimationFrame(() => {
             const row = document.getElementById(
                 getReviewRowElementId(linkedLineItemId),
@@ -1105,6 +1255,10 @@ function ApprovalQueueReviewDialog({
             row?.scrollIntoView({ block: "center", behavior: "smooth" });
             row?.focus();
         });
+    }
+
+    function handleReceiptHover(receipt: ApprovalQueueReceipt | null): void {
+        setHoveredLineItemId(receipt?.lineItemId ?? null);
     }
 
     return (
@@ -1120,7 +1274,7 @@ function ApprovalQueueReviewDialog({
                             Report Review
                         </p>
                         <h3 id="case-queue-dialog-heading">
-                            Report{" "}
+                            {reportTitleLabel}{" "}
                             {getReportDisplayId(reportLineItem.expenseReportId)}
                         </h3>
                     </div>
@@ -1158,9 +1312,11 @@ function ApprovalQueueReviewDialog({
                 </div>
                 <ReceiptGallery
                     activeLineItemId={activeLineItemId}
+                    expenseReportId={reportLineItem.expenseReportId}
                     receipts={receipts}
                     reviewRows={reviewRows}
                     view={receiptView}
+                    onReceiptHover={handleReceiptHover}
                     onReceiptSelect={handleReceiptSelect}
                     onViewChange={setReceiptView}
                 />
@@ -1188,6 +1344,26 @@ function ApprovalQueueReviewDialog({
                         onClick={() => setActiveTab("policy-checks")}
                     >
                         Policy Checks
+                    </button>
+                    <button
+                        aria-controls="report-audit-trail-panel"
+                        aria-selected={activeTab === "audit-trail"}
+                        id="report-audit-trail-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("audit-trail")}
+                    >
+                        Audit Trail
+                    </button>
+                    <button
+                        aria-controls="report-comments-panel"
+                        aria-selected={activeTab === "comments"}
+                        id="report-comments-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("comments")}
+                    >
+                        Comments
                     </button>
                 </div>
                 {activeTab === "line-items" ? (
@@ -1330,7 +1506,7 @@ function ApprovalQueueReviewDialog({
                             </tbody>
                         </table>
                     </div>
-                ) : (
+                ) : activeTab === "policy-checks" ? (
                     <div
                         aria-labelledby="report-policy-checks-tab"
                         className="case-queue-dialog__table-wrap"
@@ -1411,6 +1587,31 @@ function ApprovalQueueReviewDialog({
                             </table>
                         )}
                     </div>
+                ) : activeTab === "audit-trail" ? (
+                    <div
+                        aria-labelledby="report-audit-trail-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-audit-trail-panel"
+                        role="tabpanel"
+                    >
+                        <AuditTrailPanel query={auditQuery} />
+                    </div>
+                ) : (
+                    <div
+                        aria-labelledby="report-comments-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-comments-panel"
+                        role="tabpanel"
+                    >
+                        <CommentsPanel
+                            body={commentBody}
+                            error={commentError}
+                            isSubmitting={commentMutation.isPending}
+                            query={commentsQuery}
+                            onBodyChange={setCommentBody}
+                            onSubmit={handleSubmitComment}
+                        />
+                    </div>
                 )}
                 <footer className="case-queue-dialog__footer">
                     <button
@@ -1444,18 +1645,163 @@ function ApprovalQueueReviewDialog({
     );
 }
 
+function AuditTrailPanel({
+    query,
+}: {
+    query: UseQueryResult<ApprovalQueueAuditEntry[], Error>;
+}): JSX.Element {
+    if (query.isPending) {
+        return <LoadingSkeleton label="Loading Audit Trail" rows={3} />;
+    }
+
+    if (query.isError) {
+        return (
+            <ErrorState
+                isRetrying={query.isFetching}
+                message={getQueueActionErrorMessage(query.error)}
+                onRetry={() => {
+                    void query.refetch();
+                }}
+                title="Unable to load Audit Trail"
+            />
+        );
+    }
+
+    const entries = query.data ?? [];
+
+    if (entries.length === 0) {
+        return (
+            <div className="case-queue-dialog__empty-tab" role="status">
+                No audit entries recorded for this report.
+            </div>
+        );
+    }
+
+    return (
+        <ol className="case-detail-audit">
+            {entries.map((entry) => (
+                <li className="case-detail-audit__entry" key={entry.id}>
+                    <strong>{getAuditActionLabel(entry.action)}</strong>
+                    <span>
+                        {entry.stageBeforeAction} to{" "}
+                        {entry.stageAfterProposedAction}
+                    </span>
+                    <small>Actor {getReportDisplayId(entry.actorId)}</small>
+                    {entry.outcomeReason !== null ? (
+                        <p>{entry.outcomeReason}</p>
+                    ) : null}
+                    {entry.denialReason !== null ? (
+                        <p>{entry.denialReason}</p>
+                    ) : null}
+                    <time dateTime={entry.createdAt}>
+                        {formatDateTime(entry.createdAt)}
+                    </time>
+                </li>
+            ))}
+        </ol>
+    );
+}
+
+function CommentsPanel({
+    body,
+    error,
+    isSubmitting,
+    query,
+    onBodyChange,
+    onSubmit,
+}: {
+    body: string;
+    error: string | null;
+    isSubmitting: boolean;
+    query: UseQueryResult<ApprovalQueueCaseComment[], Error>;
+    onBodyChange: (body: string) => void;
+    onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}): JSX.Element {
+    return (
+        <section className="case-detail-comments">
+            {query.isPending ? (
+                <LoadingSkeleton label="Loading Comments" rows={3} />
+            ) : query.isError ? (
+                <ErrorState
+                    isRetrying={query.isFetching}
+                    message={getQueueActionErrorMessage(query.error)}
+                    onRetry={() => {
+                        void query.refetch();
+                    }}
+                    title="Unable to load comments"
+                />
+            ) : (query.data ?? []).length === 0 ? (
+                <div className="case-queue-dialog__empty-tab" role="status">
+                    No comments recorded for this report.
+                </div>
+            ) : (
+                <ol className="case-detail-comments__thread">
+                    {(query.data ?? []).map((comment) => (
+                        <li key={comment.id}>
+                            <div>
+                                <strong>
+                                    Author{" "}
+                                    {getReportDisplayId(comment.authorId)}
+                                </strong>
+                                <time dateTime={comment.createdAt}>
+                                    {formatDateTime(comment.createdAt)}
+                                </time>
+                            </div>
+                            <p>{comment.body}</p>
+                        </li>
+                    ))}
+                </ol>
+            )}
+            <form
+                aria-label="Add Expense Report comment"
+                className="case-detail-comments__form"
+                onSubmit={onSubmit}
+            >
+                <label>
+                    <span>Comment</span>
+                    <textarea
+                        maxLength={5_000}
+                        rows={4}
+                        value={body}
+                        onChange={(event) =>
+                            onBodyChange(event.currentTarget.value)
+                        }
+                    />
+                </label>
+                {error === null ? null : (
+                    <div className="form-message form-message--error">
+                        {error}
+                    </div>
+                )}
+                <Button
+                    disabled={isSubmitting}
+                    size="sm"
+                    type="submit"
+                    variant="primary"
+                >
+                    {isSubmitting ? "Posting..." : "Post comment"}
+                </Button>
+            </form>
+        </section>
+    );
+}
+
 function ReceiptGallery({
     activeLineItemId,
+    expenseReportId,
     receipts,
     reviewRows,
     view,
+    onReceiptHover,
     onReceiptSelect,
     onViewChange,
 }: {
     activeLineItemId: string | null;
+    expenseReportId: string;
     receipts: ApprovalQueueReceipt[];
     reviewRows: ApprovalQueueReviewRow[];
     view: "grid" | "list";
+    onReceiptHover: (receipt: ApprovalQueueReceipt | null) => void;
     onReceiptSelect: (receipt: ApprovalQueueReceipt) => void;
     onViewChange: (view: "grid" | "list") => void;
 }): JSX.Element {
@@ -1533,12 +1879,49 @@ function ReceiptGallery({
                                     .join(" ")}
                                 key={receipt.id}
                             >
-                                <button
+                                <ReceiptPreview
+                                    contentType={receipt.contentType}
+                                    merchant={receipt.merchant}
+                                    url={buildReceiptFileUrl(
+                                        expenseReportId,
+                                        receipt.id,
+                                    )}
+                                />
+                                <div
                                     aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${receipt.filename ?? "Receipt file"}. ${receipt.contentType ?? "Receipt"}. ${lineItemLabel}.`}
+                                    aria-disabled={!isLinked}
                                     className="receipt-gallery__select"
-                                    disabled={!isLinked}
-                                    type="button"
-                                    onClick={() => onReceiptSelect(receipt)}
+                                    role="button"
+                                    tabIndex={isLinked ? 0 : -1}
+                                    onKeyDown={(event) => {
+                                        if (
+                                            !isLinked ||
+                                            (event.key !== "Enter" &&
+                                                event.key !== " ")
+                                        ) {
+                                            return;
+                                        }
+
+                                        event.preventDefault();
+                                        onReceiptSelect(receipt);
+                                    }}
+                                    onClick={() => {
+                                        if (isLinked) {
+                                            onReceiptSelect(receipt);
+                                        }
+                                    }}
+                                    onBlur={() => onReceiptHover(null)}
+                                    onFocus={() => {
+                                        if (isLinked) {
+                                            onReceiptHover(receipt);
+                                        }
+                                    }}
+                                    onMouseEnter={() => {
+                                        if (isLinked) {
+                                            onReceiptHover(receipt);
+                                        }
+                                    }}
+                                    onMouseLeave={() => onReceiptHover(null)}
                                 >
                                     <span className="receipt-gallery__meta">
                                         <strong>{receipt.merchant}</strong>
@@ -1556,7 +1939,7 @@ function ReceiptGallery({
                                             {lineItemLabel}
                                         </small>
                                     </span>
-                                </button>
+                                </div>
                             </article>
                         );
                     })}
@@ -1564,6 +1947,212 @@ function ReceiptGallery({
             )}
         </section>
     );
+}
+
+function ReceiptPreview({
+    contentType,
+    merchant,
+    url,
+}: {
+    contentType: string | null;
+    merchant: string;
+    url: string;
+}): JSX.Element {
+    const session = useSession();
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const [hasPreviewError, setHasPreviewError] = useState(false);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            if (
+                objectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [objectUrl]);
+
+    const loadReceiptPreview = async (): Promise<boolean> => {
+        if (objectUrl !== null) {
+            return true;
+        }
+        if (!canLoadReceiptObjectPreview()) {
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        }
+
+        setIsPreviewLoading(true);
+        try {
+            const response = await session.authenticatedFetch(url);
+            if (!response.ok) {
+                throw new Error("Receipt preview request failed.");
+            }
+
+            const blob = await response.blob();
+            const nextObjectUrl = URL.createObjectURL(blob);
+            setObjectUrl(nextObjectUrl);
+            setHasPreviewError(false);
+            return true;
+        } catch {
+            setObjectUrl(null);
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        } finally {
+            setIsPreviewLoading(false);
+        }
+    };
+
+    const handleLoadPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        await loadReceiptPreview();
+    };
+
+    const handleExpandPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        const didLoadPreview = await loadReceiptPreview();
+        if (didLoadPreview) {
+            setIsExpanded(true);
+        }
+    };
+
+    if (isPreviewableReceipt(contentType)) {
+        const hasLoadedPreview = objectUrl !== null && !hasPreviewError;
+
+        return (
+            <span className="receipt-gallery__preview">
+                {hasLoadedPreview && isImageReceipt(contentType) ? (
+                    <img
+                        alt={`Receipt image for ${merchant}`}
+                        src={objectUrl}
+                    />
+                ) : hasLoadedPreview && contentType === "application/pdf" ? (
+                    <iframe
+                        src={objectUrl}
+                        title={`Receipt PDF for ${merchant}`}
+                    />
+                ) : (
+                    <>
+                        <span>
+                            {isPreviewLoading
+                                ? "Loading"
+                                : hasPreviewError
+                                  ? getReceiptPreviewLabel(contentType)
+                                  : getReceiptPreviewLabel(contentType)}
+                        </span>
+                        <button
+                            aria-label={`Load receipt preview for ${merchant}`}
+                            className="receipt-gallery__load"
+                            disabled={isPreviewLoading}
+                            type="button"
+                            onClick={(event) => {
+                                void handleLoadPreview(event);
+                            }}
+                        >
+                            Load Receipt
+                        </button>
+                    </>
+                )}
+                {hasLoadedPreview ? (
+                    <button
+                        aria-label={`Expand receipt preview for ${merchant}`}
+                        className="receipt-gallery__expand"
+                        type="button"
+                        onClick={(event) => {
+                            void handleExpandPreview(event);
+                        }}
+                    >
+                        <span aria-hidden="true" />
+                    </button>
+                ) : null}
+                {hasLoadedPreview && isExpanded && document.body
+                    ? createPortal(
+                          <div
+                              aria-label={`Expanded receipt preview for ${merchant}`}
+                              aria-modal="true"
+                              className="receipt-gallery__lightbox"
+                              role="dialog"
+                              onClick={(event) => event.stopPropagation()}
+                          >
+                              <button
+                                  aria-label="Close expanded receipt preview"
+                                  className="receipt-gallery__lightbox-close"
+                                  type="button"
+                                  onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIsExpanded(false);
+                                  }}
+                              >
+                                  X
+                              </button>
+                              <div className="receipt-gallery__lightbox-content">
+                                  {isImageReceipt(contentType) ? (
+                                      <img
+                                          alt={`Expanded receipt image for ${merchant}`}
+                                          src={objectUrl}
+                                      />
+                                  ) : (
+                                      <iframe
+                                          src={objectUrl}
+                                          title={`Expanded receipt PDF for ${merchant}`}
+                                      />
+                                  )}
+                              </div>
+                          </div>,
+                          document.body,
+                      )
+                    : null}
+            </span>
+        );
+    }
+
+    return (
+        <span className="receipt-gallery__preview receipt-gallery__preview--file">
+            <span>{contentType === "application/pdf" ? "PDF" : "FILE"}</span>
+        </span>
+    );
+}
+
+function isPreviewableReceipt(contentType: string | null): boolean {
+    return isImageReceipt(contentType) || contentType === "application/pdf";
+}
+
+function isImageReceipt(contentType: string | null): boolean {
+    return (
+        contentType === "image/png" ||
+        contentType === "image/jpeg" ||
+        contentType === "image/webp"
+    );
+}
+
+function getReceiptPreviewLabel(contentType: string | null): string {
+    return contentType === "application/pdf"
+        ? "PDF"
+        : isImageReceipt(contentType)
+          ? "IMG"
+          : "FILE";
+}
+
+function canLoadReceiptObjectPreview(): boolean {
+    return (
+        typeof URL.createObjectURL === "function" &&
+        !navigator.userAgent.toLowerCase().includes("jsdom")
+    );
+}
+
+function buildReceiptFileUrl(
+    expenseReportId: string,
+    receiptId: string,
+): string {
+    return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
 }
 
 function collectReportReceipts(
@@ -1612,6 +2201,21 @@ function formatDate(date: string): string {
         timeZone: "UTC",
         year: "numeric",
     }).format(new Date(`${date}T00:00:00.000Z`));
+}
+
+function formatDateTime(dateTime: string): string {
+    return new Intl.DateTimeFormat("en-US", {
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+        year: "numeric",
+    }).format(new Date(dateTime));
+}
+
+function getAuditActionLabel(action: string): string {
+    return action === "workflow_transition_applied"
+        ? "Transition Approved"
+        : action;
 }
 
 function formatMileageDistance(mileageDistance: number): string {

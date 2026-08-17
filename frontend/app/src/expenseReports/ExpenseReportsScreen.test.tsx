@@ -140,6 +140,34 @@ describe("ExpenseReportsScreen", () => {
         ).toBeTruthy();
     });
 
+    test("shows a readable message when the API returns an HTML error page", async () => {
+        renderExpenseReportsScreen(
+            vi.fn(() =>
+                Promise.resolve(
+                    new Response(
+                        "<!DOCTYPE html><html><body><pre>Cannot GET /v1/expense-reports</pre></body></html>",
+                        {
+                            headers: { "Content-Type": "text/html" },
+                            status: 404,
+                        },
+                    ),
+                ),
+            ),
+        );
+
+        expect(
+            await screen.findByRole("heading", {
+                name: "Unable to load Expense Reports",
+            }),
+        ).toBeTruthy();
+        expect(
+            screen.getByText(
+                "Expense Reports API returned an HTML error page. Check that the Vite /v1 proxy is targeting the core case service.",
+            ),
+        ).toBeTruthy();
+        expect(screen.queryByText(/<!DOCTYPE html>/i)).toBeNull();
+    });
+
     test("renders assigned manager ids without an Employee prefix", async () => {
         renderExpenseReportsScreen(
             vi.fn(() =>

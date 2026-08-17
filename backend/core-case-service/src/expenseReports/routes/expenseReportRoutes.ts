@@ -12,6 +12,7 @@ import {
     getExpenseReportAuditEntries,
     getExpenseReportById,
     getExpenseReportComments,
+    getExpenseReportReceiptFile,
     getExpenseReports,
     getExpenseReportReviewDetail,
     getFinanceDashboardTrend,
@@ -132,5 +133,9 @@ expenseReportRouter.post(
 expenseReportRouter.get(
     "/expense-reports/:id/review-detail",
     getExpenseReportReviewDetail,
+);
+expenseReportRouter.get(
+    "/expense-reports/:id/receipts/:receiptId/file",
+    getExpenseReportReceiptFile,
 );
 expenseReportRouter.get("/expense-reports/:id", getExpenseReportById);

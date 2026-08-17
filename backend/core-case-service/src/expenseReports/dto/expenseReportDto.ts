@@ -33,6 +33,11 @@ export const GetExpenseReportInboundRequestSchema = z.object({
     id: z.uuid(),
 });
 
+export const ReceiptFileParamsSchema = z.object({
+    id: z.uuid(),
+    receiptId: z.uuid(),
+});
+
 const mileageEntryRequestShape = {
     route: z.string().trim().min(3).max(500),
     distance: z
@@ -738,6 +743,16 @@ const ExpenseReportReviewDetailSourceSchema = z.object({
     deductible: z.boolean().nullable(),
 });
 
+const ExpenseReportReviewDetailReceiptSchema = z.object({
+    id: z.uuid(),
+    lineItemId: z.uuid().nullable(),
+    merchant: z.string().min(1),
+    receiptDate: z.iso.date(),
+    amount: z.coerce.number().nonnegative(),
+    filename: z.string().nullable(),
+    contentType: z.string().nullable(),
+});
+
 export const ExpenseReportReviewDetailSchema = z.object({
     expenseReportId: z.uuid(),
     owner: z.uuid(),
@@ -758,6 +773,7 @@ export const ExpenseReportReviewDetailSchema = z.object({
             distance: z.string().regex(/^\d+\.\d{2}$/),
         }),
     ),
+    receipts: z.array(ExpenseReportReviewDetailReceiptSchema),
 });
 
 export const ExpenseReportSummarySchema = z.object({
@@ -931,6 +947,8 @@ export const createExpenseReportRequestSchema =
 export const getExpenseReportRequestSchema =
     GetExpenseReportInboundRequestSchema;
 
+export const receiptFileParamsSchema = ReceiptFileParamsSchema;
+
 export const submitExpenseReportRequestSchema =
     SubmitExpenseReportInboundRequestSchema;
 
@@ -1050,6 +1068,8 @@ export type CreateExpenseReportRequest = z.infer<
 export type GetExpenseReportRequest = z.infer<
     typeof GetExpenseReportInboundRequestSchema
 >;
+
+export type ReceiptFileParams = z.infer<typeof ReceiptFileParamsSchema>;
 
 export type CreateMileageEntryRequest = z.infer<
     typeof CreateMileageEntryInboundRequestSchema

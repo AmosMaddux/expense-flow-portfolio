@@ -172,7 +172,9 @@ v1Router.use(
 app.use("/v1", v1Router);
 app.use(problemJsonErrorHandler);
 
-function onlyProtectedRoutes(handler: express.RequestHandler): express.RequestHandler {
+function onlyProtectedRoutes(
+    handler: express.RequestHandler,
+): express.RequestHandler {
     return (req: Request, res: Response, next: NextFunction): void => {
         if (!isProtectedRoute(req.path)) {
             next();

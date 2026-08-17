@@ -166,12 +166,9 @@ export async function seedLocalDemoData(): Promise<void> {
         environment.VITE_TENANT_ID,
     );
     const receiptStorageClient = new S3Client({
-        credentials: {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "expenseflowlocal",
-            secretAccessKey:
-                process.env.AWS_SECRET_ACCESS_KEY ??
-                "expenseflowlocaldevonly",
-        },
+        ...(receiptStorageConfig.credentials === undefined
+            ? {}
+            : { credentials: receiptStorageConfig.credentials }),
         endpoint: receiptStorageConfig.endpoint,
         forcePathStyle: receiptStorageConfig.forcePathStyle,
         region: receiptStorageConfig.region,

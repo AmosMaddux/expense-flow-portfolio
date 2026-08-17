@@ -119,20 +119,23 @@ test("employee submits an expense report and manager approves it", async ({
         freshManagerContext = await browser.newContext();
         const freshManagerPage = await freshManagerContext.newPage();
         await login(freshManagerPage, e2eAccounts.manager, managerTotpCode);
-        await freshManagerPage
-            .getByRole("link", { name: "Expense Reports" })
-            .click();
         await expect(
             freshManagerPage.getByRole("heading", {
                 level: 1,
                 name: "Expense Reports",
             }),
         ).toBeVisible();
-        const persistedManagerRow = freshManagerPage.getByRole("row", {
-            name: `Expense Report ${reportId}`,
-        });
-        await expect(persistedManagerRow).toBeVisible();
-        await expect(persistedManagerRow).toContainText("AP Review");
+        await freshManagerPage
+            .getByRole("link", { name: "Approval Queue" })
+            .click();
+        await expect(
+            freshManagerPage.getByRole("heading", { name: "Approval Queue" }),
+        ).toBeVisible();
+        await expect(
+            freshManagerPage.getByRole("row", {
+                name: `Expense Report ${reportId}`,
+            }),
+        ).toHaveCount(0);
 
         const financePage = await financeContext.newPage();
         await login(financePage, e2eAccounts.financeAdmin);
@@ -161,7 +164,7 @@ test("employee submits an expense report and manager approves it", async ({
         await expect(financeDialog).toBeVisible();
         await financeDialog.getByRole("tab", { name: "Audit Trail" }).click();
         await expect(
-            financeDialog.getByText("Transition Approved"),
+            financeDialog.getByText("transition_approved"),
         ).toHaveCount(3);
         await expect(financeDialog).toContainText("Submitted");
         await expect(financeDialog).toContainText("Manager Approval");

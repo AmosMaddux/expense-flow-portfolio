@@ -738,8 +738,21 @@ function hasExpenseReportFilters(filters: ExpenseReportFilters): boolean {
 
 function getExpenseReportsErrorMessage(error: Error | null): string {
     if (error instanceof QueryRequestError) {
+        if (typeof error.body === "string" && looksLikeHtml(error.body)) {
+            return "Expense Reports API returned an HTML error page. Check that the Vite /v1 proxy is targeting the core case service.";
+        }
+
         return error.message;
     }
 
     return "Expense Reports could not be loaded. Please try again.";
+}
+
+function looksLikeHtml(value: string): boolean {
+    const trimmedValue = value.trimStart().toLowerCase();
+
+    return (
+        trimmedValue.startsWith("<!doctype html") ||
+        trimmedValue.startsWith("<html")
+    );
 }
