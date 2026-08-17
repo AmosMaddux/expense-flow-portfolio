@@ -4,7 +4,14 @@ on:
   pull_request:
     paths:
       - ".github/workflows/terraform-plan.yml"
+      - "docs/iac-scanning-suppressions.md"
       - "infra/terraform/**"
+      - ".checkov.yaml"
+      - "scripts/ci/enforce-iac-gates.sh"
+      - "scripts/ci/test-enforce-iac-gates.sh"
+      - "scripts/ci/check-iac-suppression-metadata.sh"
+      - "scripts/ci/test-check-iac-suppression-metadata.sh"
+      - "tests/fixtures/iac/**"
 
 permissions:
   contents: read
@@ -14,10 +21,14 @@ jobs:
   sandbox:
     name: Sandbox Terraform
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
 
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
+      TFSEC_SHA256: a32d0799bbefababaa4fcd814da9f4d251cd932789590b99d1d5fcb89ace6f68
 
     defaults:
       run:
@@ -35,28 +46,181 @@ jobs:
       - name: Cache Terraform providers
         uses: actions/cache@v4
         with:
-          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          path: ${{ runner.temp }}/terraform-plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('infra/terraform/**/.terraform.lock.hcl') }}
           restore-keys: |
             terraform-providers-${{ runner.os }}-
 
       - name: Create Terraform plugin cache
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Terraform fmt
         run: terraform fmt -check -recursive infra/terraform
 
       - name: Init bootstrap for validation
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: terraform -chdir=infra/terraform/bootstrap init -backend=false
 
       - name: Validate bootstrap
         run: terraform -chdir=infra/terraform/bootstrap validate
 
       - name: Init sandbox for validation
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: terraform -chdir=infra/terraform/environments/sandbox init -backend=false
 
       - name: Validate sandbox
         run: terraform -chdir=infra/terraform/environments/sandbox validate
+
+      - name: Test IaC gate script
+        run: scripts/ci/test-enforce-iac-gates.sh
+
+      - name: Test IaC suppression metadata script
+        run: scripts/ci/test-check-iac-suppression-metadata.sh
+
+      - name: Check IaC suppression metadata
+        run: scripts/ci/check-iac-suppression-metadata.sh
+
+      - name: Checkov insecure fixture coverage
+        id: checkov_fixture
+        continue-on-error: true
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: tests/fixtures/iac/insecure
+          framework: terraform
+          config_file: .checkov.yaml
+          output_format: cli,json
+          output_file_path: console,checkov-fixture-reports/results_json.json
+
+      - name: Assert Checkov fixture failed by expected rule
+        if: success() || failure()
+        run: |
+          if [[ "${{ steps.checkov_fixture.outcome }}" != "failure" ]]; then
+            echo "::error::Checkov did not flag the deliberately insecure Terraform fixture."
+            exit 1
+          fi
+          if [[ ! -f checkov-fixture-reports/results_json.json ]]; then
+            echo "::error::Checkov fixture scan did not produce checkov-fixture-reports/results_json.json."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const checkov = JSON.parse(fs.readFileSync("checkov-fixture-reports/results_json.json", "utf8"));
+          const reports = Array.isArray(checkov) ? checkov : [checkov];
+          const failedChecks = reports.flatMap((report) => report?.results?.failed_checks ?? []);
+          if (!failedChecks.some((check) => check.check_id === "CKV_AWS_260")) {
+            console.error("::error::Checkov fixture did not include expected CKV_AWS_260 finding.");
+            process.exit(1);
+          }
+          NODE
+
+      - name: Install tfsec
+        run: |
+          curl --fail -sSL -o tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.14/tfsec-linux-amd64
+          echo "${TFSEC_SHA256}  tfsec" | sha256sum -c -
+          chmod +x tfsec
+
+      - name: Assert tfsec fixture failed by expected rule
+        run: |
+          set +e
+          ./tfsec tests/fixtures/iac/insecure \
+            --format sarif \
+            --out "$GITHUB_WORKSPACE/tfsec-fixture-results.sarif" \
+            --exclude-downloaded-modules
+          tfsec_status=$?
+          set -e
+
+          if (( tfsec_status == 0 )); then
+            echo "::error::tfsec did not flag the deliberately insecure Terraform fixture."
+            exit 1
+          fi
+          if [[ ! -f "$GITHUB_WORKSPACE/tfsec-fixture-results.sarif" ]]; then
+            echo "::error::tfsec fixture scan did not produce tfsec-fixture-results.sarif."
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const sarif = JSON.parse(fs.readFileSync("tfsec-fixture-results.sarif", "utf8"));
+          const results = sarif.runs?.flatMap((run) => run.results ?? []) ?? [];
+          if (!results.some((result) => result.ruleId === "aws-ec2-no-public-ingress-sgr")) {
+            console.error("::error::tfsec fixture did not include expected aws-ec2-no-public-ingress-sgr finding.");
+            process.exit(1);
+          }
+          NODE
+
+      - name: Checkov Terraform scan
+        id: checkov_scan
+        continue-on-error: true
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/terraform
+          framework: terraform
+          config_file: .checkov.yaml
+          output_format: cli,json,sarif
+          output_file_path: console,checkov-reports/results_json.json,checkov-reports/results_sarif.sarif
+
+      - name: Upload Checkov SARIF
+        if: (success() || failure()) && hashFiles('checkov-reports/results_sarif.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-reports/results_sarif.sarif
+
+      - name: tfsec Terraform scan
+        id: tfsec_scan
+        continue-on-error: true
+        run: |
+          ./tfsec infra/terraform \
+            --format sarif \
+            --out "$GITHUB_WORKSPACE/tfsec-results.sarif" \
+            --soft-fail \
+            --exclude-downloaded-modules
+
+      - name: Upload tfsec SARIF
+        if: (success() || failure()) && hashFiles('tfsec-results.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec-results.sarif
+
+      - name: Enforce IaC scan gates
+        if: success() || failure()
+        run: |
+          failed=0
+
+          if [[ "${{ steps.checkov_scan.outcome }}" == "failure" ]]; then
+            echo "::error::Checkov returned a failure outcome. The IaC gate will fail closed after evaluating generated reports."
+            failed=1
+          elif [[ "${{ steps.checkov_scan.outcome }}" == "skipped" ]]; then
+            echo "::error::Checkov was skipped before the IaC gate could evaluate findings."
+            failed=1
+          fi
+          if [[ "${{ steps.tfsec_scan.outcome }}" == "failure" ]]; then
+            echo "::error::tfsec execution failed before the IaC gate could evaluate findings. Review the scanner logs and generated reports."
+            failed=1
+          elif [[ "${{ steps.tfsec_scan.outcome }}" == "skipped" ]]; then
+            echo "::error::tfsec was skipped before the IaC gate could evaluate findings."
+            failed=1
+          fi
+
+          if [[ ! -f checkov-reports/results_json.json || ! -f checkov-reports/results_sarif.sarif ]]; then
+            echo "::error::Checkov did not produce both JSON and SARIF reports."
+            failed=1
+          fi
+
+          if [[ ! -f tfsec-results.sarif ]]; then
+            echo "::error::tfsec did not produce a SARIF report."
+            failed=1
+          fi
+
+          if ! scripts/ci/enforce-iac-gates.sh checkov-reports/results_json.json tfsec-results.sarif; then
+            failed=1
+          fi
+
+          exit "$failed"
 
       - name: Determine plan availability
         id: plan_gate

@@ -31,7 +31,13 @@ locals {
   }
 }
 
+#tfsec:ignore:aws-s3-enable-bucket-logging State bucket access logging needs a separate log archive bucket outside SCRUM-154, owner platform-security, review by 2026-12-31
 resource "aws_s3_bucket" "terraform_state" {
+  #checkov:skip=CKV_AWS_18: State bucket access logging needs a separate log archive bucket outside SCRUM-154, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_144: Cross-region state replication is deferred for sandbox cost and bootstrap simplicity, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_145: State bucket KMS re-encryption is split for IAM review to avoid locking Terraform users out, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_61: State bucket lifecycle policy is deferred until retention requirements are approved, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_62: State bucket event notifications are deferred until audit ingestion is designed, owner platform-security, review by 2026-12-31
   bucket = local.state_bucket_name
   tags   = local.tags
 }
@@ -53,6 +59,7 @@ resource "aws_s3_bucket_ownership_controls" "terraform_state" {
   }
 }
 
+#tfsec:ignore:aws-s3-encryption-customer-key State bucket KMS re-encryption is split for IAM review to avoid locking Terraform users out, owner platform-security, review by 2026-12-31
 resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 

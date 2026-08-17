@@ -47,8 +47,9 @@ locals {
 }
 
 resource "aws_ecr_repository" "core_case" {
+  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
   name                 = "${var.name_prefix}-core-case-service"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
   tags                 = var.tags
 
   encryption_configuration {
@@ -61,8 +62,9 @@ resource "aws_ecr_repository" "core_case" {
 }
 
 resource "aws_ecr_repository" "gl_coding" {
+  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
   name                 = "${var.name_prefix}-gl-coding-service"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
   tags                 = var.tags
 
   encryption_configuration {
@@ -75,12 +77,14 @@ resource "aws_ecr_repository" "gl_coding" {
 }
 
 resource "aws_cloudwatch_log_group" "core_case" {
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
   name              = local.core_case_log_group_name
   retention_in_days = var.log_retention_days
   tags              = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "gl_coding" {
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
   name              = local.gl_coding_log_group_name
   retention_in_days = var.log_retention_days
   tags              = var.tags
@@ -97,6 +101,11 @@ resource "aws_ecs_cluster" "this" {
 }
 
 resource "aws_s3_bucket" "receipts" {
+  #checkov:skip=CKV_AWS_18: Receipt bucket access logging needs a dedicated log archive bucket outside SCRUM-154, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_144: Sandbox receipt cross-region replication is deferred until DR requirements are approved, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_145: Receipt bucket KMS CMK is deferred until key ownership and grants are approved, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_61: Receipt lifecycle policy is deferred until finance retention requirements are approved, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_62: Receipt event notifications are deferred until malware/audit ingestion is designed, owner platform-security, review by 2026-12-31
   bucket = var.receipt_storage_bucket_name
   tags   = var.tags
 }
@@ -137,11 +146,13 @@ resource "aws_s3_bucket_versioning" "receipts" {
 }
 
 resource "aws_sns_topic" "stage_transitions" {
-  name = "${var.name_prefix}-stage-transitions"
-  tags = var.tags
+  kms_master_key_id = "alias/aws/sns"
+  name              = "${var.name_prefix}-stage-transitions"
+  tags              = var.tags
 }
 
 resource "aws_dynamodb_table" "expense_report_projection" {
+  #checkov:skip=CKV_AWS_119: Sandbox DynamoDB uses AWS-owned encryption while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
   name         = var.dynamodb_expense_report_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "tenantId"
@@ -169,6 +180,10 @@ resource "aws_dynamodb_table" "expense_report_projection" {
     non_key_attributes = ["dueDate"]
     projection_type    = "INCLUDE"
     range_key          = "currentStage"
+  }
+
+  point_in_time_recovery {
+    enabled = true
   }
 
   server_side_encryption {
@@ -273,20 +288,26 @@ resource "aws_security_group" "core_case" {
 
 resource "aws_vpc_security_group_ingress_rule" "core_case_from_public_alb" {
   security_group_id            = aws_security_group.core_case.id
+  description                  = "Allow public ALB traffic to Core Case tasks."
   referenced_security_group_id = var.public_alb_security_group_id
   from_port                    = 3000
   ip_protocol                  = "tcp"
   to_port                      = 3000
 }
 
+#tfsec:ignore:aws-vpc-no-public-egress-sgr Core Case needs outbound access to AWS APIs and validation endpoints in sandbox, owner platform-security, review by 2026-12-31
 resource "aws_vpc_security_group_egress_rule" "core_case_all" {
+  #checkov:skip=CKV_AWS_382: Core Case needs outbound access to AWS APIs and validation endpoints in sandbox, owner platform-security, review by 2026-12-31
   security_group_id = aws_security_group.core_case.id
+  description       = "Allow Core Case outbound access to AWS APIs and validation endpoints."
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_core_case" {
+  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Core Case security group, not public CIDR, owner platform-security, review by 2026-12-31
   security_group_id            = var.internal_alb_security_group_id
+  description                  = "Allow Core Case traffic to the internal GL-coding ALB."
   referenced_security_group_id = aws_security_group.core_case.id
   from_port                    = 80
   ip_protocol                  = "tcp"
@@ -305,14 +326,18 @@ resource "aws_security_group" "gl_coding" {
 
 resource "aws_vpc_security_group_ingress_rule" "gl_coding_from_internal_alb" {
   security_group_id            = aws_security_group.gl_coding.id
+  description                  = "Allow internal ALB traffic to GL-coding tasks."
   referenced_security_group_id = var.internal_alb_security_group_id
   from_port                    = 8001
   ip_protocol                  = "tcp"
   to_port                      = 8001
 }
 
+#tfsec:ignore:aws-vpc-no-public-egress-sgr GL-coding needs outbound package and service access in sandbox, owner platform-security, review by 2026-12-31
 resource "aws_vpc_security_group_egress_rule" "gl_coding_all" {
+  #checkov:skip=CKV_AWS_382: GL-coding needs outbound package and service access in sandbox, owner platform-security, review by 2026-12-31
   security_group_id = aws_security_group.gl_coding.id
+  description       = "Allow GL-coding outbound access to package and service endpoints."
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
@@ -404,6 +429,7 @@ resource "aws_ecs_task_definition" "core_case" {
 }
 
 resource "aws_ecs_task_definition" "gl_coding" {
+  #checkov:skip=CKV_AWS_336: GL-coding container write paths need validation before enforcing a read-only root filesystem, owner platform-security, review by 2026-12-31
   family                   = "${var.name_prefix}-gl-coding-service"
   cpu                      = "512"
   memory                   = "1024"
