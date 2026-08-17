@@ -1,0 +1,7 @@
+infra/terraform/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+docs/iac-scanning-suppressions.md @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+.github/workflows/terraform-plan.yml @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+.checkov.yaml @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+scripts/ci/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+tests/fixtures/iac/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+.github/CODEOWNERS @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security

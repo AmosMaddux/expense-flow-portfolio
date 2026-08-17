@@ -1,4 +1,7 @@
 {
     "files": [],
-    "references": [{ "path": "./backend/core-case-service/tsconfig.json" }]
+    "references": [
+        { "path": "./backend/core-case-service/tsconfig.json" },
+        { "path": "./platform/http-api/tsconfig.json" }
+    ]
 }

@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ExpenseFlow public metadata endpoint for the shared JWT issuer.
+
+Parameters:
+    EnvironmentTag:
+        Type: String
+        Default: sandbox
+        AllowedValues:
+            - sandbox
+    UserTag:
+        Type: String
+        Default: muhilramesh
+        AllowedValues:
+            - muhilramesh
+    JwksJson:
+        Type: String
+        Description: Public RSA JSON Web Key Set published by the shared issuer.
+
+Resources:
+    JwtIssuerApi:
+        Type: AWS::Serverless::HttpApi
+        Properties:
+            Description: ExpenseFlow shared JWT issuer metadata API.
+            FailOnWarnings: true
+            PropagateTags: true
+            StageName: $default
+            DefaultRouteSettings:
+                ThrottlingBurstLimit: 10
+                ThrottlingRateLimit: 5
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+
+    JwtIssuerFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: Publishes shared JWT discovery metadata and public keys.
+            Architectures:
+                - arm64
+            CodeUri: issuer-build
+            Handler: jwtIssuer.handler
+            MemorySize: 128
+            PropagateTags: true
+            Role: !GetAtt JwtIssuerFunctionRole.Arn
+            Runtime: nodejs24.x
+            Timeout: 5
+            Environment:
+                Variables:
+                    AUTH_JWT_JWKS_JSON: !Ref JwksJson
+            Events:
+                OpenIdConfiguration:
+                    Type: HttpApi
+                    Properties:
+                        ApiId: !Ref JwtIssuerApi
+                        Method: GET
+                        Path: /.well-known/openid-configuration
+                        PayloadFormatVersion: "2.0"
+                PublicJwks:
+                    Type: HttpApi
+                    Properties:
+                        ApiId: !Ref JwtIssuerApi
+                        Method: GET
+                        Path: /.well-known/jwks.json
+                        PayloadFormatVersion: "2.0"
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+
+    JwtIssuerFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            PermissionsBoundary: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/TraineeSandboxBoundary
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
+
+    JwtIssuerLogGroup:
+        Type: AWS::Logs::LogGroup
+        DeletionPolicy: Delete
+        UpdateReplacePolicy: Delete
+        Properties:
+            LogGroupName: !Sub /aws/lambda/${JwtIssuerFunction}
+            RetentionInDays: 14
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
+
+Outputs:
+    IssuerUrl:
+        Description: HTTPS issuer URL used in shared access tokens and JWT authorizers.
+        Value: !Sub https://${JwtIssuerApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+    JwksUrl:
+        Description: Public JSON Web Key Set endpoint.
+        Value: !Sub https://${JwtIssuerApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/.well-known/jwks.json

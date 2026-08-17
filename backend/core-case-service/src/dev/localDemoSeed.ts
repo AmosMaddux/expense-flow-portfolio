@@ -30,6 +30,7 @@ import {
 import * as schema from "../db/schema/index.js";
 import {
     getLocalAuthAccounts,
+    getLocalAuthAccountTenantId,
     localAuthEnvironmentSchema,
 } from "./localAuthConfig.js";
 import { seedLocalAuthAccounts } from "./localAuthUser.js";
@@ -202,7 +203,7 @@ export async function seedLocalDemoData(): Promise<void> {
                 `receipt fixtures: ${receiptObjects.length}`,
                 ...getLocalAuthAccounts().map(
                     (account) =>
-                        `${account.name}: ${account.email} (${account.role})`,
+                        `${account.name}: ${account.email} (${account.role}, tenant ${getLocalAuthAccountTenantId(environment, account)})`,
                 ),
                 "Generate MFA with: npm run dev:auth:code -- <account>",
                 "",
@@ -229,7 +230,7 @@ async function seedGlReferenceData(
     tenantId: string,
 ): Promise<void> {
     for (const code of demoGlCodes) {
-        await transaction
+        const [persistedCode] = await transaction
             .insert(glCode)
             .values({
                 id: code.id,
@@ -245,21 +246,26 @@ async function seedGlReferenceData(
                     description: code.description,
                     updatedAt: seededAt,
                 },
-            });
-    }
+            })
+            .returning({ id: glCode.id });
 
-    for (const code of demoGlCodes) {
+        if (persistedCode === undefined) {
+            throw new Error(
+                `Unable to seed synthetic GL code ${code.accountCode}.`,
+            );
+        }
+
         await transaction
             .insert(glMapping)
             .values({
                 tenantId,
                 category: code.category,
-                glCodeId: code.id,
+                glCodeId: persistedCode.id,
             })
             .onConflictDoUpdate({
                 target: [glMapping.tenantId, glMapping.category],
                 set: {
-                    glCodeId: code.id,
+                    glCodeId: persistedCode.id,
                     updatedAt: seededAt,
                 },
             });

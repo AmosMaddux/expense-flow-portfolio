@@ -48,7 +48,7 @@ expires_at="$((issued_at + 300))"
 token_header="$(printf '{"alg":"RS256","kid":"%s","typ":"JWT"}' "${jwt_key_id}" | base64url)"
 token_payload="$(
     printf '%s' \
-        "{\"exp\":${expires_at},\"iat\":${issued_at},\"iss\":\"expenseflow-core-case-service\",\"roles\":[\"Employee\"],\"sub\":\"22222222-2222-4222-8222-222222222222\",\"tenant_id\":\"11111111-1111-4111-8111-111111111111\",\"token_use\":\"access\"}" \
+        "{\"aud\":\"expenseflow-http-api\",\"exp\":${expires_at},\"iat\":${issued_at},\"iss\":\"expenseflow-core-case-service\",\"roles\":[\"Employee\"],\"sub\":\"22222222-2222-4222-8222-222222222222\",\"tenant_id\":\"11111111-1111-4111-8111-111111111111\",\"token_use\":\"access\"}" \
         | base64url
 )"
 signing_input="${token_header}.${token_payload}"

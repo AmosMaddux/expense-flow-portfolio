@@ -22,7 +22,6 @@ import {
     postExpenseReportFlagClear,
     postExpenseReportLineItemReview,
     postExpenseReportSourceReview,
-    postExpenseReportSettlement,
     postDraftExpenseContent,
     postExpenseReportSubmission,
     postExpenseReportTransition,
@@ -32,6 +31,7 @@ import {
     patchDraftLineItem,
     patchDraftMileageEntry,
     putReceiptUpload,
+    postInternalExpenseReportPaymentStubSettlement,
 } from "../controllers/expenseReportController.js";
 
 export const expenseReportRouter = Router();
@@ -96,8 +96,8 @@ expenseReportRouter.post(
     postExpenseReportTransition,
 );
 expenseReportRouter.post(
-    "/expense-reports/:id/settlement",
-    postExpenseReportSettlement,
+    "/internal/expense-reports/:id/payment-stub-settlement",
+    postInternalExpenseReportPaymentStubSettlement,
 );
 
 expenseReportRouter.post(

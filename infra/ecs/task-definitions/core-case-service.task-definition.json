@@ -74,6 +74,10 @@
                     "value": "60"
                 },
                 {
+                    "name": "CORE_CASE_INTERNAL_ROUTES_ENABLED",
+                    "value": "${CORE_CASE_INTERNAL_ROUTES_ENABLED}"
+                },
+                {
                     "name": "DYNAMODB_EXPENSE_REPORT_TABLE",
                     "value": "${DYNAMODB_EXPENSE_REPORT_TABLE}"
                 },
@@ -126,12 +130,20 @@
                     "value": "false"
                 },
                 {
+                    "name": "RUNTIME_SMOKE_GL_CODING_ENABLED",
+                    "value": "${RUNTIME_SMOKE_GL_CODING_ENABLED}"
+                },
+                {
                     "name": "REDIS_URL",
                     "value": "${REDIS_URL}"
                 },
                 {
                     "name": "STAGE_TRANSITION_SNS_TOPIC_ARN",
                     "value": "${STAGE_TRANSITION_SNS_TOPIC_ARN}"
+                },
+                {
+                    "name": "SPA_ORIGIN",
+                    "value": "${SPA_ORIGIN}"
                 },
                 {
                     "name": "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE",
@@ -178,6 +190,10 @@
                 {
                     "name": "MFA_TOTP_SECRET_ENCRYPTION_KEY",
                     "valueFrom": "${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN}"
+                },
+                {
+                    "name": "RUNTIME_SMOKE_SHARED_SECRET",
+                    "valueFrom": "${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN}"
                 },
                 {
                     "name": "TIN_EIN_VALIDATION_PASSWORD",

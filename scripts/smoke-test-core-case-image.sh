@@ -29,6 +29,7 @@ docker run \
     --env-file "${env_file}" \
     --env PORT=3000 \
     --env AUTO_APPLY_MIGRATIONS=false \
+    --env SPA_ORIGIN=https://spa.smoke.invalid \
     --publish 127.0.0.1::3000 \
     "${image_name}" >/dev/null
 

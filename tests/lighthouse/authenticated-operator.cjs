@@ -68,6 +68,7 @@ async function signAccessToken(issuedAtSeconds, expiresAtSeconds) {
     };
     const payload = {
         iss: process.env.AUTH_JWT_ISSUER ?? "expenseflow-core-case-service",
+        aud: process.env.AUTH_JWT_AUDIENCE ?? "expenseflow-http-api",
         sub: financeAdminUserId,
         tenant_id: tenantId,
         roles: operatorRoles,

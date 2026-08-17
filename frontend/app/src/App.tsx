@@ -14,6 +14,7 @@ import {
     type LoginRequest,
     type Role,
 } from "./auth";
+import { resolveLoginTenantId } from "./auth/loginTenant";
 import {
     MfaChallengeScreen,
     PasswordResetConfirmationScreen,
@@ -27,7 +28,27 @@ type PendingCredentials = Omit<LoginRequest, "totpCode">;
 
 export type AppProps = {
     tenantId?: string;
+    secondaryTenantId?: string;
 };
+
+/**
+ * Returns the organization label shown for an authenticated tenant.
+ */
+export function getTenantDisplayName(
+    tenantId: string,
+    primaryTenantId = import.meta.env.VITE_TENANT_ID,
+    secondaryTenantId = import.meta.env.VITE_SECONDARY_TENANT_ID,
+): string {
+    if (tenantId === primaryTenantId) {
+        return "example1";
+    }
+
+    if (tenantId === secondaryTenantId) {
+        return "example2";
+    }
+
+    return tenantId.slice(0, 8);
+}
 
 type RoleLanding = {
     label: string;
@@ -61,6 +82,7 @@ export function getRoleLandingScreen(role: Role): string {
  */
 export default function App({
     tenantId = import.meta.env.VITE_TENANT_ID ?? "",
+    secondaryTenantId = import.meta.env.VITE_SECONDARY_TENANT_ID,
 }: AppProps): JSX.Element {
     const session = useSession();
     const [view, setView] = useState<UnauthenticatedView>("sign-in");
@@ -99,6 +121,7 @@ export default function App({
             <AppShell
                 signedInRole={session.user.role}
                 signedInRoles={session.user.roles}
+                tenantId={session.user.tenantId}
                 onLogout={async () => {
                     await session.logout();
                     window.history.replaceState(window.history.state, "", "/");
@@ -146,13 +169,22 @@ export default function App({
         <SignInScreen
             onForgotPassword={() => setView("reset")}
             onSubmit={async ({ email, password }) => {
-                if (tenantId.length === 0) {
+                const loginTenantId = resolveLoginTenantId(
+                    email,
+                    tenantId,
+                    secondaryTenantId,
+                );
+                if (loginTenantId.length === 0) {
                     throw new Error(
                         "Sign-in is not configured for an organization.",
                     );
                 }
 
-                const credentials = { tenantId, email, password };
+                const credentials = {
+                    tenantId: loginTenantId,
+                    email,
+                    password,
+                };
 
                 try {
                     await session.login(credentials);
@@ -180,6 +212,7 @@ type AppShellProps = {
     onLogout?: () => Promise<void>;
     signedInRole: Role;
     signedInRoles?: readonly Role[];
+    tenantId?: string;
 };
 
 /**
@@ -191,6 +224,7 @@ export function AppShell({
     onLogout,
     signedInRole,
     signedInRoles = [signedInRole],
+    tenantId,
 }: AppShellProps): JSX.Element {
     const [browserPath, setBrowserPath] = useState(
         () => window.location.pathname,
@@ -209,6 +243,8 @@ export function AppShell({
     const activeNavigationPath =
         currentBrowserPath === "/" ? landing.path : currentBrowserPath;
     const isMobileNavigationOpen = isSidebarOpen && isMobileNavigation;
+    const tenantDisplayName =
+        tenantId === undefined ? undefined : getTenantDisplayName(tenantId);
 
     useEffect(() => {
         if (currentPath !== undefined) {
@@ -437,23 +473,40 @@ export function AppShell({
                             <h1>{landing.label}</h1>
                         </div>
                     </div>
-                    {onLogout === undefined ? (
-                        <div className="topbar__tenant">{signedInRole}</div>
-                    ) : (
-                        <button
-                            className="button button--secondary button--compact"
-                            disabled={isLoggingOut}
-                            onClick={() => {
-                                setIsLoggingOut(true);
-                                void onLogout().finally(() =>
-                                    setIsLoggingOut(false),
-                                );
-                            }}
-                            type="button"
+                    <div className="topbar__actions">
+                        <div
+                            aria-label={
+                                tenantDisplayName === undefined
+                                    ? undefined
+                                    : `Company ${tenantDisplayName}`
+                            }
+                            className="topbar__tenant"
                         >
-                            {isLoggingOut ? "Signing out..." : "Sign out"}
-                        </button>
-                    )}
+                            {tenantDisplayName === undefined ? (
+                                signedInRole
+                            ) : (
+                                <>
+                                    <span>Company</span>
+                                    <strong>{tenantDisplayName}</strong>
+                                </>
+                            )}
+                        </div>
+                        {onLogout === undefined ? null : (
+                            <button
+                                className="button button--secondary button--compact"
+                                disabled={isLoggingOut}
+                                onClick={() => {
+                                    setIsLoggingOut(true);
+                                    void onLogout().finally(() =>
+                                        setIsLoggingOut(false),
+                                    );
+                                }}
+                                type="button"
+                            >
+                                {isLoggingOut ? "Signing out..." : "Sign out"}
+                            </button>
+                        )}
+                    </div>
                 </header>
                 <main className="workspace__content">
                     {children ?? (

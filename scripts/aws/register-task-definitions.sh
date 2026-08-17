@@ -16,6 +16,7 @@ GL_CODING_LOG_GROUP="${GL_CODING_LOG_GROUP:-/ecs/expenseflow-sandbox/gl-coding-s
 EXECUTION_ROLE_NAME="${EXECUTION_ROLE_NAME:-expenseflow-sandbox-ecs-task-execution-role}"
 CORE_CASE_TASK_ROLE_NAME="${CORE_CASE_TASK_ROLE_NAME:-expenseflow-sandbox-core-case-task-role}"
 GL_CODING_TASK_ROLE_NAME="${GL_CODING_TASK_ROLE_NAME:-expenseflow-sandbox-gl-coding-task-role}"
+STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 
 if [[ "$VALIDATE_RENDER_ONLY" != "true" && "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -40,6 +41,23 @@ iam_role_arn() {
     fi
 }
 
+sns_topic_arn() {
+    local topic_name="$1"
+    local topic_arn
+
+    topic_arn="$(aws_cli sns list-topics \
+        --query "Topics[?ends_with(TopicArn, ':$topic_name')].TopicArn | [0]" \
+        --output text)"
+
+    if [[ -z "$topic_arn" || "$topic_arn" == "None" ]]; then
+        echo "Required SNS topic is missing or inaccessible: $topic_name" >&2
+        echo "Run create-runtime-smoke-resources.sh first, or provide STAGE_TRANSITION_SNS_TOPIC_ARN explicitly." >&2
+        return 1
+    fi
+
+    echo "$topic_arn"
+}
+
 require_non_loopback_endpoint() {
     local variable_name="$1"
     local endpoint_value="$2"
@@ -52,6 +70,16 @@ require_non_loopback_endpoint() {
     if [[ "$endpoint_value" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*://([^/@]*@)?(127\.0\.0\.1|localhost)(:|/|$) ]]; then
         echo "$variable_name must point at an ECS-reachable service endpoint, not $endpoint_value." >&2
         echo "Use Cloud Map, ECS Service Connect, or an internal load balancer DNS name for sandbox task registration." >&2
+        return 1
+    fi
+}
+
+require_non_empty() {
+    local variable_name="$1"
+    local variable_value="$2"
+
+    if [[ -z "$variable_value" ]]; then
+        echo "$variable_name must be supplied explicitly for ECS sandbox task registration." >&2
         return 1
     fi
 }
@@ -82,6 +110,9 @@ fs.writeFileSync(target, rendered);
 export AWS_REGION
 export AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
 export MFA_TOTP_SECRET_KEY_VERSION="${MFA_TOTP_SECRET_KEY_VERSION:-scrum-147-synthetic-v1}"
+export CORE_CASE_INTERNAL_ROUTES_ENABLED="${CORE_CASE_INTERNAL_ROUTES_ENABLED:-false}"
+export RUNTIME_SMOKE_GL_CODING_ENABLED="${RUNTIME_SMOKE_GL_CODING_ENABLED:-false}"
+export SPA_ORIGIN="${SPA_ORIGIN:-}"
 export GL_CODING_SERVICE_BASE_URL="${GL_CODING_SERVICE_BASE_URL:-}"
 export DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
 export DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
@@ -94,23 +125,27 @@ require_non_loopback_endpoint GL_CODING_SERVICE_BASE_URL "$GL_CODING_SERVICE_BAS
 require_non_loopback_endpoint REDIS_URL "$REDIS_URL"
 require_non_loopback_endpoint CORE_CASE_DATABASE_URL "${CORE_CASE_DATABASE_URL:-}"
 require_non_loopback_endpoint GL_CODING_DATABASE_URL "${GL_CODING_DATABASE_URL:-}"
+require_non_empty SPA_ORIGIN "$SPA_ORIGIN"
 
 if [[ "$VALIDATE_RENDER_ONLY" == "true" ]]; then
+    require_non_empty STAGE_TRANSITION_SNS_TOPIC_ARN "${STAGE_TRANSITION_SNS_TOPIC_ARN:-}"
     account_id="000000000000"
     registry_uri="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com"
-    CORE_CASE_TASK_ROLE_ARN="${CORE_CASE_TASK_ROLE_ARN:-arn:aws:iam::$account_id:role/synthetic-core-case-task-role}"
-    ECS_TASK_EXECUTION_ROLE_ARN="${ECS_TASK_EXECUTION_ROLE_ARN:-arn:aws:iam::$account_id:role/synthetic-execution-role}"
-    GL_CODING_TASK_ROLE_ARN="${GL_CODING_TASK_ROLE_ARN:-arn:aws:iam::$account_id:role/synthetic-gl-coding-task-role}"
-    CORE_CASE_DATABASE_URL_SECRET_ARN="${CORE_CASE_DATABASE_URL_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-core-case-db}"
-    CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN="${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-core-case-private-key}"
-    CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-core-case-mfa-key}"
-    CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-tin-user}"
-    CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-tin-password}"
-    GL_CODING_DATABASE_URL_SECRET_ARN="${GL_CODING_DATABASE_URL_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-gl-coding-db}"
-    GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN="${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN:-arn:aws:secretsmanager:$AWS_REGION:$account_id:secret:synthetic-gl-public-keys}"
+    CORE_CASE_TASK_ROLE_ARN="${CORE_CASE_TASK_ROLE_ARN:-synthetic-core-case-task-role-ref}"
+    ECS_TASK_EXECUTION_ROLE_ARN="${ECS_TASK_EXECUTION_ROLE_ARN:-synthetic-execution-role-ref}"
+    GL_CODING_TASK_ROLE_ARN="${GL_CODING_TASK_ROLE_ARN:-synthetic-gl-coding-task-role-ref}"
+    CORE_CASE_DATABASE_URL_SECRET_ARN="${CORE_CASE_DATABASE_URL_SECRET_ARN:-synthetic-core-case-db-secret-ref}"
+    CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN="${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN:-synthetic-core-case-private-key-secret-ref}"
+    CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-synthetic-core-case-mfa-key-secret-ref}"
+    CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN="${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN:-synthetic-core-case-runtime-smoke-secret-ref}"
+    CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN:-synthetic-tin-user-secret-ref}"
+    CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN:-synthetic-tin-password-secret-ref}"
+    GL_CODING_DATABASE_URL_SECRET_ARN="${GL_CODING_DATABASE_URL_SECRET_ARN:-synthetic-gl-coding-db-secret-ref}"
+    GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN="${GL_CODING_AUTH_JWT_PUBLIC_KEYS_JSON_SECRET_ARN:-synthetic-gl-public-keys-secret-ref}"
     export CORE_CASE_DATABASE_URL_SECRET_ARN
     export CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN
     export CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN
+    export CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN
     export CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN
     export CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN
     export GL_CODING_DATABASE_URL_SECRET_ARN
@@ -118,9 +153,10 @@ if [[ "$VALIDATE_RENDER_ONLY" == "true" ]]; then
 else
     account_id="$(aws_cli sts get-caller-identity --query Account --output text)"
     registry_uri="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com"
+    export STAGE_TRANSITION_SNS_TOPIC_ARN="${STAGE_TRANSITION_SNS_TOPIC_ARN:-$(sns_topic_arn "$STAGE_TRANSITION_SNS_TOPIC_NAME")}"
 fi
 
-export STAGE_TRANSITION_SNS_TOPIC_ARN="${STAGE_TRANSITION_SNS_TOPIC_ARN:-arn:aws:sns:$AWS_REGION:$account_id:expenseflow-sandbox-stage-transitions}"
+export STAGE_TRANSITION_SNS_TOPIC_ARN
 
 export CORE_CASE_IMAGE_URI="${CORE_CASE_IMAGE_URI:-$registry_uri/$CORE_CASE_REPOSITORY:$IMAGE_TAG}"
 export GL_CODING_IMAGE_URI="${GL_CODING_IMAGE_URI:-$registry_uri/$GL_CODING_REPOSITORY:$IMAGE_TAG}"
@@ -138,6 +174,7 @@ if [[ "$VALIDATE_RENDER_ONLY" != "true" ]]; then
     export CORE_CASE_DATABASE_URL_SECRET_ARN="${CORE_CASE_DATABASE_URL_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/database-url)}"
     export CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN="${CORE_CASE_AUTH_JWT_PRIVATE_KEY_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/auth-jwt-private-key-base64)}"
     export CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${CORE_CASE_MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key)}"
+    export CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN="${CORE_CASE_RUNTIME_SMOKE_SHARED_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/runtime-smoke-shared-secret)}"
     export CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_USERNAME_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/tin-ein-validation-username)}"
     export CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN="${CORE_CASE_TIN_EIN_VALIDATION_PASSWORD_SECRET_ARN:-$(secret_arn expenseflow/sandbox/core-case/tin-ein-validation-password)}"
     export GL_CODING_DATABASE_URL_SECRET_ARN="${GL_CODING_DATABASE_URL_SECRET_ARN:-$(secret_arn expenseflow/sandbox/gl-coding/database-url)}"

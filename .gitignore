@@ -10,6 +10,8 @@ __pycache__/
 # node
 node_modules
 build/
+issuer-build/
+.aws-sam/
 *.tsbuildinfo
 **/dist
 coverage/
@@ -21,3 +23,21 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.txt
+backend.hcl
+*.auto.tfvars
+terraform.tfvars
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+.claude/settings.local.json

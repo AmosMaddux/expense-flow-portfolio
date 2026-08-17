@@ -347,6 +347,7 @@ function renderCaseQueueScreen(
     fetchImplementation: typeof fetch,
     queryClient = createNoRetryQueryClient(),
     roles: Role[] = ["Department Manager"],
+    props: Parameters<typeof CaseQueueScreen>[0] = {},
 ): void {
     render(
         <QueryClientProvider client={queryClient}>
@@ -356,7 +357,7 @@ function renderCaseQueueScreen(
                 fetchImplementation={fetchImplementation}
                 now={() => baseTime}
             >
-                <CaseQueueScreen />
+                <CaseQueueScreen {...props} />
             </AuthProvider>
         </QueryClientProvider>,
     );
@@ -549,6 +550,30 @@ describe("CaseQueueScreen", () => {
         expect(screen.queryByText("Employee 0191")).toBeNull();
         expect(screen.queryByText("Employee 0192")).toBeNull();
         expect(screen.getByText("Showing 1 of 3 reports")).toBeTruthy();
+    });
+    test("locks the manager approval queue to Submitted and Manager Approval reports", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Department Manager"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Submitted", "Manager Approval"],
+            },
+        );
+
+        await screen.findByText("Employee 0191");
+        expect(
+            screen.getByRole("heading", { name: "Approval Queue" }),
+        ).toBeTruthy();
+        expect(screen.getByText("Employee 0192")).toBeTruthy();
+        expect(screen.queryByText("Employee 0193")).toBeNull();
+        expect(screen.queryByLabelText("Filter by stage")).toBeNull();
+        expect(screen.getByText("Showing 2 of 2 reports")).toBeTruthy();
     });
 
     test("filters report rows by the amount-over-threshold checkbox", async () => {
@@ -1535,6 +1560,64 @@ describe("CaseQueueScreen", () => {
         );
     });
 
+    test("closes the filtered Approval Queue dialog when an advanced report leaves the visible stages", async () => {
+        const fullyReviewedItem: ApprovalQueueLineItem = {
+            ...lineItems[0],
+            flaggedLineItem: false,
+            policyChecks: [],
+            reviewAction: "approve",
+            canAdvance: true,
+            mileageEntries: lineItems[0].mileageEntries.map((entry) => ({
+                ...entry,
+                reviewAction: "approve" as const,
+            })),
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse([fullyReviewedItem]))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: fullyReviewedItem.expenseReportId,
+                    currentStage: "AP Review",
+                }),
+            );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Department Manager"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Submitted", "Manager Approval"],
+            },
+        );
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+        expect(
+            screen.getByRole("dialog", { name: "Report d104c9ca" }),
+        ).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", { name: "Advance" }));
+
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(screen.queryByText("Employee 0191")).toBeNull();
+        expect(
+            screen.getByRole("region", {
+                name: "No reports waiting for review",
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db001/transitions",
+        );
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toMatchObject({ toStage: "AP Review" });
+    });
     test("keeps advance disabled when reviewed mileage still has an open flag", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(reviewedFlaggedMileageItems)),

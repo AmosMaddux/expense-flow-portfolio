@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ExpenseFlow Issue Payment Lambda route attached to the shared JWT HTTP API.
+
+Parameters:
+    EnvironmentTag:
+        Type: String
+        Default: sandbox
+        AllowedValues:
+            - sandbox
+    UserTag:
+        Type: String
+        Default: muhilramesh
+        AllowedValues:
+            - muhilramesh
+    TicketTag:
+        Type: String
+        Default: SCRUM-150
+        AllowedValues:
+            - SCRUM-150
+    HttpApiId:
+        Type: String
+        Description: Existing shared HTTP API identifier.
+        MinLength: 1
+    SharedJwtAuthorizerId:
+        Type: String
+        Description: Existing JWT authorizer identifier on the shared HTTP API.
+        MinLength: 1
+    StageName:
+        Type: String
+        Default: v1
+        AllowedPattern: "^[a-zA-Z0-9_-]+$"
+    IssuePaymentFunctionName:
+        Type: String
+        Default: expenseflow-issue-payment-stub
+        AllowedPattern: "^[a-zA-Z0-9-_]+$"
+    CoreCaseInternalBaseUrl:
+        Type: String
+        Description: Base URL that the Issue Payment Lambda uses to call Core Case.
+        AllowedPattern: "^https?://.+$"
+    CoreCaseInternalCommandTokenSecretArn:
+        Type: String
+        Description: Secrets Manager secret ARN containing the shared internal command token accepted by Core Case.
+        AllowedPattern: "^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+$"
+    CoreCaseInternalTimeoutMs:
+        Type: Number
+        Default: 5000
+        MinValue: 1
+        MaxValue: 30000
+    RolePermissionsBoundaryArn:
+        Type: String
+        Description: Sandbox permissions boundary for the Lambda execution role.
+        MinLength: 1
+    PrivateSubnetIds:
+        Type: CommaDelimitedList
+        Default: ""
+        Description: Optional private subnet IDs when Lambda must run in a VPC.
+    LambdaSecurityGroupIds:
+        Type: CommaDelimitedList
+        Default: ""
+        Description: Optional Lambda security group IDs when Lambda must run in a VPC.
+
+Conditions:
+    HasPrivateSubnetIds: !Not
+        - !Equals
+          - !Join ["", !Ref PrivateSubnetIds]
+          - ""
+    HasLambdaSecurityGroupIds: !Not
+        - !Equals
+          - !Join ["", !Ref LambdaSecurityGroupIds]
+          - ""
+    UseVpcConfig: !And
+        - !Condition HasPrivateSubnetIds
+        - !Condition HasLambdaSecurityGroupIds
+
+Resources:
+    IssuePaymentFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: Forwards protected Issue Payment stub commands to Core Case.
+            Architectures:
+                - arm64
+            CodeUri: build
+            FunctionName: !Ref IssuePaymentFunctionName
+            Handler: issuePaymentStub.handler
+            MemorySize: 128
+            Role: !GetAtt IssuePaymentFunctionRole.Arn
+            Runtime: nodejs24.x
+            Timeout: 5
+            Environment:
+                Variables:
+                    CORE_CASE_INTERNAL_BASE_URL: !Ref CoreCaseInternalBaseUrl
+                    CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN: !Ref CoreCaseInternalCommandTokenSecretArn
+                    CORE_CASE_INTERNAL_TIMEOUT_MS: !Ref CoreCaseInternalTimeoutMs
+            VpcConfig: !If
+                - UseVpcConfig
+                - SecurityGroupIds: !Ref LambdaSecurityGroupIds
+                  SubnetIds: !Ref PrivateSubnetIds
+                - !Ref AWS::NoValue
+            PropagateTags: true
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                ticket: !Ref TicketTag
+                user: !Ref UserTag
+
+    IssuePaymentFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            PermissionsBoundary: !Ref RolePermissionsBoundaryArn
+            Policies:
+                - PolicyName: expenseflow-scrum-150-issue-payment-logs
+                  PolicyDocument:
+                      Version: "2012-10-17"
+                      Statement:
+                          - Effect: Allow
+                            Action:
+                                - secretsmanager:GetSecretValue
+                            Resource: !Ref CoreCaseInternalCommandTokenSecretArn
+                          - Effect: Allow
+                            Action:
+                                - logs:CreateLogStream
+                                - logs:PutLogEvents
+                            Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${IssuePaymentFunctionName}:*
+                          - !If
+                            - UseVpcConfig
+                            - Effect: Allow
+                              Action:
+                                  - ec2:AssignPrivateIpAddresses
+                                  - ec2:CreateNetworkInterface
+                                  - ec2:DeleteNetworkInterface
+                                  - ec2:DescribeNetworkInterfaces
+                                  - ec2:UnassignPrivateIpAddresses
+                              Resource: "*"
+                            - !Ref AWS::NoValue
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: ticket
+                  Value: !Ref TicketTag
+                - Key: user
+                  Value: !Ref UserTag
+
+    IssuePaymentLogGroup:
+        Type: AWS::Logs::LogGroup
+        DeletionPolicy: Delete
+        UpdateReplacePolicy: Delete
+        Properties:
+            LogGroupName: !Sub /aws/lambda/${IssuePaymentFunctionName}
+            RetentionInDays: 14
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: ticket
+                  Value: !Ref TicketTag
+                - Key: user
+                  Value: !Ref UserTag
+
+    IssuePaymentIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref HttpApiId
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !GetAtt IssuePaymentFunction.Arn
+            PayloadFormatVersion: "2.0"
+
+    IssuePaymentRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref HttpApiId
+            AuthorizationType: JWT
+            AuthorizerId: !Ref SharedJwtAuthorizerId
+            RouteKey: POST /expense-reports/{id}/settlement
+            Target: !Sub integrations/${IssuePaymentIntegration}
+
+    IssuePaymentInvokePermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !Ref IssuePaymentFunction
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApiId}/*/POST/expense-reports/*/settlement
+
+Outputs:
+    IssuePaymentFunctionName:
+        Description: Issue Payment Lambda function name.
+        Value: !Ref IssuePaymentFunction
+    IssuePaymentRouteId:
+        Description: API Gateway route identifier for the protected Issue Payment route.
+        Value: !Ref IssuePaymentRoute
+    IssuePaymentUrl:
+        Description: Protected Issue Payment URL prefix. Append an Expense Report ID before /settlement.
+        Value: !Sub https://${HttpApiId}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/expense-reports/

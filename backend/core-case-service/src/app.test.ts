@@ -54,12 +54,15 @@ async function closeActiveServer(): Promise<void> {
 void describe("app", () => {
     beforeAll(async () => {
         process.env.AUTH_JWT_PRIVATE_KEY_BASE64 = syntheticRsaPrivateKeyBase64;
+        process.env.AUTH_JWT_ISSUER =
+            "https://auth.expenseflow.example.test/v1";
         process.env.AUTH_JWT_KEY_ID = "synthetic-key-v1";
         process.env.MFA_TOTP_SECRET_ENCRYPTION_KEY = Buffer.alloc(
             32,
             1,
         ).toString("base64");
         process.env.MFA_TOTP_SECRET_KEY_VERSION = "synthetic-v1";
+        delete process.env.CORE_CASE_INTERNAL_ROUTES_ENABLED;
         app = (await import("./app.js")).app;
     });
 
@@ -162,6 +165,19 @@ void describe("app", () => {
         );
     });
 
+    void test("publishes OIDC metadata for API Gateway JWKS discovery", async () => {
+        const response = await requestApp(
+            "/v1/.well-known/openid-configuration",
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({
+            issuer: "https://auth.expenseflow.example.test/v1",
+            jwks_uri:
+                "https://auth.expenseflow.example.test/v1/.well-known/jwks.json",
+        });
+    });
+
     void test("serves Scalar documentation for the OpenAPI document", async () => {
         const response = await requestApp("/v1/docs/");
         const body = await response.text();
@@ -170,6 +186,36 @@ void describe("app", () => {
         expect(response.headers.get("content-type")).toContain("text/html");
         expect(body).toContain("ExpenseFlow Core Case Service v1 API Docs");
         expect(body).toContain("/v1/openapi.json");
+    });
+
+    void test("does not mount runtime smoke routes by default", async () => {
+        const response = await requestApp("/v1/runtime-smoke/gl-coding");
+
+        expect(response.status).toBe(404);
+    });
+
+    void test("does not mount internal command routes by default", async () => {
+        const response = await requestApp(
+            "/v1/internal/expense-reports/60000000-0000-4000-8000-000000000150/payment-stub-settlement",
+            {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                    "idempotency-key": "synthetic-internal-disabled",
+                    "x-core-case-internal-command-token":
+                        "synthetic-core-case-internal-command-token",
+                    "x-correlation-id": "70000000-0000-4000-8000-000000000150",
+                },
+                body: JSON.stringify({
+                    tenantId: "40000000-0000-4000-8000-000000000150",
+                    actorId: "50000000-0000-4000-8000-000000000150",
+                    roles: ["Finance Admin"],
+                    reason: "Synthetic disabled internal route.",
+                }),
+            },
+        );
+
+        expect(response.status).toBe(404);
     });
 
     void test.each([

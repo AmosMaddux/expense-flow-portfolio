@@ -9,6 +9,8 @@ export default [
             "**/node_modules/**",
             "**/dist/**",
             "**/build/**",
+            "**/issuer-build/**",
+            "**/.aws-sam/**",
             "**/coverage/**",
             "**/.lighthouseci/**",
             "**/playwright-report/**",
@@ -49,6 +51,16 @@ export default [
     {
         ...tseslint.configs.disableTypeChecked,
         files: ["**/*.{js,mjs,cjs}"],
+        languageOptions: {
+            ...tseslint.configs.disableTypeChecked.languageOptions,
+            globals: {
+                ...globals.node,
+            },
+        },
+    },
+    {
+        ...tseslint.configs.disableTypeChecked,
+        files: ["backend/core-case-service/tests/production/**/*.ts"],
         languageOptions: {
             ...tseslint.configs.disableTypeChecked.languageOptions,
             globals: {

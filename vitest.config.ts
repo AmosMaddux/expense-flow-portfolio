@@ -14,16 +14,27 @@ const coreCaseSourceRoot = new URL(
     "./backend/core-case-service/src/",
     import.meta.url,
 ).pathname;
+const coreCaseTestsRoot = new URL(
+    "./backend/core-case-service/tests/",
+    import.meta.url,
+).pathname;
 const coreCaseIntegrationTestGlob = `${coreCaseSourceRoot}**/*.integration.test.ts`;
 const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
+const coreCaseProductionTestGlob = `${coreCaseTestsRoot}production/**/*.test.ts`;
 const frontendSourceRoot = new URL("./frontend/app/src/", import.meta.url)
     .pathname;
+const platformHttpApiSourceRoot = new URL(
+    "./platform/http-api/src/",
+    import.meta.url,
+).pathname;
 const testEnvironment = {
     AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",
     GL_CODING_SERVICE_BASE_URL: "http://gl-coding.example.test",
     MFA_TOTP_SECRET_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     MFA_TOTP_SECRET_KEY_VERSION: "synthetic-vitest-key",
+    CORE_CASE_INTERNAL_COMMAND_TOKEN:
+        "synthetic-core-case-internal-command-token",
     CORE_CASE_RATE_LIMIT_REQUESTS: "2",
     CORE_CASE_RATE_LIMIT_WINDOW_SECONDS: "60",
 };
@@ -62,6 +73,19 @@ const coreCaseIntegrationProject = {
         testTimeout: 60_000,
     },
 };
+const coreCaseProductionProject = {
+    test: {
+        name: "production",
+        env: testEnvironment,
+        exclude: [...configDefaults.exclude, "**/dist"],
+        fileParallelism: false,
+        include: [coreCaseProductionTestGlob],
+        maxWorkers: 1,
+        pool: "forks",
+        root: repositoryRoot,
+        testTimeout: 180_000,
+    },
+};
 const frontendProject = {
     test: {
         name: "frontend",
@@ -69,6 +93,13 @@ const frontendProject = {
         include: [`${frontendSourceRoot}**/*.test.{ts,tsx}`],
         root: repositoryRoot,
         testTimeout: 10_000,
+    },
+};
+const platformHttpApiProject = {
+    test: {
+        name: "platform-http-api",
+        include: [`${platformHttpApiSourceRoot}**/*.test.ts`],
+        root: repositoryRoot,
     },
 };
 
@@ -103,7 +134,9 @@ export default defineConfig({
             ...(shouldRunCoreCaseIntegrationTests
                 ? [coreCaseIntegrationProject]
                 : []),
+            coreCaseProductionProject,
             frontendProject,
+            platformHttpApiProject,
         ],
     },
 });
