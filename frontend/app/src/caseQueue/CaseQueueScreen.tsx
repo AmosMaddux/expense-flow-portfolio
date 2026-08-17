@@ -14,8 +14,9 @@ import {
     type Query,
     type QueryClient,
     type QueryKey,
+    type UseQueryResult,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { z } from "zod";
 
@@ -154,6 +155,8 @@ type ApprovalQueueReviewRow =
       };
 type FlagFilter = "all" | "flagged" | "clear";
 type ReportDetailTab = "line-items" | "policy-checks";
+type ApprovalQueueReviewDialogTab =
+    ReportDetailTab | "audit-trail" | "comments";
 type LineItemReviewAction = NonNullable<ApprovalQueueLineItem["reviewAction"]>;
 type LineItemMutationVariables = {
     lineItem: ApprovalQueueLineItem;
@@ -216,8 +219,37 @@ const expenseReportTransitionResponseSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
 });
+const auditEntrySchema = z.object({
+    id: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    expenseReportId: z.string().uuid(),
+    actorId: z.string().uuid(),
+    action: z.string().min(1),
+    stageBeforeAction: z.enum(EXPENSE_REPORT_STAGES),
+    stageAfterProposedAction: z.enum(EXPENSE_REPORT_STAGES),
+    denialReason: z.string().nullable(),
+    outcomeReason: z.string().nullable(),
+    createdAt: z.string().datetime({ offset: true }),
+});
+const caseCommentSchema = z.object({
+    id: z.string().uuid(),
+    tenantId: z.string().uuid(),
+    expenseReportId: z.string().uuid(),
+    authorId: z.string().uuid(),
+    body: z.string().min(1),
+    createdAt: z.string().datetime({ offset: true }),
+});
+const auditEntryListSchema = z.array(auditEntrySchema);
+const caseCommentListSchema = z.array(caseCommentSchema);
+const createCaseCommentRequestSchema = z
+    .object({
+        body: z.string().trim().min(1).max(5_000),
+    })
+    .strict();
 
 const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
+type ApprovalQueueAuditEntry = z.infer<typeof auditEntrySchema>;
+type ApprovalQueueCaseComment = z.infer<typeof caseCommentSchema>;
 
 /**
  * Fetches authenticated Approval Queue line items for the current tenant.
@@ -228,6 +260,40 @@ export function useApprovalQueueLineItems() {
         keyParts: approvalQueueLineItemKeyParts,
         parseResponse: async (response) =>
             approvalQueueLineItemListSchema.parse(await response.json()),
+        staleTime: 30_000,
+    });
+}
+
+/**
+ * Fetches tenant-scoped Audit Trail entries for a report review dialog.
+ */
+export function useExpenseReportAuditEntries(
+    expenseReportId: string,
+    enabled = true,
+) {
+    return useExpenseFlowQuery<ApprovalQueueAuditEntry[]>({
+        enabled,
+        input: `/v1/expense-reports/${expenseReportId}/audit-entries`,
+        keyParts: ["expense-report-audit-entries", expenseReportId],
+        parseResponse: async (response) =>
+            auditEntryListSchema.parse(await response.json()),
+        staleTime: 30_000,
+    });
+}
+
+/**
+ * Fetches tenant-scoped comments for a report review dialog.
+ */
+export function useExpenseReportComments(
+    expenseReportId: string,
+    enabled = true,
+) {
+    return useExpenseFlowQuery<ApprovalQueueCaseComment[]>({
+        enabled,
+        input: `/v1/expense-reports/${expenseReportId}/comments`,
+        keyParts: ["expense-report-comments", expenseReportId],
+        parseResponse: async (response) =>
+            caseCommentListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -989,6 +1055,7 @@ export function ApprovalQueueReviewDialog({
     onClearFlag,
     onClose,
     onReviewLineItem,
+    reportTitleLabel = "Report",
     onSendBackReport,
     onToggleDeductibility,
 }: {
@@ -1004,6 +1071,7 @@ export function ApprovalQueueReviewDialog({
         sourceId: string,
         action: LineItemReviewAction,
     ) => void;
+    reportTitleLabel?: "Expense Report" | "Report";
     onSendBackReport: (lineItem: ApprovalQueueLineItem) => void;
     onToggleDeductibility: (
         lineItem: ApprovalQueueLineItem,
@@ -1012,12 +1080,69 @@ export function ApprovalQueueReviewDialog({
         deductible: boolean,
     ) => void;
 }): JSX.Element {
-    const [activeTab, setActiveTab] = useState<ReportDetailTab>("line-items");
+    const [activeTab, setActiveTab] =
+        useState<ApprovalQueueReviewDialogTab>("line-items");
     const reportLineItem = lineItems[0];
+    const expenseReportId = reportLineItem.expenseReportId;
+    const session = useSession();
+    const queryClient = useQueryClient();
     const [activeLineItemId, setActiveLineItemId] = useState<string | null>(
         null,
     );
     const [receiptView, setReceiptView] = useState<"grid" | "list">("grid");
+    const [commentBody, setCommentBody] = useState("");
+    const [commentError, setCommentError] = useState<string | null>(null);
+    const auditQuery = useExpenseReportAuditEntries(
+        expenseReportId,
+        activeTab === "audit-trail",
+    );
+    const commentsQuery = useExpenseReportComments(
+        expenseReportId,
+        activeTab === "comments",
+    );
+    const commentsQueryFilter = {
+        predicate: (cachedQuery: Query) =>
+            cachedQuery.queryKey.includes("expense-report-comments") &&
+            cachedQuery.queryKey.includes(expenseReportId),
+    };
+    const commentMutation = useMutation({
+        mutationFn: async (body: string) => {
+            const requestBody = createCaseCommentRequestSchema.parse({ body });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${expenseReportId}/comments`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return caseCommentSchema.parse(await response.json());
+        },
+        onMutate: async () => {
+            await queryClient.cancelQueries(commentsQueryFilter);
+        },
+        onError: (error) => {
+            setCommentError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (comment) => {
+            setCommentBody("");
+            setCommentError(null);
+            queryClient.setQueriesData<ApprovalQueueCaseComment[]>(
+                commentsQueryFilter,
+                (current = []) =>
+                    current.some(
+                        (cachedComment) => cachedComment.id === comment.id,
+                    )
+                        ? current
+                        : [...current, comment],
+            );
+        },
+    });
     const {
         canAdvanceReport,
         canClearPolicyChecks,
@@ -1054,6 +1179,20 @@ export function ApprovalQueueReviewDialog({
         0,
     );
     const mileageTotal = calculateReportMileageTotal(lineItems);
+    const handleSubmitComment = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const parsed = createCaseCommentRequestSchema.safeParse({
+            body: commentBody,
+        });
+        if (!parsed.success) {
+            setCommentError("Enter a comment before posting.");
+            return;
+        }
+
+        setCommentError(null);
+        commentMutation.mutate(parsed.data.body);
+    };
+
     function handleReceiptSelect(receipt: ApprovalQueueReceipt): void {
         if (receipt.lineItemId === null) {
             return;
@@ -1084,7 +1223,7 @@ export function ApprovalQueueReviewDialog({
                             Report Review
                         </p>
                         <h3 id="case-queue-dialog-heading">
-                            Report{" "}
+                            {reportTitleLabel}{" "}
                             {getReportDisplayId(reportLineItem.expenseReportId)}
                         </h3>
                     </div>
@@ -1153,6 +1292,26 @@ export function ApprovalQueueReviewDialog({
                         onClick={() => setActiveTab("policy-checks")}
                     >
                         Policy Checks
+                    </button>
+                    <button
+                        aria-controls="report-audit-trail-panel"
+                        aria-selected={activeTab === "audit-trail"}
+                        id="report-audit-trail-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("audit-trail")}
+                    >
+                        Audit Trail
+                    </button>
+                    <button
+                        aria-controls="report-comments-panel"
+                        aria-selected={activeTab === "comments"}
+                        id="report-comments-tab"
+                        role="tab"
+                        type="button"
+                        onClick={() => setActiveTab("comments")}
+                    >
+                        Comments
                     </button>
                 </div>
                 {activeTab === "line-items" ? (
@@ -1295,7 +1454,7 @@ export function ApprovalQueueReviewDialog({
                             </tbody>
                         </table>
                     </div>
-                ) : (
+                ) : activeTab === "policy-checks" ? (
                     <div
                         aria-labelledby="report-policy-checks-tab"
                         className="case-queue-dialog__table-wrap"
@@ -1376,6 +1535,31 @@ export function ApprovalQueueReviewDialog({
                             </table>
                         )}
                     </div>
+                ) : activeTab === "audit-trail" ? (
+                    <div
+                        aria-labelledby="report-audit-trail-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-audit-trail-panel"
+                        role="tabpanel"
+                    >
+                        <AuditTrailPanel query={auditQuery} />
+                    </div>
+                ) : (
+                    <div
+                        aria-labelledby="report-comments-tab"
+                        className="case-queue-dialog__table-wrap"
+                        id="report-comments-panel"
+                        role="tabpanel"
+                    >
+                        <CommentsPanel
+                            body={commentBody}
+                            error={commentError}
+                            isSubmitting={commentMutation.isPending}
+                            query={commentsQuery}
+                            onBodyChange={setCommentBody}
+                            onSubmit={handleSubmitComment}
+                        />
+                    </div>
                 )}
                 <footer className="case-queue-dialog__footer">
                     <button
@@ -1406,6 +1590,147 @@ export function ApprovalQueueReviewDialog({
                 </footer>
             </section>
         </div>
+    );
+}
+
+function AuditTrailPanel({
+    query,
+}: {
+    query: UseQueryResult<ApprovalQueueAuditEntry[], Error>;
+}): JSX.Element {
+    if (query.isPending) {
+        return <LoadingSkeleton label="Loading Audit Trail" rows={3} />;
+    }
+
+    if (query.isError) {
+        return (
+            <ErrorState
+                isRetrying={query.isFetching}
+                message={getQueueActionErrorMessage(query.error)}
+                onRetry={() => {
+                    void query.refetch();
+                }}
+                title="Unable to load Audit Trail"
+            />
+        );
+    }
+
+    const entries = query.data ?? [];
+
+    if (entries.length === 0) {
+        return (
+            <div className="case-queue-dialog__empty-tab" role="status">
+                No audit entries recorded for this report.
+            </div>
+        );
+    }
+
+    return (
+        <ol className="case-detail-audit">
+            {entries.map((entry) => (
+                <li className="case-detail-audit__entry" key={entry.id}>
+                    <strong>{getAuditActionLabel(entry.action)}</strong>
+                    <span>
+                        {entry.stageBeforeAction} to{" "}
+                        {entry.stageAfterProposedAction}
+                    </span>
+                    <small>Actor {getReportDisplayId(entry.actorId)}</small>
+                    {entry.outcomeReason !== null ? (
+                        <p>{entry.outcomeReason}</p>
+                    ) : null}
+                    {entry.denialReason !== null ? (
+                        <p>{entry.denialReason}</p>
+                    ) : null}
+                    <time dateTime={entry.createdAt}>
+                        {formatDateTime(entry.createdAt)}
+                    </time>
+                </li>
+            ))}
+        </ol>
+    );
+}
+
+function CommentsPanel({
+    body,
+    error,
+    isSubmitting,
+    query,
+    onBodyChange,
+    onSubmit,
+}: {
+    body: string;
+    error: string | null;
+    isSubmitting: boolean;
+    query: UseQueryResult<ApprovalQueueCaseComment[], Error>;
+    onBodyChange: (body: string) => void;
+    onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}): JSX.Element {
+    return (
+        <section className="case-detail-comments">
+            {query.isPending ? (
+                <LoadingSkeleton label="Loading Comments" rows={3} />
+            ) : query.isError ? (
+                <ErrorState
+                    isRetrying={query.isFetching}
+                    message={getQueueActionErrorMessage(query.error)}
+                    onRetry={() => {
+                        void query.refetch();
+                    }}
+                    title="Unable to load comments"
+                />
+            ) : (query.data ?? []).length === 0 ? (
+                <div className="case-queue-dialog__empty-tab" role="status">
+                    No comments recorded for this report.
+                </div>
+            ) : (
+                <ol className="case-detail-comments__thread">
+                    {(query.data ?? []).map((comment) => (
+                        <li key={comment.id}>
+                            <div>
+                                <strong>
+                                    Author{" "}
+                                    {getReportDisplayId(comment.authorId)}
+                                </strong>
+                                <time dateTime={comment.createdAt}>
+                                    {formatDateTime(comment.createdAt)}
+                                </time>
+                            </div>
+                            <p>{comment.body}</p>
+                        </li>
+                    ))}
+                </ol>
+            )}
+            <form
+                aria-label="Add Expense Report comment"
+                className="case-detail-comments__form"
+                onSubmit={onSubmit}
+            >
+                <label>
+                    <span>Comment</span>
+                    <textarea
+                        maxLength={5_000}
+                        rows={4}
+                        value={body}
+                        onChange={(event) =>
+                            onBodyChange(event.currentTarget.value)
+                        }
+                    />
+                </label>
+                {error === null ? null : (
+                    <div className="form-message form-message--error">
+                        {error}
+                    </div>
+                )}
+                <Button
+                    disabled={isSubmitting}
+                    size="sm"
+                    type="submit"
+                    variant="primary"
+                >
+                    {isSubmitting ? "Posting..." : "Post comment"}
+                </Button>
+            </form>
+        </section>
     );
 }
 
@@ -1647,7 +1972,7 @@ function ReceiptPreview({
                     <span>
                         {hasPreviewError
                             ? getReceiptPreviewLabel(contentType)
-                            : "..."}
+                            : getReceiptPreviewLabel(contentType)}
                     </span>
                 )}
                 {hasLoadedPreview ? (
@@ -1791,6 +2116,21 @@ function formatDate(date: string): string {
         timeZone: "UTC",
         year: "numeric",
     }).format(new Date(`${date}T00:00:00.000Z`));
+}
+
+function formatDateTime(dateTime: string): string {
+    return new Intl.DateTimeFormat("en-US", {
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+        year: "numeric",
+    }).format(new Date(dateTime));
+}
+
+function getAuditActionLabel(action: string): string {
+    return action === "workflow_transition_applied"
+        ? "Transition Approved"
+        : action;
 }
 
 function formatMileageDistance(mileageDistance: number): string {

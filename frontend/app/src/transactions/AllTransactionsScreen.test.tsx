@@ -434,6 +434,189 @@ describe("AllTransactionsScreen", () => {
         expect(within(dialog).getByText("PDF")).toBeTruthy();
     });
 
+    test("opens a mileage-only report review modal", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000179",
+            expenseReportId: "60000000-0000-4000-8000-000000000179",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Mileage",
+            category: "Travel",
+            amount: "24.18",
+            currency: "USD",
+            status: "Manager Approval",
+            glCode: "6250",
+            flaggedLineItem: false,
+            reviewAction: null,
+            ...defaultReportMetadata,
+        };
+        const reportDetail = createReportDetail(transaction, {
+            lineItems: [],
+            mileageEntries: [
+                {
+                    id: "82000000-0000-4000-8000-000000000179",
+                    route: "Synthetic Office to Client Site",
+                    date: "2026-07-20",
+                    amount: "24.18",
+                    currency: "USD",
+                    distance: "37.20",
+                    glCode: "6250",
+                    flaggedLineItem: false,
+                    reviewAction: null,
+                    deductible: null,
+                },
+            ],
+        });
+        const fetchImplementation = vi.fn<typeof fetch>((input) => {
+            const requestUrl = readRequestInput(input);
+            if (requestUrl.includes("/review-detail")) {
+                return Promise.resolve(createJsonResponse(reportDetail));
+            }
+            if (
+                requestUrl.includes("/audit-entries") ||
+                requestUrl.includes("/comments")
+            ) {
+                return Promise.resolve(createJsonResponse([]));
+            }
+
+            return Promise.resolve(
+                createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Mileage Travel \$24\.18 Manager Approval Review/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+
+        expect(
+            await screen.findByRole("row", {
+                name: /Synthetic Office to Client Site \$24\.18 37\.20 miles 6250 Clear.*Not reviewed/i,
+            }),
+        ).toBeTruthy();
+    });
+
+    test("keeps audit trail and comments available in report review", async () => {
+        const transaction: AllTransaction = {
+            id: "30000000-0000-4000-8000-000000000180",
+            expenseReportId: "60000000-0000-4000-8000-000000000180",
+            date: "2026-07-20T12:00:00.000Z",
+            merchant: "Summit Air",
+            category: "Travel",
+            amount: "512.09",
+            currency: "USD",
+            status: "AP Review",
+            glCode: "6220",
+            flaggedLineItem: true,
+            reviewAction: "reject",
+            ...defaultReportMetadata,
+        };
+        const reportDetail = createReportDetail(transaction);
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const requestUrl = readRequestInput(input);
+            const requestMethod =
+                input instanceof Request ? input.method : init?.method;
+            if (requestUrl.includes("/review-detail")) {
+                return Promise.resolve(createJsonResponse(reportDetail));
+            }
+            if (requestUrl.includes("/audit-entries")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "83000000-0000-4000-8000-000000000180",
+                            tenantId,
+                            expenseReportId: transaction.expenseReportId,
+                            actorId: userId,
+                            action: "receipt_preview_opened",
+                            stageBeforeAction: "AP Review",
+                            stageAfterProposedAction: "AP Review",
+                            denialReason: null,
+                            outcomeReason: "Synthetic audit detail.",
+                            createdAt: "2026-07-22T12:00:00.000Z",
+                        },
+                    ]),
+                );
+            }
+            if (requestUrl.includes("/comments") && requestMethod === "POST") {
+                return Promise.resolve(
+                    createJsonResponse(
+                        {
+                            id: "84000000-0000-4000-8000-000000000181",
+                            tenantId,
+                            expenseReportId: transaction.expenseReportId,
+                            authorId: userId,
+                            body: "Synthetic posted transaction comment.",
+                            createdAt: "2026-07-22T12:06:00.000Z",
+                        },
+                        { status: 201 },
+                    ),
+                );
+            }
+            if (requestUrl.includes("/comments")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "84000000-0000-4000-8000-000000000180",
+                            tenantId,
+                            expenseReportId: transaction.expenseReportId,
+                            authorId: userId,
+                            body: "Synthetic receipt comment.",
+                            createdAt: "2026-07-22T12:05:00.000Z",
+                        },
+                    ]),
+                );
+            }
+
+            return Promise.resolve(
+                createJsonResponse(createTransactionPage([transaction])),
+            );
+        });
+
+        renderAllTransactionsScreen(fetchImplementation);
+
+        const reportRow = await screen.findByRole("row", {
+            name: /Summit Air Travel \$512\.09 AP Review Review/i,
+        });
+        fireEvent.click(
+            within(reportRow).getByRole("button", { name: "Review" }),
+        );
+        await screen.findByRole("table", {
+            name: "Report review line items",
+        });
+        const dialog = screen.getByRole("dialog", {
+            name: /Report 60000000/i,
+        });
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Audit Trail" }),
+        );
+        expect(
+            await within(dialog).findByText("receipt_preview_opened"),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByText("Synthetic audit detail."),
+        ).toBeTruthy();
+
+        fireEvent.click(within(dialog).getByRole("tab", { name: "Comments" }));
+        expect(
+            await within(dialog).findByText("Synthetic receipt comment."),
+        ).toBeTruthy();
+        fireEvent.change(within(dialog).getByLabelText("Comment"), {
+            target: { value: "Synthetic posted transaction comment." },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+        expect(
+            await within(dialog).findByText(
+                "Synthetic posted transaction comment.",
+            ),
+        ).toBeTruthy();
+    });
+
     test("loads report detail from all report sources instead of visible transaction rows", async () => {
         const visibleTransaction: AllTransaction = {
             id: "30000000-0000-4000-8000-000000000188",

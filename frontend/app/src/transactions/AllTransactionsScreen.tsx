@@ -673,6 +673,7 @@ function TransactionReviewDialog({
             onClearFlag={() => undefined}
             onClose={onClose}
             onReviewLineItem={() => undefined}
+            reportTitleLabel="Expense Report"
             onSendBackReport={() => undefined}
             onToggleDeductibility={() => undefined}
         />
@@ -706,34 +707,81 @@ function adaptReportDetailToApprovalQueueLineItems(
         receiptsByLineItemId.set(receipt.lineItemId, [...existing, receipt]);
     }
 
-    return report.lineItems.map((lineItem, index) => ({
-        id: lineItem.id,
-        sourceType: "line_item",
-        expenseReportId: report.expenseReportId,
-        employee: report.owner,
-        merchant: lineItem.merchant,
-        amount: Number(lineItem.amount),
-        glCode: lineItem.glCode ?? "Unmapped",
-        currentStage: report.status,
-        flaggedLineItem: lineItem.flaggedLineItem,
-        policyChecks: buildSyntheticPolicyChecks(lineItem.flaggedLineItem),
-        reviewAction: lineItem.reviewAction,
-        deductible: lineItem.deductible ?? false,
-        canAdvance: false,
-        reportTotalMileage: mileageEntries.reduce(
-            (total, entry) => total + entry.distance,
-            0,
-        ),
-        mileageEntries: index === 0 ? mileageEntries : [],
-        receipts: [
-            ...(receiptsByLineItemId.get(lineItem.id) ?? []),
-            ...(index === 0
-                ? report.receipts.filter(
-                      (receipt) => receipt.lineItemId === null,
-                  )
-                : []),
-        ],
-    }));
+    const lineItemRows: ApprovalQueueLineItem[] = report.lineItems.map(
+        (lineItem, index) => ({
+            id: lineItem.id,
+            sourceType: "line_item",
+            expenseReportId: report.expenseReportId,
+            employee: report.owner,
+            merchant: lineItem.merchant,
+            amount: Number(lineItem.amount),
+            glCode: lineItem.glCode ?? "Unmapped",
+            currentStage: report.status,
+            flaggedLineItem: lineItem.flaggedLineItem,
+            policyChecks: buildSyntheticPolicyChecks(lineItem.flaggedLineItem),
+            reviewAction: lineItem.reviewAction,
+            deductible: lineItem.deductible ?? false,
+            canAdvance: false,
+            reportTotalMileage: mileageEntries.reduce(
+                (total, entry) => total + entry.distance,
+                0,
+            ),
+            mileageEntries: index === 0 ? mileageEntries : [],
+            receipts: [
+                ...(receiptsByLineItemId.get(lineItem.id) ?? []),
+                ...(index === 0
+                    ? report.receipts.filter(
+                          (receipt) => receipt.lineItemId === null,
+                      )
+                    : []),
+            ],
+        }),
+    );
+
+    if (lineItemRows.length > 0 || mileageEntries.length === 0) {
+        return lineItemRows;
+    }
+
+    return [
+        {
+            id: mileageEntries[0]?.id ?? report.expenseReportId,
+            sourceType: "line_item",
+            expenseReportId: report.expenseReportId,
+            employee: report.owner,
+            merchant: "Mileage",
+            amount: mileageEntries.reduce(
+                (total, entry) => total + entry.amount,
+                0,
+            ),
+            glCode: mileageEntries[0]?.glCode ?? "Unmapped",
+            currentStage: report.status,
+            flaggedLineItem: mileageEntries.some(
+                (entry) => entry.flaggedLineItem,
+            ),
+            policyChecks: mileageEntries.flatMap((entry) =>
+                buildSyntheticPolicyChecks(entry.flaggedLineItem),
+            ),
+            reviewAction: mileageEntries.every(
+                (entry) => entry.reviewAction === "approve",
+            )
+                ? "approve"
+                : mileageEntries.some(
+                        (entry) => entry.reviewAction === "reject",
+                    )
+                  ? "reject"
+                  : null,
+            deductible: mileageEntries.every((entry) => entry.deductible),
+            canAdvance: false,
+            reportTotalMileage: mileageEntries.reduce(
+                (total, entry) => total + entry.distance,
+                0,
+            ),
+            mileageEntries,
+            receipts: report.receipts.filter(
+                (receipt) => receipt.lineItemId === null,
+            ),
+        },
+    ];
 }
 
 function buildSyntheticPolicyChecks(

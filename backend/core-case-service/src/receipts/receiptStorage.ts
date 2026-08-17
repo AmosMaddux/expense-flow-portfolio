@@ -165,11 +165,18 @@ function buildReceiptObjectKey(descriptor: ReceiptObjectDescriptor): string {
 }
 
 function toS3ClientConfig(config: ReceiptStorageConfig): {
+    credentials?: {
+        accessKeyId: string;
+        secretAccessKey: string;
+    };
     endpoint?: string;
     forcePathStyle: boolean;
     region: string;
 } {
     return {
+        ...(config.credentials === undefined
+            ? {}
+            : { credentials: config.credentials }),
         ...(config.endpoint === undefined ? {} : { endpoint: config.endpoint }),
         forcePathStyle: config.forcePathStyle,
         region: config.region,

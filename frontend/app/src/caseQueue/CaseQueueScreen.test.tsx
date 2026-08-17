@@ -304,6 +304,22 @@ function createProblemResponse(detail: string): Response {
     );
 }
 
+function readRequestInput(input: RequestInfo | URL): string {
+    if (typeof input === "string") {
+        return input;
+    }
+
+    if (input instanceof URL) {
+        return input.href;
+    }
+
+    if (input instanceof Request) {
+        return input.url;
+    }
+
+    return "";
+}
+
 function createNoRetryQueryClient(): QueryClient {
     return new QueryClient({
         defaultOptions: {
@@ -725,15 +741,93 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Linked to Northstar Hotels"),
         ).toBeTruthy();
+        expect(screen.queryByRole("link", { name: "Open receipt" })).toBeNull();
         expect(
-            screen.queryByRole("link", { name: "Open receipt" }),
-        ).toBeNull();
-        expect(document.querySelector(".receipt-gallery__preview")).toBeTruthy();
+            document.querySelector(".receipt-gallery__preview"),
+        ).toBeTruthy();
         expect(screen.getByText("PDF")).toBeTruthy();
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
         expect(axeResults.violations).toHaveLength(0);
+    });
+
+    test("shows audit trail and lets reviewers post comments from report review", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const requestUrl = readRequestInput(input);
+            if (requestUrl.includes("/audit-entries")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "83000000-0000-4000-8000-000000000201",
+                            tenantId,
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            actorId: userId,
+                            action: "workflow_transition_applied",
+                            stageBeforeAction: "Submitted",
+                            stageAfterProposedAction: "Manager Approval",
+                            denialReason: null,
+                            outcomeReason: "Synthetic review started.",
+                            createdAt: "2026-07-22T12:00:00.000Z",
+                        },
+                    ]),
+                );
+            }
+            if (requestUrl.includes("/comments") && init?.method === "POST") {
+                return Promise.resolve(
+                    createJsonResponse(
+                        {
+                            id: "84000000-0000-4000-8000-000000000201",
+                            tenantId,
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            authorId: userId,
+                            body: "Synthetic case queue comment.",
+                            createdAt: "2026-07-22T12:05:00.000Z",
+                        },
+                        { status: 201 },
+                    ),
+                );
+            }
+            if (requestUrl.includes("/comments")) {
+                return Promise.resolve(createJsonResponse([]));
+            }
+
+            return Promise.resolve(createJsonResponse(lineItems));
+        });
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", { name: "Report d104c9ca" });
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Audit Trail" }),
+        );
+        expect(
+            await within(dialog).findByText("Transition Approved"),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByText("Synthetic review started."),
+        ).toBeTruthy();
+
+        fireEvent.click(within(dialog).getByRole("tab", { name: "Comments" }));
+        fireEvent.change(await within(dialog).findByLabelText("Comment"), {
+            target: { value: "Synthetic case queue comment." },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+
+        expect(
+            await within(dialog).findByText("Synthetic case queue comment."),
+        ).toBeTruthy();
     });
 
     test("selecting a receipt focuses and highlights its linked line item in a multi-line report", async () => {
@@ -747,7 +841,7 @@ describe("CaseQueueScreen", () => {
             .mockImplementation((callback) => {
                 callback(0);
                 return 0;
-        });
+            });
         Element.prototype.scrollIntoView = scrollIntoView;
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(linkedReceiptReportItems)),
@@ -845,9 +939,7 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByText("application/pdf / Unlinked receipt"),
         ).toBeTruthy();
-        expect(
-            screen.queryByRole("link", { name: "Open receipt" }),
-        ).toBeNull();
+        expect(screen.queryByRole("link", { name: "Open receipt" })).toBeNull();
     });
 
     test("opens one report with a separate expense row and mileage row for review", async () => {

@@ -159,6 +159,9 @@ export async function seedLocalDemoData(): Promise<void> {
         environment.VITE_TENANT_ID,
     );
     const receiptStorageClient = new S3Client({
+        ...(receiptStorageConfig.credentials === undefined
+            ? {}
+            : { credentials: receiptStorageConfig.credentials }),
         endpoint: receiptStorageConfig.endpoint,
         forcePathStyle: receiptStorageConfig.forcePathStyle,
         region: receiptStorageConfig.region,

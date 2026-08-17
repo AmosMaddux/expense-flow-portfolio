@@ -1790,7 +1790,37 @@ void describe("Expense Report routes", () => {
         );
         expect(managerResponse.status).toBe(200);
 
-        const employeeTenantId = "40000000-0000-4000-8000-000000000246";
+        const otherFinanceTenantId = "40000000-0000-4000-8000-000000000246";
+        const otherManagerTenantId = "40000000-0000-4000-8000-000000000247";
+        const employeeTenantId = "40000000-0000-4000-8000-000000000248";
+        const otherTenantFinanceAdmin = "50000000-0000-4000-8000-000000000248";
+        const otherTenantDepartmentManager =
+            "50000000-0000-4000-8000-000000000249";
+        receiptStorageMock.get.mockClear();
+        const otherTenantFinanceResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherFinanceTenantId,
+                        otherTenantFinanceAdmin,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const otherTenantManagerResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherManagerTenantId,
+                        otherTenantDepartmentManager,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
         const employeeResponse = await requestApp(
             `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
             {
@@ -1803,7 +1833,10 @@ void describe("Expense Report routes", () => {
                 },
             },
         );
+        expect(otherTenantFinanceResponse.status).toBe(404);
+        expect(otherTenantManagerResponse.status).toBe(404);
         expect(employeeResponse.status).toBe(403);
+        expect(receiptStorageMock.get).not.toHaveBeenCalled();
     });
 
     void test("deduplicates retried mileage additions", async () => {
