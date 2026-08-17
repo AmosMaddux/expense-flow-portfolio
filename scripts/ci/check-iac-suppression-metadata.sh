@@ -131,6 +131,10 @@ function validateSuppression(file, lineNumber, line, lines, index, depthBeforeLi
   } else if (reviewBy < today) {
     emitError(`${file}:${lineNumber} suppression review date ${reviewBy} is before ${today}.`);
   }
+  const trailingContent = line.match(/review by\s+\d{4}-\d{2}-\d{2}(.*)$/i)?.[1];
+  if (trailingContent?.trim()) {
+    emitError(`${file}:${lineNumber} suppression metadata must be the only content on its line.`);
+  }
 }
 
 validateCheckovConfig();

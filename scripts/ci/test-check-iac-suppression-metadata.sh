@@ -77,6 +77,12 @@ expired_review=$(write_case expired-review 'resource "aws_s3_bucket" "synthetic"
 ')
 expect_failure "expired review date" "$expired_review"
 
+trailing_hcl=$(write_case trailing-hcl 'resource "aws_s3_bucket" "synthetic" {
+  #checkov:skip=CKV_AWS_18: Sandbox fixture exception, owner platform-security, review by 2026-12-31  bucket = "synthetic-fixture-bucket"
+}
+')
+expect_failure "HCL trailing suppression metadata" "$trailing_hcl"
+
 bad_checkov_placement=$(write_case bad-checkov-placement '#checkov:skip=CKV_AWS_18: Sandbox fixture exception, owner platform-security, review by 2026-12-31
 resource "aws_s3_bucket" "synthetic" {
   bucket = "synthetic-fixture-bucket"

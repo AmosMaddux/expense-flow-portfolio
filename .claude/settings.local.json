@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(aws --version)",
+      "Bash(aws s3api *)",
+      "Bash(wsl -e bash -lc 'aws --version; python3 -c \"import botocore,os,json;p=os.path.join\\(os.path.dirname\\(botocore.__file__\\),\\\\\"data\\\\\",\\\\\"s3\\\\\",\\\\\"2006-03-01\\\\\",\\\\\"service-2.json\\\\\"\\);print\\(p\\)\"')",
+      "Bash(wsl -e *)"
+    ]
+  }
+}

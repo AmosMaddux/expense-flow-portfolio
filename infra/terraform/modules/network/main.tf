@@ -8,7 +8,8 @@ locals {
 
 resource "aws_vpc" "this" {
   #checkov:skip=CKV2_AWS_11: VPC flow logs need a logging destination module outside SCRUM-154, owner platform-security, review by 2026-12-31
-  #checkov:skip=CKV2_AWS_12: Default security group lockdown is deferred to the network hardening ticket, owner platform-security, review by 2026-12-31  cidr_block           = var.vpc_cidr
+  #checkov:skip=CKV2_AWS_12: Default security group lockdown is deferred to the network hardening ticket, owner platform-security, review by 2026-12-31
+  cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
 
@@ -26,7 +27,8 @@ resource "aws_internet_gateway" "this" {
 }
 
 resource "aws_subnet" "public" {
-  #checkov:skip=CKV_AWS_130: Public subnets intentionally assign public IPs for internet-facing ALB and NAT placement, owner platform-security, review by 2026-12-31  for_each = { for index, az in local.azs : az => index }
+  #checkov:skip=CKV_AWS_130: Public subnets intentionally assign public IPs for internet-facing ALB and NAT placement, owner platform-security, review by 2026-12-31
+  for_each = { for index, az in local.azs : az => index }
 
   vpc_id                  = aws_vpc.this.id
   availability_zone       = each.key
@@ -73,7 +75,8 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_eip" "nat" {
-  #checkov:skip=CKV2_AWS_19: NAT EIP is attached by aws_nat_gateway.this but Checkov cannot resolve the conditional reference, owner platform-security, review by 2026-12-31  count = var.enable_nat_gateway ? 1 : 0
+  #checkov:skip=CKV2_AWS_19: NAT EIP is attached by aws_nat_gateway.this but Checkov cannot resolve the conditional reference, owner platform-security, review by 2026-12-31
+  count = var.enable_nat_gateway ? 1 : 0
 
   domain = "vpc"
 

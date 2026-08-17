@@ -37,11 +37,14 @@ Checkov and tfsec use different placement rules:
 
 1. Document the proposed suppression in the pull request description.
 2. Link the finding to the Terraform line where the suppression is applied.
-3. Obtain approval from a Platform reviewer and a Security reviewer.
+3. Obtain approval from a Platform reviewer or a Security reviewer, as required
+   by the repository's CODEOWNERS and branch-protection settings.
 4. Remove or renew the suppression before the review-by date.
 
-`.github/CODEOWNERS` requires Platform and Security review for Terraform and
-scanning-policy changes. CI runs `scripts/ci/check-iac-suppression-metadata.sh`
+`.github/CODEOWNERS` requests review from the Platform and Security owner groups
+for Terraform and scanning-policy changes; GitHub considers the approval
+requirement satisfied when any one listed code owner approves. CI runs
+`scripts/ci/check-iac-suppression-metadata.sh`
 to require scanner IDs, owners, non-expired review-by dates, and scanner-specific
 placement on suppression comments.
 

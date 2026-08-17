@@ -47,7 +47,8 @@ locals {
 }
 
 resource "aws_ecr_repository" "core_case" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31  name                 = "${var.name_prefix}-core-case-service"
+  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
+  name                 = "${var.name_prefix}-core-case-service"
   image_tag_mutability = "IMMUTABLE"
   tags                 = var.tags
 
@@ -61,7 +62,8 @@ resource "aws_ecr_repository" "core_case" {
 }
 
 resource "aws_ecr_repository" "gl_coding" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31  name                 = "${var.name_prefix}-gl-coding-service"
+  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
+  name                 = "${var.name_prefix}-gl-coding-service"
   image_tag_mutability = "IMMUTABLE"
   tags                 = var.tags
 
@@ -75,13 +77,15 @@ resource "aws_ecr_repository" "gl_coding" {
 }
 
 resource "aws_cloudwatch_log_group" "core_case" {
-  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31  name              = local.core_case_log_group_name
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
+  name              = local.core_case_log_group_name
   retention_in_days = var.log_retention_days
   tags              = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "gl_coding" {
-  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31  name              = local.gl_coding_log_group_name
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
+  name              = local.gl_coding_log_group_name
   retention_in_days = var.log_retention_days
   tags              = var.tags
 }
@@ -101,8 +105,9 @@ resource "aws_s3_bucket" "receipts" {
   #checkov:skip=CKV_AWS_144: Sandbox receipt cross-region replication is deferred until DR requirements are approved, owner platform-security, review by 2026-12-31
   #checkov:skip=CKV_AWS_145: Receipt bucket KMS CMK is deferred until key ownership and grants are approved, owner platform-security, review by 2026-12-31
   #checkov:skip=CKV2_AWS_61: Receipt lifecycle policy is deferred until finance retention requirements are approved, owner platform-security, review by 2026-12-31
-  #checkov:skip=CKV2_AWS_62: Receipt event notifications are deferred until malware/audit ingestion is designed, owner platform-security, review by 2026-12-31  bucket = var.receipt_storage_bucket_name
-  tags = var.tags
+  #checkov:skip=CKV2_AWS_62: Receipt event notifications are deferred until malware/audit ingestion is designed, owner platform-security, review by 2026-12-31
+  bucket = var.receipt_storage_bucket_name
+  tags   = var.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "receipts" {
@@ -147,7 +152,8 @@ resource "aws_sns_topic" "stage_transitions" {
 }
 
 resource "aws_dynamodb_table" "expense_report_projection" {
-  #checkov:skip=CKV_AWS_119: Sandbox DynamoDB uses AWS-owned encryption while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31  name         = var.dynamodb_expense_report_table_name
+  #checkov:skip=CKV_AWS_119: Sandbox DynamoDB uses AWS-owned encryption while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
+  name         = var.dynamodb_expense_report_table_name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "tenantId"
   range_key    = "id"
@@ -299,7 +305,8 @@ resource "aws_vpc_security_group_egress_rule" "core_case_all" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_core_case" {
-  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Core Case security group, not public CIDR, owner platform-security, review by 2026-12-31  security_group_id            = var.internal_alb_security_group_id
+  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Core Case security group, not public CIDR, owner platform-security, review by 2026-12-31
+  security_group_id            = var.internal_alb_security_group_id
   description                  = "Allow Core Case traffic to the internal GL-coding ALB."
   referenced_security_group_id = aws_security_group.core_case.id
   from_port                    = 80
@@ -422,7 +429,8 @@ resource "aws_ecs_task_definition" "core_case" {
 }
 
 resource "aws_ecs_task_definition" "gl_coding" {
-  #checkov:skip=CKV_AWS_336: GL-coding container write paths need validation before enforcing a read-only root filesystem, owner platform-security, review by 2026-12-31  family                   = "${var.name_prefix}-gl-coding-service"
+  #checkov:skip=CKV_AWS_336: GL-coding container write paths need validation before enforcing a read-only root filesystem, owner platform-security, review by 2026-12-31
+  family                   = "${var.name_prefix}-gl-coding-service"
   cpu                      = "512"
   memory                   = "1024"
   network_mode             = "awsvpc"

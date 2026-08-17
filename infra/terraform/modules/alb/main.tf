@@ -102,7 +102,8 @@ resource "aws_lb" "internal" {
 }
 
 resource "aws_lb_target_group" "core_case" {
-  #checkov:skip=CKV_AWS_378: Core Case target group uses HTTP behind the ALB in private service networking, owner platform-security, review by 2026-12-31  name        = var.core_case_target_group_name
+  #checkov:skip=CKV_AWS_378: Core Case target group uses HTTP behind the ALB in private service networking, owner platform-security, review by 2026-12-31
+  name        = var.core_case_target_group_name
   port        = 3000
   protocol    = "HTTP"
   target_type = "ip"
@@ -125,7 +126,8 @@ resource "aws_lb_target_group" "core_case" {
 }
 
 resource "aws_lb_target_group" "gl_coding" {
-  #checkov:skip=CKV_AWS_378: GL-coding target group uses HTTP behind the internal ALB in private service networking, owner platform-security, review by 2026-12-31  name        = var.gl_coding_target_group_name
+  #checkov:skip=CKV_AWS_378: GL-coding target group uses HTTP behind the internal ALB in private service networking, owner platform-security, review by 2026-12-31
+  name        = var.gl_coding_target_group_name
   port        = 8001
   protocol    = "HTTP"
   target_type = "ip"

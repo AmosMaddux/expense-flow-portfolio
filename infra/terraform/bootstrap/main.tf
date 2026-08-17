@@ -37,8 +37,9 @@ resource "aws_s3_bucket" "terraform_state" {
   #checkov:skip=CKV_AWS_144: Cross-region state replication is deferred for sandbox cost and bootstrap simplicity, owner platform-security, review by 2026-12-31
   #checkov:skip=CKV_AWS_145: State bucket KMS re-encryption is split for IAM review to avoid locking Terraform users out, owner platform-security, review by 2026-12-31
   #checkov:skip=CKV2_AWS_61: State bucket lifecycle policy is deferred until retention requirements are approved, owner platform-security, review by 2026-12-31
-  #checkov:skip=CKV2_AWS_62: State bucket event notifications are deferred until audit ingestion is designed, owner platform-security, review by 2026-12-31  bucket = local.state_bucket_name
-  tags = local.tags
+  #checkov:skip=CKV2_AWS_62: State bucket event notifications are deferred until audit ingestion is designed, owner platform-security, review by 2026-12-31
+  bucket = local.state_bucket_name
+  tags   = local.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "terraform_state" {

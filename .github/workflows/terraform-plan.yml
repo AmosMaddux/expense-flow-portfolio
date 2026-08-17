@@ -28,7 +28,6 @@ jobs:
 
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
       TFSEC_SHA256: a32d0799bbefababaa4fcd814da9f4d251cd932789590b99d1d5fcb89ace6f68
 
     defaults:
@@ -47,24 +46,30 @@ jobs:
       - name: Cache Terraform providers
         uses: actions/cache@v4
         with:
-          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          path: ${{ runner.temp }}/terraform-plugin-cache
           key: terraform-providers-${{ runner.os }}-${{ hashFiles('infra/terraform/**/.terraform.lock.hcl') }}
           restore-keys: |
             terraform-providers-${{ runner.os }}-
 
       - name: Create Terraform plugin cache
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Terraform fmt
         run: terraform fmt -check -recursive infra/terraform
 
       - name: Init bootstrap for validation
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: terraform -chdir=infra/terraform/bootstrap init -backend=false
 
       - name: Validate bootstrap
         run: terraform -chdir=infra/terraform/bootstrap validate
 
       - name: Init sandbox for validation
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         run: terraform -chdir=infra/terraform/environments/sandbox init -backend=false
 
       - name: Validate sandbox
@@ -88,7 +93,7 @@ jobs:
           framework: terraform
           config_file: .checkov.yaml
           output_format: cli,json
-          output_file_path: console,checkov-fixture-reports
+          output_file_path: console,checkov-fixture-reports/results_json.json
 
       - name: Assert Checkov fixture failed by expected rule
         if: success() || failure()
@@ -155,7 +160,7 @@ jobs:
           framework: terraform
           config_file: .checkov.yaml
           output_format: cli,json,sarif
-          output_file_path: console,checkov-reports
+          output_file_path: console,checkov-reports/results_json.json,checkov-reports/results_sarif.sarif
 
       - name: Upload Checkov SARIF
         if: (success() || failure()) && hashFiles('checkov-reports/results_sarif.sarif') != ''
