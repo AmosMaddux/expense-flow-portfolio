@@ -402,10 +402,25 @@ describe("AllTransactionsScreen", () => {
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
             const requestUrl = readRequestInput(input);
             return Promise.resolve(
-                requestUrl.includes("/review-detail")
+                requestUrl.includes("/receipts/")
+                    ? new Response(new Blob(["synthetic receipt preview"]))
+                    : requestUrl.includes("/review-detail")
                     ? createJsonResponse(reportDetail)
                     : createJsonResponse(createTransactionPage([transaction])),
             );
+        });
+        const originalUserAgent = window.navigator.userAgent;
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: "Mozilla/5.0",
+        });
+        Object.defineProperty(URL, "createObjectURL", {
+            configurable: true,
+            value: vi.fn(() => "blob:synthetic-receipt"),
+        });
+        Object.defineProperty(URL, "revokeObjectURL", {
+            configurable: true,
+            value: vi.fn(),
         });
 
         renderAllTransactionsScreen(fetchImplementation);
@@ -432,6 +447,29 @@ describe("AllTransactionsScreen", () => {
         expect(within(dialog).getByText("Synthetic Lodge")).toBeTruthy();
         expect(within(dialog).getByText("IMG")).toBeTruthy();
         expect(within(dialog).getByText("PDF")).toBeTruthy();
+        expect(
+            within(dialog).queryByRole("button", {
+                name: "Expand receipt preview for Summit Air",
+            }),
+        ).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+        fireEvent.click(
+            within(dialog).getByRole("button", {
+                name: "Load receipt preview for Summit Air",
+            }),
+        );
+        expect(
+            await within(dialog).findByRole("button", {
+                name: "Expand receipt preview for Summit Air",
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(3);
+
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: originalUserAgent,
+        });
     });
 
     test("opens a mileage-only report review modal", async () => {

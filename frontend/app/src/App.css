@@ -2262,6 +2262,34 @@ button:disabled {
     background: #ffffff;
 }
 
+.receipt-gallery__load {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 800;
+    opacity: 0;
+    transition:
+        background 140ms ease,
+        opacity 140ms ease;
+}
+
+.receipt-gallery__load:hover,
+.receipt-gallery__load:focus-visible {
+    background: rgb(15 23 42 / 54%);
+    opacity: 1;
+}
+
+.receipt-gallery__load:disabled {
+    cursor: progress;
+}
+
 .receipt-gallery__expand {
     position: absolute;
     top: 10px;

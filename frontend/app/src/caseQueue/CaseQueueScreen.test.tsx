@@ -741,8 +741,12 @@ describe("CaseQueueScreen", () => {
     });
 
     test("renders receipt metadata in the report review gallery", async () => {
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(lineItems)),
+        const fetchImplementation = vi.fn<typeof fetch>((input) =>
+            Promise.resolve(
+                readRequestInput(input).includes("/receipts/")
+                    ? new Response(new Blob(["synthetic receipt preview"]))
+                    : createJsonResponse(lineItems),
+            ),
         );
         const originalUserAgent = window.navigator.userAgent;
         Object.defineProperty(window.navigator, "userAgent", {
@@ -784,11 +788,28 @@ describe("CaseQueueScreen", () => {
             document.querySelector(".receipt-gallery__preview"),
         ).toBeTruthy();
         expect(screen.getByText("PDF")).toBeTruthy();
+        expect(
+            screen.queryByRole("button", {
+                name: "Expand receipt preview for Northstar Hotels",
+            }),
+        ).toBeNull();
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
         expect(axeResults.violations).toHaveLength(0);
         expect(fetchImplementation).toHaveBeenCalledOnce();
+
+        fireEvent.click(
+            screen.getByRole("button", {
+                name: "Load receipt preview for Northstar Hotels",
+            }),
+        );
+        expect(
+            await screen.findByRole("button", {
+                name: "Expand receipt preview for Northstar Hotels",
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
 
         Object.defineProperty(window.navigator, "userAgent", {
             configurable: true,

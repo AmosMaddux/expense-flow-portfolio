@@ -1,4 +1,10 @@
-import { useState, type FormEvent } from "react";
+import {
+    useEffect,
+    useState,
+    type FormEvent,
+    type MouseEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import {
     useMutation,
     useQueryClient,
@@ -461,14 +467,19 @@ function LineItemsTab({
                     </tbody>
                 </table>
             </div>
-            <ReceiptGallery receipts={report.receipts} />
+            <ReceiptGallery
+                expenseReportId={report.expenseReportId}
+                receipts={report.receipts}
+            />
         </div>
     );
 }
 
 function ReceiptGallery({
+    expenseReportId,
     receipts,
 }: {
+    expenseReportId: string;
     receipts: ExpenseReportReviewDetail["receipts"];
 }): JSX.Element {
     return (
@@ -492,13 +503,14 @@ function ReceiptGallery({
                             key={receipt.id}
                         >
                             <span className="receipt-gallery__select">
-                                <span className="receipt-gallery__preview receipt-gallery__preview--file">
-                                    <span>
-                                        {getReceiptPreviewLabel(
-                                            receipt.contentType,
-                                        )}
-                                    </span>
-                                </span>
+                                <ReceiptPreview
+                                    contentType={receipt.contentType}
+                                    merchant={receipt.merchant}
+                                    url={buildReceiptFileUrl(
+                                        expenseReportId,
+                                        receipt.id,
+                                    )}
+                                />
                                 <span className="receipt-gallery__meta">
                                     <strong>{receipt.merchant}</strong>
                                     <span className="receipt-gallery__filename">
@@ -526,6 +538,176 @@ function ReceiptGallery({
                 </div>
             )}
         </section>
+    );
+}
+
+function ReceiptPreview({
+    contentType,
+    merchant,
+    url,
+}: {
+    contentType: string | null;
+    merchant: string;
+    url: string;
+}): JSX.Element {
+    const session = useSession();
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
+    const [hasPreviewError, setHasPreviewError] = useState(false);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    useEffect(() => {
+        return () => {
+            if (
+                objectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [objectUrl]);
+
+    const loadReceiptPreview = async (): Promise<boolean> => {
+        if (objectUrl !== null) {
+            return true;
+        }
+        if (!canLoadReceiptObjectPreview()) {
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        }
+
+        setIsPreviewLoading(true);
+        try {
+            const response = await session.authenticatedFetch(url);
+            if (!response.ok) {
+                throw new Error("Receipt preview request failed.");
+            }
+
+            const blob = await response.blob();
+            const nextObjectUrl = URL.createObjectURL(blob);
+            setObjectUrl(nextObjectUrl);
+            setHasPreviewError(false);
+            return true;
+        } catch {
+            setObjectUrl(null);
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return false;
+        } finally {
+            setIsPreviewLoading(false);
+        }
+    };
+
+    const handleLoadPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        await loadReceiptPreview();
+    };
+
+    const handleExpandPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        const didLoadPreview = await loadReceiptPreview();
+        if (didLoadPreview) {
+            setIsExpanded(true);
+        }
+    };
+
+    if (isPreviewableReceipt(contentType)) {
+        const hasLoadedPreview = objectUrl !== null && !hasPreviewError;
+
+        return (
+            <span className="receipt-gallery__preview">
+                {hasLoadedPreview && isImageReceipt(contentType) ? (
+                    <img
+                        alt={`Receipt image for ${merchant}`}
+                        src={objectUrl}
+                    />
+                ) : hasLoadedPreview && contentType === "application/pdf" ? (
+                    <iframe
+                        src={objectUrl}
+                        title={`Receipt PDF for ${merchant}`}
+                    />
+                ) : (
+                    <>
+                        <span>
+                            {isPreviewLoading
+                                ? "Loading"
+                                : getReceiptPreviewLabel(contentType)}
+                        </span>
+                        <button
+                            aria-label={`Load receipt preview for ${merchant}`}
+                            className="receipt-gallery__load"
+                            disabled={isPreviewLoading}
+                            type="button"
+                            onClick={(event) => {
+                                void handleLoadPreview(event);
+                            }}
+                        >
+                            Load Receipt
+                        </button>
+                    </>
+                )}
+                {hasLoadedPreview ? (
+                    <button
+                        aria-label={`Expand receipt preview for ${merchant}`}
+                        className="receipt-gallery__expand"
+                        type="button"
+                        onClick={(event) => {
+                            void handleExpandPreview(event);
+                        }}
+                    >
+                        <span aria-hidden="true" />
+                    </button>
+                ) : null}
+                {hasLoadedPreview && isExpanded && document.body
+                    ? createPortal(
+                          <div
+                              aria-label={`Expanded receipt preview for ${merchant}`}
+                              aria-modal="true"
+                              className="receipt-gallery__lightbox"
+                              role="dialog"
+                              onClick={(event) => event.stopPropagation()}
+                          >
+                              <button
+                                  aria-label="Close expanded receipt preview"
+                                  className="receipt-gallery__lightbox-close"
+                                  type="button"
+                                  onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIsExpanded(false);
+                                  }}
+                              >
+                                  X
+                              </button>
+                              <div className="receipt-gallery__lightbox-content">
+                                  {isImageReceipt(contentType) ? (
+                                      <img
+                                          alt={`Expanded receipt image for ${merchant}`}
+                                          src={objectUrl}
+                                      />
+                                  ) : (
+                                      <iframe
+                                          src={objectUrl}
+                                          title={`Expanded receipt PDF for ${merchant}`}
+                                      />
+                                  )}
+                              </div>
+                          </div>,
+                          document.body,
+                      )
+                    : null}
+            </span>
+        );
+    }
+
+    return (
+        <span className="receipt-gallery__preview receipt-gallery__preview--file">
+            <span>{contentType === "application/pdf" ? "PDF" : "FILE"}</span>
+        </span>
     );
 }
 
@@ -793,15 +975,34 @@ function getReceiptPreviewLabel(contentType: string | null): string {
         return "PDF";
     }
 
-    if (
-        contentType === "image/png" ||
-        contentType === "image/jpeg" ||
-        contentType === "image/webp"
-    ) {
+    if (isImageReceipt(contentType)) {
         return "IMG";
     }
 
     return "FILE";
+}
+
+function isPreviewableReceipt(contentType: string | null): boolean {
+    return isImageReceipt(contentType) || contentType === "application/pdf";
+}
+
+function isImageReceipt(contentType: string | null): boolean {
+    return (
+        contentType === "image/png" ||
+        contentType === "image/jpeg" ||
+        contentType === "image/webp"
+    );
+}
+
+function canLoadReceiptObjectPreview(): boolean {
+    return (
+        typeof URL.createObjectURL === "function" &&
+        !navigator.userAgent.toLowerCase().includes("jsdom")
+    );
+}
+
+function buildReceiptFileUrl(expenseReportId: string, receiptId: string): string {
+    return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
 }
 
 function formatAuditAction(action: string, format: "raw" | "title"): string {

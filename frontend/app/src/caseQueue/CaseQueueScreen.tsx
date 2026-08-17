@@ -1952,18 +1952,14 @@ function ReceiptPreview({
         };
     }, [objectUrl]);
 
-    const handleExpandPreview = async (
-        event: MouseEvent<HTMLButtonElement>,
-    ): Promise<void> => {
-        event.stopPropagation();
+    const loadReceiptPreview = async (): Promise<boolean> => {
         if (objectUrl !== null) {
-            setIsExpanded(true);
-            return;
+            return true;
         }
         if (!canLoadReceiptObjectPreview()) {
             setHasPreviewError(true);
             setIsExpanded(false);
-            return;
+            return false;
         }
 
         setIsPreviewLoading(true);
@@ -1977,13 +1973,31 @@ function ReceiptPreview({
             const nextObjectUrl = URL.createObjectURL(blob);
             setObjectUrl(nextObjectUrl);
             setHasPreviewError(false);
-            setIsExpanded(true);
+            return true;
         } catch {
             setObjectUrl(null);
             setHasPreviewError(true);
             setIsExpanded(false);
+            return false;
         } finally {
             setIsPreviewLoading(false);
+        }
+    };
+
+    const handleLoadPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        await loadReceiptPreview();
+    };
+
+    const handleExpandPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        const didLoadPreview = await loadReceiptPreview();
+        if (didLoadPreview) {
+            setIsExpanded(true);
         }
     };
 
@@ -2003,25 +2017,39 @@ function ReceiptPreview({
                         title={`Receipt PDF for ${merchant}`}
                     />
                 ) : (
-                    <span>
-                        {isPreviewLoading
-                            ? "Loading"
-                            : hasPreviewError
-                              ? getReceiptPreviewLabel(contentType)
-                              : getReceiptPreviewLabel(contentType)}
-                    </span>
+                    <>
+                        <span>
+                            {isPreviewLoading
+                                ? "Loading"
+                                : hasPreviewError
+                                  ? getReceiptPreviewLabel(contentType)
+                                  : getReceiptPreviewLabel(contentType)}
+                        </span>
+                        <button
+                            aria-label={`Load receipt preview for ${merchant}`}
+                            className="receipt-gallery__load"
+                            disabled={isPreviewLoading}
+                            type="button"
+                            onClick={(event) => {
+                                void handleLoadPreview(event);
+                            }}
+                        >
+                            Load Receipt
+                        </button>
+                    </>
                 )}
-                <button
-                    aria-label={`Expand receipt preview for ${merchant}`}
-                    className="receipt-gallery__expand"
-                    disabled={isPreviewLoading}
-                    type="button"
-                    onClick={(event) => {
-                        void handleExpandPreview(event);
-                    }}
-                >
-                    <span aria-hidden="true" />
-                </button>
+                {hasLoadedPreview ? (
+                    <button
+                        aria-label={`Expand receipt preview for ${merchant}`}
+                        className="receipt-gallery__expand"
+                        type="button"
+                        onClick={(event) => {
+                            void handleExpandPreview(event);
+                        }}
+                    >
+                        <span aria-hidden="true" />
+                    </button>
+                ) : null}
                 {hasLoadedPreview && isExpanded && document.body
                     ? createPortal(
                           <div
