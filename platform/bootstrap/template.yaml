@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ExpenseFlow platform deployment bootstrap resources.
+
+Parameters:
+    EnvironmentTag:
+        Type: String
+        Default: sandbox
+        AllowedValues:
+            - sandbox
+    UserTag:
+        Type: String
+        Default: muhilramesh
+        AllowedValues:
+            - muhilramesh
+
+Resources:
+    DeploymentArtifactBucket:
+        Type: AWS::S3::Bucket
+        DeletionPolicy: Retain
+        UpdateReplacePolicy: Retain
+        Properties:
+            BucketEncryption:
+                ServerSideEncryptionConfiguration:
+                    - ServerSideEncryptionByDefault:
+                          SSEAlgorithm: AES256
+            LifecycleConfiguration:
+                Rules:
+                    - AbortIncompleteMultipartUpload:
+                          DaysAfterInitiation: 7
+                      ExpirationInDays: 30
+                      Id: ExpireDeploymentArtifacts
+                      NoncurrentVersionExpiration:
+                          NoncurrentDays: 30
+                      Status: Enabled
+            PublicAccessBlockConfiguration:
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: user
+                  Value: !Ref UserTag
+                - Key: service
+                  Value: Platform
+                - Key: purpose
+                  Value: DeploymentArtifacts
+            VersioningConfiguration:
+                Status: Enabled
+
+Outputs:
+    DeploymentArtifactBucketName:
+        Description: Private bucket used for packaged CloudFormation artifacts.
+        Value: !Ref DeploymentArtifactBucket

@@ -63,7 +63,7 @@ test("employee submits an expense report and manager approves it", async ({
 
         await managerPage.getByRole("link", { name: "Approval Queue" }).click();
         await expect(
-            managerPage.getByRole("heading", { name: "Case Queue" }),
+            managerPage.getByRole("heading", { name: "Approval Queue" }),
         ).toBeVisible();
 
         const managerReportRow = managerPage.getByRole("row", {
@@ -114,16 +114,19 @@ test("employee submits an expense report and manager approves it", async ({
         );
         await dialog.getByRole("button", { name: "Advance" }).click();
         await advanceResponse;
-        await expect(dialog).toContainText("AP Review");
+        await expect(dialog).not.toBeVisible();
 
         freshManagerContext = await browser.newContext();
         const freshManagerPage = await freshManagerContext.newPage();
         await login(freshManagerPage, e2eAccounts.manager, managerTotpCode);
         await freshManagerPage
-            .getByRole("link", { name: "Approval Queue" })
+            .getByRole("link", { name: "Expense Reports" })
             .click();
         await expect(
-            freshManagerPage.getByRole("heading", { name: "Case Queue" }),
+            freshManagerPage.getByRole("heading", {
+                level: 1,
+                name: "Expense Reports",
+            }),
         ).toBeVisible();
         const persistedManagerRow = freshManagerPage.getByRole("row", {
             name: `Expense Report ${reportId}`,

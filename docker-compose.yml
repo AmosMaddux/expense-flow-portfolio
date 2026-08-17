@@ -55,6 +55,29 @@ services:
         entrypoint: ["/bin/sh", "-c"]
         command:
             - >
+                if [ "$${AWS_WALKTHROUGH_USE_REAL_AWS:-false}" = "true" ]; then
+                unset AWS_ENDPOINT_URL
+                AWS_ENDPOINT_URL_DYNAMODB
+                AWS_ENDPOINT_URL_SNS
+                AWS_ENDPOINT_URL_SQS
+                DYNAMODB_ENDPOINT
+                STAGE_TRANSITION_SNS_ENDPOINT
+                STAGE_TRANSITION_SQS_ENDPOINT;
+                if [ -n "$${AWS_PROFILE:-}" ] && [ "$${AWS_WALKTHROUGH_USE_EXPORTED_CREDENTIALS:-false}" != "true" ]; then
+                unset AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY
+                AWS_SESSION_TOKEN
+                AWS_CREDENTIAL_EXPIRATION;
+                fi;
+                if [ -z "$${STAGE_TRANSITION_SNS_TOPIC_ARN:-}" ]; then
+                echo "STAGE_TRANSITION_SNS_TOPIC_ARN is required for AWS walkthrough mode." >&2;
+                exit 1;
+                fi;
+                else
+                unset AWS_PROFILE
+                AWS_SDK_LOAD_CONFIG
+                AWS_SESSION_TOKEN
+                AWS_CREDENTIAL_EXPIRATION;
                 export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
                 -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
                 const client = new SNSClient({
@@ -69,6 +92,7 @@ services:
                 echo "Local stage-transition topic identifier could not be resolved." >&2;
                 exit 1;
                 fi;
+                fi;
                 node backend/core-case-service/dist/index.js
         environment:
             ARGON2_HASH_LENGTH: ${ARGON2_HASH_LENGTH:-32}
@@ -76,6 +100,7 @@ services:
             ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-1}
             ARGON2_TIME_COST: ${ARGON2_TIME_COST:-2}
             AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-900}
+            AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-expenseflow-http-api}
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_PRIVATE_KEY_BASE64: ${AUTH_JWT_PRIVATE_KEY_BASE64:?AUTH_JWT_PRIVATE_KEY_BASE64 must be set in .env}
@@ -83,8 +108,13 @@ services:
             AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-expenseflowlocal}
             AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
             AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
+            AWS_PROFILE: ${AWS_PROFILE:-}
             AWS_REGION: ${AWS_REGION:-us-east-1}
+            AWS_SDK_LOAD_CONFIG: ${AWS_SDK_LOAD_CONFIG:-1}
             AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-expenseflowlocaldevonly}
+            AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+            AWS_WALKTHROUGH_USE_REAL_AWS: ${AWS_WALKTHROUGH_USE_REAL_AWS:-false}
+            AWS_WALKTHROUGH_USE_EXPORTED_CREDENTIALS: ${AWS_WALKTHROUGH_USE_EXPORTED_CREDENTIALS:-false}
             CASE_QUEUE_ROLLUP_TTL_SECONDS: ${CASE_QUEUE_ROLLUP_TTL_SECONDS:-30}
             CORE_CASE_RATE_LIMIT_REQUESTS: ${CORE_CASE_RATE_LIMIT_REQUESTS:-100}
             CORE_CASE_RATE_LIMIT_WINDOW_SECONDS: ${CORE_CASE_RATE_LIMIT_WINDOW_SECONDS:-60}
@@ -100,14 +130,17 @@ services:
             MFA_TOTP_SECRET_ENCRYPTION_KEY: ${MFA_TOTP_SECRET_ENCRYPTION_KEY:?MFA_TOTP_SECRET_ENCRYPTION_KEY must be set in .env}
             MFA_TOTP_SECRET_KEY_VERSION: ${MFA_TOTP_SECRET_KEY_VERSION:-local-dev-v1}
             MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
+            NODE_ENV: development
             PORT: 3000
             RECEIPT_STORAGE_BUCKET: ${RECEIPT_STORAGE_BUCKET:-expenseflow-receipts-local}
             RECEIPT_STORAGE_ENDPOINT: http://minio:9000
             RECEIPT_STORAGE_FORCE_PATH_STYLE: ${RECEIPT_STORAGE_FORCE_PATH_STYLE:-true}
             REDIS_URL: redis://redis:6379
+            SPA_ORIGIN: ${SPA_ORIGIN:-http://127.0.0.1:5173}
+            STAGE_TRANSITION_SNS_TOPIC_ARN: ${STAGE_TRANSITION_SNS_TOPIC_ARN:-}
             STAGE_TRANSITION_SNS_ENDPOINT: http://localstack:4566
             STAGE_TRANSITION_SQS_ENDPOINT: http://localstack:4566
-            STAGE_TRANSITION_SQS_QUEUE_URL: http://localstack:4566/000000000000/expenseflow-stage-transition-events-local
+            STAGE_TRANSITION_SQS_QUEUE_URL: ${STAGE_TRANSITION_SQS_QUEUE_URL:-http://localstack:4566/000000000000/expenseflow-stage-transition-events-local}
             TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE: ${TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE:-50}
             TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS: ${TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS:-30000}
             TIN_EIN_VALIDATION_ENDPOINT_URL: ${TIN_EIN_VALIDATION_ENDPOINT_URL:-https://tin-ein.example.test/tivs}
@@ -120,6 +153,8 @@ services:
             TIN_EIN_VALIDATION_WSDL_URL: ${TIN_EIN_VALIDATION_WSDL_URL:-https://tin-ein.example.test/tivs?wsdl}
         ports:
             - "3301:3000"
+        volumes:
+            - ${HOME}/.aws:/home/node/.aws:ro
 
     gl-coding:
         build:
@@ -131,6 +166,7 @@ services:
                 condition: service_started
         environment:
             AUTH_JWT_CLOCK_SKEW_SECONDS: ${AUTH_JWT_CLOCK_SKEW_SECONDS:-10}
+            AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-expenseflow-http-api}
             AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-expenseflow-core-case-service}
             AUTH_JWT_KEY_ID: ${AUTH_JWT_KEY_ID:-local-dev-rs256-v1}
             AUTH_JWT_JWKS_JSON: ${AUTH_JWT_JWKS_JSON:?AUTH_JWT_JWKS_JSON must be set in .env}

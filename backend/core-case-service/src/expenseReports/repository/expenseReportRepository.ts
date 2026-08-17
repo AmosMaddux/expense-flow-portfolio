@@ -211,6 +211,9 @@ type ApprovalQueueReceiptRow = {
     blobReference: unknown;
 };
 
+// Stub manager ownership until Expense Reports have a real manager assignment model.
+const localStubManagerId = "9f1b3f5c-1dc8-4f37-8a23-000000000002";
+
 export type InsertMileageEntryResult =
     | { kind: "created"; entry: typeof mileageEntry.$inferSelect }
     | { kind: "invalid_stage"; currentStage: ExpenseReportStage }
@@ -4117,7 +4120,10 @@ function toExpenseReportSummaryRow(
         id: String(row.id),
         createdAt: toDate(row.createdAt),
         employeeId: String(row.employeeId),
-        managerId: typeof row.managerId === "string" ? row.managerId : null,
+        managerId:
+            typeof row.managerId === "string"
+                ? row.managerId
+                : localStubManagerId,
         category: summarizeReportCategoryNames(categories),
         categories,
         amount: Number(row.amount).toFixed(2),

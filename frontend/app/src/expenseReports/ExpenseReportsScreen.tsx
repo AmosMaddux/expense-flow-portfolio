@@ -58,6 +58,7 @@ const emptyExpenseReportFilters: ExpenseReportFilters = {
     employee: "",
     statuses: [],
 };
+const localStubManagerId = "9f1b3f5c-1dc8-4f37-8a23-000000000002";
 
 /**
  * Fetches internal Expense Report summaries for the authenticated tenant.
@@ -481,12 +482,8 @@ function ExpenseReportsTable({
                                     />
                                 </td>
                                 <td>
-                                    {report.managerId === null ? (
-                                        <span className="expense-reports-table__muted">
-                                            Pending assignment
-                                        </span>
-                                    ) : (
-                                        formatManager(report.managerId)
+                                    {formatManager(
+                                        report.managerId ?? localStubManagerId,
                                     )}
                                 </td>
                                 <td>{report.category}</td>

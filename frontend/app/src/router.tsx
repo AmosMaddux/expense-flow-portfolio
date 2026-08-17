@@ -17,13 +17,14 @@ import {
     type LoginRequest,
     type SessionUser,
 } from "./auth";
+import { resolveLoginTenantId } from "./auth/loginTenant";
 import {
     MfaChallengeScreen,
     PasswordResetConfirmationScreen,
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
-import { CaseQueueScreen } from "./caseQueue/CaseQueueScreen";
+import { CaseQueueScreen, managerApprovalQueueStages } from "./caseQueue/CaseQueueScreen";
 import { ExpenseReportsScreen } from "./expenseReports/ExpenseReportsScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { GlMappingScreen } from "./glMapping/GlMappingScreen";
@@ -78,7 +79,10 @@ const protectedRoutes = navigationItems.map((item) =>
             ) : item.path === "/expense-reports" ? (
                 <ExpenseReportsScreen />
             ) : item.path === "/approval-queue" ? (
-                <CaseQueueScreen />
+                <CaseQueueScreen
+                    heading="Approval Queue"
+                    visibleStages={managerApprovalQueueStages}
+                />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
             ) : item.path === "/gl-mapping" ? (
@@ -183,7 +187,11 @@ function LoginRoute(): JSX.Element {
         <SignInScreen
             onForgotPassword={() => setView("reset")}
             onSubmit={async ({ email, password }) => {
-                const tenantId = import.meta.env.VITE_TENANT_ID ?? "";
+                const tenantId = resolveLoginTenantId(
+                    email,
+                    import.meta.env.VITE_TENANT_ID ?? "",
+                    import.meta.env.VITE_SECONDARY_TENANT_ID,
+                );
                 if (tenantId.length === 0) {
                     throw new Error(
                         "Sign-in is not configured for an organization.",
@@ -238,6 +246,7 @@ function AuthenticatedLayout(): JSX.Element {
             currentPath={location.pathname}
             signedInRole={session.user.role}
             signedInRoles={session.user.roles}
+            tenantId={session.user.tenantId}
             onLogout={async () => {
                 setIsExplicitSignOut(true);
                 try {

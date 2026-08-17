@@ -309,6 +309,82 @@ describe("createExpenseFlowQueryOptions", () => {
         expect(tenantTwoSession.authenticatedFetch).toHaveBeenCalledOnce();
     });
 
+    test("keeps Expense Reports route queue data separate for different tenants", async () => {
+        const queryClient = createExpenseFlowQueryClient();
+        const keyParts = ["case-queue", "line-items"];
+        const tenantOneSession = createQuerySession(
+            tenantOneUser,
+            () =>
+                new Response(
+                    JSON.stringify([
+                        {
+                            expenseReportId:
+                                "71000000-0000-4000-8000-000000000101",
+                        },
+                    ]),
+                    {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    },
+                ),
+        );
+        const tenantTwoSession = createQuerySession(
+            tenantTwoUser,
+            () =>
+                new Response(
+                    JSON.stringify([
+                        {
+                            expenseReportId:
+                                "71000000-0000-4000-8000-000000000202",
+                        },
+                    ]),
+                    {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    },
+                ),
+        );
+
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(tenantOneSession, {
+                    input: "/v1/case-queue/line-items",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual([
+            { expenseReportId: "71000000-0000-4000-8000-000000000101" },
+        ]);
+        await expect(
+            queryClient.fetchQuery(
+                createExpenseFlowQueryOptions(tenantTwoSession, {
+                    input: "/v1/case-queue/line-items",
+                    keyParts,
+                    staleTime: 60_000,
+                }),
+            ),
+        ).resolves.toEqual([
+            { expenseReportId: "71000000-0000-4000-8000-000000000202" },
+        ]);
+
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(tenantOneUser, keyParts),
+            ),
+        ).toEqual([
+            { expenseReportId: "71000000-0000-4000-8000-000000000101" },
+        ]);
+        expect(
+            queryClient.getQueryData(
+                createTenantQueryKey(tenantTwoUser, keyParts),
+            ),
+        ).toEqual([
+            { expenseReportId: "71000000-0000-4000-8000-000000000202" },
+        ]);
+        expect(tenantOneSession.authenticatedFetch).toHaveBeenCalledOnce();
+        expect(tenantTwoSession.authenticatedFetch).toHaveBeenCalledOnce();
+    });
     test("does not reuse cached data for different users or roles in the same tenant", async () => {
         const queryClient = createExpenseFlowQueryClient();
         const keyParts = ["case-queue", "rollups"];

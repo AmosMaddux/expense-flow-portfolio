@@ -28,6 +28,7 @@ const jwtHeaderSchema = z.object({
 
 const accessTokenClaimsSchema = z.object({
     iss: z.string().min(1),
+    aud: z.string().min(1),
     sub: z.uuid(),
     tenant_id: z.uuid(),
     roles: z.array(z.enum(roleValues)).min(1),
@@ -38,6 +39,7 @@ const accessTokenClaimsSchema = z.object({
 
 export type AccessTokenVerifierConfig = {
     issuer: string;
+    audience: string;
     publicKeysById: Map<string, KeyObject>;
 };
 
@@ -58,6 +60,7 @@ declare module "express-serve-static-core" {
  */
 export function createAccessTokenVerifierConfig(
     issuer: string,
+    audience: string,
     jwks: JsonWebKeySet,
 ): AccessTokenVerifierConfig {
     const parsedJwks = jwksSchema.parse(jwks);
@@ -72,7 +75,7 @@ export function createAccessTokenVerifierConfig(
         );
     }
 
-    return { issuer, publicKeysById };
+    return { issuer, audience, publicKeysById };
 }
 
 /**
@@ -159,6 +162,7 @@ function verifyAccessTokenUnchecked(
     const nowSeconds = Math.floor(now.getTime() / 1000);
     if (
         claims.iss !== config.issuer ||
+        claims.aud !== config.audience ||
         claims.exp <= nowSeconds ||
         claims.iat > nowSeconds
     ) {

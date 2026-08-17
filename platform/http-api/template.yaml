@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ExpenseFlow HTTP API with the shared native JWT authorizer.
+
+Parameters:
+    EnvironmentTag:
+        Type: String
+        Default: sandbox
+        AllowedValues:
+            - sandbox
+    UserTag:
+        Type: String
+        Default: muhilramesh
+        AllowedValues:
+            - muhilramesh
+    JwtIssuer:
+        Type: String
+        Description: HTTPS issuer URL that publishes OIDC metadata and the shared JWKS.
+        AllowedPattern: "^https://.+$"
+    JwtAudience:
+        Type: String
+        Default: expenseflow-http-api
+        MinLength: 1
+    StageName:
+        Type: String
+        Default: v1
+        AllowedPattern: "^[a-zA-Z0-9_-]+$"
+
+Resources:
+    SharedJwtHttpApi:
+        Type: AWS::Serverless::HttpApi
+        Properties:
+            Description: ExpenseFlow serverless endpoints protected by the shared access token.
+            DefaultRouteSettings:
+                ThrottlingBurstLimit: 10
+                ThrottlingRateLimit: 5
+            FailOnWarnings: true
+            PropagateTags: true
+            StageName: !Ref StageName
+            Auth:
+                DefaultAuthorizer: SharedJwtAuthorizer
+                Authorizers:
+                    SharedJwtAuthorizer:
+                        IdentitySource: $request.header.Authorization
+                        JwtConfiguration:
+                            issuer: !Ref JwtIssuer
+                            audience:
+                                - !Ref JwtAudience
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+
+    ClaimsProbeFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            Description: Confirms verified JWT tenant and role claims reach protected Lambdas.
+            Architectures:
+                - arm64
+            CodeUri: build
+            Handler: claimsProbe.handler
+            MemorySize: 128
+            Role: !GetAtt ClaimsProbeFunctionRole.Arn
+            Runtime: nodejs24.x
+            Timeout: 5
+            PropagateTags: true
+            Events:
+                ProtectedClaimsProbe:
+                    Type: HttpApi
+                    Properties:
+                        ApiId: !Ref SharedJwtHttpApi
+                        Method: GET
+                        Path: /auth-context
+                        PayloadFormatVersion: "2.0"
+            Tags:
+                env: !Ref EnvironmentTag
+                service: Platform
+                user: !Ref UserTag
+
+    ClaimsProbeFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: lambda.amazonaws.com
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            PermissionsBoundary: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/TraineeSandboxBoundary
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
+
+    ClaimsProbeLogGroup:
+        Type: AWS::Logs::LogGroup
+        DeletionPolicy: Delete
+        UpdateReplacePolicy: Delete
+        Properties:
+            LogGroupName: !Sub /aws/lambda/${ClaimsProbeFunction}
+            RetentionInDays: 14
+            Tags:
+                - Key: env
+                  Value: !Ref EnvironmentTag
+                - Key: service
+                  Value: Platform
+                - Key: user
+                  Value: !Ref UserTag
+
+Outputs:
+    HttpApiId:
+        Description: API Gateway HTTP API identifier.
+        Value: !Ref SharedJwtHttpApi
+    ProtectedClaimsProbeUrl:
+        Description: Protected route used by the JWT gateway smoke test.
+        Value: !Sub https://${SharedJwtHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/auth-context

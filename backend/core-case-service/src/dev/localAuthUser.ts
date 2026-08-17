@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { z } from "zod";
@@ -23,15 +23,17 @@ import {
     auditEntry,
     caseComment,
     expenseReport,
+    glCodingResult,
     lineItem,
     stageTransition,
 } from "../db/schema/expenseReport.js";
 import * as schema from "../db/schema/index.js";
 import {
     getLocalAuthAccount,
+    getLocalAuthAccountTenantId,
     getLocalAuthAccounts,
-    localAuthAccountNameSchema,
     localAuthEnvironmentSchema,
+    resolveLocalAuthAccountName,
     type LocalAuthAccount,
     type LocalAuthEnvironment,
 } from "./localAuthConfig.js";
@@ -45,18 +47,20 @@ const totpPeriodSeconds = 30;
 const minimumUsefulCodeLifetimeSeconds = 10;
 
 export type LocalAuthDatabase = NodePgDatabase<typeof schema>;
-type LocalAuthTransaction = Parameters<
-    Parameters<LocalAuthDatabase["transaction"]>[0]
->[0];
 
-const overdueSubmissionId = "7a000000-0000-4000-8000-000000000001";
-const overdueSubmissionDueDate = "2026-06-20";
+const legacyEmployeeSubmissionIds = [
+    "7a000000-0000-4000-8000-000000000001",
+    "7b000000-0000-4000-8000-000000000001",
+    "7c000000-0000-4000-8000-000000000001",
+    "7d000000-0000-4000-8000-000000000001",
+];
 
 async function seedLocalAuthAccount(
     database: LocalAuthDatabase,
     environment: LocalAuthEnvironment,
     account: LocalAuthAccount,
 ): Promise<void> {
+    const tenantId = getLocalAuthAccountTenantId(environment, account);
     const passwordHash = await createPasswordHasher(
         loadPasswordHashConfig(),
     ).hashPassword(environment.EXPENSEFLOW_DEV_PASSWORD);
@@ -64,29 +68,38 @@ async function seedLocalAuthAccount(
 
     await database.transaction(async (transaction) => {
         const existingUsers = await transaction
-            .select({ id: user.id })
+            .select({ id: user.id, email: user.email })
             .from(user)
             .where(
                 and(
-                    eq(user.tenantId, environment.VITE_TENANT_ID),
-                    eq(user.email, account.email),
+                    eq(user.tenantId, tenantId),
+                    or(
+                        eq(user.id, account.userId),
+                        eq(user.email, account.email),
+                    ),
                 ),
             )
             .limit(1);
-        const userId = existingUsers[0]?.id ?? account.userId;
+        const existingUser = existingUsers[0];
+        const userId = existingUser?.id ?? account.userId;
 
-        if (existingUsers.length === 0) {
+        if (existingUser === undefined) {
             await transaction.insert(user).values({
                 id: userId,
-                tenantId: environment.VITE_TENANT_ID,
+                tenantId,
                 email: account.email,
             });
+        } else if (existingUser.email !== account.email) {
+            await transaction
+                .update(user)
+                .set({ email: account.email, updatedAt: new Date() })
+                .where(and(eq(user.tenantId, tenantId), eq(user.id, userId)));
         }
 
         await transaction
             .insert(credential)
             .values({
-                tenantId: environment.VITE_TENANT_ID,
+                tenantId,
                 userId,
                 passwordHash,
                 passwordHashAlgorithm: "argon2id",
@@ -102,14 +115,9 @@ async function seedLocalAuthAccount(
 
         await transaction
             .delete(role)
-            .where(
-                and(
-                    eq(role.tenantId, environment.VITE_TENANT_ID),
-                    eq(role.userId, userId),
-                ),
-            );
+            .where(and(eq(role.tenantId, tenantId), eq(role.userId, userId)));
         await transaction.insert(role).values({
-            tenantId: environment.VITE_TENANT_ID,
+            tenantId,
             userId,
             name: account.role,
         });
@@ -119,7 +127,7 @@ async function seedLocalAuthAccount(
             .delete(refreshToken)
             .where(
                 and(
-                    eq(refreshToken.tenantId, environment.VITE_TENANT_ID),
+                    eq(refreshToken.tenantId, tenantId),
                     eq(refreshToken.userId, userId),
                 ),
             );
@@ -127,7 +135,7 @@ async function seedLocalAuthAccount(
             .delete(mfaEnrollment)
             .where(
                 and(
-                    eq(mfaEnrollment.tenantId, environment.VITE_TENANT_ID),
+                    eq(mfaEnrollment.tenantId, tenantId),
                     eq(mfaEnrollment.userId, userId),
                 ),
             );
@@ -150,18 +158,10 @@ async function seedLocalAuthAccount(
             },
             secretProtector,
         ).enroll({
-            tenantId: environment.VITE_TENANT_ID,
+            tenantId,
             userId,
             email: account.email,
         });
-
-        if (account.role === "Employee") {
-            await seedOverdueEmployeeSubmission(
-                transaction,
-                environment.VITE_TENANT_ID,
-                userId,
-            );
-        }
     });
 }
 
@@ -172,165 +172,62 @@ export async function seedLocalAuthAccounts(
     database: LocalAuthDatabase,
     environment: LocalAuthEnvironment,
 ): Promise<void> {
+    await removeLegacyEmployeeSubmissionFixtures(database);
+
     for (const account of getLocalAuthAccounts()) {
         await seedLocalAuthAccount(database, environment, account);
     }
 }
 
-async function seedOverdueEmployeeSubmission(
-    transaction: LocalAuthTransaction,
-    tenantId: string,
-    ownerId: string,
+async function removeLegacyEmployeeSubmissionFixtures(
+    database: LocalAuthDatabase,
 ): Promise<void> {
-    const seededAt = new Date("2026-06-20T12:00:00.000Z");
-
-    await transaction
-        .insert(expenseReport)
-        .values({
-            id: overdueSubmissionId,
-            tenantId,
-            owner: ownerId,
-            dueDate: overdueSubmissionDueDate,
-            priority: "Normal",
-            currentStage: "Manager Approval",
-            createdAt: seededAt,
-            updatedAt: seededAt,
-        })
-        .onConflictDoUpdate({
-            target: expenseReport.id,
-            set: {
-                tenantId,
-                owner: ownerId,
-                dueDate: overdueSubmissionDueDate,
-                priority: "Normal",
-                currentStage: "Manager Approval",
-                onHold: false,
-                holdReason: null,
-                updatedAt: seededAt,
-            },
-        });
-
-    await transaction
-        .insert(auditEntry)
-        .values([
-            {
-                id: "7a000000-0000-4000-8000-000000000002",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actorId: ownerId,
-                action: "report_created",
-                stageBeforeAction: "Drafted",
-                stageAfterProposedAction: "Drafted",
-                createdAt: seededAt,
-            },
-            {
-                id: "7a000000-0000-4000-8000-000000000003",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actorId: ownerId,
-                action: "transition_approved",
-                stageBeforeAction: "Drafted",
-                stageAfterProposedAction: "Submitted",
-                createdAt: new Date("2026-06-21T12:00:00.000Z"),
-            },
-            {
-                id: "7a000000-0000-4000-8000-000000000004",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actorId: ownerId,
-                action: "transition_approved",
-                stageBeforeAction: "Submitted",
-                stageAfterProposedAction: "Manager Approval",
-                createdAt: new Date("2026-06-22T12:00:00.000Z"),
-            },
-        ])
-        .onConflictDoNothing();
-
-    await transaction
-        .insert(stageTransition)
-        .values([
-            {
-                id: "7a000000-0000-4000-8000-000000000005",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actor: ownerId,
-                fromStage: "Drafted",
-                toStage: "Drafted",
-                reason: "report_created",
-                occurredAt: seededAt,
-            },
-            {
-                id: "7a000000-0000-4000-8000-000000000006",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actor: ownerId,
-                fromStage: "Drafted",
-                toStage: "Submitted",
-                reason: "Synthetic local workflow progression.",
-                occurredAt: new Date("2026-06-21T12:00:00.000Z"),
-            },
-            {
-                id: "7a000000-0000-4000-8000-000000000007",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                actor: ownerId,
-                fromStage: "Submitted",
-                toStage: "Manager Approval",
-                reason: "Synthetic local workflow progression.",
-                occurredAt: new Date("2026-06-22T12:00:00.000Z"),
-            },
-        ])
-        .onConflictDoNothing();
-
-    await transaction
-        .insert(lineItem)
-        .values({
-            id: "7a000000-0000-4000-8000-000000000008",
-            tenantId,
-            expenseReportId: overdueSubmissionId,
-            merchant: "Synthetic Rail",
-            expenseDate: "2026-06-18",
-            category: "Travel",
-            amount: "84.25",
-            currency: "USD",
-            createdAt: seededAt,
-            updatedAt: seededAt,
-        })
-        .onConflictDoUpdate({
-            target: lineItem.id,
-            set: {
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                merchant: "Synthetic Rail",
-                expenseDate: "2026-06-18",
-                category: "Travel",
-                amount: "84.25",
-                currency: "USD",
-                updatedAt: seededAt,
-            },
-        });
-
-    await transaction
-        .insert(caseComment)
-        .values([
-            {
-                id: "7a000000-0000-4000-8000-000000000009",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                authorId: ownerId,
-                body: "Synthetic employee dispute: receipt is available for finance review.",
-                createdAt: new Date("2026-06-22T13:00:00.000Z"),
-            },
-            {
-                id: "7a000000-0000-4000-8000-000000000010",
-                tenantId,
-                expenseReportId: overdueSubmissionId,
-                authorId: "9f1b3f5c-1dc8-4f37-8a23-000000000003",
-                body: "Synthetic finance note: confirm policy treatment before reimbursement.",
-                createdAt: new Date("2026-06-22T14:00:00.000Z"),
-            },
-        ])
-        .onConflictDoNothing();
+    await database.transaction(async (transaction) => {
+        // The loopback-only seed must bypass append-only triggers to remove its obsolete fixed fixtures.
+        await transaction.execute(
+            sql`set local session_replication_role = replica`,
+        );
+        await transaction
+            .delete(glCodingResult)
+            .where(
+                inArray(
+                    glCodingResult.expenseReportId,
+                    legacyEmployeeSubmissionIds,
+                ),
+            );
+        await transaction
+            .delete(caseComment)
+            .where(
+                inArray(
+                    caseComment.expenseReportId,
+                    legacyEmployeeSubmissionIds,
+                ),
+            );
+        await transaction
+            .delete(stageTransition)
+            .where(
+                inArray(
+                    stageTransition.expenseReportId,
+                    legacyEmployeeSubmissionIds,
+                ),
+            );
+        await transaction
+            .delete(auditEntry)
+            .where(
+                inArray(
+                    auditEntry.expenseReportId,
+                    legacyEmployeeSubmissionIds,
+                ),
+            );
+        await transaction
+            .delete(lineItem)
+            .where(
+                inArray(lineItem.expenseReportId, legacyEmployeeSubmissionIds),
+            );
+        await transaction
+            .delete(expenseReport)
+            .where(inArray(expenseReport.id, legacyEmployeeSubmissionIds));
+    });
 }
 
 async function readCurrentLocalTotpCode(
@@ -338,6 +235,7 @@ async function readCurrentLocalTotpCode(
     environment: LocalAuthEnvironment,
     account: LocalAuthAccount,
 ): Promise<string> {
+    const tenantId = getLocalAuthAccountTenantId(environment, account);
     const enrollments = await database
         .select({
             secretCiphertext: mfaEnrollment.secretCiphertext,
@@ -355,12 +253,7 @@ async function readCurrentLocalTotpCode(
                 eq(user.id, mfaEnrollment.userId),
             ),
         )
-        .where(
-            and(
-                eq(user.tenantId, environment.VITE_TENANT_ID),
-                eq(user.email, account.email),
-            ),
-        )
+        .where(and(eq(user.tenantId, tenantId), eq(user.email, account.email)))
         .limit(1);
     const enrollment = enrollments[0];
 
@@ -401,6 +294,17 @@ async function waitForUsefulTotpInterval(): Promise<void> {
     });
 }
 
+function formatLocalAuthError(error: unknown): string {
+    if (!(error instanceof Error)) {
+        return "Unknown local auth error.";
+    }
+
+    return error.message.replaceAll(
+        /postgres(?:ql)?:\/\/[^@\s]+@/gi,
+        "postgres://<redacted>@",
+    );
+}
+
 async function main(): Promise<void> {
     const environment = localAuthEnvironmentSchema.parse(process.env);
     const command = localAuthCommandSchema.parse(process.argv[2] ?? "seed");
@@ -409,8 +313,8 @@ async function main(): Promise<void> {
 
     try {
         if (command === "code") {
-            const accountName = localAuthAccountNameSchema.parse(
-                process.argv[3] ?? "employee",
+            const accountName = resolveLocalAuthAccountName(
+                process.argv[3] ?? "employee-1",
             );
             await waitForUsefulTotpInterval();
             const currentCode = await readCurrentLocalTotpCode(
@@ -429,7 +333,7 @@ async function main(): Promise<void> {
                 "Synthetic local ExpenseFlow accounts are ready.",
                 ...getLocalAuthAccounts().map(
                     (account) =>
-                        `${account.name}: ${account.email} (${account.role})`,
+                        `${account.name}: ${account.email} (${account.role}, ${account.tenant} tenant)`,
                 ),
                 "Generate MFA with: npm run dev:auth:code -- <account>",
                 "",
@@ -441,9 +345,14 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().catch(() => {
+    void main().catch((error: unknown) => {
         process.stderr.write(
-            "Unable to manage synthetic local auth accounts. Use only a loopback database and check local auth configuration.\n",
+            [
+                "Unable to manage synthetic local auth accounts.",
+                formatLocalAuthError(error),
+                "Use only a loopback database and check local auth configuration.",
+                "",
+            ].join("\n"),
         );
         process.exitCode = 1;
     });

@@ -1659,6 +1659,74 @@
                     "updatedAt"
                 ]
             },
+            "InternalSettlePaymentStubHeaders": {
+                "type": "object",
+                "properties": {
+                    "x-core-case-internal-command-token": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "idempotency-key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                    },
+                    "x-correlation-id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": [
+                    "x-core-case-internal-command-token",
+                    "idempotency-key",
+                    "x-correlation-id"
+                ],
+                "additionalProperties": false
+            },
+            "InternalSettlePaymentStubParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            },
+            "InternalSettlePaymentStubRequest": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "actorId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "Finance Admin",
+                                "Department Manager",
+                                "Employee",
+                                "Admin"
+                            ]
+                        },
+                        "minItems": 1
+                    },
+                    "reason": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": ["tenantId", "actorId", "roles", "reason"],
+                "additionalProperties": false
+            },
             "LoginErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -2319,16 +2387,6 @@
                     }
                 },
                 "required": ["id", "sourceType", "sourceId"]
-            },
-            "SettleExpenseReportRequest": {
-                "type": "object",
-                "properties": {
-                    "reason": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                },
-                "additionalProperties": false
             },
             "SubmitExpenseReportRequest": {
                 "type": "object",
@@ -5173,15 +5231,10 @@
                 }
             }
         },
-        "/v1/expense-reports/{id}/settlement": {
+        "/v1/internal/expense-reports/{id}/payment-stub-settlement": {
             "post": {
-                "summary": "Settle an Expense Report",
-                "description": "Coordinates the Issue Payment stub, Paid transition, and Reconciled transition as a compensating settlement saga.",
-                "security": [
-                    {
-                        "bearerAuth": []
-                    }
-                ],
+                "summary": "Settle an Expense Report from the internal payment command",
+                "description": "Accepts trusted internal Issue Payment stub commands and delegates settlement, workflow transitions, audit entries, and outbox writes to Core Case.",
                 "parameters": [
                     {
                         "schema": {
@@ -5195,32 +5248,39 @@
                     {
                         "schema": {
                             "type": "string",
-                            "maxLength": 128,
-                            "description": "Required tenant-scoped key used to replay completed Expense Report settlements."
+                            "minLength": 1
                         },
                         "required": true,
-                        "description": "Required tenant-scoped key used to replay completed Expense Report settlements.",
-                        "name": "Idempotency-Key",
+                        "name": "x-core-case-internal-command-token",
                         "in": "header"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "format": "uuid",
-                            "description": "End-to-end request correlation identifier. The service generates one when omitted."
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9._:-]+$"
                         },
-                        "required": false,
-                        "description": "End-to-end request correlation identifier. The service generates one when omitted.",
+                        "required": true,
+                        "name": "idempotency-key",
+                        "in": "header"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
                         "name": "x-correlation-id",
                         "in": "header"
                     }
                 ],
                 "requestBody": {
-                    "required": false,
+                    "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/SettleExpenseReportRequest"
+                                "$ref": "#/components/schemas/InternalSettlePaymentStubRequest"
                             }
                         }
                     }
@@ -5229,18 +5289,6 @@
                     "200": {
                         "description": "Expense Report settled and reconciled.",
                         "headers": {
-                            "RateLimit-Limit": {
-                                "$ref": "#/components/headers/RateLimitLimit"
-                            },
-                            "RateLimit-Remaining": {
-                                "$ref": "#/components/headers/RateLimitRemaining"
-                            },
-                            "RateLimit-Reset": {
-                                "$ref": "#/components/headers/RateLimitReset"
-                            },
-                            "X-RateLimit-Cost": {
-                                "$ref": "#/components/headers/RateLimitCost"
-                            },
                             "X-Correlation-Id": {
                                 "description": "Correlation identifier carried by settlement saga events.",
                                 "schema": {
@@ -5258,7 +5306,7 @@
                         }
                     },
                     "400": {
-                        "description": "Malformed settlement request.",
+                        "description": "Malformed internal settlement command.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -5268,7 +5316,7 @@
                         }
                     },
                     "401": {
-                        "description": "Valid access token required.",
+                        "description": "Valid internal command token required.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -5278,7 +5326,7 @@
                         }
                     },
                     "403": {
-                        "description": "Authenticated role is not permitted.",
+                        "description": "Command role is not permitted.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -5306,9 +5354,6 @@
                                 }
                             }
                         }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimitExceeded"
                     },
                     "500": {
                         "description": "Unexpected server error.",

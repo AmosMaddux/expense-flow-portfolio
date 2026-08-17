@@ -14,6 +14,7 @@ import { ExpenseReportsScreen } from "./ExpenseReportsScreen";
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
+const managerId = "9f1b3f5c-1dc8-4f37-8a23-000000000002";
 const baseTime = Date.parse("2026-07-22T12:00:00.000Z");
 const reportId = "d104c9ca-9de7-4f85-bb23-ed907e9db001";
 
@@ -92,7 +93,7 @@ describe("ExpenseReportsScreen", () => {
                                 createdAt: "2026-07-20T14:30:00.000Z",
                                 employeeId:
                                     "50000000-0000-4000-8000-000000000191",
-                                managerId: null,
+                                managerId,
                                 category: "Travel",
                                 categories: ["Travel"],
                                 amount: "742.18",
@@ -130,9 +131,10 @@ describe("ExpenseReportsScreen", () => {
         ).toBeTruthy();
 
         const row = screen.getByRole("row", {
-            name: /Travel \$742\.18 Manager Approval/i,
+            name: /Manager 9f1b3f5c Travel \$742\.18 Manager Approval/i,
         });
-        expect(within(row).getByText("Pending assignment")).toBeTruthy();
+        expect(within(row).getByText("Manager 9f1b3f5c")).toBeTruthy();
+        expect(within(row).queryByText(/Pending assignment/i)).toBeNull();
         expect(
             within(row).getByRole("button", { name: "Review" }),
         ).toBeTruthy();
@@ -468,7 +470,7 @@ describe("ExpenseReportsScreen", () => {
                                 createdAt: "2026-07-20T14:30:00.000Z",
                                 employeeId:
                                     "50000000-0000-4000-8000-000000000191",
-                                managerId: null,
+                                managerId,
                                 category: "Multiple",
                                 categories: ["Mileage", "Travel"],
                                 amount: "754.58",
@@ -536,6 +538,18 @@ describe("ExpenseReportsScreen", () => {
                             merchant: "Northstar Hotels",
                             category: "Travel",
                         },
+                        {
+                            id: "b7a69670-b8ad-4850-9d55-4c15db31786f",
+                            date: "2026-07-21",
+                            amount: "38.50",
+                            currency: "USD",
+                            glCode: "6000",
+                            flaggedLineItem: false,
+                            reviewAction: "approve",
+                            deductible: false,
+                            merchant: "Metro Rail",
+                            category: "Travel",
+                        },
                     ],
                     mileageEntries: [
                         {
@@ -578,9 +592,14 @@ describe("ExpenseReportsScreen", () => {
         ).toBeTruthy();
         expect(
             within(dialog).getByRole("row", {
+                name: /Metro Rail \$38\.50 - 6000 Clear Approved/i,
+            }),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByRole("row", {
                 name: /Office to client site \$12\.40 18\.50 mi 6250 Clear Not reviewed/i,
             }),
-        );
+        ).toBeTruthy();
 
         fireEvent.click(
             within(dialog).getByRole("tab", { name: "Audit Trail" }),

@@ -1,0 +1,96 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/terraform-plan.yml"
+      - "infra/terraform/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sandbox:
+    name: Sandbox Terraform
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.6
+
+      - name: Cache Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-providers-${{ runner.os }}-${{ hashFiles('infra/terraform/**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-${{ runner.os }}-
+
+      - name: Create Terraform plugin cache
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Init bootstrap for validation
+        run: terraform -chdir=infra/terraform/bootstrap init -backend=false
+
+      - name: Validate bootstrap
+        run: terraform -chdir=infra/terraform/bootstrap validate
+
+      - name: Init sandbox for validation
+        run: terraform -chdir=infra/terraform/environments/sandbox init -backend=false
+
+      - name: Validate sandbox
+        run: terraform -chdir=infra/terraform/environments/sandbox validate
+
+      - name: Determine plan availability
+        id: plan_gate
+        run: echo "enabled=${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        if: steps.plan_gate.outputs.enabled == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Init sandbox backend
+        if: steps.plan_gate.outputs.enabled == 'true'
+        run: |
+          terraform -chdir=infra/terraform/environments/sandbox init -reconfigure \
+            -backend-config="bucket=${{ vars.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="region=${AWS_REGION}"
+
+      - name: Terraform plan
+        if: steps.plan_gate.outputs.enabled == 'true'
+        run: |
+          terraform -chdir=infra/terraform/environments/sandbox plan \
+            -input=false \
+            -out=sandbox.tfplan \
+            -var="redis_url=${{ secrets.SANDBOX_REDIS_URL }}"
+
+      - name: Save plan text
+        if: steps.plan_gate.outputs.enabled == 'true'
+        run: terraform -chdir=infra/terraform/environments/sandbox show -no-color sandbox.tfplan > "$RUNNER_TEMP/sandbox.tfplan.txt"
+
+      - name: Upload plan artifact
+        if: steps.plan_gate.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-terraform-plan
+          path: ${{ runner.temp }}/sandbox.tfplan.txt

@@ -49,6 +49,7 @@ const syntheticPrivateKeyPem = Buffer.from(
 ).toString("utf8");
 const testAuthJwtConfig: AccessTokenSigningConfig = {
     issuer: "expenseflow-core-case-service-test",
+    audience: "expenseflow-http-api",
     privateKey: createPrivateKey(syntheticPrivateKeyPem),
     keyId: "synthetic-key-v1",
     accessTokenTtlSeconds: 900,

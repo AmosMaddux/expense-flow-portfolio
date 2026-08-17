@@ -127,12 +127,15 @@ const tenantOwnedTablesInDeleteOrder = [
     "gl_coding_result",
     "mileage_entry",
     "line_item",
+    "expense_report_settlement",
     "stage_transition_outbox",
+    "stage_transition_projection",
     "stage_transition",
     "audit_entry",
     "expense_report",
     "gl_mapping",
     "gl_code",
+    "tenant_expense_policy",
     "refresh_token",
     "mfa_enrollment",
     "credential",
@@ -150,7 +153,10 @@ const e2eEnvironmentSchema = z.object({
 
 type E2eAccountName = z.infer<typeof e2eAccountNameSchema>;
 
-async function resetE2eTestData(): Promise<void> {
+/**
+ * Resets the dedicated local E2E database to deterministic synthetic data.
+ */
+export async function resetE2eTestData(): Promise<void> {
     const environment = e2eEnvironmentSchema.parse(process.env);
 
     const pool = new Pool({ connectionString: environment.DATABASE_URL });
@@ -186,18 +192,23 @@ async function resetE2eTestData(): Promise<void> {
 }
 
 async function printE2eTotpCode(accountName: E2eAccountName): Promise<void> {
+    const code = await readCurrentE2eAccountTotpCode(accountName);
+    process.stdout.write(`${code}\n`);
+}
+
+/**
+ * Reads the current deterministic TOTP code for a seeded local E2E account.
+ */
+export async function readCurrentE2eAccountTotpCode(
+    accountName: E2eAccountName,
+): Promise<string> {
     const environment = e2eEnvironmentSchema.parse(process.env);
     const pool = new Pool({ connectionString: environment.DATABASE_URL });
     const database = drizzle(pool, { schema });
 
     try {
         await waitForUsefulTotpInterval();
-        const code = await readCurrentE2eTotpCode(
-            database,
-            e2eTenantId,
-            accountName,
-        );
-        process.stdout.write(`${code}\n`);
+        return await readCurrentE2eTotpCode(database, e2eTenantId, accountName);
     } finally {
         await pool.end();
     }
@@ -600,11 +611,17 @@ async function main(): Promise<void> {
     await resetE2eTestData();
 }
 
-void main().catch((error: unknown) => {
-    process.stderr.write(
-        error instanceof Error
-            ? `${error.message}\n`
-            : "Unable to prepare synthetic E2E data.\n",
-    );
-    process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("e2eTestData.js") === true) {
+    void main().catch((error: unknown) => {
+        process.stderr.write(
+            error instanceof Error
+                ? `${error.message}\n`
+                : "Unable to prepare synthetic E2E data.\n",
+        );
+        process.exitCode = 1;
+    });
+}
+
+export const e2eWalkthroughAccounts = e2eAccounts;
+export const e2eWalkthroughPassword = e2ePasswordDefault;
+export const e2eWalkthroughTenantId = e2eTenantId;

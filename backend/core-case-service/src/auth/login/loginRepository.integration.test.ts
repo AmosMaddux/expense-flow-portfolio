@@ -51,6 +51,7 @@ const realTotpSecretProtector = createTotpSecretProtector(() => ({
 }));
 const testAuthJwtConfig = {
     issuer: "expenseflow-core-case-service-test",
+    audience: "expenseflow-http-api",
     privateKey: createPrivateKey(
         Buffer.from(syntheticRsaPrivateKeyBase64, "base64").toString("utf8"),
     ),

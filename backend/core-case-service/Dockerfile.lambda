@@ -1,0 +1,41 @@
+FROM public.ecr.aws/lambda/nodejs:24 AS deps
+
+WORKDIR /workspace
+
+COPY package.json package-lock.json ./
+COPY tsconfig.json tsconfig.base.json ./
+COPY backend/core-case-service/package.json backend/core-case-service/package.json
+
+RUN npm ci --workspace @expense-flow/core-case-service --include-workspace-root
+
+FROM deps AS build
+
+COPY backend/core-case-service/tsconfig.json backend/core-case-service/tsconfig.json
+COPY backend/core-case-service/src backend/core-case-service/src
+
+RUN npm --workspace @expense-flow/core-case-service run build
+
+FROM public.ecr.aws/lambda/nodejs:24 AS production-deps
+
+WORKDIR /workspace
+
+COPY package.json package-lock.json ./
+COPY backend/core-case-service/package.json backend/core-case-service/package.json
+
+RUN npm ci --omit=dev --workspace @expense-flow/core-case-service && npm cache clean --force
+
+FROM public.ecr.aws/lambda/nodejs:24 AS runtime
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+ENV NODE_ENV=production
+ENV AUTO_APPLY_MIGRATIONS=false
+
+COPY --from=production-deps /workspace/package.json /workspace/package-lock.json ./
+COPY --from=production-deps /workspace/node_modules ./node_modules
+COPY --from=production-deps /workspace/backend/core-case-service/package.json backend/core-case-service/package.json
+COPY --from=production-deps /workspace/backend/core-case-service/node_modules backend/core-case-service/node_modules
+COPY --from=build /workspace/backend/core-case-service/dist backend/core-case-service/dist
+COPY backend/core-case-service/drizzle backend/core-case-service/drizzle
+
+CMD ["backend/core-case-service/dist/events/stageTransitionLambdaHandler.handler"]
