@@ -920,12 +920,9 @@ describe("CaseQueueScreen", () => {
         fireEvent.click(
             within(reportRow).getByRole("button", { name: "Review" }),
         );
-        fireEvent.click(
-            screen.getByRole("button", {
-                name: /Central Parking receipt for \$28\.75/i,
-            }),
-        );
-
+        const receiptMetadata = screen.getByRole("button", {
+            name: /Central Parking receipt for \$28\.75/i,
+        });
         const reviewTable = screen.getByRole("table", {
             name: "Report review line items",
         });
@@ -935,6 +932,23 @@ describe("CaseQueueScreen", () => {
         const secondReviewRow = within(reviewTable).getByRole("row", {
             name: /Central Parking/i,
         });
+
+        fireEvent.mouseEnter(receiptMetadata);
+        expect(secondReviewRow.className).toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(firstReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(document.activeElement).not.toBe(secondReviewRow);
+        expect(scrollIntoView).not.toHaveBeenCalled();
+
+        fireEvent.mouseLeave(receiptMetadata);
+        expect(secondReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+
+        fireEvent.click(receiptMetadata);
         expect(secondReviewRow.className).toContain(
             "case-queue-dialog__row--active",
         );

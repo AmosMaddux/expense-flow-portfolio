@@ -1129,9 +1129,13 @@ export function ApprovalQueueReviewDialog({
     const expenseReportId = reportLineItem.expenseReportId;
     const session = useSession();
     const queryClient = useQueryClient();
-    const [activeLineItemId, setActiveLineItemId] = useState<string | null>(
+    const [selectedLineItemId, setSelectedLineItemId] = useState<string | null>(
         null,
     );
+    const [hoveredLineItemId, setHoveredLineItemId] = useState<string | null>(
+        null,
+    );
+    const activeLineItemId = hoveredLineItemId ?? selectedLineItemId;
     const [receiptView, setReceiptView] = useState<"grid" | "list">("grid");
     const [commentBody, setCommentBody] = useState("");
     const [commentError, setCommentError] = useState<string | null>(null);
@@ -1242,7 +1246,7 @@ export function ApprovalQueueReviewDialog({
         }
 
         const linkedLineItemId = receipt.lineItemId;
-        setActiveLineItemId(linkedLineItemId);
+        setSelectedLineItemId(linkedLineItemId);
         window.requestAnimationFrame(() => {
             const row = document.getElementById(
                 getReviewRowElementId(linkedLineItemId),
@@ -1251,6 +1255,10 @@ export function ApprovalQueueReviewDialog({
             row?.scrollIntoView({ block: "center", behavior: "smooth" });
             row?.focus();
         });
+    }
+
+    function handleReceiptHover(receipt: ApprovalQueueReceipt | null): void {
+        setHoveredLineItemId(receipt?.lineItemId ?? null);
     }
 
     return (
@@ -1308,6 +1316,7 @@ export function ApprovalQueueReviewDialog({
                     receipts={receipts}
                     reviewRows={reviewRows}
                     view={receiptView}
+                    onReceiptHover={handleReceiptHover}
                     onReceiptSelect={handleReceiptSelect}
                     onViewChange={setReceiptView}
                 />
@@ -1783,6 +1792,7 @@ function ReceiptGallery({
     receipts,
     reviewRows,
     view,
+    onReceiptHover,
     onReceiptSelect,
     onViewChange,
 }: {
@@ -1791,6 +1801,7 @@ function ReceiptGallery({
     receipts: ApprovalQueueReceipt[];
     reviewRows: ApprovalQueueReviewRow[];
     view: "grid" | "list";
+    onReceiptHover: (receipt: ApprovalQueueReceipt | null) => void;
     onReceiptSelect: (receipt: ApprovalQueueReceipt) => void;
     onViewChange: (view: "grid" | "list") => void;
 }): JSX.Element {
@@ -1899,6 +1910,18 @@ function ReceiptGallery({
                                             onReceiptSelect(receipt);
                                         }
                                     }}
+                                    onBlur={() => onReceiptHover(null)}
+                                    onFocus={() => {
+                                        if (isLinked) {
+                                            onReceiptHover(receipt);
+                                        }
+                                    }}
+                                    onMouseEnter={() => {
+                                        if (isLinked) {
+                                            onReceiptHover(receipt);
+                                        }
+                                    }}
+                                    onMouseLeave={() => onReceiptHover(null)}
                                 >
                                     <span className="receipt-gallery__meta">
                                         <strong>{receipt.merchant}</strong>
