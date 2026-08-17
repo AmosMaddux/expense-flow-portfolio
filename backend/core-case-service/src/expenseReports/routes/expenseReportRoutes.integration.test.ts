@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
+import { Readable } from "node:stream";
 
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -122,11 +123,7 @@ const redisClientMock = vi.hoisted(() => ({
     }),
 }));
 const receiptStorageMock = vi.hoisted(() => ({
-    get: vi.fn().mockResolvedValue({
-        content: new TextEncoder().encode("synthetic receipt image"),
-        contentLength: 23,
-        contentType: "image/png",
-    }),
+    read: vi.fn(),
     put: vi.fn().mockResolvedValue({
         objectKey: "synthetic/receipt-object",
     }),
@@ -281,7 +278,12 @@ void describe("Expense Report routes", () => {
         redisClientMock.get.mockClear();
         redisClientMock.set.mockClear();
         redisClientMock.incr.mockClear();
-        receiptStorageMock.get.mockClear();
+        receiptStorageMock.read.mockReset();
+        receiptStorageMock.read.mockResolvedValue({
+            content: Readable.from(["synthetic receipt image"]),
+            contentLength: 23,
+            contentType: "image/png",
+        });
         receiptStorageMock.put.mockClear();
         receiptStorageMock.verify.mockClear();
         stageTransitionPublishMock.mockClear();
@@ -1776,7 +1778,7 @@ void describe("Expense Report routes", () => {
             'inline; filename="synthetic-preview.png"',
         );
         expect(bodyText).toBe("synthetic receipt image");
-        expect(receiptStorageMock.get).toHaveBeenCalledWith(
+        expect(receiptStorageMock.read).toHaveBeenCalledWith(
             "synthetic/receipt-preview-object",
         );
 
@@ -1800,7 +1802,7 @@ void describe("Expense Report routes", () => {
         const otherTenantFinanceAdmin = "50000000-0000-4000-8000-000000000248";
         const otherTenantDepartmentManager =
             "50000000-0000-4000-8000-000000000249";
-        receiptStorageMock.get.mockClear();
+        receiptStorageMock.read.mockClear();
         const otherTenantFinanceResponse = await requestApp(
             `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
             {
@@ -1840,7 +1842,7 @@ void describe("Expense Report routes", () => {
         expect(otherTenantFinanceResponse.status).toBe(404);
         expect(otherTenantManagerResponse.status).toBe(404);
         expect(employeeResponse.status).toBe(403);
-        expect(receiptStorageMock.get).not.toHaveBeenCalled();
+        expect(receiptStorageMock.read).not.toHaveBeenCalled();
     });
 
     void test("deduplicates retried mileage additions", async () => {

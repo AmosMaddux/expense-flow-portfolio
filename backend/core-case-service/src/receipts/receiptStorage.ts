@@ -4,6 +4,8 @@ import {
     PutObjectCommand,
     S3Client,
 } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
 import {
     loadReceiptStorageConfig,
@@ -20,8 +22,8 @@ export type ReceiptObjectDescriptor = {
 };
 
 export type ReceiptStorage = {
-    get(objectKey: string): Promise<{
-        content: Uint8Array;
+    read(objectKey: string): Promise<{
+        content: NodeJS.ReadableStream;
         contentLength?: number;
         contentType?: string;
     }>;
@@ -59,7 +61,7 @@ export function createS3ReceiptStorage(
     config: ReceiptStorageConfig,
 ): ReceiptStorage {
     return {
-        async get(objectKey) {
+        async read(objectKey) {
             try {
                 const storedObject = await client.send(
                     new GetObjectCommand({
@@ -68,15 +70,12 @@ export function createS3ReceiptStorage(
                     }),
                 );
                 const body = storedObject.Body;
-                if (
-                    body === undefined ||
-                    typeof body.transformToByteArray !== "function"
-                ) {
+                if (body === undefined) {
                     throw new Error("Receipt storage response body was empty.");
                 }
 
                 return {
-                    content: await body.transformToByteArray(),
+                    content: toNodeReadableStream(body),
                     ...(storedObject.ContentLength === undefined
                         ? {}
                         : { contentLength: storedObject.ContentLength }),
@@ -144,6 +143,44 @@ export function createS3ReceiptStorage(
             return { objectKey };
         },
     };
+}
+
+function toNodeReadableStream(body: unknown): NodeJS.ReadableStream {
+    if (body instanceof Readable) {
+        return body;
+    }
+
+    if (hasPipe(body)) {
+        return body;
+    }
+
+    if (hasTransformToWebStream(body)) {
+        return Readable.fromWeb(
+            body.transformToWebStream() as NodeReadableStream,
+        );
+    }
+
+    throw new Error("Receipt storage response body was not streamable.");
+}
+
+function hasPipe(body: unknown): body is NodeJS.ReadableStream {
+    return (
+        typeof body === "object" &&
+        body !== null &&
+        "pipe" in body &&
+        typeof body.pipe === "function"
+    );
+}
+
+function hasTransformToWebStream(body: unknown): body is {
+    transformToWebStream: () => ReadableStream<Uint8Array>;
+} {
+    return (
+        typeof body === "object" &&
+        body !== null &&
+        "transformToWebStream" in body &&
+        typeof body.transformToWebStream === "function"
+    );
 }
 
 /**

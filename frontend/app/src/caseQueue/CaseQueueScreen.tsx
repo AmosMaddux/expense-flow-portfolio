@@ -16,7 +16,13 @@ import {
     type QueryKey,
     type UseQueryResult,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+    useEffect,
+    useMemo,
+    useState,
+    type FormEvent,
+    type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { z } from "zod";
 
@@ -1862,6 +1868,14 @@ function ReceiptGallery({
                                     .join(" ")}
                                 key={receipt.id}
                             >
+                                <ReceiptPreview
+                                    contentType={receipt.contentType}
+                                    merchant={receipt.merchant}
+                                    url={buildReceiptFileUrl(
+                                        expenseReportId,
+                                        receipt.id,
+                                    )}
+                                />
                                 <div
                                     aria-label={`${receipt.merchant} receipt for ${formatCurrency(receipt.amount)} on ${formatDate(receipt.receiptDate)}. ${receipt.filename ?? "Receipt file"}. ${receipt.contentType ?? "Receipt"}. ${lineItemLabel}.`}
                                     aria-disabled={!isLinked}
@@ -1886,14 +1900,6 @@ function ReceiptGallery({
                                         }
                                     }}
                                 >
-                                    <ReceiptPreview
-                                        contentType={receipt.contentType}
-                                        merchant={receipt.merchant}
-                                        url={buildReceiptFileUrl(
-                                            expenseReportId,
-                                            receipt.id,
-                                        )}
-                                    />
                                     <span className="receipt-gallery__meta">
                                         <strong>{receipt.merchant}</strong>
                                         <span className="receipt-gallery__filename">
@@ -1932,63 +1938,54 @@ function ReceiptPreview({
     const session = useSession();
     const [objectUrl, setObjectUrl] = useState<string | null>(null);
     const [hasPreviewError, setHasPreviewError] = useState(false);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
 
     useEffect(() => {
-        if (!isPreviewableReceipt(contentType)) {
-            setObjectUrl(null);
-            setHasPreviewError(false);
-            setIsExpanded(false);
-            return undefined;
+        return () => {
+            if (
+                objectUrl !== null &&
+                typeof URL.revokeObjectURL === "function"
+            ) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [objectUrl]);
+
+    const handleExpandPreview = async (
+        event: MouseEvent<HTMLButtonElement>,
+    ): Promise<void> => {
+        event.stopPropagation();
+        if (objectUrl !== null) {
+            setIsExpanded(true);
+            return;
         }
         if (!canLoadReceiptObjectPreview()) {
+            setHasPreviewError(true);
+            setIsExpanded(false);
+            return;
+        }
+
+        setIsPreviewLoading(true);
+        try {
+            const response = await session.authenticatedFetch(url);
+            if (!response.ok) {
+                throw new Error("Receipt preview request failed.");
+            }
+
+            const blob = await response.blob();
+            const nextObjectUrl = URL.createObjectURL(blob);
+            setObjectUrl(nextObjectUrl);
+            setHasPreviewError(false);
+            setIsExpanded(true);
+        } catch {
             setObjectUrl(null);
             setHasPreviewError(true);
             setIsExpanded(false);
-            return undefined;
+        } finally {
+            setIsPreviewLoading(false);
         }
-
-        const controller = new AbortController();
-        let nextObjectUrl: string | null = null;
-
-        async function loadReceiptPreview(): Promise<void> {
-            try {
-                const response = await session.authenticatedFetch(url, {
-                    signal: controller.signal,
-                });
-                if (!response.ok) {
-                    throw new Error("Receipt preview request failed.");
-                }
-
-                const blob = await response.blob();
-                if (controller.signal.aborted) {
-                    return;
-                }
-
-                nextObjectUrl = URL.createObjectURL(blob);
-                setObjectUrl(nextObjectUrl);
-                setHasPreviewError(false);
-            } catch {
-                if (!controller.signal.aborted) {
-                    setObjectUrl(null);
-                    setHasPreviewError(true);
-                    setIsExpanded(false);
-                }
-            }
-        }
-
-        void loadReceiptPreview();
-
-        return () => {
-            controller.abort();
-            if (
-                nextObjectUrl !== null &&
-                typeof URL.revokeObjectURL === "function"
-            ) {
-                URL.revokeObjectURL(nextObjectUrl);
-            }
-        };
-    }, [contentType, session, url]);
+    };
 
     if (isPreviewableReceipt(contentType)) {
         const hasLoadedPreview = objectUrl !== null && !hasPreviewError;
@@ -2007,24 +2004,24 @@ function ReceiptPreview({
                     />
                 ) : (
                     <span>
-                        {hasPreviewError
-                            ? getReceiptPreviewLabel(contentType)
-                            : getReceiptPreviewLabel(contentType)}
+                        {isPreviewLoading
+                            ? "Loading"
+                            : hasPreviewError
+                              ? getReceiptPreviewLabel(contentType)
+                              : getReceiptPreviewLabel(contentType)}
                     </span>
                 )}
-                {hasLoadedPreview ? (
-                    <button
-                        aria-label={`Expand receipt preview for ${merchant}`}
-                        className="receipt-gallery__expand"
-                        type="button"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            setIsExpanded(true);
-                        }}
-                    >
-                        <span aria-hidden="true" />
-                    </button>
-                ) : null}
+                <button
+                    aria-label={`Expand receipt preview for ${merchant}`}
+                    className="receipt-gallery__expand"
+                    disabled={isPreviewLoading}
+                    type="button"
+                    onClick={(event) => {
+                        void handleExpandPreview(event);
+                    }}
+                >
+                    <span aria-hidden="true" />
+                </button>
                 {hasLoadedPreview && isExpanded && document.body
                     ? createPortal(
                           <div

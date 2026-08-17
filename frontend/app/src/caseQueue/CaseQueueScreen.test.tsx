@@ -744,6 +744,19 @@ describe("CaseQueueScreen", () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(lineItems)),
         );
+        const originalUserAgent = window.navigator.userAgent;
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: "Mozilla/5.0",
+        });
+        Object.defineProperty(URL, "createObjectURL", {
+            configurable: true,
+            value: vi.fn(() => "blob:synthetic-receipt"),
+        });
+        Object.defineProperty(URL, "revokeObjectURL", {
+            configurable: true,
+            value: vi.fn(),
+        });
 
         renderCaseQueueScreen(fetchImplementation);
 
@@ -775,6 +788,12 @@ describe("CaseQueueScreen", () => {
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
         expect(axeResults.violations).toHaveLength(0);
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: originalUserAgent,
+        });
     });
 
     test("shows audit trail and lets reviewers post comments from report review", async () => {

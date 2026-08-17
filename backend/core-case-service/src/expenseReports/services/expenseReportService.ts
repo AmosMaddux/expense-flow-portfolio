@@ -126,7 +126,7 @@ export type SubmitExpenseReportResult = {
 };
 
 export type ReceiptFileResponse = {
-    content: Uint8Array;
+    content: NodeJS.ReadableStream;
     contentLength: number | null;
     contentType: string;
     filename: string | null;
@@ -254,7 +254,7 @@ export async function readApprovalQueueLineItems(request: {
 }
 
 /**
- * Reads tenant-scoped receipt bytes for a Finance Admin review surface.
+ * Opens a tenant-scoped receipt stream for an internal review surface.
  */
 export async function readReceiptFile(request: {
     expenseReportId: string;
@@ -270,7 +270,7 @@ export async function readReceiptFile(request: {
         throw new NotFoundError("Receipt not found.");
     }
 
-    const storedFile = await getDefaultReceiptStorage().get(receipt.objectKey);
+    const storedFile = await getDefaultReceiptStorage().read(receipt.objectKey);
 
     return {
         content: storedFile.content,

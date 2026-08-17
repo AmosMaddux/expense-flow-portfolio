@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { Readable } from "node:stream";
 import { ZodError } from "zod";
 import {
     ConflictError,
@@ -28,7 +29,7 @@ const transitionIssuedExpenseReportSettlementToPaidMock = vi.hoisted(() =>
 );
 const readDraftSubmissionSourcesMock = vi.hoisted(() => vi.fn());
 const receiptStorageMock = vi.hoisted(() => ({
-    get: vi.fn(),
+    read: vi.fn(),
     put: vi.fn(),
     verify: vi.fn(),
 }));
@@ -144,7 +145,7 @@ beforeEach(() => {
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
     findReceiptFileMetadataMock.mockReset();
-    receiptStorageMock.get.mockReset();
+    receiptStorageMock.read.mockReset();
     receiptStorageMock.put.mockReset();
     receiptStorageMock.verify.mockReset();
     findExpenseReportSummariesMock.mockReset();
@@ -1220,8 +1221,8 @@ void describe("Expense Report mileage service", () => {
             objectKey: "synthetic/private-object-key",
             sizeBytes: 15,
         });
-        receiptStorageMock.get.mockResolvedValue({
-            content: new TextEncoder().encode("synthetic image"),
+        receiptStorageMock.read.mockResolvedValue({
+            content: Readable.from(["synthetic image"]),
             contentLength: 15,
             contentType: "image/png",
         });
@@ -1237,15 +1238,13 @@ void describe("Expense Report mileage service", () => {
             expenseReportId,
             receiptId,
         );
-        expect(receiptStorageMock.get).toHaveBeenCalledWith(
+        expect(receiptStorageMock.read).toHaveBeenCalledWith(
             "synthetic/private-object-key",
         );
-        expect(file).toStrictEqual({
-            content: new TextEncoder().encode("synthetic image"),
-            contentLength: 15,
-            contentType: "image/png",
-            filename: "synthetic-receipt.png",
-        });
+        expect(file.content).toBeInstanceOf(Readable);
+        expect(file.contentLength).toBe(15);
+        expect(file.contentType).toBe("image/png");
+        expect(file.filename).toBe("synthetic-receipt.png");
         expect("objectKey" in file).toBe(false);
     });
 

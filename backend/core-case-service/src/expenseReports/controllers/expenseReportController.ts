@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
@@ -1084,7 +1085,8 @@ export async function getExpenseReportReceiptFile(
         if (file.contentLength !== null) {
             res.setHeader("Content-Length", String(file.contentLength));
         }
-        res.status(200).send(Buffer.from(file.content));
+        res.status(200);
+        await pipeline(file.content, res);
     } catch (error: unknown) {
         next(error);
     }
