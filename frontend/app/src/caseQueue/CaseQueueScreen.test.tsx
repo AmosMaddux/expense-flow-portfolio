@@ -942,6 +942,12 @@ describe("CaseQueueScreen", () => {
         );
         expect(document.activeElement).not.toBe(secondReviewRow);
         expect(scrollIntoView).not.toHaveBeenCalled();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/receipts/"),
+            ),
+        ).toBe(false);
 
         fireEvent.mouseLeave(receiptMetadata);
         expect(secondReviewRow.className).not.toContain(
@@ -957,6 +963,12 @@ describe("CaseQueueScreen", () => {
         );
         expect(document.activeElement).toBe(secondReviewRow);
         expect(scrollIntoView).toHaveBeenCalled();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/receipts/"),
+            ),
+        ).toBe(false);
         if (originalScrollIntoView === undefined) {
             Reflect.deleteProperty(Element.prototype, "scrollIntoView");
         } else {
