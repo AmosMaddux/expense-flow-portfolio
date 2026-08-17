@@ -49,6 +49,16 @@ GL_CODING_SERVICE_BASE_URL="http://<internal-gl-coding-alb-dns>"
 
 ## Script Order
 
+### DynamoDB Only
+
+Create or tag the AWS DynamoDB table that matches the local Expense Report read-projection defaults:
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/create-expense-report-dynamodb-table.sh
+```
+
+The script creates `expenseflow-expense-reports` with primary key `id` and GSI `tenantId-index` unless `DYNAMODB_EXPENSE_REPORT_TABLE` or `DYNAMODB_EXPENSE_REPORT_TENANT_INDEX` are overridden.
+
 ### 1. Create Runtime Smoke Resources
 
 ```bash

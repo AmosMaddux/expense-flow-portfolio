@@ -14,6 +14,7 @@ const findCaseCommentsByExpenseReportIdMock = vi.hoisted(() => vi.fn());
 const findCurrentDraftExpenseReportMock = vi.hoisted(() => vi.fn());
 const findExpenseReportByIdMock = vi.hoisted(() => vi.fn());
 const findExpenseReportReviewDetailMock = vi.hoisted(() => vi.fn());
+const findExpenseReportSummariesMock = vi.hoisted(() => vi.fn());
 const insertCaseCommentForExpenseReportMock = vi.hoisted(() => vi.fn());
 const insertMileageEntryMock = vi.hoisted(() => vi.fn());
 const abandonUnpaidExpenseReportSettlementClaimMock = vi.hoisted(() => vi.fn());
@@ -47,6 +48,7 @@ vi.mock("../repository/expenseReportRepository.js", () => ({
     findCurrentDraftExpenseReport: findCurrentDraftExpenseReportMock,
     findExpenseReportById: findExpenseReportByIdMock,
     findExpenseReportReviewDetail: findExpenseReportReviewDetailMock,
+    findExpenseReportSummaries: findExpenseReportSummariesMock,
     insertDeniedSubmissionAuditEntry: vi.fn(),
     insertDeniedWorkflowTransitionAttempt:
         insertDeniedWorkflowTransitionAttemptMock,
@@ -111,6 +113,7 @@ import {
     readExpenseReportAuditEntries,
     readExpenseReportComments,
     readExpenseReportReviewDetail,
+    readExpenseReportSummaries,
     settleExpenseReportWorkflow,
     submitExpenseReport,
     transitionExpenseReportWorkflow,
@@ -128,6 +131,7 @@ beforeEach(() => {
     findCurrentDraftExpenseReportMock.mockReset();
     findExpenseReportByIdMock.mockReset();
     findExpenseReportReviewDetailMock.mockReset();
+    findExpenseReportSummariesMock.mockReset();
     insertCaseCommentForExpenseReportMock.mockReset();
     insertMileageEntryMock.mockReset();
     abandonUnpaidExpenseReportSettlementClaimMock.mockReset();
@@ -143,6 +147,81 @@ beforeEach(() => {
     insertDeniedWorkflowTransitionAttemptMock.mockReset();
     invalidateCachedCaseQueueStageRollupsMock.mockReset();
     updateExpenseReportSourceDeductibilityMock.mockReset();
+});
+
+void describe("Expense Report summaries", () => {
+    void test("returns display category and underlying category membership", async () => {
+        findExpenseReportSummariesMock.mockResolvedValue({
+            items: [
+                {
+                    id: "30000000-0000-4000-8000-000000000901",
+                    createdAt: new Date("2026-07-22T12:00:00.000Z"),
+                    employeeId: "50000000-0000-4000-8000-000000000901",
+                    managerId: null,
+                    category: "Multiple",
+                    categories: ["Meals", "Travel"],
+                    amount: "150.50",
+                    currency: "USD",
+                    status: "Manager Approval",
+                },
+            ],
+            nextCursor: null,
+        });
+
+        const summaries = await readExpenseReportSummaries({
+            tenantId: "40000000-0000-4000-8000-000000000901",
+            roles: ["Finance Admin"],
+        });
+
+        expect(summaries.items[0]).toMatchObject({
+            category: "Multiple",
+            categories: ["Meals", "Travel"],
+        });
+        expect(findExpenseReportSummariesMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                limit: 50,
+                tenantId: "40000000-0000-4000-8000-000000000901",
+            }),
+        );
+    });
+
+    void test("rejects summaries without category membership", async () => {
+        findExpenseReportSummariesMock.mockResolvedValue({
+            items: [
+                {
+                    id: "30000000-0000-4000-8000-000000000902",
+                    createdAt: new Date("2026-07-22T12:00:00.000Z"),
+                    employeeId: "50000000-0000-4000-8000-000000000902",
+                    managerId: null,
+                    category: "Travel",
+                    amount: "150.50",
+                    currency: "USD",
+                    status: "Manager Approval",
+                },
+            ],
+            nextCursor: null,
+        });
+
+        await expect(
+            readExpenseReportSummaries({
+                tenantId: "40000000-0000-4000-8000-000000000902",
+                roles: ["Finance Admin"],
+            }),
+        ).rejects.toThrow(ZodError);
+    });
+
+    void test.each([["Department Manager" as const], ["Employee" as const]])(
+        "rejects Expense Report summaries for %s",
+        async (role) => {
+            await expect(
+                readExpenseReportSummaries({
+                    tenantId: "40000000-0000-4000-8000-000000000903",
+                    roles: [role],
+                }),
+            ).rejects.toThrow(ForbiddenError);
+            expect(findExpenseReportSummariesMock).not.toHaveBeenCalled();
+        },
+    );
 });
 
 void describe("Expense Report stage-transition outbox dispatch", () => {

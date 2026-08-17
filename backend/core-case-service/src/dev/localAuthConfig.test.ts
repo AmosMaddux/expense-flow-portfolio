@@ -5,6 +5,7 @@ import {
     getLocalAuthAccountTenantId,
     isLocalDatabaseUrl,
     localAuthEnvironmentSchema,
+    resolveLocalAuthAccountName,
 } from "./localAuthConfig.js";
 
 describe("local auth configuration", () => {
@@ -99,5 +100,15 @@ describe("local auth configuration", () => {
                 VITE_SECONDARY_TENANT_ID: sharedTenantId,
             }),
         ).toThrow("Synthetic tenant IDs must be different.");
+    });
+
+    test.each([
+        ["employee", "employee-1"],
+        ["manager", "manager-1"],
+        ["finance-admin", "finance-admin-1"],
+        ["platform-admin", "platform-admin-1"],
+        ["finance-admin-2", "finance-admin-2"],
+    ])("resolves the CLI account argument %s", (argument, accountName) => {
+        expect(resolveLocalAuthAccountName(argument)).toBe(accountName);
     });
 });
