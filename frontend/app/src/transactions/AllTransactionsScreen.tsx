@@ -517,17 +517,6 @@ function formatDate(date: string): string {
     }).format(new Date(date));
 }
 
-function formatDateTime(date: string): string {
-    return new Intl.DateTimeFormat("en-US", {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "short",
-        timeZone: "UTC",
-        year: "numeric",
-    }).format(new Date(date));
-}
-
 function formatCurrency(amount: string, currency: string): string {
     return new Intl.NumberFormat("en-US", {
         currency,

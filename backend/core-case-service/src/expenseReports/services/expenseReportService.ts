@@ -80,7 +80,6 @@ import {
     type DraftExpenseContentResponse,
     type ExpenseReportResponse,
     type ExpenseReportReviewDetail,
-    type ExpenseReportSummary,
     type ExpenseReportSummaryPage,
     type GetExpenseReportRequest,
     type MileageConfigResponse,

@@ -103,7 +103,7 @@ describe("ExpenseReportsScreen", () => {
                         ]),
                     ),
                 ),
-            ) as typeof fetch,
+            ),
         );
 
         expect(
@@ -153,7 +153,7 @@ describe("ExpenseReportsScreen", () => {
                         ]),
                     ),
                 ),
-            ) as typeof fetch,
+            ),
         );
 
         const row = await screen.findByRole("row", {
@@ -299,7 +299,7 @@ describe("ExpenseReportsScreen", () => {
                         ]),
                     ),
                 ),
-            ) as typeof fetch,
+            ),
         );
 
         await screen.findByText("$742.18");

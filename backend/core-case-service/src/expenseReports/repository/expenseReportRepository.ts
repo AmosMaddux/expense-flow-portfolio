@@ -6,7 +6,6 @@ import {
     desc,
     eq,
     inArray,
-    isNotNull,
     isNull,
     lt,
     notExists,
@@ -62,12 +61,6 @@ type ExpenseReportStage = (typeof approvedWorkflowStages)[number];
 type SubmissionSourceKey = `${"line_item" | "mileage"}:${string}`;
 type ReviewableExpenseSourceType = "line_item" | "mileage";
 type SubmissionSourceFingerprint = string;
-type ExpenseReportSummarySource = {
-    expenseReportId: string;
-    category: string;
-    amount: string;
-    currency: string;
-};
 type ExpenseReportSummaryCursor = {
     createdAt: string;
     id: string;
@@ -4061,34 +4054,6 @@ export async function insertCaseCommentForExpenseReport(
     });
 }
 
-function appendReportSummarySource(
-    sourcesByReportId: Map<string, ExpenseReportSummarySource[]>,
-    source: ExpenseReportSummarySource,
-): void {
-    const sources = sourcesByReportId.get(source.expenseReportId);
-    if (sources === undefined) {
-        sourcesByReportId.set(source.expenseReportId, [source]);
-        return;
-    }
-
-    sources.push(source);
-}
-
-function summarizeReportCategory(
-    sources: ExpenseReportSummarySource[],
-): string {
-    const categories = summarizeReportCategories(sources);
-    if (categories.length === 0) {
-        return "Uncategorized";
-    }
-
-    if (categories.length === 1) {
-        return categories[0] ?? "Uncategorized";
-    }
-
-    return "Multiple";
-}
-
 function summarizeReportCategoryNames(categories: string[]): string {
     if (categories.length === 0) {
         return "Uncategorized";
@@ -4212,55 +4177,8 @@ function toStringArray(value: unknown): string[] {
     return ["Uncategorized"];
 }
 
-function summarizeReportCategories(
-    sources: ExpenseReportSummarySource[],
-): string[] {
-    const categories = getUniqueSortedValues(
-        sources.map((source) => source.category),
-    );
-
-    return categories.length === 0 ? ["Uncategorized"] : categories;
-}
-
-function summarizeReportCurrency(
-    sources: ExpenseReportSummarySource[],
-): string {
-    const currencies = new Set(sources.map((source) => source.currency));
-    if (currencies.size === 1) {
-        return sources[0]?.currency ?? "USD";
-    }
-
-    return "USD";
-}
-
-function sumReportAmounts(sources: ExpenseReportSummarySource[]): string {
-    const cents = sources.reduce(
-        (total, source) => total + decimalCurrencyToCents(source.amount),
-        0,
-    );
-
-    return centsToDecimalCurrency(cents);
-}
-
 function getUniqueSortedValues(values: string[]): string[] {
     return [...new Set(values)].sort((firstValue, secondValue) =>
         firstValue.localeCompare(secondValue),
     );
-}
-
-function decimalCurrencyToCents(amount: string): number {
-    const sign = amount.startsWith("-") ? -1 : 1;
-    const normalizedAmount = amount.replace("-", "");
-    const [dollars = "0", cents = "0"] = normalizedAmount.split(".");
-
-    return sign * (Number(dollars) * 100 + Number(cents.padEnd(2, "0")));
-}
-
-function centsToDecimalCurrency(cents: number): string {
-    const sign = cents < 0 ? "-" : "";
-    const absoluteCents = Math.abs(cents);
-    const dollars = Math.floor(absoluteCents / 100);
-    const remainder = absoluteCents % 100;
-
-    return `${sign}${dollars}.${remainder.toString().padStart(2, "0")}`;
 }

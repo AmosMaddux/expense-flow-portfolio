@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { z } from "zod";
 
 import {
@@ -356,6 +356,7 @@ function CategorySelector({
 }): JSX.Element {
     const [inputValue, setInputValue] = useState(value);
     const [isOpen, setIsOpen] = useState(false);
+    const [activeOptionIndex, setActiveOptionIndex] = useState(0);
     const normalizedInput = inputValue.trim().toLowerCase();
     const matchingCategories = useMemo(
         () =>
@@ -370,6 +371,9 @@ function CategorySelector({
     useEffect(() => {
         setInputValue(value);
     }, [value]);
+    useEffect(() => {
+        setActiveOptionIndex(0);
+    }, [matchingCategories]);
 
     const chooseCategory = (category: string) => {
         setInputValue(category);
@@ -381,13 +385,57 @@ function CategorySelector({
         setIsOpen(false);
         onChange("");
     };
+    const activeCategory =
+        isOpen && matchingCategories.length > 0
+            ? matchingCategories[activeOptionIndex]
+            : undefined;
+    const activeOptionId =
+        activeCategory === undefined
+            ? undefined
+            : getCategoryOptionId(activeCategory);
+    const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setIsOpen(true);
+            setActiveOptionIndex((currentIndex) =>
+                matchingCategories.length === 0
+                    ? 0
+                    : (currentIndex + 1) % matchingCategories.length,
+            );
+            return;
+        }
+
+        if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setIsOpen(true);
+            setActiveOptionIndex((currentIndex) =>
+                matchingCategories.length === 0
+                    ? 0
+                    : (currentIndex - 1 + matchingCategories.length) %
+                      matchingCategories.length,
+            );
+            return;
+        }
+
+        if (event.key === "Enter" && isOpen && activeCategory !== undefined) {
+            event.preventDefault();
+            chooseCategory(activeCategory);
+            return;
+        }
+
+        if (event.key === "Escape") {
+            event.preventDefault();
+            setIsOpen(false);
+        }
+    };
 
     return (
         <div className="expense-reports-filters__category">
             <label htmlFor="expense-report-category">Category</label>
-            <div>
+            <div className="expense-reports-filters__category-control">
                 <input
                     aria-autocomplete="list"
+                    aria-activedescendant={activeOptionId}
                     aria-controls="expense-report-category-options"
                     aria-expanded={isOpen}
                     id="expense-report-category"
@@ -405,6 +453,7 @@ function CategorySelector({
                         onChange(matchedCategory ?? "");
                     }}
                     onFocus={() => setIsOpen(true)}
+                    onKeyDown={handleKeyDown}
                     placeholder="All categories"
                     role="combobox"
                     type="text"
@@ -415,28 +464,50 @@ function CategorySelector({
                         Clear category
                     </button>
                 )}
-            </div>
-            {isOpen ? (
-                <ul id="expense-report-category-options" role="listbox">
-                    {matchingCategories.length === 0 ? (
-                        <li>No matching categories</li>
-                    ) : (
-                        matchingCategories.map((category) => (
-                            <li key={category} role="option">
-                                <button
-                                    onMouseDown={(event) =>
-                                        event.preventDefault()
-                                    }
-                                    onClick={() => chooseCategory(category)}
-                                    type="button"
-                                >
-                                    {category}
-                                </button>
+                {isOpen ? (
+                    <ul
+                        className="expense-reports-filters__category-menu"
+                        id="expense-report-category-options"
+                        role="listbox"
+                    >
+                        {matchingCategories.length === 0 ? (
+                            <li
+                                className="expense-reports-filters__category-empty"
+                                role="presentation"
+                            >
+                                No matching categories
                             </li>
-                        ))
-                    )}
-                </ul>
-            ) : null}
+                        ) : (
+                            matchingCategories.map((category, index) => (
+                                <li
+                                    aria-selected={category === activeCategory}
+                                    id={getCategoryOptionId(category)}
+                                    key={category}
+                                    role="option"
+                                >
+                                    <button
+                                        className={
+                                            category === activeCategory
+                                                ? "expense-reports-filters__category-option expense-reports-filters__category-option--active"
+                                                : "expense-reports-filters__category-option"
+                                        }
+                                        onMouseDown={(event) =>
+                                            event.preventDefault()
+                                        }
+                                        onMouseEnter={() =>
+                                            setActiveOptionIndex(index)
+                                        }
+                                        onClick={() => chooseCategory(category)}
+                                        type="button"
+                                    >
+                                        {category}
+                                    </button>
+                                </li>
+                            ))
+                        )}
+                    </ul>
+                ) : null}
+            </div>
         </div>
     );
 }
@@ -515,6 +586,13 @@ function ExpenseReportsTable({
             </div>
         </section>
     );
+}
+
+function getCategoryOptionId(category: string): string {
+    return `expense-report-category-option-${category
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")}`;
 }
 
 function PrincipalCell({
