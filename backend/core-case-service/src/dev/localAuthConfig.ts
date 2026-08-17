@@ -17,6 +17,23 @@ export const localAuthAccountNameSchema = z.enum([
 
 export type LocalAuthAccountName = z.infer<typeof localAuthAccountNameSchema>;
 
+const localAuthAccountAliasSchema = z.enum([
+    "employee",
+    "manager",
+    "finance-admin",
+    "platform-admin",
+]);
+
+const localAuthAccountAliases = {
+    employee: "employee-1",
+    manager: "manager-1",
+    "finance-admin": "finance-admin-1",
+    "platform-admin": "platform-admin-1",
+} as const satisfies Record<
+    z.infer<typeof localAuthAccountAliasSchema>,
+    LocalAuthAccountName
+>;
+
 export type LocalAuthAccount = {
     name: LocalAuthAccountName;
     tenant: "primary" | "secondary";
@@ -25,7 +42,12 @@ export type LocalAuthAccount = {
     role: RoleName;
 };
 
-const localDatabaseHostnames = new Set(["127.0.0.1", "[::1]", "localhost"]);
+const localDatabaseHostnames = new Set([
+    "127.0.0.1",
+    "[::1]",
+    "localhost",
+    "postgres",
+]);
 
 const localAuthAccounts = [
     {
@@ -153,6 +175,25 @@ export function getLocalAuthAccount(
     name: LocalAuthAccountName,
 ): LocalAuthAccount {
     return localAuthAccounts.find((account) => account.name === name)!;
+}
+
+/**
+ * Resolves a local auth CLI account argument to a fixed synthetic identity name.
+ */
+export function resolveLocalAuthAccountName(
+    value: string,
+): LocalAuthAccountName {
+    const accountName = localAuthAccountNameSchema.safeParse(value);
+    if (accountName.success) {
+        return accountName.data;
+    }
+
+    const accountAlias = localAuthAccountAliasSchema.safeParse(value);
+    if (accountAlias.success) {
+        return localAuthAccountAliases[accountAlias.data];
+    }
+
+    return localAuthAccountNameSchema.parse(value);
 }
 
 /**

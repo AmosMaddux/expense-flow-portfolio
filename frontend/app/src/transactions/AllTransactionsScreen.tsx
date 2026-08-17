@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { type UseQueryResult } from "@tanstack/react-query";
 import { z } from "zod";
 
-import {
-    ApprovalQueueReviewDialog,
-    type ApprovalQueueLineItem,
-} from "../caseQueue/CaseQueueScreen";
 import {
     Badge,
     Button,
@@ -16,6 +11,10 @@ import {
     StatusBadge,
     type ExpenseReportStage,
 } from "../components";
+import {
+    ExpenseReportDetailDialog,
+    type ExpenseReportReviewDetail,
+} from "../expenseReports/ExpenseReportDetailDialog";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 
 const allTransactionSchema = z.object({
@@ -44,55 +43,9 @@ const allTransactionPageSchema = z.object({
     nextCursor: z.string().nullable(),
 });
 
-const expenseReportReviewDetailSourceSchema = z.object({
-    id: z.string().uuid(),
-    date: z.iso.date(),
-    amount: z.string().regex(/^-?\d+\.\d{2}$/),
-    currency: z.string().min(3).max(3),
-    glCode: z.string().nullable(),
-    flaggedLineItem: z.boolean(),
-    reviewAction: z.enum(["approve", "reject"]).nullable(),
-    deductible: z.boolean().nullable(),
-});
-
-const expenseReportReviewDetailReceiptSchema = z.object({
-    id: z.string().uuid(),
-    lineItemId: z.string().uuid().nullable(),
-    merchant: z.string().min(1),
-    receiptDate: z.iso.date(),
-    amount: z.coerce.number().nonnegative(),
-    filename: z.string().nullable(),
-    contentType: z.string().nullable(),
-});
-
-const expenseReportReviewDetailSchema = z.object({
-    expenseReportId: z.string().uuid(),
-    owner: z.string().uuid(),
-    priority: z.enum(["Low", "Normal", "High", "Urgent"]),
-    dueDate: z.iso.date(),
-    status: z.enum(EXPENSE_REPORT_STAGES),
-    onHold: z.boolean(),
-    isOverdue: z.boolean(),
-    lineItems: z.array(
-        expenseReportReviewDetailSourceSchema.extend({
-            merchant: z.string().min(1),
-            category: z.string().min(1),
-        }),
-    ),
-    mileageEntries: z.array(
-        expenseReportReviewDetailSourceSchema.extend({
-            route: z.string().min(1),
-            distance: z.string().regex(/^\d+\.\d{2}$/),
-        }),
-    ),
-    receipts: z.array(expenseReportReviewDetailReceiptSchema),
-});
-
 export type AllTransaction = z.infer<typeof allTransactionSchema>;
 export type AllTransactionPage = z.infer<typeof allTransactionPageSchema>;
-export type ExpenseReportReviewDetail = z.infer<
-    typeof expenseReportReviewDetailSchema
->;
+export type { ExpenseReportReviewDetail };
 export type LoadedTransactionPage = {
     cursor: string | null;
     page: AllTransactionPage;
@@ -135,23 +88,6 @@ export function useAllTransactions(
 }
 
 /**
- * Fetches the complete tenant-scoped report detail independent of list filters.
- */
-export function useExpenseReportReviewDetail(expenseReportId: string | null) {
-    return useExpenseFlowQuery<ExpenseReportReviewDetail>({
-        enabled: expenseReportId !== null,
-        input:
-            expenseReportId === null
-                ? "/v1/expense-reports/00000000-0000-4000-8000-000000000000/review-detail"
-                : `/v1/expense-reports/${expenseReportId}/review-detail`,
-        keyParts: ["expense-report-review-detail", expenseReportId],
-        parseResponse: async (response) =>
-            expenseReportReviewDetailSchema.parse(await response.json()),
-        staleTime: 30_000,
-    });
-}
-
-/**
  * Renders the Finance Admin All Transactions read-model screen.
  */
 export function AllTransactionsScreen(): JSX.Element {
@@ -182,9 +118,6 @@ export function AllTransactionsScreen(): JSX.Element {
                 ),
             ).sort((left, right) => left.localeCompare(right)),
         [transactions],
-    );
-    const selectedReportQuery = useExpenseReportReviewDetail(
-        selectedExpenseReportId,
     );
 
     const appendPage = (
@@ -336,9 +269,10 @@ export function AllTransactionsScreen(): JSX.Element {
                             </div>
                         ) : null}
                         {selectedExpenseReportId !== null ? (
-                            <TransactionReviewDialog
+                            <ExpenseReportDetailDialog
+                                auditActionFormat="raw"
+                                mileageUnitLabel="miles"
                                 onClose={() => setSelectedExpenseReportId(null)}
-                                query={selectedReportQuery}
                                 reportId={selectedExpenseReportId}
                             />
                         ) : null}
@@ -576,228 +510,6 @@ function AllTransactionsTable({
     );
 }
 
-function TransactionReviewDialog({
-    onClose,
-    query,
-    reportId,
-}: {
-    onClose: () => void;
-    query: UseQueryResult<ExpenseReportReviewDetail, Error>;
-    reportId: string;
-}): JSX.Element | null {
-    const report = query.data;
-
-    if (query.isPending) {
-        return (
-            <div className="case-queue-dialog__backdrop">
-                <section
-                    aria-labelledby="all-transactions-review-dialog-heading"
-                    aria-modal="true"
-                    className="case-queue-dialog"
-                    role="dialog"
-                >
-                    <header className="case-queue-dialog__header">
-                        <div>
-                            <p className="screen-placeholder__label">
-                                Report Review
-                            </p>
-                            <h3 id="all-transactions-review-dialog-heading">
-                                Report {formatReportId(reportId)}
-                            </h3>
-                        </div>
-                        <Button
-                            onClick={onClose}
-                            size="sm"
-                            type="button"
-                            variant="secondary"
-                        >
-                            Close
-                        </Button>
-                    </header>
-                    <LoadingSkeleton label="Loading Report Review" rows={4} />
-                </section>
-            </div>
-        );
-    }
-
-    if (query.isError) {
-        return (
-            <div className="case-queue-dialog__backdrop">
-                <section
-                    aria-labelledby="all-transactions-review-dialog-heading"
-                    aria-modal="true"
-                    className="case-queue-dialog"
-                    role="dialog"
-                >
-                    <header className="case-queue-dialog__header">
-                        <div>
-                            <p className="screen-placeholder__label">
-                                Report Review
-                            </p>
-                            <h3 id="all-transactions-review-dialog-heading">
-                                Report {formatReportId(reportId)}
-                            </h3>
-                        </div>
-                        <Button
-                            onClick={onClose}
-                            size="sm"
-                            type="button"
-                            variant="secondary"
-                        >
-                            Close
-                        </Button>
-                    </header>
-                    <ErrorState
-                        isRetrying={query.isFetching}
-                        message={getReportDetailErrorMessage(query.error)}
-                        onRetry={() => {
-                            void query.refetch();
-                        }}
-                        title="Unable to load report review"
-                    />
-                </section>
-            </div>
-        );
-    }
-
-    if (report === undefined) {
-        return null;
-    }
-
-    return (
-        <ApprovalQueueReviewDialog
-            canManageReviewWorkflow={false}
-            isActionPending={false}
-            lineItems={adaptReportDetailToApprovalQueueLineItems(report)}
-            onAdvanceReport={() => undefined}
-            onClearFlag={() => undefined}
-            onClose={onClose}
-            onReviewLineItem={() => undefined}
-            reportTitleLabel="Expense Report"
-            onSendBackReport={() => undefined}
-            onToggleDeductibility={() => undefined}
-        />
-    );
-}
-
-function adaptReportDetailToApprovalQueueLineItems(
-    report: ExpenseReportReviewDetail,
-): ApprovalQueueLineItem[] {
-    const mileageEntries = report.mileageEntries.map((entry) => ({
-        id: entry.id,
-        expenseReportId: report.expenseReportId,
-        distance: Number(entry.distance),
-        mileageDate: entry.date,
-        route: entry.route,
-        amount: Number(entry.amount),
-        glCode: entry.glCode ?? "Unmapped",
-        flaggedLineItem: entry.flaggedLineItem,
-        policyChecks: buildSyntheticPolicyChecks(entry.flaggedLineItem),
-        reviewAction: entry.reviewAction,
-        deductible: entry.deductible ?? false,
-    }));
-    const receiptsByLineItemId = new Map<string, typeof report.receipts>();
-
-    for (const receipt of report.receipts) {
-        if (receipt.lineItemId === null) {
-            continue;
-        }
-
-        const existing = receiptsByLineItemId.get(receipt.lineItemId) ?? [];
-        receiptsByLineItemId.set(receipt.lineItemId, [...existing, receipt]);
-    }
-
-    const lineItemRows: ApprovalQueueLineItem[] = report.lineItems.map(
-        (lineItem, index) => ({
-            id: lineItem.id,
-            sourceType: "line_item",
-            expenseReportId: report.expenseReportId,
-            employee: report.owner,
-            merchant: lineItem.merchant,
-            amount: Number(lineItem.amount),
-            glCode: lineItem.glCode ?? "Unmapped",
-            currentStage: report.status,
-            flaggedLineItem: lineItem.flaggedLineItem,
-            policyChecks: buildSyntheticPolicyChecks(lineItem.flaggedLineItem),
-            reviewAction: lineItem.reviewAction,
-            deductible: lineItem.deductible ?? false,
-            canAdvance: false,
-            reportTotalMileage: mileageEntries.reduce(
-                (total, entry) => total + entry.distance,
-                0,
-            ),
-            mileageEntries: index === 0 ? mileageEntries : [],
-            receipts: [
-                ...(receiptsByLineItemId.get(lineItem.id) ?? []),
-                ...(index === 0
-                    ? report.receipts.filter(
-                          (receipt) => receipt.lineItemId === null,
-                      )
-                    : []),
-            ],
-        }),
-    );
-
-    if (lineItemRows.length > 0 || mileageEntries.length === 0) {
-        return lineItemRows;
-    }
-
-    return [
-        {
-            id: mileageEntries[0]?.id ?? report.expenseReportId,
-            sourceType: "line_item",
-            expenseReportId: report.expenseReportId,
-            employee: report.owner,
-            merchant: "Mileage",
-            amount: mileageEntries.reduce(
-                (total, entry) => total + entry.amount,
-                0,
-            ),
-            glCode: mileageEntries[0]?.glCode ?? "Unmapped",
-            currentStage: report.status,
-            flaggedLineItem: mileageEntries.some(
-                (entry) => entry.flaggedLineItem,
-            ),
-            policyChecks: mileageEntries.flatMap((entry) =>
-                buildSyntheticPolicyChecks(entry.flaggedLineItem),
-            ),
-            reviewAction: mileageEntries.every(
-                (entry) => entry.reviewAction === "approve",
-            )
-                ? "approve"
-                : mileageEntries.some(
-                        (entry) => entry.reviewAction === "reject",
-                    )
-                  ? "reject"
-                  : null,
-            deductible: mileageEntries.every((entry) => entry.deductible),
-            canAdvance: false,
-            reportTotalMileage: mileageEntries.reduce(
-                (total, entry) => total + entry.distance,
-                0,
-            ),
-            mileageEntries,
-            receipts: report.receipts.filter(
-                (receipt) => receipt.lineItemId === null,
-            ),
-        },
-    ];
-}
-
-function buildSyntheticPolicyChecks(
-    flaggedLineItem: boolean,
-): ApprovalQueueLineItem["policyChecks"] {
-    return flaggedLineItem
-        ? [
-              {
-                  code: "amount-threshold",
-                  message: "Line item exceeds the $500 review threshold.",
-                  state: "uncleared",
-              },
-          ]
-        : [];
-}
-
 function formatDate(date: string): string {
     return new Intl.DateTimeFormat("en-US", {
         day: "2-digit",
@@ -814,10 +526,6 @@ function formatCurrency(amount: string, currency: string): string {
     }).format(Number(amount));
 }
 
-function formatReportId(expenseReportId: string): string {
-    return expenseReportId.slice(0, 8).toUpperCase();
-}
-
 function formatReportOwner(owner: string): string {
     return owner.slice(0, 8).toUpperCase();
 }
@@ -828,12 +536,4 @@ function getAllTransactionsErrorMessage(error: Error | null): string {
     }
 
     return "The transaction list could not be loaded. Please retry.";
-}
-
-function getReportDetailErrorMessage(error: Error | null): string {
-    if (error instanceof QueryRequestError) {
-        return error.message;
-    }
-
-    return "The report detail could not be loaded. Please retry.";
 }

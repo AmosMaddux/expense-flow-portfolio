@@ -32,8 +32,8 @@ import {
     getLocalAuthAccount,
     getLocalAuthAccountTenantId,
     getLocalAuthAccounts,
-    localAuthAccountNameSchema,
     localAuthEnvironmentSchema,
+    resolveLocalAuthAccountName,
     type LocalAuthAccount,
     type LocalAuthEnvironment,
 } from "./localAuthConfig.js";
@@ -294,6 +294,17 @@ async function waitForUsefulTotpInterval(): Promise<void> {
     });
 }
 
+function formatLocalAuthError(error: unknown): string {
+    if (!(error instanceof Error)) {
+        return "Unknown local auth error.";
+    }
+
+    return error.message.replaceAll(
+        /postgres(?:ql)?:\/\/[^@\s]+@/gi,
+        "postgres://<redacted>@",
+    );
+}
+
 async function main(): Promise<void> {
     const environment = localAuthEnvironmentSchema.parse(process.env);
     const command = localAuthCommandSchema.parse(process.argv[2] ?? "seed");
@@ -302,7 +313,7 @@ async function main(): Promise<void> {
 
     try {
         if (command === "code") {
-            const accountName = localAuthAccountNameSchema.parse(
+            const accountName = resolveLocalAuthAccountName(
                 process.argv[3] ?? "employee-1",
             );
             await waitForUsefulTotpInterval();
@@ -334,9 +345,14 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().catch(() => {
+    void main().catch((error: unknown) => {
         process.stderr.write(
-            "Unable to manage synthetic local auth accounts. Use only a loopback database and check local auth configuration.\n",
+            [
+                "Unable to manage synthetic local auth accounts.",
+                formatLocalAuthError(error),
+                "Use only a loopback database and check local auth configuration.",
+                "",
+            ].join("\n"),
         );
         process.exitCode = 1;
     });

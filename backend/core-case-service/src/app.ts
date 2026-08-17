@@ -53,6 +53,14 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
 loadDefaultGlCodingConfig();
 app.use(createCorsMiddleware(loadCorsConfig()));
 const v1Router = express.Router();
+const protectedRoutePrefixes = [
+    "/expense-reports",
+    "/case-queue",
+    "/finance-dashboard",
+    "/policy-reference",
+    "/transactions",
+    "/gl-mappings",
+];
 
 /**
  * Blocks trusted command routes unless this process is explicitly deployed for internal traffic.
@@ -110,71 +118,15 @@ v1Router.use(
     ),
 );
 
-// Any request to /expense-reports/* or /case-queue/* must pass through createAccessTokenMiddleware first
 v1Router.use(
-    "/expense-reports",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
+    onlyProtectedRoutes(createAccessTokenMiddleware(accessTokenVerifierConfig)),
 );
 v1Router.use(
-    "/case-queue",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
-);
-v1Router.use(
-    "/finance-dashboard",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
-);
-v1Router.use(
-    "/policy-reference",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
-);
-v1Router.use(
-    "/transactions",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
-);
-v1Router.use(
-    "/gl-mappings",
-    createAccessTokenMiddleware(accessTokenVerifierConfig),
-);
-v1Router.use(
-    "/expense-reports",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
-    ),
-);
-v1Router.use(
-    "/case-queue",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
-    ),
-);
-v1Router.use(
-    "/finance-dashboard",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
-    ),
-);
-v1Router.use(
-    "/policy-reference",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
-    ),
-);
-v1Router.use(
-    "/transactions",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
-    ),
-);
-v1Router.use(
-    "/gl-mappings",
-    createTenantRateLimitMiddleware(
-        loadRateLimitConfig(),
-        createPostgresTenantRateLimitStore(db),
+    onlyProtectedRoutes(
+        createTenantRateLimitMiddleware(
+            loadRateLimitConfig(),
+            createPostgresTenantRateLimitStore(db),
+        ),
     ),
 );
 v1Router.use("/expense-reports", express.json());
@@ -219,3 +171,22 @@ v1Router.use(
 
 app.use("/v1", v1Router);
 app.use(problemJsonErrorHandler);
+
+function onlyProtectedRoutes(
+    handler: express.RequestHandler,
+): express.RequestHandler {
+    return (req: Request, res: Response, next: NextFunction): void => {
+        if (!isProtectedRoute(req.path)) {
+            next();
+            return;
+        }
+
+        handler(req, res, next);
+    };
+}
+
+function isProtectedRoute(path: string): boolean {
+    return protectedRoutePrefixes.some(
+        (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+    );
+}

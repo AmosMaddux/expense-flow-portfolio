@@ -74,8 +74,12 @@ services:
                 exit 1;
                 fi;
                 else
-                until STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node
-                --input-type=module -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
+                unset AWS_PROFILE
+                AWS_SDK_LOAD_CONFIG
+                AWS_SESSION_TOKEN
+                AWS_CREDENTIAL_EXPIRATION;
+                until export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
+                -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
                 const client = new SNSClient({
                 endpoint: process.env.STAGE_TRANSITION_SNS_ENDPOINT,
                 region: process.env.AWS_REGION
@@ -127,6 +131,7 @@ services:
             MFA_TOTP_SECRET_ENCRYPTION_KEY: ${MFA_TOTP_SECRET_ENCRYPTION_KEY:?MFA_TOTP_SECRET_ENCRYPTION_KEY must be set in .env}
             MFA_TOTP_SECRET_KEY_VERSION: ${MFA_TOTP_SECRET_KEY_VERSION:-local-dev-v1}
             MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
+            NODE_ENV: development
             PORT: 3000
             RECEIPT_STORAGE_BUCKET: ${RECEIPT_STORAGE_BUCKET:-expenseflow-receipts-local}
             RECEIPT_STORAGE_ACCESS_KEY_ID: ${RECEIPT_STORAGE_ACCESS_KEY_ID:-expenseflow-local}
@@ -134,6 +139,7 @@ services:
             RECEIPT_STORAGE_FORCE_PATH_STYLE: ${RECEIPT_STORAGE_FORCE_PATH_STYLE:-true}
             RECEIPT_STORAGE_SECRET_ACCESS_KEY: ${RECEIPT_STORAGE_SECRET_ACCESS_KEY:-expenseflow-local-dev-only}
             REDIS_URL: redis://redis:6379
+            SPA_ORIGIN: ${SPA_ORIGIN:-http://127.0.0.1:5173}
             STAGE_TRANSITION_SNS_TOPIC_ARN: ${STAGE_TRANSITION_SNS_TOPIC_ARN:-}
             STAGE_TRANSITION_SNS_ENDPOINT: http://localstack:4566
             STAGE_TRANSITION_SQS_ENDPOINT: http://localstack:4566

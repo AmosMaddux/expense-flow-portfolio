@@ -1415,6 +1415,81 @@
                     "mileageEntries"
                 ]
             },
+            "ExpenseReportSummaryPage": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                "employeeId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "managerId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "categories": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "pattern": "^\\d+\\.\\d{2}$"
+                                },
+                                "currency": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 3
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Drafted",
+                                        "Submitted",
+                                        "Manager Approval",
+                                        "AP Review",
+                                        "Paid",
+                                        "Reconciled"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "createdAt",
+                                "employeeId",
+                                "managerId",
+                                "category",
+                                "categories",
+                                "amount",
+                                "currency",
+                                "status"
+                            ]
+                        }
+                    },
+                    "nextCursor": {
+                        "type": ["string", "null"]
+                    }
+                },
+                "required": ["items", "nextCursor"]
+            },
             "FinanceDashboardTrendPointList": {
                 "type": "array",
                 "items": {
@@ -2129,6 +2204,58 @@
                     }
                 },
                 "required": ["asOfDate"]
+            },
+            "ReadExpenseReportSummariesRequest": {
+                "type": "object",
+                "properties": {
+                    "amountMax": {
+                        "type": "string",
+                        "pattern": "^\\d+(\\.\\d{1,2})?$"
+                    },
+                    "amountMin": {
+                        "type": "string",
+                        "pattern": "^\\d+(\\.\\d{1,2})?$"
+                    },
+                    "category": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "employee": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "status": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "Drafted",
+                                "Submitted",
+                                "Manager Approval",
+                                "AP Review",
+                                "Paid",
+                                "Reconciled"
+                            ]
+                        },
+                        "maxItems": 6
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "additionalProperties": false
             },
             "ReadFinanceDashboardTrendRequest": {
                 "type": "object",
@@ -4153,6 +4280,172 @@
                     },
                     "409": {
                         "description": "Submission with this idempotency key is already in progress.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "summary": "List Expense Report summaries",
+                "description": "Loads a cursor-paginated page of Finance Admin Expense Report summaries with server-side filters, display category labels, and underlying category membership.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+(\\.\\d{1,2})?$"
+                        },
+                        "required": false,
+                        "name": "amountMax",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d+(\\.\\d{1,2})?$"
+                        },
+                        "required": false,
+                        "name": "amountMin",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": false,
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        },
+                        "required": false,
+                        "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        },
+                        "required": false,
+                        "name": "employee",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "Drafted",
+                                    "Submitted",
+                                    "Manager Approval",
+                                    "AP Review",
+                                    "Paid",
+                                    "Reconciled"
+                                ]
+                            },
+                            "maxItems": 6
+                        },
+                        "required": false,
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Expense Report summary page found.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ExpenseReportSummaryPage"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed Expense Report list request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Valid access token required.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Expense Reports access is limited to Finance Admins.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

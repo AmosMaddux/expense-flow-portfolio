@@ -13,7 +13,6 @@ const financeAdminNavigationLabels = [
 ];
 
 const departmentManagerNavigationLabels = [
-    "Expense Reports",
     "Approval Queue",
     "Policy Reference",
     "GL Mapping",

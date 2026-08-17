@@ -24,6 +24,7 @@ import {
     InternalSettlePaymentStubParamsSchema,
     ReadAllTransactionsQuerySchema,
     ReceiptFileParamsSchema,
+    ReadExpenseReportSummariesQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
@@ -71,6 +72,7 @@ import {
     readExpenseReportComments,
     readExpenseReportReviewDetail,
     readReceiptFile,
+    readExpenseReportSummaries,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
@@ -545,6 +547,39 @@ export async function getExpenseReportById(
     }
 }
 
+/**
+ * Handles internal Expense Report summary list reads.
+ */
+export async function getExpenseReports(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceAdminExpenseReportsAccess(auth);
+        const parsedQuery = ReadExpenseReportSummariesQuerySchema.parse({
+            amountMax: req.query.amountMax,
+            amountMin: req.query.amountMin,
+            category: req.query.category,
+            cursor: req.query.cursor,
+            date: req.query.date,
+            employee: req.query.employee,
+            limit: req.query.limit,
+            status: req.query.status,
+        });
+        const reports = await readExpenseReportSummaries({
+            ...parsedQuery,
+            tenantId: auth.tenantId,
+            roles: auth.roles,
+        });
+
+        res.status(200).json(reports);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
 //OUTBOX submission events
 /**
  * Handles Expense Report submission requests.
@@ -1004,7 +1039,7 @@ export async function getExpenseReportReviewDetail(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireFinanceAdminAllTransactionsAccess(auth);
+        requireInternalCaseQueueAccess(auth);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
@@ -1216,6 +1251,18 @@ function requireFinanceAdminAllTransactionsAccess(
 
     throw new ForbiddenError(
         "All Transactions access is limited to Finance Admins.",
+    );
+}
+
+function requireFinanceAdminExpenseReportsAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Expense Reports access is limited to Finance Admins.",
     );
 }
 
