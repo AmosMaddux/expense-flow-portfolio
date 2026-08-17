@@ -7,8 +7,9 @@ locals {
   caller_name = try(regex("(user|assumed-role)/([^/@]+)", data.aws_caller_identity.current.arn)[1], "unknown")
 
   tags = {
-    user = coalesce(var.resource_owner, local.caller_name)
-    env  = "sandbox"
+    env                       = "sandbox"
+    tenant-isolation-boundary = "tenant-scoped"
+    user                      = coalesce(var.resource_owner, local.caller_name)
   }
 
   account_id                         = data.aws_caller_identity.current.account_id

@@ -47,3 +47,43 @@ output "spa_cloudfront_domain_name" {
   description = "CloudFront domain name for the SPA."
   value       = module.spa.cloudfront_domain_name
 }
+
+output "stage_transition_sns_topic_arn" {
+  description = "SNS topic ARN for Expense Report stage-transition events."
+  value       = module.ecs.stage_transition_sns_topic_arn
+}
+
+output "stage_transition_sqs_queue_arn" {
+  description = "SQS queue ARN for Expense Report stage-transition events."
+  value       = module.ecs.stage_transition_sqs_queue_arn
+}
+
+output "stage_transition_sqs_queue_url" {
+  description = "SQS queue URL for Expense Report stage-transition events."
+  value       = module.ecs.stage_transition_sqs_queue_url
+}
+
+output "stage_transition_sqs_dlq_arn" {
+  description = "SQS DLQ ARN for Expense Report stage-transition events."
+  value       = module.ecs.stage_transition_sqs_dlq_arn
+}
+
+output "stage_transition_sqs_dlq_url" {
+  description = "SQS DLQ URL for Expense Report stage-transition events."
+  value       = module.ecs.stage_transition_sqs_dlq_url
+}
+
+output "dynamodb_expense_report_table_arn" {
+  description = "DynamoDB table ARN for the Expense Report read projection."
+  value       = module.ecs.dynamodb_expense_report_table_arn
+}
+
+output "dynamodb_expense_report_table_name" {
+  description = "DynamoDB table name for the Expense Report read projection."
+  value       = module.ecs.dynamodb_expense_report_table_name
+}
+
+output "dynamodb_expense_report_tenant_index_name" {
+  description = "Tenant index name for the Expense Report read projection."
+  value       = module.ecs.dynamodb_expense_report_tenant_index_name
+}

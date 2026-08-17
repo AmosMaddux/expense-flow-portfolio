@@ -159,6 +159,17 @@ variable "dynamodb_expense_report_tenant_index_name" {
   default     = "expenseflow-sandbox-expense-report-tenant-index"
 }
 
+variable "stage_transition_sqs_max_receive_count" {
+  description = "Number of failed receives before stage-transition messages move to the DLQ."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.stage_transition_sqs_max_receive_count >= 1 && var.stage_transition_sqs_max_receive_count <= 1000
+    error_message = "stage_transition_sqs_max_receive_count must be between 1 and 1000."
+  }
+}
+
 variable "core_case_auth_jwt_private_key_secret_arn" {
   description = "Secrets Manager ARN for Core Case JWT private key material."
   type        = string
