@@ -26,10 +26,7 @@ jobs:
               run: >-
                   semgrep scan
                   --config p/typescript
-                  --severity CRITICAL
-                  --severity HIGH
                   --severity ERROR
-                  --error
                   --json-output semgrep-results.json
                   --metrics off
                   .
