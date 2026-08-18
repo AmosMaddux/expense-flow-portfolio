@@ -1,0 +1,141 @@
+name: Secure PR Gate
+
+on:
+    pull_request:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: secure-pr-gate-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    semgrep:
+        name: Semgrep - TypeScript
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        container:
+            image: semgrep/semgrep:1.172.0
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Scan TypeScript for high-severity findings
+              run: >-
+                  semgrep scan
+                  --config p/typescript
+                  --severity CRITICAL
+                  --severity HIGH
+                  --severity ERROR
+                  --error
+                  --json-output semgrep-results.json
+                  --metrics off
+                  .
+
+            - name: Enforce Semgrep findings
+              run: |
+                  python - <<'PY'
+                  import json
+
+                  with open("semgrep-results.json", encoding="utf-8") as report:
+                      findings = json.load(report).get("results", [])
+
+                  if findings:
+                      raise SystemExit(f"Semgrep reported {len(findings)} blocking finding(s).")
+                  PY
+
+    bandit:
+        name: Bandit - Python
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.13"
+                  cache: pip
+
+            - name: Install Bandit
+              run: python -m pip install --disable-pip-version-check bandit==1.9.4
+
+            - name: Scan Python for high-severity findings
+              run: python -m bandit -r backend tests --severity-level high
+
+    osv:
+        name: OSV - Dependencies
+        uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        permissions:
+            actions: read
+            contents: read
+        with:
+            scan-args: |-
+                --recursive
+                ./
+            upload-sarif: false
+            fail-on-vuln: true
+
+    gitleaks:
+        name: Gitleaks - PR Commits
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+
+        steps:
+            - name: Checkout full history
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Scan PR commits for secrets
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  docker run --rm \
+                    --volume "$GITHUB_WORKSPACE:/repo" \
+                    ghcr.io/gitleaks/gitleaks:v8.28.0 \
+                    git /repo \
+                    --log-opts="$BASE_SHA..$HEAD_SHA" \
+                    --redact \
+                    --verbose
+
+    secure-pr-gate:
+        name: Secure PR Gate
+        if: always()
+        needs:
+            - semgrep
+            - bandit
+            - osv
+            - gitleaks
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        steps:
+            - name: Enforce scanner results
+              env:
+                  BANDIT_RESULT: ${{ needs.bandit.result }}
+                  GITLEAKS_RESULT: ${{ needs.gitleaks.result }}
+                  OSV_RESULT: ${{ needs.osv.result }}
+                  SEMGREP_RESULT: ${{ needs.semgrep.result }}
+              run: |
+                  failed=0
+
+                  for scanner_result in \
+                    "Semgrep:$SEMGREP_RESULT" \
+                    "Bandit:$BANDIT_RESULT" \
+                    "OSV:$OSV_RESULT" \
+                    "Gitleaks:$GITLEAKS_RESULT"; do
+                    scanner="${scanner_result%%:*}"
+                    result="${scanner_result#*:}"
+                    if [[ "$result" != "success" ]]; then
+                      echo "::error::$scanner finished with result: $result"
+                      failed=1
+                    fi
+                  done
+
+                  exit "$failed"

@@ -47,6 +47,23 @@ void describe("TOTP secret protector", () => {
         expect(configProvider).toHaveBeenCalledOnce();
     });
 
+    void test("rejects an authentication tag shorter than 128 bits", () => {
+        const protector = createTotpSecretProtector(() =>
+            loadMfaTotpSecretEncryptionConfig({
+                MFA_TOTP_SECRET_ENCRYPTION_KEY: key,
+                MFA_TOTP_SECRET_KEY_VERSION: "synthetic-v1",
+            }),
+        );
+        const protectedSecret = protector.protect("SYNTHETICTOTPSECRET");
+
+        expect(() =>
+            protector.reveal({
+                ...protectedSecret,
+                secretAuthTag: Buffer.from("short-tag").toString("base64"),
+            }),
+        ).toThrow();
+    });
+
     void test("rejects a missing encryption key", () => {
         expect(() => loadMfaTotpSecretEncryptionConfig({})).toThrow(
             "MFA_TOTP_SECRET_ENCRYPTION_KEY is required.",
