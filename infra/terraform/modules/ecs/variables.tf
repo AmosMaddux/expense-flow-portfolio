@@ -80,7 +80,7 @@ variable "desired_count" {
 variable "log_retention_days" {
   description = "CloudWatch log retention in days."
   type        = number
-  default     = 14
+  default     = 365
 }
 
 variable "core_case_image_uri" {

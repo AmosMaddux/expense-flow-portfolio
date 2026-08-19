@@ -7,6 +7,10 @@ const lambdaDatabaseEnvironmentSchema = z.object({
     DATABASE_SECRET_ARN: z.string().trim().min(1),
 });
 
+const lambdaDatabaseSecretSchema = z.object({
+    database_url: z.string().trim().min(1),
+});
+
 export type LambdaDatabaseConfig = {
     databaseUrl: string;
 };
@@ -35,12 +39,9 @@ export async function loadLambdaDatabaseConfig(
             throw new Error("Secret does not contain a SecretString value.");
         }
 
-        const secretValue = JSON.parse(response.SecretString);
-        const databaseUrl = secretValue.database_url;
-
-        if (!databaseUrl || typeof databaseUrl !== "string") {
-            throw new Error("Secret does not contain a valid database_url key.");
-        }
+        const secretValue: unknown = JSON.parse(response.SecretString);
+        const { database_url: databaseUrl } =
+            lambdaDatabaseSecretSchema.parse(secretValue);
 
         // Validate that the URL is parseable
         new URL(databaseUrl);

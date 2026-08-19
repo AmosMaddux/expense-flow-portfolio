@@ -53,6 +53,12 @@ const demoTransactionsSqlUrl = new URL(
     "../../../../scripts/seed-demo-transactions.sql",
     import.meta.url,
 );
+const localReceiptStorageHostnames = new Set([
+    "127.0.0.1",
+    "[::1]",
+    "localhost",
+    "minio",
+]);
 const syntheticExpensePolicyText = `ExpenseFlow Synthetic Tenant Expense Policy
 
 Reimbursable expenses must have a clear business purpose, a matching receipt when one is available, and manager approval before AP review.
@@ -160,6 +166,9 @@ export async function seedLocalDemoData(): Promise<void> {
         environment.VITE_TENANT_ID,
     );
     const receiptStorageClient = new S3Client({
+        ...(receiptStorageConfig.credentials === undefined
+            ? {}
+            : { credentials: receiptStorageConfig.credentials }),
         endpoint: receiptStorageConfig.endpoint,
         forcePathStyle: receiptStorageConfig.forcePathStyle,
         region: receiptStorageConfig.region,
@@ -251,18 +260,35 @@ async function seedGlReferenceData(
                 `Unable to seed synthetic GL code ${code.accountCode}.`,
             );
         }
+    }
+
+    for (const code of demoGlCodes) {
+        const [tenantGlCode] = await transaction
+            .select({ id: glCode.id })
+            .from(glCode)
+            .where(
+                and(
+                    eq(glCode.tenantId, tenantId),
+                    eq(glCode.accountCode, code.accountCode),
+                ),
+            );
+        if (tenantGlCode === undefined) {
+            throw new Error(
+                `Local demo seed could not resolve GL code ${code.accountCode}.`,
+            );
+        }
 
         await transaction
             .insert(glMapping)
             .values({
                 tenantId,
                 category: code.category,
-                glCodeId: persistedCode.id,
+                glCodeId: tenantGlCode.id,
             })
             .onConflictDoUpdate({
                 target: [glMapping.tenantId, glMapping.category],
                 set: {
-                    glCodeId: persistedCode.id,
+                    glCodeId: tenantGlCode.id,
                     updatedAt: seededAt,
                 },
             });
@@ -699,7 +725,7 @@ function assertLocalReceiptStorageEndpoint(
     }
 
     const endpoint = new URL(config.endpoint);
-    if (!["127.0.0.1", "[::1]", "localhost"].includes(endpoint.hostname)) {
+    if (!localReceiptStorageHostnames.has(endpoint.hostname)) {
         throw new Error(
             "Synthetic local demo seeding can upload receipts only to loopback object storage.",
         );

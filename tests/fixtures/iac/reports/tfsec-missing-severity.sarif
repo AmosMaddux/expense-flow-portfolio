@@ -1,0 +1,25 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "tfsec",
+          "rules": [
+            {
+              "id": "aws-vpc-no-public-ingress-sgr"
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "aws-vpc-no-public-ingress-sgr",
+          "message": {
+            "text": "Synthetic finding with missing severity metadata."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
@@ -23,6 +24,8 @@ import {
     InternalSettlePaymentStubHeadersSchema,
     InternalSettlePaymentStubParamsSchema,
     ReadAllTransactionsQuerySchema,
+    ReceiptFileParamsSchema,
+    ReadExpenseReportSummariesQuerySchema,
     ReceiptUploadMetadataInboundRequestSchema,
     ReceiptUploadParamsSchema,
     ReadCaseQueueStageRollupsQuerySchema,
@@ -69,6 +72,8 @@ import {
     readExpenseReportAuditEntries,
     readExpenseReportComments,
     readExpenseReportReviewDetail,
+    readReceiptFile,
+    readExpenseReportSummaries,
     readMileageConfig,
     reviewExpenseReportLineItem,
     reviewExpenseReportSource,
@@ -543,6 +548,39 @@ export async function getExpenseReportById(
     }
 }
 
+/**
+ * Handles internal Expense Report summary list reads.
+ */
+export async function getExpenseReports(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireFinanceAdminExpenseReportsAccess(auth);
+        const parsedQuery = ReadExpenseReportSummariesQuerySchema.parse({
+            amountMax: req.query.amountMax,
+            amountMin: req.query.amountMin,
+            category: req.query.category,
+            cursor: req.query.cursor,
+            date: req.query.date,
+            employee: req.query.employee,
+            limit: req.query.limit,
+            status: req.query.status,
+        });
+        const reports = await readExpenseReportSummaries({
+            ...parsedQuery,
+            tenantId: auth.tenantId,
+            roles: auth.roles,
+        });
+
+        res.status(200).json(reports);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
 //OUTBOX submission events
 /**
  * Handles Expense Report submission requests.
@@ -1002,7 +1040,7 @@ export async function getExpenseReportReviewDetail(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireFinanceAdminAllTransactionsAccess(auth);
+        requireInternalCaseQueueAccess(auth);
         const parsedRequest = GetExpenseReportInboundRequestSchema.parse({
             id: req.params.id,
         });
@@ -1012,6 +1050,43 @@ export async function getExpenseReportReviewDetail(
         });
 
         res.status(200).json(detail);
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Finance Admin receipt-file reads for report-detail previews.
+ */
+export async function getExpenseReportReceiptFile(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requireInternalCaseQueueAccess(auth);
+        const parsedParams = ReceiptFileParamsSchema.parse({
+            id: req.params.id,
+            receiptId: req.params.receiptId,
+        });
+        const file = await readReceiptFile({
+            expenseReportId: parsedParams.id,
+            receiptId: parsedParams.receiptId,
+            tenantId: auth.tenantId,
+        });
+
+        res.setHeader("Content-Type", file.contentType);
+        res.setHeader(
+            "Content-Disposition",
+            `inline; filename="${sanitizeHeaderFilename(file.filename)}"`,
+        );
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (file.contentLength !== null) {
+            res.setHeader("Content-Length", String(file.contentLength));
+        }
+        res.status(200);
+        await pipeline(file.content, res);
     } catch (error: unknown) {
         next(error);
     }
@@ -1181,6 +1256,18 @@ function requireFinanceAdminAllTransactionsAccess(
     );
 }
 
+function requireFinanceAdminExpenseReportsAccess(
+    auth: NonNullable<Request["auth"]>,
+): void {
+    if (auth.roles.includes("Finance Admin")) {
+        return;
+    }
+
+    throw new ForbiddenError(
+        "Expense Reports access is limited to Finance Admins.",
+    );
+}
+
 const internalExpenseReportRoles = new Set<RoleName>([
     "Finance Admin",
     "Department Manager",
@@ -1221,6 +1308,17 @@ function requireEmployeeAccess(auth: NonNullable<Request["auth"]>): void {
             "This action is limited to the Employee Portal.",
         );
     }
+}
+
+function sanitizeHeaderFilename(filename: string | null): string {
+    const fallback = "receipt";
+    if (filename === null) {
+        return fallback;
+    }
+
+    const sanitized = filename.replace(/["\r\n\\]/gu, "_").trim();
+
+    return sanitized.length === 0 ? fallback : sanitized;
 }
 
 function parseIdempotencyKey(req: Request): string {

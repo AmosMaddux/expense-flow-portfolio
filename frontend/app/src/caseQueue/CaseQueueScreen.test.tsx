@@ -304,6 +304,22 @@ function createProblemResponse(detail: string): Response {
     );
 }
 
+function readRequestInput(input: RequestInfo | URL): string {
+    if (typeof input === "string") {
+        return input;
+    }
+
+    if (input instanceof URL) {
+        return input.href;
+    }
+
+    if (input instanceof Request) {
+        return input.url;
+    }
+
+    return "";
+}
+
 function createNoRetryQueryClient(): QueryClient {
     return new QueryClient({
         defaultOptions: {
@@ -725,9 +741,26 @@ describe("CaseQueueScreen", () => {
     });
 
     test("renders receipt metadata in the report review gallery", async () => {
-        const fetchImplementation = vi.fn<typeof fetch>(() =>
-            Promise.resolve(createJsonResponse(lineItems)),
+        const fetchImplementation = vi.fn<typeof fetch>((input) =>
+            Promise.resolve(
+                readRequestInput(input).includes("/receipts/")
+                    ? new Response(new Blob(["synthetic receipt preview"]))
+                    : createJsonResponse(lineItems),
+            ),
         );
+        const originalUserAgent = window.navigator.userAgent;
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: "Mozilla/5.0",
+        });
+        Object.defineProperty(URL, "createObjectURL", {
+            configurable: true,
+            value: vi.fn(() => "blob:synthetic-receipt"),
+        });
+        Object.defineProperty(URL, "revokeObjectURL", {
+            configurable: true,
+            value: vi.fn(),
+        });
 
         renderCaseQueueScreen(fetchImplementation);
 
@@ -751,11 +784,115 @@ describe("CaseQueueScreen", () => {
             screen.getByText("application/pdf / Linked to Northstar Hotels"),
         ).toBeTruthy();
         expect(screen.queryByRole("link", { name: "Open receipt" })).toBeNull();
-        expect(document.querySelector(".receipt-gallery__preview")).toBeNull();
+        expect(
+            document.querySelector(".receipt-gallery__preview"),
+        ).toBeTruthy();
+        expect(screen.getByText("PDF")).toBeTruthy();
+        expect(
+            screen.queryByRole("button", {
+                name: "Expand receipt preview for Northstar Hotels",
+            }),
+        ).toBeNull();
         const axeResults = await axe.run(
             screen.getByRole("dialog", { name: "Report d104c9ca" }),
         );
         expect(axeResults.violations).toHaveLength(0);
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+
+        fireEvent.click(
+            screen.getByRole("button", {
+                name: "Load receipt preview for Northstar Hotels",
+            }),
+        );
+        expect(
+            await screen.findByRole("button", {
+                name: "Expand receipt preview for Northstar Hotels",
+            }),
+        ).toBeTruthy();
+        expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+        Object.defineProperty(window.navigator, "userAgent", {
+            configurable: true,
+            value: originalUserAgent,
+        });
+    });
+
+    test("shows audit trail and lets reviewers post comments from report review", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const requestUrl = readRequestInput(input);
+            if (requestUrl.includes("/audit-entries")) {
+                return Promise.resolve(
+                    createJsonResponse([
+                        {
+                            id: "83000000-0000-4000-8000-000000000201",
+                            tenantId,
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            actorId: userId,
+                            action: "workflow_transition_applied",
+                            stageBeforeAction: "Submitted",
+                            stageAfterProposedAction: "Manager Approval",
+                            denialReason: null,
+                            outcomeReason: "Synthetic review started.",
+                            createdAt: "2026-07-22T12:00:00.000Z",
+                        },
+                    ]),
+                );
+            }
+            if (requestUrl.includes("/comments") && init?.method === "POST") {
+                return Promise.resolve(
+                    createJsonResponse(
+                        {
+                            id: "84000000-0000-4000-8000-000000000201",
+                            tenantId,
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            authorId: userId,
+                            body: "Synthetic case queue comment.",
+                            createdAt: "2026-07-22T12:05:00.000Z",
+                        },
+                        { status: 201 },
+                    ),
+                );
+            }
+            if (requestUrl.includes("/comments")) {
+                return Promise.resolve(createJsonResponse([]));
+            }
+
+            return Promise.resolve(createJsonResponse(lineItems));
+        });
+
+        renderCaseQueueScreen(fetchImplementation);
+
+        const northstarRow = await screen.findByRole("row", {
+            name: /Employee 0191/i,
+        });
+        fireEvent.click(
+            within(northstarRow).getByRole("button", { name: "Review" }),
+        );
+        const dialog = screen.getByRole("dialog", { name: "Report d104c9ca" });
+
+        fireEvent.click(
+            within(dialog).getByRole("tab", { name: "Audit Trail" }),
+        );
+        expect(
+            await within(dialog).findByText("Transition Approved"),
+        ).toBeTruthy();
+        expect(
+            within(dialog).getByText("Synthetic review started."),
+        ).toBeTruthy();
+
+        fireEvent.click(within(dialog).getByRole("tab", { name: "Comments" }));
+        fireEvent.change(await within(dialog).findByLabelText("Comment"), {
+            target: { value: "Synthetic case queue comment." },
+        });
+        fireEvent.click(
+            within(dialog).getByRole("button", { name: "Post comment" }),
+        );
+
+        expect(
+            await within(dialog).findByText("Synthetic case queue comment."),
+        ).toBeTruthy();
     });
 
     test("selecting a receipt focuses and highlights its linked line item in a multi-line report", async () => {
@@ -783,12 +920,9 @@ describe("CaseQueueScreen", () => {
         fireEvent.click(
             within(reportRow).getByRole("button", { name: "Review" }),
         );
-        fireEvent.click(
-            screen.getByRole("button", {
-                name: /Central Parking receipt for \$28\.75/i,
-            }),
-        );
-
+        const receiptMetadata = screen.getByRole("button", {
+            name: /Central Parking receipt for \$28\.75/i,
+        });
         const reviewTable = screen.getByRole("table", {
             name: "Report review line items",
         });
@@ -798,6 +932,29 @@ describe("CaseQueueScreen", () => {
         const secondReviewRow = within(reviewTable).getByRole("row", {
             name: /Central Parking/i,
         });
+
+        fireEvent.mouseEnter(receiptMetadata);
+        expect(secondReviewRow.className).toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(firstReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+        expect(document.activeElement).not.toBe(secondReviewRow);
+        expect(scrollIntoView).not.toHaveBeenCalled();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/receipts/"),
+            ),
+        ).toBe(false);
+
+        fireEvent.mouseLeave(receiptMetadata);
+        expect(secondReviewRow.className).not.toContain(
+            "case-queue-dialog__row--active",
+        );
+
+        fireEvent.click(receiptMetadata);
         expect(secondReviewRow.className).toContain(
             "case-queue-dialog__row--active",
         );
@@ -806,6 +963,12 @@ describe("CaseQueueScreen", () => {
         );
         expect(document.activeElement).toBe(secondReviewRow);
         expect(scrollIntoView).toHaveBeenCalled();
+        expect(fetchImplementation).toHaveBeenCalledOnce();
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                readRequestInput(input).includes("/receipts/"),
+            ),
+        ).toBe(false);
         if (originalScrollIntoView === undefined) {
             Reflect.deleteProperty(Element.prototype, "scrollIntoView");
         } else {
@@ -863,7 +1026,7 @@ describe("CaseQueueScreen", () => {
         const receiptButton = screen.getByRole("button", {
             name: /Unlinked receipt/i,
         });
-        expect(receiptButton).toHaveProperty("disabled", true);
+        expect(receiptButton.getAttribute("aria-disabled")).toBe("true");
         expect(
             screen.getByText("application/pdf / Unlinked receipt"),
         ).toBeTruthy();

@@ -29,8 +29,8 @@ CORE_CASE_TARGET_GROUP_NAME="${CORE_CASE_TARGET_GROUP_NAME:-expenseflow-sandbox-
 INTERNAL_GL_CODING_TARGET_GROUP_NAME="${INTERNAL_GL_CODING_TARGET_GROUP_NAME:-expenseflow-sbox-int-gl-tg}"
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-}"
 RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-expenseflow-sandbox-receipts}"
-DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-sandbox-expense-report}"
-DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-expenseflow-sandbox-expense-report-tenant-index}"
+DYNAMODB_EXPENSE_REPORT_TABLE="${DYNAMODB_EXPENSE_REPORT_TABLE:-expenseflow-expense-reports}"
+DYNAMODB_EXPENSE_REPORT_TENANT_INDEX="${DYNAMODB_EXPENSE_REPORT_TENANT_INDEX:-tenantId-index}"
 STAGE_TRANSITION_SNS_TOPIC_NAME="${STAGE_TRANSITION_SNS_TOPIC_NAME:-expenseflow-sandbox-stage-transitions}"
 AUTH_JWT_KEY_ID="${AUTH_JWT_KEY_ID:-synthetic-scrum-147-key}"
 REDIS_URL="${REDIS_URL:-}"
@@ -479,6 +479,7 @@ create_or_tag_expense_report_table() {
     local table_name="$1"
     local tenant_index_name="$2"
     local table_arn
+    local tenant_index_status
 
     table_arn="$(aws_cli dynamodb describe-table \
         --table-name "$table_name" \
@@ -489,19 +490,27 @@ create_or_tag_expense_report_table() {
         table_arn="$(aws_cli dynamodb create-table \
             --table-name "$table_name" \
             --attribute-definitions \
-                AttributeName=tenantId,AttributeType=S \
                 AttributeName=id,AttributeType=S \
-                AttributeName=currentStage,AttributeType=S \
+                AttributeName=tenantId,AttributeType=S \
             --key-schema \
-                AttributeName=tenantId,KeyType=HASH \
-                AttributeName=id,KeyType=RANGE \
+                AttributeName=id,KeyType=HASH \
             --global-secondary-indexes \
-                "IndexName=$tenant_index_name,KeySchema=[{AttributeName=tenantId,KeyType=HASH},{AttributeName=currentStage,KeyType=RANGE}],Projection={ProjectionType=INCLUDE,NonKeyAttributes=[dueDate]}" \
+                "IndexName=$tenant_index_name,KeySchema=[{AttributeName=tenantId,KeyType=HASH}],Projection={ProjectionType=ALL}" \
             --billing-mode PAY_PER_REQUEST \
             --tags "${TAGS[@]}" \
             --query 'TableDescription.TableArn' \
             --output text)"
         aws_cli dynamodb wait table-exists --table-name "$table_name"
+    fi
+
+    tenant_index_status="$(aws_cli dynamodb describe-table \
+        --table-name "$table_name" \
+        --query "Table.GlobalSecondaryIndexes[?IndexName=='$tenant_index_name']|[0].IndexStatus" \
+        --output text)"
+    if [[ -z "$tenant_index_status" || "$tenant_index_status" == "None" ]]; then
+        echo "DynamoDB table $table_name exists without required GSI $tenant_index_name." >&2
+        echo "Create a new table or supply DYNAMODB_EXPENSE_REPORT_TENANT_INDEX for the existing tenant index." >&2
+        return 1
     fi
 
     aws_cli dynamodb tag-resource --resource-arn "$table_arn" --tags "${TAGS[@]}"

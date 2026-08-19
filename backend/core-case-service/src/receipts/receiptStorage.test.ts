@@ -1,8 +1,10 @@
 import {
+    GetObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
     type S3Client,
 } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
 
 import { BadGatewayError, ConflictError } from "../errors/problem-json.js";
@@ -73,6 +75,34 @@ void describe("receipt storage", () => {
         expect(vi.mocked(client.send).mock.calls[0]?.[0]).toBeInstanceOf(
             HeadObjectCommand,
         );
+    });
+
+    void test("streams receipt objects without buffering them into memory", async () => {
+        const body = Readable.from(["synthetic receipt"]);
+        const client = createClient(() =>
+            Promise.resolve({
+                Body: body,
+                ContentLength: 17,
+                ContentType: "application/pdf",
+            }),
+        );
+        const storage = createS3ReceiptStorage(client, storageConfig);
+
+        await expect(storage.read(expectedObjectKey)).resolves.toEqual({
+            content: body,
+            contentLength: 17,
+            contentType: "application/pdf",
+        });
+
+        const command = vi.mocked(client.send).mock.calls[0]?.[0];
+        expect(command).toBeInstanceOf(GetObjectCommand);
+        if (!(command instanceof GetObjectCommand)) {
+            throw new Error("Expected a GetObjectCommand");
+        }
+        expect(command.input).toMatchObject({
+            Bucket: "synthetic-receipts",
+            Key: expectedObjectKey,
+        });
     });
 
     void test("rejects metadata that does not match the stored object", async () => {

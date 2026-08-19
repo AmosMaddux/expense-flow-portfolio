@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
+import { Readable } from "node:stream";
 
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -122,6 +123,7 @@ const redisClientMock = vi.hoisted(() => ({
     }),
 }));
 const receiptStorageMock = vi.hoisted(() => ({
+    read: vi.fn(),
     put: vi.fn().mockResolvedValue({
         objectKey: "synthetic/receipt-object",
     }),
@@ -276,6 +278,12 @@ void describe("Expense Report routes", () => {
         redisClientMock.get.mockClear();
         redisClientMock.set.mockClear();
         redisClientMock.incr.mockClear();
+        receiptStorageMock.read.mockReset();
+        receiptStorageMock.read.mockResolvedValue({
+            content: Readable.from(["synthetic receipt image"]),
+            contentLength: 23,
+            contentType: "image/png",
+        });
         receiptStorageMock.put.mockClear();
         receiptStorageMock.verify.mockClear();
         stageTransitionPublishMock.mockClear();
@@ -1714,6 +1722,127 @@ void describe("Expense Report routes", () => {
             },
             expect.any(Buffer),
         );
+    });
+
+    void test("serves tenant-scoped receipt images to internal reviewers", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000245";
+        const owner = "50000000-0000-4000-8000-000000000245";
+        const financeAdmin = "50000000-0000-4000-8000-000000000246";
+        const departmentManager = "50000000-0000-4000-8000-000000000247";
+        const report = await db
+            .insert(expenseReport)
+            .values({
+                tenantId,
+                owner,
+                dueDate: "2026-08-25",
+                priority: "Normal",
+                currentStage: "AP Review",
+            })
+            .returning({ id: expenseReport.id });
+        const expenseReportId = report[0]?.id;
+        if (expenseReportId === undefined) {
+            throw new Error("Expected Expense Report to be created");
+        }
+        const receiptId = "81000000-0000-4000-8000-000000000245";
+        await db.insert(receiptMetadata).values({
+            id: receiptId,
+            tenantId,
+            expenseReportId,
+            lineItemId: null,
+            merchant: "Synthetic Receipt Preview",
+            receiptDate: "2026-07-21",
+            amount: "42.10",
+            blobReference: {
+                objectKey: "synthetic/receipt-preview-object",
+                filename: "synthetic-preview.png",
+                contentType: "image/png",
+                sizeBytes: 23,
+            },
+        });
+
+        const response = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(tenantId, financeAdmin, [
+                        "Finance Admin",
+                    ]),
+                },
+            },
+        );
+        const bodyText = new TextDecoder().decode(await response.arrayBuffer());
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("image/png");
+        expect(response.headers.get("content-disposition")).toBe(
+            'inline; filename="synthetic-preview.png"',
+        );
+        expect(bodyText).toBe("synthetic receipt image");
+        expect(receiptStorageMock.read).toHaveBeenCalledWith(
+            "synthetic/receipt-preview-object",
+        );
+
+        const managerResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        tenantId,
+                        departmentManager,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
+        expect(managerResponse.status).toBe(200);
+
+        const otherFinanceTenantId = "40000000-0000-4000-8000-000000000246";
+        const otherManagerTenantId = "40000000-0000-4000-8000-000000000247";
+        const employeeTenantId = "40000000-0000-4000-8000-000000000248";
+        const otherTenantFinanceAdmin = "50000000-0000-4000-8000-000000000248";
+        const otherTenantDepartmentManager =
+            "50000000-0000-4000-8000-000000000249";
+        receiptStorageMock.read.mockClear();
+        const otherTenantFinanceResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherFinanceTenantId,
+                        otherTenantFinanceAdmin,
+                        ["Finance Admin"],
+                    ),
+                },
+            },
+        );
+        const otherTenantManagerResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        otherManagerTenantId,
+                        otherTenantDepartmentManager,
+                        ["Department Manager"],
+                    ),
+                },
+            },
+        );
+        const employeeResponse = await requestApp(
+            `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`,
+            {
+                headers: {
+                    authorization: authorizationHeader(
+                        employeeTenantId,
+                        owner,
+                        ["Employee"],
+                    ),
+                },
+            },
+        );
+        expect(otherTenantFinanceResponse.status).toBe(404);
+        expect(otherTenantManagerResponse.status).toBe(404);
+        expect(employeeResponse.status).toBe(403);
+        expect(receiptStorageMock.read).not.toHaveBeenCalled();
     });
 
     void test("deduplicates retried mileage additions", async () => {
@@ -7420,6 +7549,141 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             detail: "Case Queue access is limited to internal roles.",
         });
     });
+
+    void test("lists tenant-scoped Expense Report summaries for Finance Admins", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000166";
+        const otherTenantId = "40000000-0000-4000-8000-000000000167";
+        const owner = "50000000-0000-4000-8000-000000000166";
+        const managerId = "52000000-0000-4000-8000-000000000166";
+        const financeAdminId = "51000000-0000-4000-8000-000000000166";
+
+        await db.insert(expenseReport).values([
+            {
+                id: "60000000-0000-4000-8000-000000000166",
+                tenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "Manager Approval",
+            },
+            {
+                id: "60000000-0000-4000-8000-000000000167",
+                tenantId: otherTenantId,
+                owner,
+                dueDate: "2026-07-20",
+                currentStage: "Manager Approval",
+            },
+        ]);
+        await db.insert(lineItem).values([
+            {
+                id: "30000000-0000-4000-8000-000000000166",
+                tenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000166",
+                merchant: "Synthetic Rail",
+                amount: "120.00",
+                currency: "USD",
+                category: "Travel",
+                expenseDate: "2026-07-20",
+            },
+            {
+                id: "30000000-0000-4000-8000-000000000167",
+                tenantId: otherTenantId,
+                expenseReportId: "60000000-0000-4000-8000-000000000167",
+                merchant: "Synthetic Rail",
+                amount: "120.00",
+                currency: "USD",
+                category: "Travel",
+                expenseDate: "2026-07-20",
+            },
+        ]);
+        await db.insert(glCodingResult).values({
+            id: "30000000-0000-4000-8000-000000000168",
+            submissionId: "30000000-0000-4000-8000-000000000169",
+            tenantId,
+            expenseReportId: "60000000-0000-4000-8000-000000000166",
+            sourceType: "line_item",
+            sourceId: "30000000-0000-4000-8000-000000000166",
+            category: "Travel",
+            mappingStatus: "mapped",
+            glAccountCode: "6000",
+            glAccountName: "Travel Expense",
+            amount: "120.00",
+            currency: "USD",
+            lineItemReviewAction: "approve",
+            lineItemReviewedBy: managerId,
+            lineItemReviewedAt: new Date("2026-07-21T12:00:00.000Z"),
+            codedAt: new Date("2026-07-20T12:00:00.000Z"),
+        });
+
+        const response = await requestApp("/v1/expense-reports", {
+            headers: {
+                authorization: authorizationHeader(tenantId, financeAdminId, [
+                    "Finance Admin",
+                ]),
+            },
+        });
+        const body = (await response.json()) as {
+            items?: Array<{
+                id?: string;
+                employeeId?: string;
+                managerId?: string | null;
+                category?: string;
+                categories?: string[];
+                amount?: string;
+                status?: string;
+            }>;
+            nextCursor?: string | null;
+        };
+
+        expect(response.status).toBe(200);
+        expect(body.items).toHaveLength(1);
+        expect(body.items?.[0]).toMatchObject({
+            id: "60000000-0000-4000-8000-000000000166",
+            employeeId: owner,
+            managerId,
+            category: "Travel",
+            categories: ["Travel"],
+            amount: "120.00",
+            status: "Manager Approval",
+        });
+        expect(body.nextCursor).toBeNull();
+        expect(
+            body.items?.some(
+                (summary) =>
+                    summary.id === "60000000-0000-4000-8000-000000000167",
+            ),
+        ).toBe(false);
+    });
+
+    void test.each([["Department Manager" as const], ["Employee" as const]])(
+        "returns 403 for Expense Report summaries with %s",
+        async (role) => {
+            const tenantId = "40000000-0000-4000-8000-000000000168";
+            const actorId = "51000000-0000-4000-8000-000000000168";
+
+            const response = await requestApp("/v1/expense-reports", {
+                headers: {
+                    authorization: authorizationHeader(tenantId, actorId, [
+                        role,
+                    ]),
+                },
+            });
+            const body = (await response.json()) as {
+                detail?: string;
+                status?: number;
+                title?: string;
+            };
+
+            expect(response.status).toBe(403);
+            expect(response.headers.get("content-type")).toContain(
+                "application/problem+json",
+            );
+            expect(body).toMatchObject({
+                title: "Forbidden",
+                status: 403,
+                detail: "Expense Reports access is limited to Finance Admins.",
+            });
+        },
+    );
 
     void test("lists tenant-scoped All Transactions for Finance Admins", async () => {
         const tenantId = "40000000-0000-4000-8000-000000000160";

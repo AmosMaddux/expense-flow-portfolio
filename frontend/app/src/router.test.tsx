@@ -234,7 +234,7 @@ describe("ExpenseFlowRouter", () => {
 
     test.each([
         ["Finance Admin", "/finance-dashboard", "Finance Dashboard"],
-        ["Department Manager", "/expense-reports", "Expense Reports"],
+        ["Department Manager", "/approval-queue", "Case Queue"],
         ["Employee", "/my-submissions", "My Submissions"],
         ["Admin", "/roles-permissions", "Roles & Permissions"],
     ] as const)(
@@ -378,9 +378,9 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
-        await screen.findByRole("heading", { name: "Expense Reports" });
+        await screen.findByRole("heading", { name: "Case Queue" });
         await waitFor(() =>
-            expect(window.location.pathname).toBe("/expense-reports"),
+            expect(window.location.pathname).toBe("/approval-queue"),
         );
     });
     test("redirects Employee users away from the internal Case Queue route", async () => {

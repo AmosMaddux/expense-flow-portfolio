@@ -27,7 +27,7 @@ export const navigationItems = [
     {
         label: "Expense Reports",
         path: "/expense-reports",
-        allowedRoles: internalRoles,
+        allowedRoles: financeAdminOnlyRoles,
     },
     {
         label: "All Transactions",
@@ -37,11 +37,6 @@ export const navigationItems = [
     {
         label: "Approval Queue",
         path: "/approval-queue",
-        allowedRoles: internalRoles,
-    },
-    {
-        label: "Receipts",
-        path: "/receipts",
         allowedRoles: internalRoles,
     },
     {

@@ -34,6 +34,8 @@ import {
     findDraftExpenseContent,
     findExpenseReportById,
     findExpenseReportReviewDetail,
+    findReceiptFileMetadata,
+    findExpenseReportSummaries,
     abandonUnpaidExpenseReportSettlementClaim,
     claimExpenseReportSettlement,
     compensatePaidSettlementStage,
@@ -63,6 +65,7 @@ import {
     CaseCommentOutboundResponseSchema,
     DraftExpenseContentOutboundResponseSchema,
     ExpenseReportReviewDetailSchema,
+    ExpenseReportSummaryPageSchema,
     MileageConfigOutboundResponseSchema,
     MileageEntryOutboundResponseSchema,
     ReceiptUploadOutboundResponseSchema,
@@ -78,11 +81,14 @@ import {
     type DraftExpenseContentResponse,
     type ExpenseReportResponse,
     type ExpenseReportReviewDetail,
+    type ExpenseReportSummaryPage,
     type GetExpenseReportRequest,
     type MileageConfigResponse,
     type MileageEntryResponse,
     type ReceiptUploadMetadataRequest,
     type ReceiptUploadResponse,
+    ReadExpenseReportSummariesInboundRequestSchema,
+    type ReadExpenseReportSummariesParams,
     type ReviewExpenseReportLineItemRequest,
     type ReviewExpenseReportSourceParams,
     type SettleExpenseReportRequest,
@@ -117,6 +123,13 @@ export type ExpenseReportSubmissionDependencies =
 export type SubmitExpenseReportResult = {
     correlationId: string;
     report: ExpenseReportResponse;
+};
+
+export type ReceiptFileResponse = {
+    content: NodeJS.ReadableStream;
+    contentLength: number | null;
+    contentType: string;
+    filename: string | null;
 };
 
 /**
@@ -197,6 +210,36 @@ export async function readExpenseReportReviewDetail(request: {
 }
 
 /**
+ * Reads tenant-scoped Expense Report summaries for internal workspaces.
+ */
+export async function readExpenseReportSummaries(
+    request: {
+        tenantId: string;
+        roles: RoleName[];
+    } & ReadExpenseReportSummariesParams,
+): Promise<ExpenseReportSummaryPage> {
+    if (!request.roles.includes("Finance Admin")) {
+        throw new ForbiddenError();
+    }
+
+    const parsedRequest = ReadExpenseReportSummariesInboundRequestSchema.parse({
+        amountMax: request.amountMax,
+        amountMin: request.amountMin,
+        category: request.category,
+        cursor: request.cursor,
+        date: request.date,
+        employee: request.employee,
+        limit: request.limit,
+        status: request.status,
+        tenantId: request.tenantId,
+    });
+
+    return ExpenseReportSummaryPageSchema.parse(
+        await findExpenseReportSummaries(parsedRequest),
+    );
+}
+
+/**
  * Reads manager-review line items in the authenticated tenant's Approval Queue.
  */
 export async function readApprovalQueueLineItems(request: {
@@ -208,6 +251,36 @@ export async function readApprovalQueueLineItems(request: {
     }
 
     return findApprovalQueueLineItems(request.tenantId);
+}
+
+/**
+ * Opens a tenant-scoped receipt stream for an internal review surface.
+ */
+export async function readReceiptFile(request: {
+    expenseReportId: string;
+    receiptId: string;
+    tenantId: string;
+}): Promise<ReceiptFileResponse> {
+    const receipt = await findReceiptFileMetadata(
+        request.tenantId,
+        request.expenseReportId,
+        request.receiptId,
+    );
+    if (receipt === undefined) {
+        throw new NotFoundError("Receipt not found.");
+    }
+
+    const storedFile = await getDefaultReceiptStorage().read(receipt.objectKey);
+
+    return {
+        content: storedFile.content,
+        contentLength: storedFile.contentLength ?? receipt.sizeBytes,
+        contentType:
+            receipt.contentType ??
+            storedFile.contentType ??
+            "application/octet-stream",
+        filename: receipt.filename,
+    };
 }
 
 /**

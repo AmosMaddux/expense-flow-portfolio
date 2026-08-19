@@ -1,8 +1,11 @@
 import {
+    GetObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
     S3Client,
 } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
 import {
     loadReceiptStorageConfig,
@@ -19,6 +22,11 @@ export type ReceiptObjectDescriptor = {
 };
 
 export type ReceiptStorage = {
+    read(objectKey: string): Promise<{
+        content: NodeJS.ReadableStream;
+        contentLength?: number;
+        contentType?: string;
+    }>;
     put(
         descriptor: ReceiptObjectDescriptor,
         content: Uint8Array,
@@ -53,6 +61,35 @@ export function createS3ReceiptStorage(
     config: ReceiptStorageConfig,
 ): ReceiptStorage {
     return {
+        async read(objectKey) {
+            try {
+                const storedObject = await client.send(
+                    new GetObjectCommand({
+                        Bucket: config.bucket,
+                        Key: objectKey,
+                    }),
+                );
+                const body = storedObject.Body;
+                if (body === undefined) {
+                    throw new Error("Receipt storage response body was empty.");
+                }
+
+                return {
+                    content: toNodeReadableStream(body),
+                    ...(storedObject.ContentLength === undefined
+                        ? {}
+                        : { contentLength: storedObject.ContentLength }),
+                    ...(storedObject.ContentType === undefined
+                        ? {}
+                        : { contentType: storedObject.ContentType }),
+                };
+            } catch (error: unknown) {
+                throw new BadGatewayError(
+                    "Receipt storage could not read the file.",
+                    { cause: error },
+                );
+            }
+        },
         async put(descriptor, content) {
             const objectKey = buildReceiptObjectKey(descriptor);
             try {
@@ -108,6 +145,44 @@ export function createS3ReceiptStorage(
     };
 }
 
+function toNodeReadableStream(body: unknown): NodeJS.ReadableStream {
+    if (body instanceof Readable) {
+        return body;
+    }
+
+    if (hasPipe(body)) {
+        return body;
+    }
+
+    if (hasTransformToWebStream(body)) {
+        return Readable.fromWeb(
+            body.transformToWebStream() as NodeReadableStream,
+        );
+    }
+
+    throw new Error("Receipt storage response body was not streamable.");
+}
+
+function hasPipe(body: unknown): body is NodeJS.ReadableStream {
+    return (
+        typeof body === "object" &&
+        body !== null &&
+        "pipe" in body &&
+        typeof body.pipe === "function"
+    );
+}
+
+function hasTransformToWebStream(body: unknown): body is {
+    transformToWebStream: () => ReadableStream<Uint8Array>;
+} {
+    return (
+        typeof body === "object" &&
+        body !== null &&
+        "transformToWebStream" in body &&
+        typeof body.transformToWebStream === "function"
+    );
+}
+
 /**
  * Clears the cached storage adapter between configuration-sensitive tests.
  */
@@ -127,11 +202,18 @@ function buildReceiptObjectKey(descriptor: ReceiptObjectDescriptor): string {
 }
 
 function toS3ClientConfig(config: ReceiptStorageConfig): {
+    credentials?: {
+        accessKeyId: string;
+        secretAccessKey: string;
+    };
     endpoint?: string;
     forcePathStyle: boolean;
     region: string;
 } {
     return {
+        ...(config.credentials === undefined
+            ? {}
+            : { credentials: config.credentials }),
         ...(config.endpoint === undefined ? {} : { endpoint: config.endpoint }),
         forcePathStyle: config.forcePathStyle,
         region: config.region,

@@ -74,7 +74,11 @@ services:
                 exit 1;
                 fi;
                 else
-                export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
+                unset AWS_PROFILE
+                AWS_SDK_LOAD_CONFIG
+                AWS_SESSION_TOKEN
+                AWS_CREDENTIAL_EXPIRATION;
+                until export STAGE_TRANSITION_SNS_TOPIC_ARN="$$(node --input-type=module
                 -e "import { CreateTopicCommand, SNSClient } from '@aws-sdk/client-sns';
                 const client = new SNSClient({
                 endpoint: process.env.STAGE_TRANSITION_SNS_ENDPOINT,
@@ -83,11 +87,12 @@ services:
                 const response = await client.send(new CreateTopicCommand({
                 Name: 'expenseflow-stage-transitions-local'
                 }));
-                process.stdout.write(response.TopicArn ?? '');")";
-                if [ -z "$$STAGE_TRANSITION_SNS_TOPIC_ARN" ]; then
+                process.stdout.write(response.TopicArn ?? '');")" &&
+                [ -n "$$STAGE_TRANSITION_SNS_TOPIC_ARN" ]; do
                 echo "Local stage-transition topic identifier could not be resolved." >&2;
-                exit 1;
-                fi;
+                sleep 2;
+                done;
+                export STAGE_TRANSITION_SNS_TOPIC_ARN;
                 fi;
                 node backend/core-case-service/dist/index.js
         environment:
@@ -126,11 +131,15 @@ services:
             MFA_TOTP_SECRET_ENCRYPTION_KEY: ${MFA_TOTP_SECRET_ENCRYPTION_KEY:?MFA_TOTP_SECRET_ENCRYPTION_KEY must be set in .env}
             MFA_TOTP_SECRET_KEY_VERSION: ${MFA_TOTP_SECRET_KEY_VERSION:-local-dev-v1}
             MILEAGE_REIMBURSEMENT_RATE: ${MILEAGE_REIMBURSEMENT_RATE:-0.70}
+            NODE_ENV: development
             PORT: 3000
             RECEIPT_STORAGE_BUCKET: ${RECEIPT_STORAGE_BUCKET:-expenseflow-receipts-local}
+            RECEIPT_STORAGE_ACCESS_KEY_ID: ${RECEIPT_STORAGE_ACCESS_KEY_ID:-expenseflow-local}
             RECEIPT_STORAGE_ENDPOINT: http://minio:9000
             RECEIPT_STORAGE_FORCE_PATH_STYLE: ${RECEIPT_STORAGE_FORCE_PATH_STYLE:-true}
+            RECEIPT_STORAGE_SECRET_ACCESS_KEY: ${RECEIPT_STORAGE_SECRET_ACCESS_KEY:-expenseflow-local-dev-only}
             REDIS_URL: redis://redis:6379
+            SPA_ORIGIN: ${SPA_ORIGIN:-http://127.0.0.1:5173}
             STAGE_TRANSITION_SNS_TOPIC_ARN: ${STAGE_TRANSITION_SNS_TOPIC_ARN:-}
             STAGE_TRANSITION_SNS_ENDPOINT: http://localstack:4566
             STAGE_TRANSITION_SQS_ENDPOINT: http://localstack:4566
@@ -315,6 +324,6 @@ services:
             timeout: 3s
             retries: 12
         ports:
-            - "4566:4566"
+            - "${LOCALSTACK_PORT:-4566}:4566"
         volumes:
             - ./scripts/init-local-stage-transition-events.sh:/etc/localstack/init/ready.d/init-stage-transition-events.sh:ro
