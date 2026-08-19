@@ -1,0 +1,7 @@
+# Trivy vulnerability suppressions for the secure release gate.
+#
+# Add only an exact CVE ID, immediately preceded by one metadata comment line:
+#   # owner=<github-handle>; review-by=<YYYY-MM-DD>; reason=<rationale>
+#
+# See docs/secure-release-gate.md for the approval process. The review-by date
+# must be no more than 90 days out and cannot be in the past.

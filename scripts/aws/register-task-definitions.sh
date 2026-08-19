@@ -161,6 +161,11 @@ export STAGE_TRANSITION_SNS_TOPIC_ARN
 export CORE_CASE_IMAGE_URI="${CORE_CASE_IMAGE_URI:-$registry_uri/$CORE_CASE_REPOSITORY:$IMAGE_TAG}"
 export GL_CODING_IMAGE_URI="${GL_CODING_IMAGE_URI:-$registry_uri/$GL_CODING_REPOSITORY:$IMAGE_TAG}"
 if [[ "$VALIDATE_RENDER_ONLY" != "true" ]]; then
+    # Only a signed image built by scripts/aws/build-push-images.sh may be
+    # registered into a task definition. See docs/secure-release-gate.md.
+    "$(dirname "${BASH_SOURCE[0]}")/verify-image-signatures.sh" "$CORE_CASE_IMAGE_URI" "$GL_CODING_IMAGE_URI"
+fi
+if [[ "$VALIDATE_RENDER_ONLY" != "true" ]]; then
     ECS_TASK_EXECUTION_ROLE_ARN="${ECS_TASK_EXECUTION_ROLE_ARN:-$(iam_role_arn "$EXECUTION_ROLE_NAME")}"
     CORE_CASE_TASK_ROLE_ARN="${CORE_CASE_TASK_ROLE_ARN:-$(iam_role_arn "$CORE_CASE_TASK_ROLE_NAME")}"
     GL_CODING_TASK_ROLE_ARN="${GL_CODING_TASK_ROLE_ARN:-$(iam_role_arn "$GL_CODING_TASK_ROLE_NAME")}"
