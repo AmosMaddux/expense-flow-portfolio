@@ -8,6 +8,7 @@ import {
 const encryptionAlgorithm: CipherGCMTypes = "aes-256-gcm";
 const requiredKeyBytes = 32;
 const ivBytes = 12;
+const authTagBytes = 16;
 
 export type MfaTotpSecretEncryptionConfig = {
     key: Buffer;
@@ -69,7 +70,9 @@ export function createTotpSecretProtector(
     return {
         protect(secret: Buffer | string): ProtectedTotpSecret {
             const iv = randomBytes(ivBytes);
-            const cipher = createCipheriv(encryptionAlgorithm, key, iv);
+            const cipher = createCipheriv(encryptionAlgorithm, key, iv, {
+                authTagLength: authTagBytes,
+            });
             const ciphertext = Buffer.concat([
                 cipher.update(secret),
                 cipher.final(),
@@ -87,6 +90,7 @@ export function createTotpSecretProtector(
                 encryptionAlgorithm,
                 key,
                 Buffer.from(protectedSecret.secretIv, "base64"),
+                { authTagLength: authTagBytes },
             );
             decipher.setAuthTag(
                 Buffer.from(protectedSecret.secretAuthTag, "base64"),

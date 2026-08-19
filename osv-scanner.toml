@@ -1,0 +1,9 @@
+[[IgnoredVulns]]
+id = "GHSA-52f5-9888-hmc6"
+ignoreUntil = 2026-09-18
+reason = "The latest @lhci/cli pins tmp below the fixed range; it is used only for isolated CI audits."
+
+[[IgnoredVulns]]
+id = "GHSA-ph9p-34f9-6g65"
+ignoreUntil = 2026-09-18
+reason = "The latest @lhci/cli pins tmp below the fixed range; it is used only for isolated CI audits."

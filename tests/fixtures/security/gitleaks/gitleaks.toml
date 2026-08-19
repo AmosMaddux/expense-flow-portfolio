@@ -1,0 +1,6 @@
+title = "ExpenseFlow synthetic Gitleaks contract"
+
+[[rules]]
+id = "expenseflow-synthetic-test-token"
+description = "Detect the non-production token used by the security-gate contract test"
+regex = '''EXPENSEFLOW_SYNTHETIC_TEST_TOKEN=[A-Z0-9]{24}'''

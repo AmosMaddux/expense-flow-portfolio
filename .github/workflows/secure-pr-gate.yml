@@ -1,0 +1,143 @@
+name: Secure PR Gate
+
+on:
+    pull_request:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: secure-pr-gate-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    gate-contract-tests:
+        name: Security gate contract tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        env:
+            ACTIONLINT_IMAGE: rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+            GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+            OSV_IMAGE: ghcr.io/google/osv-scanner-action@sha256:b892993f7834b6a97b7476051f6c1f53cddb4b9da1100e9801952d90b5eb398a
+            SEMGREP_IMAGE: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.13"
+                  cache: pip
+
+            - name: Install Bandit
+              run: python -m pip install --disable-pip-version-check bandit==1.9.4
+
+            - name: Validate scanner contracts
+              run: scripts/ci/test-secure-pr-gate.sh
+
+    semgrep:
+        name: Semgrep - TypeScript
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        env:
+            SEMGREP_IMAGE: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Scan TypeScript for high-severity findings
+              run: |
+                  docker run --rm \
+                    --volume "$GITHUB_WORKSPACE:/src" \
+                    --workdir /src \
+                    --entrypoint bash \
+                    "$SEMGREP_IMAGE" \
+                    /src/scripts/ci/run-semgrep-gate.sh .
+
+    bandit:
+        name: Bandit - Python
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.13"
+                  cache: pip
+
+            - name: Install Bandit
+              run: python -m pip install --disable-pip-version-check bandit==1.9.4
+
+            - name: Scan Python for high-severity findings
+              run: scripts/ci/run-bandit-gate.sh backend tests
+
+    osv:
+        name: OSV - Dependencies
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        env:
+            OSV_IMAGE: ghcr.io/google/osv-scanner-action@sha256:b892993f7834b6a97b7476051f6c1f53cddb4b9da1100e9801952d90b5eb398a
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Scan dependencies
+              run: scripts/ci/run-osv-gate.sh --recursive ./
+
+    gitleaks:
+        name: Gitleaks - PR Commits
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        env:
+            GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+
+        steps:
+            - name: Checkout full history
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+              with:
+                  fetch-depth: 0
+
+            - name: Scan PR commits for secrets
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: scripts/ci/run-gitleaks-gate.sh . "$BASE_SHA" "$HEAD_SHA"
+
+    secure-pr-gate:
+        name: Secure PR Gate
+        if: always()
+        needs:
+            - gate-contract-tests
+            - semgrep
+            - bandit
+            - osv
+            - gitleaks
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Enforce scanner results
+              env:
+                  BANDIT_RESULT: ${{ needs.bandit.result }}
+                  GATE_CONTRACT_RESULT: ${{ needs.gate-contract-tests.result }}
+                  GITLEAKS_RESULT: ${{ needs.gitleaks.result }}
+                  OSV_RESULT: ${{ needs.osv.result }}
+                  SEMGREP_RESULT: ${{ needs.semgrep.result }}
+              run: >-
+                  scripts/ci/enforce-secure-pr-gate-results.sh
+                  "Contract tests:$GATE_CONTRACT_RESULT"
+                  "Semgrep:$SEMGREP_RESULT"
+                  "Bandit:$BANDIT_RESULT"
+                  "OSV:$OSV_RESULT"
+                  "Gitleaks:$GITLEAKS_RESULT"

@@ -18,6 +18,7 @@ coverage/
 playwright-report/
 test-results/
 /.lighthouseci/
+/.secure-pr-gate-contract/
 
 # dotenv environment variable files
 .env

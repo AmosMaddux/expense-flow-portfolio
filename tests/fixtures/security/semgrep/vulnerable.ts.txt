@@ -1,0 +1,7 @@
+const jwt = require("jsonwebtoken");
+const syntheticToken = "synthetic.header.payload";
+const syntheticVerificationKey = "not-a-real-key";
+
+jwt.verify(syntheticToken, syntheticVerificationKey, {
+    algorithms: ["none"],
+});
