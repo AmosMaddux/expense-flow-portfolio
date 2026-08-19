@@ -17,6 +17,7 @@ Pull requests must:
 - Include data-handling notes when the change touches logs, fixtures, generated output, documents, receipts, payment data, tenant data, or private identifiers.
 - Follow the commenting policy in `AGENTS.md` for public docstrings/JSDoc and intentional inline comments.
 - Confirm the AI code-review checklist in [docs/pr-review-checklist.md](docs/pr-review-checklist.md) was completed.
+- Follow [the secure PR gate suppression process](docs/secure-pr-gate-suppressions.md) for every vetted scanner false positive or time-bounded risk acceptance.
 
 If a PR changes an architectural decision, tenant boundary, workflow contract, authorization model, data classification posture, or technology choice, it must link the relevant ADR under `docs/adr/`. New ADRs should use the filename pattern `NNNN-short-title.md`.
 

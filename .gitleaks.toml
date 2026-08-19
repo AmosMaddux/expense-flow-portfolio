@@ -1,0 +1,4 @@
+title = "ExpenseFlow secure PR gate"
+
+[extend]
+useDefault = true
