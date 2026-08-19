@@ -119,3 +119,37 @@ expect_failure "Cosign rejects a tampered SBOM" \
 expect_failure "Cosign verify requires scoped identity metadata when keyless" \
   "$repo_root/scripts/ci/run-cosign-verify-blob.sh" \
     "$runtime_dir/sbom.cdx.json" "$runtime_dir/sbom.cdx.json.cosign.bundle"
+
+# Exercise real image signing and attestation (not just blob signing) against
+# an ephemeral local registry, mirroring what scripts/aws/build-push-images.sh
+# and the release-scan workflow job do against a real registry.
+if [[ -n "${TEST_REGISTRY:-}" ]]; then
+  signed_image="$TEST_REGISTRY/secure-release-gate-fixture-clean:test"
+  unsigned_image="$TEST_REGISTRY/secure-release-gate-fixture-unsigned:test"
+
+  docker tag secure-release-gate-fixture-clean:test "$signed_image"
+  docker push --quiet "$signed_image" >/dev/null
+  docker tag secure-release-gate-fixture-vulnerable:test "$unsigned_image"
+  docker push --quiet "$unsigned_image" >/dev/null
+
+  cleanup() {
+    docker rmi --force secure-release-gate-fixture-clean:test secure-release-gate-fixture-vulnerable:test "$signed_image" "$unsigned_image" >/dev/null 2>&1 || true
+    rm -rf "$runtime_dir"
+  }
+
+  expect_success "Cosign signs the pushed image" \
+    env COSIGN_KEY="$cosign_key_dir/cosign.key" COSIGN_PASSWORD="" \
+      "$repo_root/scripts/ci/run-cosign-sign-image.sh" "$signed_image"
+
+  expect_success "Cosign attests the SBOM to the signed image" \
+    env COSIGN_KEY="$cosign_key_dir/cosign.key" COSIGN_PASSWORD="" \
+      "$repo_root/scripts/ci/run-cosign-attest-sbom.sh" "$signed_image" "$runtime_dir/sbom.cdx.json" cyclonedx
+
+  expect_success "Deploy-time verification accepts the signed image and attestation" \
+    env COSIGN_KEY="$cosign_key_dir/cosign.pub" \
+      "$repo_root/scripts/aws/verify-image-signatures.sh" "$signed_image"
+
+  expect_failure "Deploy-time verification rejects an unsigned image" \
+    env COSIGN_KEY="$cosign_key_dir/cosign.pub" \
+      "$repo_root/scripts/aws/verify-image-signatures.sh" "$unsigned_image"
+fi

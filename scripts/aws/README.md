@@ -130,7 +130,7 @@ attestation. The Trivy report and SBOM are written under
 Before rendering task definitions, this script runs
 `scripts/aws/verify-image-signatures.sh` against `CORE_CASE_IMAGE_URI` and
 `GL_CODING_IMAGE_URI` and refuses to register a task definition if either
-image's Cosign signature does not verify. Set
+image's Cosign signature or CycloneDX SBOM attestation does not verify. Set
 `COSIGN_CERTIFICATE_IDENTITY_REGEXP` and `COSIGN_CERTIFICATE_OIDC_ISSUER` to
 match the identity that ran `build-push-images.sh` (or `COSIGN_KEY` if it
 signed with a key pair).

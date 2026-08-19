@@ -5,12 +5,16 @@ on:
         paths:
             - ".github/workflows/secure-release-gate.yml"
             - "backend/core-case-service/Dockerfile"
+            - "backend/python/Dockerfile"
             - "docs/secure-release-gate.md"
             - ".trivyignore"
             - "scripts/ci/run-trivy-gate.sh"
             - "scripts/ci/run-syft-sbom.sh"
             - "scripts/ci/run-cosign-sign-blob.sh"
             - "scripts/ci/run-cosign-verify-blob.sh"
+            - "scripts/ci/run-cosign-sign-image.sh"
+            - "scripts/ci/run-cosign-attest-sbom.sh"
+            - "scripts/aws/verify-image-signatures.sh"
             - "scripts/ci/check-secure-release-suppression-metadata.sh"
             - "scripts/ci/test-secure-release-gate.sh"
             - "scripts/ci/test-check-secure-release-suppression-metadata.sh"
@@ -20,10 +24,13 @@ on:
             - main
         paths:
             - "backend/core-case-service/**"
+            - "backend/python/**"
             - ".trivyignore"
             - "scripts/ci/run-trivy-gate.sh"
             - "scripts/ci/run-syft-sbom.sh"
-            - "scripts/ci/run-cosign-sign-blob.sh"
+            - "scripts/ci/run-cosign-sign-image.sh"
+            - "scripts/ci/run-cosign-attest-sbom.sh"
+            - "scripts/aws/verify-image-signatures.sh"
 
 permissions:
     contents: read
@@ -40,6 +47,13 @@ jobs:
         env:
             TRIVY_IMAGE: aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7
             SYFT_IMAGE: anchore/syft@sha256:b8c170b8e51bfc4779ec3ef4399942c57290f5ce76a9c3af564c9d00d4946a6b
+            TEST_REGISTRY: localhost:5050
+
+        services:
+            registry:
+                image: registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+                ports:
+                    - 5050:5000
 
         steps:
             - name: Checkout
@@ -58,12 +72,21 @@ jobs:
               run: scripts/ci/test-secure-release-gate.sh
 
     release-scan:
-        name: Scan and sign Core Case Service image
+        name: Scan and sign ${{ matrix.service.name }} image
         runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 20
         permissions:
             contents: read
+            packages: write
             id-token: write
+        strategy:
+            fail-fast: false
+            matrix:
+                service:
+                    - name: core-case-service
+                      dockerfile: backend/core-case-service/Dockerfile
+                    - name: gl-coding-service
+                      dockerfile: backend/python/Dockerfile
         env:
             TRIVY_IMAGE: aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7
             SYFT_IMAGE: anchore/syft@sha256:b8c170b8e51bfc4779ec3ef4399942c57290f5ce76a9c3af564c9d00d4946a6b
@@ -75,17 +98,22 @@ jobs:
             - name: Install Cosign
               uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-            - name: Build Core Case Service image
+            - name: Compute evidence image reference
+              run: |
+                  repo_lc=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+                  echo "IMAGE_REF=ghcr.io/$repo_lc/secure-release-gate/${{ matrix.service.name }}:${{ github.sha }}" >> "$GITHUB_ENV"
+
+            - name: Build ${{ matrix.service.name }} image
               run: |
                   docker build \
-                    --file backend/core-case-service/Dockerfile \
-                    --tag expenseflow-core-case:release-gate \
+                    --file ${{ matrix.service.dockerfile }} \
+                    --tag "$IMAGE_REF" \
                     .
 
             - name: Save image for scanning
               run: |
                   mkdir -p .secure-release-gate
-                  docker save expenseflow-core-case:release-gate -o .secure-release-gate/image.tar
+                  docker save "$IMAGE_REF" -o .secure-release-gate/image.tar
 
             - name: Trivy scan blocks on critical CVEs
               run: |
@@ -103,19 +131,42 @@ jobs:
                     docker-archive:/repo/.secure-release-gate/image.tar \
                     -o cyclonedx-json=/repo/.secure-release-gate/sbom.cdx.json
 
-            - name: Sign SBOM keylessly with this workflow's OIDC identity
+            # The steps below push this build to GHCR as a per-commit evidence
+            # artifact and sign/attest *that* pushed image, so the Cosign
+            # signature is cryptographically bound to the exact scanned
+            # image digest instead of a detached SBOM blob. See
+            # docs/secure-release-gate.md.
+            - name: Log in to GHCR
               if: github.event_name == 'push'
-              run: scripts/ci/run-cosign-sign-blob.sh .secure-release-gate/sbom.cdx.json
+              run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            - name: Push evidence image to GHCR
+              if: github.event_name == 'push'
+              run: docker push "$IMAGE_REF"
+
+            - name: Sign the pushed image keylessly with this workflow's OIDC identity
+              if: github.event_name == 'push'
+              run: scripts/ci/run-cosign-sign-image.sh "$IMAGE_REF"
+
+            - name: Attest the SBOM to the signed image
+              if: github.event_name == 'push'
+              run: scripts/ci/run-cosign-attest-sbom.sh "$IMAGE_REF" .secure-release-gate/sbom.cdx.json cyclonedx
+
+            - name: Verify the image signature and SBOM attestation
+              if: github.event_name == 'push'
+              env:
+                  COSIGN_CERTIFICATE_IDENTITY_REGEXP: ^https://github\.com/${{ github.repository }}/\.github/workflows/secure-release-gate\.yml@refs/heads/main$
+                  COSIGN_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+              run: scripts/aws/verify-image-signatures.sh "$IMAGE_REF"
 
             - name: Publish evidence packet
               if: always()
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
-                  name: core-case-service-secure-release-evidence-${{ github.sha }}
+                  name: ${{ matrix.service.name }}-secure-release-evidence-${{ github.sha }}
                   path: |
                       .secure-release-gate/trivy-report.json
                       .secure-release-gate/sbom.cdx.json
-                      .secure-release-gate/sbom.cdx.json.cosign.bundle
                   if-no-files-found: warn
                   retention-days: 90
 

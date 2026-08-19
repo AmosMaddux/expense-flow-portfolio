@@ -12,6 +12,7 @@ EVIDENCE_DIR="${SECURE_RELEASE_GATE_EVIDENCE_DIR:-evidence/secure-release-gate}"
 TRIVY_BIN="${TRIVY_BIN:-trivy}"
 SYFT_BIN="${SYFT_BIN:-syft}"
 COSIGN_BIN="${COSIGN_BIN:-cosign}"
+CI_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ci" && pwd)"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -30,6 +31,7 @@ require_tool() {
 require_tool "$TRIVY_BIN"
 require_tool "$SYFT_BIN"
 require_tool "$COSIGN_BIN"
+export COSIGN_BIN
 
 aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
@@ -53,11 +55,11 @@ scan_and_sign_image() {
     "$SYFT_BIN" "$image_uri" \
         -o "cyclonedx-json=$EVIDENCE_DIR/$evidence_prefix-sbom.cdx.json"
 
-    "$COSIGN_BIN" sign --yes "$image_uri"
-    "$COSIGN_BIN" attest --yes \
-        --predicate "$EVIDENCE_DIR/$evidence_prefix-sbom.cdx.json" \
-        --type cyclonedx \
-        "$image_uri"
+    "$CI_SCRIPTS_DIR/run-cosign-sign-image.sh" "$image_uri"
+    "$CI_SCRIPTS_DIR/run-cosign-attest-sbom.sh" \
+        "$image_uri" \
+        "$EVIDENCE_DIR/$evidence_prefix-sbom.cdx.json" \
+        cyclonedx
 }
 
 mkdir -p "$EVIDENCE_DIR"

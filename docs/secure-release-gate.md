@@ -1,30 +1,38 @@
 # Secure Release Gate
 
 The Secure Release Gate scans each container image with Trivy, generates a
-Syft SBOM, and signs the image and its SBOM with Cosign before the image is
-allowed to reach a runtime environment. It complements the
+Syft SBOM, and signs the image and attests the SBOM to it with Cosign before
+the image is allowed to reach a runtime environment. It complements the
 [Secure PR Gate](secure-pr-gate-suppressions.md), which scans source and
 dependencies on every pull request; the release gate scans the built artifact.
+
+Both service images are covered: `backend/core-case-service/Dockerfile`
+(Core Case Service) and `backend/python/Dockerfile` (GL-coding service).
 
 ## What runs where
 
 `.github/workflows/secure-release-gate.yml` validates the gate's scripts on
 every pull request that touches a Dockerfile, the gate scripts, or their
-fixtures, and runs the full scan-SBOM-sign sequence against the Core Case
-Service image on every push to `main`. That workflow job builds the image
-locally, so it does not have credentials for the real container registry; it
-publishes the Trivy report and Syft SBOM as workflow artifacts for the
-evidence packet, and it signs the SBOM with a keyless Cosign signature scoped
-to the workflow's own GitHub Actions OIDC identity, proving the scan and SBOM
-came from this pipeline.
+fixtures. On every push to `main`, its `release-scan` job runs as a matrix
+over both service Dockerfiles: it builds the image, runs the Trivy scan and
+Syft SBOM, pushes the build to `ghcr.io/<repo>/secure-release-gate/<service>`
+as a per-commit evidence image using the workflow's own `GITHUB_TOKEN` (no
+extra credentials needed), and then signs and attests *that pushed image*
+with Cosign. Signing the pushed image, rather than signing the SBOM alone as
+a detached blob, is what cryptographically binds the signature to the exact
+scanned artifact digest — a bare SBOM signature does not prove anything about
+which image it describes. The job then verifies its own signature and
+attestation before finishing, and publishes the Trivy report and SBOM as
+workflow artifacts for the evidence packet.
 
-The image that actually reaches ECS is pushed by `scripts/aws/build-push-images.sh`.
-That script runs the same Trivy scan, Syft SBOM generation, and Cosign signing
-against the pushed image reference, so the artifact ECS runs is scanned and
-signed at the point it enters the registry. `scripts/aws/register-task-definitions.sh`
-runs `scripts/aws/verify-image-signatures.sh` before it renders task
-definitions, so a task definition cannot reference an image whose signature
-does not verify.
+The image that actually reaches ECS is pushed by `scripts/aws/build-push-images.sh`,
+for both services. That script runs the same Trivy scan, Syft SBOM
+generation, and Cosign signing/attestation against the pushed ECR image
+reference, so the artifact ECS runs is scanned and signed at the point it
+enters the registry. `scripts/aws/register-task-definitions.sh` runs
+`scripts/aws/verify-image-signatures.sh` before it renders task definitions,
+so a task definition cannot reference an image whose signature or SBOM
+attestation does not verify.
 
 ## Trivy
 
@@ -37,26 +45,39 @@ reported in JSON so they can be attached to the evidence packet.
 
 Syft generates a CycloneDX SBOM for each image (`scripts/ci/run-syft-sbom.sh`,
 wrapping `syft`). The SBOM is published as a build artifact and is the
-predicate Cosign attests against the pushed image.
+predicate Cosign attests to the image.
 
 ## Cosign
 
-Cosign signs the pushed image and attests the SBOM to it. Signing is keyless
-by default: it uses the calling identity's GitHub Actions OIDC token (or, for
-a local release from `scripts/aws/build-push-images.sh`, the operator's
-Sigstore identity) against the public Fulcio/Rekor instances, so no signing
-key needs to be stored as a secret. Set `COSIGN_KEY` (and `COSIGN_PASSWORD`
-for private keys) to sign with a key pair instead, for example in an
-environment without OIDC or network access to Sigstore.
+Cosign signs the pushed image (`scripts/ci/run-cosign-sign-image.sh`,
+wrapping `cosign sign`) and attests the SBOM to it
+(`scripts/ci/run-cosign-attest-sbom.sh`, wrapping `cosign attest`). Both
+operate on an image reference that already exists in a registry — GHCR for
+the CI evidence job, ECR for the real release — so the resulting signature
+and attestation are bound to that exact image digest, not to a standalone
+file. Signing is keyless by default: it uses the calling identity's GitHub
+Actions OIDC token (or, for a local release from
+`scripts/aws/build-push-images.sh`, the operator's Sigstore identity) against
+the public Fulcio/Rekor instances, so no signing key needs to be stored as a
+secret. Set `COSIGN_KEY` (and `COSIGN_PASSWORD` for private keys) to sign
+with a key pair instead, for example in an environment without OIDC or
+network access to Sigstore.
 
-Verification (`scripts/aws/verify-image-signatures.sh`, wrapping
-`cosign verify`) requires `COSIGN_CERTIFICATE_IDENTITY_REGEXP` and
-`COSIGN_CERTIFICATE_OIDC_ISSUER` (or `COSIGN_KEY` for key-based signatures) so
-a verifier cannot be satisfied by a signature from an arbitrary identity.
-Scope the regexp to the identity that is expected to have produced the
-release, for example the release script's own GitHub Actions workflow ref
-once that pipeline exists, or the release engineer's Sigstore identity for the
-current manual sandbox release process.
+Verification (`scripts/aws/verify-image-signatures.sh`) runs both
+`cosign verify` and `cosign verify-attestation --type cyclonedx` against each
+image, so a task definition can't be registered from an image that is signed
+but has no verifiable SBOM, or vice versa. It requires
+`COSIGN_CERTIFICATE_IDENTITY_REGEXP` and `COSIGN_CERTIFICATE_OIDC_ISSUER` (or
+`COSIGN_KEY` for key-based signatures) so a verifier cannot be satisfied by a
+signature from an arbitrary identity. Scope the regexp to the identity that
+is expected to have produced the release, for example the release script's
+own GitHub Actions workflow ref once that pipeline exists, or the release
+engineer's Sigstore identity for the current manual sandbox release process.
+
+Blob-signing wrappers (`scripts/ci/run-cosign-sign-blob.sh` /
+`run-cosign-verify-blob.sh`) still exist for signing standalone files such as
+a report that is not tied to a specific image, but the release gate itself
+signs images, not blobs.
 
 ## Suppressions
 
@@ -77,11 +98,10 @@ repeat the review before the review-by date if it is still needed.
 
 ## Evidence packet
 
-Each `secure-release-gate` run on `main` uploads the Trivy JSON report, the
-Syft CycloneDX SBOM, and the Cosign signature bundle as workflow artifacts.
-`scripts/aws/build-push-images.sh` writes the Trivy report and SBOM to
-`evidence/secure-release-gate/` (see `scripts/aws/README.md`) next to the
-pushed image reference so they can be attached to the release's evidence
-packet; the image's Cosign signature and SBOM attestation live in the
-registry alongside the image itself and can be fetched with `cosign verify`
-and `cosign verify-attestation`.
+Each `secure-release-gate` run on `main` uploads a Trivy JSON report and a
+Syft CycloneDX SBOM per service as workflow artifacts. `scripts/aws/build-push-images.sh`
+writes the same Trivy reports and SBOMs to `evidence/secure-release-gate/`
+(see `scripts/aws/README.md`) next to each pushed image reference so they can
+be attached to the release's evidence packet; each image's Cosign signature
+and SBOM attestation live in the registry alongside the image itself and can
+be fetched with `cosign verify` and `cosign verify-attestation`.
