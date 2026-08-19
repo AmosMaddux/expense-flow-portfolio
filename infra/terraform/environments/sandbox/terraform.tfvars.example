@@ -33,7 +33,7 @@ aws_region = "us-east-1"
 # redis_url = "rediss://redis.example.internal:6379"
 
 # Use Secrets Manager ARNs only. Do not put secret values in tfvars.
-# core_case_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/database-url-SYNTHETIC"
+# Core Case database credentials come from the RDS-managed master user secret; no ARN to set here.
 # gl_coding_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/database-url-SYNTHETIC"
 
 # Optional GL-coding internal authentication. When configured, Core Case must authenticate with this

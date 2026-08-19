@@ -30,6 +30,8 @@ const platformHttpApiSourceRoot = new URL(
 const testEnvironment = {
     AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",
+    DATABASE_URL:
+        "postgres://synthetic:synthetic@127.0.0.1:55432/expenseflow_core_case_test",
     GL_CODING_SERVICE_BASE_URL: "http://gl-coding.example.test",
     MFA_TOTP_SECRET_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
     MFA_TOTP_SECRET_KEY_VERSION: "synthetic-vitest-key",

@@ -17,7 +17,7 @@ locals {
 
   core_case_secret_arns = compact([
     var.core_case_auth_jwt_private_key_secret_arn,
-    var.core_case_database_url_secret_arn,
+    var.core_case_db_master_user_secret_arn,
     var.core_case_mfa_totp_secret_encryption_key_secret_arn,
     var.core_case_runtime_smoke_shared_secret_arn,
     var.core_case_tin_ein_validation_password_secret_arn,
@@ -34,7 +34,10 @@ locals {
 
   core_case_secrets = concat(
     var.core_case_auth_jwt_private_key_secret_arn == null ? [] : [{ name = "AUTH_JWT_PRIVATE_KEY_BASE64", valueFrom = var.core_case_auth_jwt_private_key_secret_arn }],
-    var.core_case_database_url_secret_arn == null ? [] : [{ name = "DATABASE_URL", valueFrom = var.core_case_database_url_secret_arn }],
+    [
+      { name = "DB_USERNAME", valueFrom = "${var.core_case_db_master_user_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.core_case_db_master_user_secret_arn}:password::" },
+    ],
     var.core_case_mfa_totp_secret_encryption_key_secret_arn == null ? [] : [{ name = "MFA_TOTP_SECRET_ENCRYPTION_KEY", valueFrom = var.core_case_mfa_totp_secret_encryption_key_secret_arn }],
     var.core_case_runtime_smoke_shared_secret_arn == null ? [] : [{ name = "RUNTIME_SMOKE_SHARED_SECRET", valueFrom = var.core_case_runtime_smoke_shared_secret_arn }],
     var.core_case_tin_ein_validation_password_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_PASSWORD", valueFrom = var.core_case_tin_ein_validation_password_secret_arn }],
@@ -493,6 +496,9 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
         { name = "CORE_CASE_RATE_LIMIT_REQUESTS", value = "100" },
         { name = "CORE_CASE_RATE_LIMIT_WINDOW_SECONDS", value = "60" },
+        { name = "DB_HOST", value = var.core_case_db_host },
+        { name = "DB_NAME", value = var.core_case_db_name },
+        { name = "DB_PORT", value = tostring(var.core_case_db_port) },
         { name = "DYNAMODB_EXPENSE_REPORT_TABLE", value = aws_dynamodb_table.expense_report_projection.name },
         { name = "DYNAMODB_EXPENSE_REPORT_TENANT_INDEX", value = var.dynamodb_expense_report_tenant_index_name },
         { name = "GL_CODING_BASE_BACKOFF_MS", value = "100" },

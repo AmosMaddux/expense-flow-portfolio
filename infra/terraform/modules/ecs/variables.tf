@@ -176,10 +176,24 @@ variable "core_case_auth_jwt_private_key_secret_arn" {
   default     = null
 }
 
-variable "core_case_database_url_secret_arn" {
-  description = "Secrets Manager ARN for Core Case database URL."
+variable "core_case_db_host" {
+  description = "Hostname of the Core Case RDS instance."
   type        = string
-  default     = null
+}
+
+variable "core_case_db_port" {
+  description = "Port of the Core Case RDS instance."
+  type        = number
+}
+
+variable "core_case_db_name" {
+  description = "Database name on the Core Case RDS instance."
+  type        = string
+}
+
+variable "core_case_db_master_user_secret_arn" {
+  description = "Secrets Manager ARN of the RDS-managed master user secret for the Core Case database."
+  type        = string
 }
 
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {

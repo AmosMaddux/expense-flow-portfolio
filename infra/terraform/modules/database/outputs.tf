@@ -18,6 +18,16 @@ output "master_user_secret_arn" {
   value       = aws_db_instance.this.master_user_secret[0].secret_arn
 }
 
+output "db_name" {
+  description = "Database name on the instance."
+  value       = aws_db_instance.this.db_name
+}
+
+output "master_username" {
+  description = "Master username for the database instance."
+  value       = aws_db_instance.this.username
+}
+
 output "security_group_id" {
   description = "Security group ID for the database instance."
   value       = aws_security_group.this.id

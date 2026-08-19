@@ -199,12 +199,6 @@ variable "core_case_auth_jwt_private_key_secret_arn" {
   default     = null
 }
 
-variable "core_case_database_url_secret_arn" {
-  description = "Secrets Manager ARN for Core Case database URL."
-  type        = string
-  default     = null
-}
-
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {
   description = "Secrets Manager ARN for MFA TOTP encryption key."
   type        = string

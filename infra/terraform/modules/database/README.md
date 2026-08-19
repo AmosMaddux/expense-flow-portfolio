@@ -10,13 +10,14 @@ example.
 
 The instance uses `manage_master_user_password = true`, so RDS creates and
 owns the master password in Secrets Manager. No password value is set in this
-module and none appears in Terraform state. Retrieve the credentials only
-through the `master_user_secret_arn` output, never from state.
+module and none appears in Terraform state. Never call `secretsmanager
+get-secret-value` (or `batch-get-secret-value`) against `master_user_secret_arn`
+— that prints the plaintext password to terminal output and potentially
+captured logs, which this repository's AWS Secret Safety rule forbids.
+Resolve it at runtime instead, via `asm-exec` with a dynamic reference:
 
-```bash
-aws secretsmanager get-secret-value \
-  --secret-id "$(terraform output -raw master_user_secret_arn)" \
-  --query SecretString --output text
+```
+{{resolve:secretsmanager:<master_user_secret_arn>:SecretString:password}}
 ```
 
 The secret value is a JSON object (`username`, `password`, `dbname`, `host`,

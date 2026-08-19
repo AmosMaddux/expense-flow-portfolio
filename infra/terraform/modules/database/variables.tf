@@ -19,8 +19,13 @@ variable "private_subnet_ids" {
   type        = list(string)
 
   validation {
-    condition     = length(var.private_subnet_ids) > 0
-    error_message = "private_subnet_ids must include at least one private subnet."
+    condition     = length(var.private_subnet_ids) >= 2
+    error_message = "private_subnet_ids must include at least two private subnets, in at least two distinct Availability Zones, so RDS can create a DB subnet group. A single subnet passes this check but is still rejected by RDS at apply time if it does not provide multi-AZ coverage."
+  }
+
+  validation {
+    condition     = length(var.private_subnet_ids) == length(toset(var.private_subnet_ids))
+    error_message = "private_subnet_ids must not contain duplicate subnet IDs."
   }
 }
 

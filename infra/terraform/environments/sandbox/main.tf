@@ -66,7 +66,10 @@ module "ecs" {
   auth_jwt_key_id                                     = var.auth_jwt_key_id
   aws_region                                          = var.aws_region
   core_case_auth_jwt_private_key_secret_arn           = var.core_case_auth_jwt_private_key_secret_arn
-  core_case_database_url_secret_arn                   = var.core_case_database_url_secret_arn
+  core_case_db_host                                   = module.database_core_case.db_address
+  core_case_db_master_user_secret_arn                 = module.database_core_case.master_user_secret_arn
+  core_case_db_name                                   = module.database_core_case.db_name
+  core_case_db_port                                   = module.database_core_case.db_port
   core_case_image_uri                                 = var.core_case_image_uri
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
   core_case_mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
