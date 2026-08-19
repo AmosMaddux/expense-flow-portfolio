@@ -1,5 +1,6 @@
 import os
 from typing import Any, Mapping
+from urllib.parse import quote
 from uuid import UUID
 
 from .gl_coding import ExpenseCategory, GlAccount
@@ -31,14 +32,33 @@ class PostgresGlAccountMappingRepository:
     def from_environment(
         cls, environment: Mapping[str, str] | None = None
     ) -> "PostgresGlAccountMappingRepository":
-        """Create a repository from the process database configuration."""
+        """Create a repository from the process database configuration.
+
+        Prefers DATABASE_URL (local/docker-compose) and otherwise assembles it
+        from the discrete RDS connection env vars ECS injects.
+        """
         env = environment if environment is not None else os.environ
         connection_string = env.get("DATABASE_URL")
-        if connection_string is None:
+        if connection_string is not None:
+            return cls(connection_string)
+
+        db_host = env.get("DB_HOST")
+        db_port = env.get("DB_PORT")
+        db_name = env.get("DB_NAME")
+        db_username = env.get("DB_USERNAME")
+        db_password = env.get("DB_PASSWORD")
+        if not all([db_host, db_port, db_name, db_username, db_password]):
             raise GlMappingConfigurationError(
-                "DATABASE_URL is required for GL mapping lookup."
+                "Database connection is not configured. Set DATABASE_URL, or "
+                "DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD."
             )
-        return cls(connection_string)
+
+        encoded_username = quote(db_username, safe="")
+        encoded_password = quote(db_password, safe="")
+        return cls(
+            f"postgresql://{encoded_username}:{encoded_password}"
+            f"@{db_host}:{db_port}/{db_name}"
+        )
 
     async def get_accounts_for_categories(
         self, tenant_id: UUID, categories: set[ExpenseCategory]

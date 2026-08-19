@@ -33,18 +33,14 @@ aws_region = "us-east-1"
 # redis_url = "rediss://redis.example.internal:6379"
 
 # Use Secrets Manager ARNs only. Do not put secret values in tfvars.
-# Core Case database credentials come from the RDS-managed master user secret; no ARN to set here.
-# gl_coding_database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/database-url-SYNTHETIC"
+# Core Case and GL-coding database credentials come from their RDS-managed master user secrets; no ARN to set here.
 
 # Optional GL-coding internal authentication. When configured, Core Case must authenticate with this
 # secret when calling GL-coding. Enables defense-in-depth: the ALB enforces explicit routing rules
 # requiring X-Internal-Auth header, and GL-coding validates the header value against this secret.
 # gl_coding_internal_auth_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/internal-auth-SYNTHETIC"
 
-# Optional. Sizing for the Core Case RDS instance. Defaults are sandbox-cheap.
+# Optional. Sizing for the Core Case RDS instance, shared by Core Case and GL-coding.
+# Defaults are sandbox-cheap.
 # db_instance_class = "db.t3.micro"
 # db_allocated_storage = 20
-
-# Optional. Sizing for the GL-coding RDS instance. Defaults are sandbox-cheap.
-# gl_coding_db_instance_class = "db.t3.micro"
-# gl_coding_db_allocated_storage = 20

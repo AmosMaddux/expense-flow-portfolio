@@ -81,7 +81,10 @@ module "ecs" {
   dynamodb_expense_report_table_name                  = local.dynamodb_expense_report_table_name
   dynamodb_expense_report_tenant_index_name           = "${var.name_prefix}-expense-report-tenant-index"
   gl_coding_auth_jwt_public_keys_json_secret_arn      = var.gl_coding_auth_jwt_public_keys_json_secret_arn
-  gl_coding_database_url_secret_arn                   = var.gl_coding_database_url_secret_arn
+  gl_coding_db_host                                   = module.database_core_case.db_address
+  gl_coding_db_master_user_secret_arn                 = module.database_core_case.master_user_secret_arn
+  gl_coding_db_name                                   = module.database_core_case.db_name
+  gl_coding_db_port                                   = module.database_core_case.db_port
   gl_coding_image_uri                                 = var.gl_coding_image_uri
   gl_coding_internal_auth_secret_arn                  = var.gl_coding_internal_auth_secret_arn
   gl_coding_target_group_arn                          = module.alb.gl_coding_target_group_arn
@@ -104,27 +107,17 @@ module "ecs" {
 module "database_core_case" {
   source = "../../modules/database"
 
-  allocated_storage          = var.db_allocated_storage
-  allowed_security_group_ids = [module.ecs.core_case_security_group_id]
-  instance_class             = var.db_instance_class
-  name_prefix                = var.name_prefix
-  private_subnet_ids         = local.private_subnet_ids
-  service_name               = "core-case"
-  tags                       = local.tags
-  vpc_id                     = local.vpc_id
-}
-
-module "database_gl_coding" {
-  source = "../../modules/database"
-
-  allocated_storage          = var.gl_coding_db_allocated_storage
-  allowed_security_group_ids = [module.ecs.gl_coding_security_group_id]
-  instance_class             = var.gl_coding_db_instance_class
-  name_prefix                = var.name_prefix
-  private_subnet_ids         = local.private_subnet_ids
-  service_name               = "gl-coding"
-  tags                       = local.tags
-  vpc_id                     = local.vpc_id
+  allocated_storage = var.db_allocated_storage
+  allowed_security_group_ids = [
+    module.ecs.core_case_security_group_id,
+    module.ecs.gl_coding_security_group_id,
+  ]
+  instance_class     = var.db_instance_class
+  name_prefix        = var.name_prefix
+  private_subnet_ids = local.private_subnet_ids
+  service_name       = "core-case"
+  tags               = local.tags
+  vpc_id             = local.vpc_id
 }
 
 module "spa" {

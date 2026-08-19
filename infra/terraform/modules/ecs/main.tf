@@ -27,7 +27,7 @@ locals {
 
   gl_coding_secret_arns = compact([
     var.gl_coding_auth_jwt_public_keys_json_secret_arn,
-    var.gl_coding_database_url_secret_arn,
+    var.gl_coding_db_master_user_secret_arn,
   ])
 
   all_secret_arns = concat(local.core_case_secret_arns, local.gl_coding_secret_arns)
@@ -47,7 +47,10 @@ locals {
 
   gl_coding_secrets = concat(
     var.gl_coding_auth_jwt_public_keys_json_secret_arn == null ? [] : [{ name = "AUTH_JWT_JWKS_JSON", valueFrom = var.gl_coding_auth_jwt_public_keys_json_secret_arn }],
-    var.gl_coding_database_url_secret_arn == null ? [] : [{ name = "DATABASE_URL", valueFrom = var.gl_coding_database_url_secret_arn }],
+    [
+      { name = "DB_USERNAME", valueFrom = "${var.gl_coding_db_master_user_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.gl_coding_db_master_user_secret_arn}:password::" },
+    ],
   )
 }
 
@@ -576,6 +579,9 @@ resource "aws_ecs_task_definition" "gl_coding" {
         { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
         { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
+        { name = "DB_HOST", value = var.gl_coding_db_host },
+        { name = "DB_NAME", value = var.gl_coding_db_name },
+        { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
         { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
       ]
       secrets = local.gl_coding_secrets

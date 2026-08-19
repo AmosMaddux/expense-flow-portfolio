@@ -235,12 +235,6 @@ variable "gl_coding_auth_jwt_public_keys_json_secret_arn" {
   default     = null
 }
 
-variable "gl_coding_database_url_secret_arn" {
-  description = "Secrets Manager ARN for GL-coding database URL."
-  type        = string
-  default     = null
-}
-
 variable "db_instance_class" {
   description = "RDS instance class for the Core Case database."
   type        = string
@@ -249,18 +243,6 @@ variable "db_instance_class" {
 
 variable "db_allocated_storage" {
   description = "Allocated storage in GiB for the Core Case database."
-  type        = number
-  default     = 20
-}
-
-variable "gl_coding_db_instance_class" {
-  description = "RDS instance class for the GL-coding database."
-  type        = string
-  default     = "db.t3.micro"
-}
-
-variable "gl_coding_db_allocated_storage" {
-  description = "Allocated storage in GiB for the GL-coding database."
   type        = number
   default     = 20
 }

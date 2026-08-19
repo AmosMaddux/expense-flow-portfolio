@@ -226,10 +226,24 @@ variable "gl_coding_auth_jwt_public_keys_json_secret_arn" {
   default     = null
 }
 
-variable "gl_coding_database_url_secret_arn" {
-  description = "Secrets Manager ARN for GL-coding database URL."
+variable "gl_coding_db_host" {
+  description = "Hostname of the GL-coding RDS instance."
   type        = string
-  default     = null
+}
+
+variable "gl_coding_db_port" {
+  description = "Port of the GL-coding RDS instance."
+  type        = number
+}
+
+variable "gl_coding_db_name" {
+  description = "Database name on the GL-coding RDS instance."
+  type        = string
+}
+
+variable "gl_coding_db_master_user_secret_arn" {
+  description = "Secrets Manager ARN of the RDS-managed master user secret for the GL-coding database."
+  type        = string
 }
 
 variable "gl_coding_internal_auth_secret_arn" {
