@@ -5,3 +5,16 @@
 #
 # See docs/secure-release-gate.md for the approval process. The review-by date
 # must be no more than 90 days out and cannot be in the past.
+
+# owner=platform-security; review-by=2026-11-17; reason=Debian has not shipped a perl fix (status affected); perl-base is a base-image dependency the Core Case Service never invokes (CMD is `node dist/index.js`), so the regex/Storable code path is unreachable at runtime. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2026-13221
+# owner=platform-security; review-by=2026-11-17; reason=Debian marks this fix_deferred; perl-archive-tar ships with perl-base but is never invoked by the Core Case Service runtime. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2026-42496
+# owner=platform-security; review-by=2026-11-17; reason=Debian has not shipped a perl fix (status affected); Storable is a perl-base component never invoked by the Core Case Service runtime. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2026-57433
+# owner=platform-security; review-by=2026-11-17; reason=Debian has not shipped a perl fix (status affected); the affected regex compiler path is only reachable on 32-bit builds and perl-base is never invoked by the Core Case Service runtime. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2026-8376
+# owner=platform-security; review-by=2026-11-17; reason=Debian marks this will_not_fix upstream; the affected zipOpenNewFileInZip4_6 zip-writing path in zlib1g is not exercised by the Core Case Service, which only links zlib for gzip/deflate. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2023-45853
+# owner=platform-security; review-by=2026-11-17; reason=Fixed in tar 7.5.19, but this is npm's own bundled tar dependency inside the node:24-bookworm-slim base image (usr/local/lib/node_modules/npm/node_modules/tar), not an application dependency; npm is never invoked in the running container. Re-check on the next node:24-bookworm-slim digest bump.
+CVE-2026-59873
