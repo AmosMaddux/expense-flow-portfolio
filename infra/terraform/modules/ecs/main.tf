@@ -9,6 +9,8 @@ data "aws_iam_policy_document" "ecs_tasks_assume_role" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   core_case_log_group_name = "/ecs/${var.name_prefix}/core-case-service"
   gl_coding_log_group_name = "/ecs/${var.name_prefix}/gl-coding-service"
@@ -146,9 +148,117 @@ resource "aws_s3_bucket_versioning" "receipts" {
 }
 
 resource "aws_sns_topic" "stage_transitions" {
-  kms_master_key_id = "alias/aws/sns"
   name              = "${var.name_prefix}-stage-transitions"
+  kms_master_key_id = "alias/aws/sns"
   tags              = var.tags
+}
+
+resource "aws_sqs_queue" "stage_transition_events_dlq" {
+  name                      = "${var.name_prefix}-stage-transition-events-dlq"
+  message_retention_seconds = 1209600
+  sqs_managed_sse_enabled   = true
+  tags                      = var.tags
+}
+
+resource "aws_sqs_queue" "stage_transition_events" {
+  name                       = "${var.name_prefix}-stage-transition-events"
+  message_retention_seconds  = 1209600
+  receive_wait_time_seconds  = 20
+  sqs_managed_sse_enabled    = true
+  visibility_timeout_seconds = 60
+  tags                       = var.tags
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.stage_transition_events_dlq.arn
+    maxReceiveCount     = var.stage_transition_sqs_max_receive_count
+  })
+}
+
+resource "aws_sqs_queue_redrive_allow_policy" "stage_transition_events_dlq" {
+  queue_url = aws_sqs_queue.stage_transition_events_dlq.id
+
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue"
+    sourceQueueArns   = [aws_sqs_queue.stage_transition_events.arn]
+  })
+}
+
+data "aws_iam_policy_document" "stage_transition_queue" {
+  statement {
+    sid     = "AllowExpenseFlowStageTransitionTopic"
+    actions = ["sqs:SendMessage"]
+
+    principals {
+      identifiers = ["sns.amazonaws.com"]
+      type        = "Service"
+    }
+
+    resources = [aws_sqs_queue.stage_transition_events.arn]
+
+    condition {
+      test     = "ArnEquals"
+      values   = [aws_sns_topic.stage_transitions.arn]
+      variable = "aws:SourceArn"
+    }
+
+    condition {
+      test     = "StringEquals"
+      values   = [data.aws_caller_identity.current.account_id]
+      variable = "aws:SourceAccount"
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "stage_transition_events" {
+  queue_url = aws_sqs_queue.stage_transition_events.id
+  policy    = data.aws_iam_policy_document.stage_transition_queue.json
+}
+
+resource "aws_sns_topic_subscription" "stage_transition_events" {
+  topic_arn            = aws_sns_topic.stage_transitions.arn
+  protocol             = "sqs"
+  endpoint             = aws_sqs_queue.stage_transition_events.arn
+  raw_message_delivery = true
+
+  depends_on = [aws_sqs_queue_policy.stage_transition_events]
+}
+
+data "aws_iam_policy_document" "stage_transition_topic" {
+  statement {
+    sid = "AllowAccountTopicManagement"
+    actions = [
+      "sns:AddPermission",
+      "sns:DeleteTopic",
+      "sns:GetTopicAttributes",
+      "sns:ListSubscriptionsByTopic",
+      "sns:RemovePermission",
+      "sns:SetTopicAttributes",
+      "sns:Subscribe",
+    ]
+
+    principals {
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+      type        = "AWS"
+    }
+
+    resources = [aws_sns_topic.stage_transitions.arn]
+  }
+
+  statement {
+    sid       = "AllowCoreCaseStageTransitionPublish"
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.stage_transitions.arn]
+
+    principals {
+      identifiers = [aws_iam_role.core_case_task.arn]
+      type        = "AWS"
+    }
+  }
+}
+
+resource "aws_sns_topic_policy" "stage_transitions" {
+  arn    = aws_sns_topic.stage_transitions.arn
+  policy = data.aws_iam_policy_document.stage_transition_topic.json
 }
 
 resource "aws_dynamodb_table" "expense_report_projection" {
