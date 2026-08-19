@@ -2,6 +2,10 @@ infra/terraform/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22
 docs/iac-scanning-suppressions.md @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
 .github/workflows/terraform-plan.yml @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
 .github/workflows/secure-pr-gate.yml @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
+docs/secure-pr-gate-suppressions.md @AI-Native-2026-06-22-FedStack/security
+osv-scanner.toml @AI-Native-2026-06-22-FedStack/security
+.gitleaks.toml @AI-Native-2026-06-22-FedStack/security
+.gitleaksignore @AI-Native-2026-06-22-FedStack/security
 .checkov.yaml @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
 scripts/ci/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security
 tests/fixtures/iac/** @AI-Native-2026-06-22-FedStack/platform @AI-Native-2026-06-22-FedStack/security

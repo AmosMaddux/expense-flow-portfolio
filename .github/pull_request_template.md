@@ -38,6 +38,11 @@ ADR link:
 - [ ] Does not expose customer data, tenant data, private identifiers, receipt data, payment data, credentials, tokens, API keys, or secrets.
 - [ ] Logging, errors, traces, analytics, queues, and webhooks are redacted or avoid controlled data.
 
+## Security Suppressions
+
+- [ ] This PR adds no security-scanner suppression.
+- [ ] Every suppression is documented, time-bounded, and submitted for Security CODEOWNER approval under [the suppression process](../docs/secure-pr-gate-suppressions.md).
+
 ## AI Review Checklist
 
 - [ ] I reviewed this PR with the AI-augmented checklist in [docs/pr-review-checklist.md](../docs/pr-review-checklist.md).
