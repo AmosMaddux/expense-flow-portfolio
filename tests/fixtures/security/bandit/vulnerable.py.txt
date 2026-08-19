@@ -1,0 +1,4 @@
+import subprocess
+
+user_input = input("Synthetic command: ")
+subprocess.Popen(f"echo {user_input}", shell=True)

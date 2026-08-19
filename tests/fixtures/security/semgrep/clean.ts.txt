@@ -1,0 +1,3 @@
+export function createSyntheticLabel(value: string): string {
+    return `ExpenseFlow fixture: ${value}`;
+}
