@@ -13,7 +13,7 @@ concurrency:
 jobs:
     gate-contract-tests:
         name: Security gate contract tests
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 15
         env:
             ACTIONLINT_IMAGE: rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
@@ -45,7 +45,7 @@ jobs:
 
     semgrep:
         name: Semgrep - TypeScript
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 15
         env:
             SEMGREP_IMAGE: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
@@ -65,7 +65,7 @@ jobs:
 
     bandit:
         name: Bandit - Python
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 10
 
         steps:
@@ -86,7 +86,7 @@ jobs:
 
     osv:
         name: OSV - Dependencies
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 15
         env:
             OSV_IMAGE: ghcr.io/google/osv-scanner-action@sha256:b892993f7834b6a97b7476051f6c1f53cddb4b9da1100e9801952d90b5eb398a
@@ -100,7 +100,7 @@ jobs:
 
     gitleaks:
         name: Gitleaks - PR Commits
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 10
         env:
             GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
@@ -126,7 +126,7 @@ jobs:
             - bandit
             - osv
             - gitleaks
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         timeout-minutes: 5
 
         steps:
