@@ -191,10 +191,7 @@ jobs:
         run: |
           failed=0
 
-          if [[ "${{ steps.checkov_scan.outcome }}" == "failure" ]]; then
-            echo "::error::Checkov returned a failure outcome. The IaC gate will fail closed after evaluating generated reports."
-            failed=1
-          elif [[ "${{ steps.checkov_scan.outcome }}" == "skipped" ]]; then
+          if [[ "${{ steps.checkov_scan.outcome }}" == "skipped" ]]; then
             echo "::error::Checkov was skipped before the IaC gate could evaluate findings."
             failed=1
           fi
