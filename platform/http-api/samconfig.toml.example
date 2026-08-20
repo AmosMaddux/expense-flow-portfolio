@@ -13,3 +13,14 @@ resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 parameter_overrides = "EnvironmentTag=sandbox UserTag=muhilramesh TicketTag=SCRUM-150 HttpApiId=synthetic-http-api-id SharedJwtAuthorizerId=synthetic-authorizer-id StageName=v1 IssuePaymentFunctionName=expenseflow-issue-payment-stub CoreCaseInternalBaseUrl=https://internal-core-case.expenseflow-sandbox.local CoreCaseInternalCommandTokenSecretArn=arn:aws:secretsmanager:us-east-1:000000000000:secret:expenseflow/sandbox/core-case/internal-command-token RolePermissionsBoundaryArn=REPLACE_WITH_BOUNDARY_ARN"
+
+[issuer-sandbox.deploy.parameters]
+stack_name = "expenseflow-http-api-issuer-sandbox"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+# JwksJson is the AUTH_JWT_JWKS_JSON secret value published by
+# scripts/aws/generate-sandbox-secrets.sh (Secrets Manager ARN
+# gl_coding_auth_jwt_public_keys_json_secret_arn). Fetch it with:
+#   aws secretsmanager get-secret-value --secret-id expenseflow/sandbox/gl-coding/auth-jwt-public-keys-json --query SecretString --output text
+parameter_overrides = 'EnvironmentTag=sandbox UserTag=muhilramesh JwksJson={"keys":[]}'

@@ -35,6 +35,29 @@ aws_region = "us-east-1"
 # Use Secrets Manager ARNs only. Do not put secret values in tfvars.
 # Core Case and GL-coding database credentials come from their RDS-managed master user secrets; no ARN to set here.
 
+# Required. No default. Run scripts/aws/generate-sandbox-secrets.sh to generate and publish these,
+# then paste the printed ARNs below. auth_jwt_key_id (below) must match the AUTH_JWT_KEY_ID the
+# script was run with (default: synthetic-sandbox-key).
+# core_case_auth_jwt_private_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/auth-jwt-private-key-base64-SYNTHETIC"
+# gl_coding_auth_jwt_public_keys_json_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/auth-jwt-public-keys-json-SYNTHETIC"
+# core_case_mfa_totp_secret_encryption_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key-SYNTHETIC"
+# core_case_internal_command_token_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/internal-command-token-SYNTHETIC"
+
+# Optional. Only needed to exercise the /v1/runtime-smoke/gl-coding health check. Generate with
+# scripts/aws/generate-sandbox-secrets.sh INCLUDE_RUNTIME_SMOKE_SECRET=true.
+# core_case_runtime_smoke_shared_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/runtime-smoke-shared-secret-SYNTHETIC"
+# runtime_smoke_gl_coding_enabled = false
+
+# auth_jwt_key_id must match AUTH_JWT_KEY_ID used when generating the JWT keypair above.
+# auth_jwt_key_id = "synthetic-sandbox-key"
+
+# Required. No default. HTTPS issuer URL serving /.well-known/openid-configuration and
+# /.well-known/jwks.json for the HTTP API's JWT authorizer. Deploy
+# platform/http-api/issuer-template.yaml with scripts/aws/package-jwt-issuer.sh and
+# scripts/aws/deploy-jwt-issuer.sh (which reads the JWKS from
+# gl_coding_auth_jwt_public_keys_json_secret_arn above), then paste the printed IssuerUrl below.
+# http_api_jwt_issuer = "https://SYNTHETIC_API_ID.execute-api.us-east-1.amazonaws.com"
+
 # Optional GL-coding internal authentication. When configured, Core Case must authenticate with this
 # secret when calling GL-coding. Enables defense-in-depth: the ALB enforces explicit routing rules
 # requiring X-Internal-Auth header, and GL-coding validates the header value against this secret.

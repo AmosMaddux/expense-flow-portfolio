@@ -39,3 +39,38 @@ Plaintext public HTTP does not forward application traffic by default. Set
 exposing `/v1` over HTTP is explicitly accepted. If no certificate is configured,
 runtime smoke CIDR allowlists over HTTP also require
 `allow_plain_http_public_api=true` so the intent is explicit at plan time.
+
+## Required secrets and JWT issuer
+
+Five Terraform variables have no default and must be supplied explicitly, or
+`terraform apply` fails validation:
+
+- `core_case_auth_jwt_private_key_secret_arn`
+- `gl_coding_auth_jwt_public_keys_json_secret_arn`
+- `core_case_mfa_totp_secret_encryption_key_secret_arn`
+- `core_case_internal_command_token_secret_arn`
+- `http_api_jwt_issuer`
+
+Generate and publish the four Secrets Manager secrets (plus, optionally, the
+runtime-smoke shared secret) with:
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/generate-sandbox-secrets.sh
+```
+
+This prints the resulting ARNs as ready-to-use `-var` flags. It also generates
+one RSA-2048 keypair shared by the first two secrets (Core Case signs, GL-coding
+validates) — `auth_jwt_key_id` in tfvars must match the `AUTH_JWT_KEY_ID` the
+script ran with (default `synthetic-sandbox-key`).
+
+`http_api_jwt_issuer` needs a real deployed endpoint, not a secret. Deploy
+`platform/http-api/issuer-template.yaml`, which serves the OIDC discovery
+document and JWKS backed by the GL-coding public-JWKS secret above:
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/package-jwt-issuer.sh
+AWS_PROFILE=expenseflow-smoke scripts/aws/deploy-jwt-issuer.sh
+```
+
+`deploy-jwt-issuer.sh` prints the stack's `IssuerUrl` output — pass that as
+`http_api_jwt_issuer`.
