@@ -426,6 +426,15 @@ resource "aws_vpc_security_group_egress_rule" "core_case_all" {
   ip_protocol       = "-1"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "core_case_from_internal_alb" {
+  security_group_id            = aws_security_group.core_case.id
+  description                  = "Allow internal ALB traffic to Core Case tasks."
+  referenced_security_group_id = var.internal_alb_security_group_id
+  from_port                    = 3000
+  ip_protocol                  = "tcp"
+  to_port                      = 3000
+}
+
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_core_case" {
   #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Core Case security group, not public CIDR, owner platform-security, review by 2026-12-31
   security_group_id            = var.internal_alb_security_group_id
@@ -624,6 +633,12 @@ resource "aws_ecs_service" "core_case" {
     container_name   = "core-case-service"
     container_port   = 3000
     target_group_arn = var.core_case_target_group_arn
+  }
+
+  load_balancer {
+    container_name   = "core-case-service"
+    container_port   = 3000
+    target_group_arn = var.core_case_internal_target_group_arn
   }
 
   network_configuration {

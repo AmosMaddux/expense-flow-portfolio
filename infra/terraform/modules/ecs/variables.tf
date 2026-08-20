@@ -60,6 +60,11 @@ variable "gl_coding_target_group_arn" {
   type        = string
 }
 
+variable "core_case_internal_target_group_arn" {
+  description = "Target group ARN for Core Case on the internal ALB."
+  type        = string
+}
+
 variable "internal_alb_dns_name" {
   description = "DNS name for the internal GL-coding ALB."
   type        = string

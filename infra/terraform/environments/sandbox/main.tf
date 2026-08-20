@@ -31,6 +31,11 @@ locals {
   vpc_cidr           = local.uses_existing_network ? data.aws_vpc.selected[0].cidr_block : var.vpc_cidr
   public_subnet_ids  = local.uses_existing_network ? local.existing_public_subnet_ids : module.network[0].public_subnet_ids
   private_subnet_ids = local.uses_existing_network ? local.existing_private_subnet_ids : module.network[0].private_subnet_ids
+
+  # Issue Payment Lambda's internal settlement calls to Core Case route over the internal ALB,
+  # matching the /v1/internal/* rule on module.alb's internal listener. Reachable only when the
+  # Lambda also runs inside the VPC (http_api_lambda_vpc_id set).
+  core_case_internal_base_url = "http://${module.alb.internal_alb_dns_name}"
 }
 
 module "network" {
@@ -71,6 +76,7 @@ module "ecs" {
   core_case_db_name                                   = module.database_core_case.db_name
   core_case_db_port                                   = module.database_core_case.db_port
   core_case_image_uri                                 = var.core_case_image_uri
+  core_case_internal_target_group_arn                 = module.alb.core_case_internal_target_group_arn
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
   core_case_mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
   core_case_runtime_smoke_shared_secret_arn           = var.core_case_runtime_smoke_shared_secret_arn
@@ -156,7 +162,7 @@ module "http_api" {
 
   aws_region                                  = var.aws_region
   claims_probe_build_output                   = var.http_api_claims_probe_build_output
-  core_case_internal_base_url                 = var.core_case_internal_base_url
+  core_case_internal_base_url                 = local.core_case_internal_base_url
   core_case_internal_command_token_secret_arn = var.core_case_internal_command_token_secret_arn
   issue_payment_build_output                  = var.http_api_issue_payment_build_output
   jwt_audience                                = var.http_api_jwt_audience

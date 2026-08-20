@@ -53,6 +53,17 @@ variable "gl_coding_target_group_name" {
   }
 }
 
+variable "core_case_internal_target_group_name" {
+  description = "Name for the Core Case internal target group. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-core-int-tg"
+
+  validation {
+    condition     = length(var.core_case_internal_target_group_name) <= 32
+    error_message = "core_case_internal_target_group_name must be 32 characters or fewer."
+  }
+}
+
 variable "vpc_id" {
   description = "VPC ID for load balancers and target groups."
   type        = string

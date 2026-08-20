@@ -18,6 +18,11 @@ output "gl_coding_target_group_arn" {
   value       = aws_lb_target_group.gl_coding.arn
 }
 
+output "core_case_internal_target_group_arn" {
+  description = "Target group ARN for Core Case on the internal ALB."
+  value       = aws_lb_target_group.core_case_internal.arn
+}
+
 output "public_alb_dns_name" {
   description = "DNS name of the public ALB."
   value       = aws_lb.public.dns_name

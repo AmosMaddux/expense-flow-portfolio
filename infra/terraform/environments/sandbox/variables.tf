@@ -263,16 +263,6 @@ variable "http_api_issue_payment_build_output" {
   default     = "../../../../platform/http-api/build/issuePaymentStub.js"
 }
 
-variable "core_case_internal_base_url" {
-  description = "Base URL the Issue Payment Lambda uses to call Core Case's internal settlement route. Must point to a private Core Case endpoint (internal ALB, Cloud Map, or Service Connect hostname)."
-  type        = string
-
-  validation {
-    condition     = can(regex("^https?://.+", var.core_case_internal_base_url))
-    error_message = "core_case_internal_base_url must be an http:// or https:// URL."
-  }
-}
-
 variable "core_case_internal_command_token_secret_arn" {
   description = "Secrets Manager secret ARN containing the shared internal command token accepted by Core Case. Read by the Issue Payment Lambda."
   type        = string
