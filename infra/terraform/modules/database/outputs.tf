@@ -32,3 +32,8 @@ output "security_group_id" {
   description = "Security group ID for the database instance."
   value       = aws_security_group.this.id
 }
+
+output "readonly_role_secret_arns" {
+  description = "Secrets Manager ARNs of each readonly_roles credential, keyed by role name."
+  value       = { for name, secret in aws_secretsmanager_secret.readonly_role : name => secret.arn }
+}
