@@ -108,6 +108,8 @@ run_alb_smoke() {
         CORE_CASE_TARGET_GROUP_NAME="$(output_value core_case_target_group_name)" \
         INTERNAL_GL_CODING_TARGET_GROUP_NAME="$(output_value gl_coding_target_group_name)" \
         CLUSTER_NAME="$(output_value ecs_cluster_name)" \
+        CORE_CASE_SERVICE_NAME="$(output_value core_case_service_name)" \
+        GL_CODING_SERVICE_NAME="$(output_value gl_coding_service_name)" \
         RECEIPT_STORAGE_BUCKET="$(output_value receipt_storage_bucket_name)" \
         DYNAMODB_EXPENSE_REPORT_TABLE="$(output_value dynamodb_expense_report_table_name)" \
         PUBLIC_ALB_SMOKE_BASE_URL="$PUBLIC_ALB_SMOKE_BASE_URL" \
@@ -170,9 +172,12 @@ poll_projection_count() {
 
     deadline=$(($(date +%s) + VERIFY_TIMEOUT_SECONDS))
     while (($(date +%s) <= deadline)); do
-        actual_count="$(query_projection_count)"
-        if [[ "$actual_count" == "$expected_count" ]]; then
-            return 0
+        if actual_count="$(query_projection_count)"; then
+            if [[ "$actual_count" == "$expected_count" ]]; then
+                return 0
+            fi
+        else
+            echo "Transient error querying projection count; retrying..." >&2
         fi
         sleep "$VERIFY_POLL_SECONDS"
     done
@@ -266,13 +271,16 @@ poll_lambda_invocations() {
 
     deadline=$(($(date +%s) + VERIFY_TIMEOUT_SECONDS))
     while (($(date +%s) <= deadline)); do
-        invocation_sum="$(lambda_invocation_sum_since "$function_name" "$start_time")"
-        if INVOCATION_SUM="$invocation_sum" MINIMUM_INVOCATIONS="$minimum_invocations" node --input-type=module -e '
+        if invocation_sum="$(lambda_invocation_sum_since "$function_name" "$start_time")"; then
+            if INVOCATION_SUM="$invocation_sum" MINIMUM_INVOCATIONS="$minimum_invocations" node --input-type=module -e '
 const invocationSum = Number(process.env.INVOCATION_SUM);
 const minimumInvocations = Number(process.env.MINIMUM_INVOCATIONS);
 process.exit(Number.isFinite(invocationSum) && invocationSum >= minimumInvocations ? 0 : 1);
 '; then
-            return 0
+                return 0
+            fi
+        else
+            echo "Transient error querying Lambda invocation metrics; retrying..." >&2
         fi
         sleep "$VERIFY_POLL_SECONDS"
     done

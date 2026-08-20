@@ -48,6 +48,16 @@ output "ecs_cluster_name" {
   value       = module.ecs.cluster_name
 }
 
+output "core_case_service_name" {
+  description = "Core Case ECS service name, for AWS CLI name-based lookups."
+  value       = module.ecs.core_case_service_name
+}
+
+output "gl_coding_service_name" {
+  description = "GL-coding ECS service name, for AWS CLI name-based lookups."
+  value       = module.ecs.gl_coding_service_name
+}
+
 output "core_case_repository_url" {
   description = "Core Case ECR repository URL."
   value       = module.ecs.core_case_repository_url
