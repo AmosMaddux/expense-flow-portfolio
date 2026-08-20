@@ -98,3 +98,18 @@ output "core_case_db_master_user_secret_arn" {
   value       = module.database_core_case.master_user_secret_arn
 }
 
+output "stage_transition_consumer_lambda_function_name" {
+  description = "Function name of the stage-transition consumer Lambda."
+  value       = module.lambda_stage_transition_consumer.function_name
+}
+
+output "stage_transition_consumer_lambda_repository_url" {
+  description = "ECR repository URL for the stage-transition consumer Lambda image."
+  value       = module.lambda_stage_transition_consumer.repository_url
+}
+
+output "stage_transition_consumer_event_source_mapping_uuid" {
+  description = "UUID of the SQS event-source mapping wiring the stage-transition queue to the consumer Lambda."
+  value       = module.lambda_stage_transition_consumer.event_source_mapping_uuid
+}
+

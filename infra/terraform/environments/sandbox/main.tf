@@ -111,6 +111,7 @@ module "database_core_case" {
   allowed_security_group_ids = [
     module.ecs.core_case_security_group_id,
     module.ecs.gl_coding_security_group_id,
+    module.lambda_stage_transition_consumer.security_group_id,
   ]
   instance_class     = var.db_instance_class
   name_prefix        = var.name_prefix
@@ -118,6 +119,23 @@ module "database_core_case" {
   service_name       = "core-case"
   tags               = local.tags
   vpc_id             = local.vpc_id
+}
+
+module "lambda_stage_transition_consumer" {
+  source = "../../modules/lambda-stage-transition-consumer"
+
+  aws_region                          = var.aws_region
+  core_case_db_host                   = module.database_core_case.db_address
+  core_case_db_master_user_secret_arn = module.database_core_case.master_user_secret_arn
+  core_case_db_name                   = module.database_core_case.db_name
+  core_case_db_port                   = module.database_core_case.db_port
+  name_prefix                         = var.name_prefix
+  private_subnet_ids                  = local.private_subnet_ids
+  role_permissions_boundary_arn       = var.role_permissions_boundary_arn
+  stage_transition_sqs_dlq_arn        = module.ecs.stage_transition_sqs_dlq_arn
+  stage_transition_sqs_queue_arn      = module.ecs.stage_transition_sqs_queue_arn
+  tags                                = local.tags
+  vpc_id                              = local.vpc_id
 }
 
 module "spa" {
