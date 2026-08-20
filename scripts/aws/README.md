@@ -197,7 +197,7 @@ The services are not autoscaled by these scripts. They use `DESIRED_COUNT`, whic
 AWS_PROFILE=expenseflow-smoke scripts/aws/run-task-smoke.sh
 ```
 
-This validates ALB-backed ECS services and calls the public ALB over HTTPS. `PUBLIC_ALB_SMOKE_BASE_URL` is required and must be the HTTPS hostname covered by the ACM certificate; the AWS-generated ALB DNS name normally will not pass TLS hostname verification.
+This validates ALB-backed ECS services and calls the public ALB over HTTPS. `PUBLIC_ALB_SMOKE_BASE_URL` is required and must be the HTTPS hostname covered by the ACM certificate; the AWS-generated ALB DNS name normally will not pass TLS hostname verification. For a cert-free demo ALB (`allow_plain_http_public_api = true`, no `public_alb_certificate_arn`), set `PUBLIC_ALB_SMOKE_BASE_URL` to the plain `http://<alb-dns-name>` origin and pass `ALLOW_PLAIN_HTTP_SMOKE=true` to explicitly opt into sending the runtime smoke token over plaintext HTTP.
 If the sandbox AWS Organizations policy still blocks creation of the dedicated
 receipt bucket, run the ALB-only smoke with:
 
@@ -239,7 +239,7 @@ AWS_PROFILE=expenseflow-smoke \
 scripts/aws/run-terraform-e2e-smoke.sh
 ```
 
-`PUBLIC_ALB_SMOKE_BASE_URL` has the same TLS-hostname requirement as `run-task-smoke.sh`. `VALID_ACCESS_TOKEN`/`EXPIRED_ACCESS_TOKEN` must be minted by the same JWT issuer configured on the HTTP API's authorizer (`http_api_jwt_issuer`/`http_api_jwt_audience`) — Terraform does not mint tokens. The event-flow check requires a synthetic `expense_report` row to already exist for `SYNTHETIC_EXPENSE_REPORT_ID`/`SYNTHETIC_TENANT_ID` (defaults provided; override to point at seeded data) and reads the database URL via Secrets Manager, never as a plaintext argument.
+`PUBLIC_ALB_SMOKE_BASE_URL` has the same TLS-hostname requirement (and the same `ALLOW_PLAIN_HTTP_SMOKE=true` cert-free demo escape hatch) as `run-task-smoke.sh`. `VALID_ACCESS_TOKEN`/`EXPIRED_ACCESS_TOKEN` must be minted by the same JWT issuer configured on the HTTP API's authorizer (`http_api_jwt_issuer`/`http_api_jwt_audience`) — Terraform does not mint tokens. The event-flow check requires a synthetic `expense_report` row to already exist for `SYNTHETIC_EXPENSE_REPORT_ID`/`SYNTHETIC_TENANT_ID` (defaults provided; override to point at seeded data) and reads the database URL via Secrets Manager, never as a plaintext argument.
 
 Any of the three checks can be skipped independently: `RUN_ALB_SMOKE=false`, `RUN_PAYMENT_SMOKE=false`, `RUN_EVENT_FLOW_SMOKE=false`.
 
