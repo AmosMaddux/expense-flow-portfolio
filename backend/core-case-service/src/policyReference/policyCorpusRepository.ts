@@ -128,8 +128,9 @@ export async function replaceTenantPolicyChunks(
  */
 export async function findTenantPolicyCorpusChunks(
     tenantId: string,
+    database: Pick<typeof db, "select"> = db,
 ): Promise<TenantExpensePolicyChunkRecord[]> {
-    return db
+    return database
         .select()
         .from(tenantExpensePolicyChunk)
         .where(eq(tenantExpensePolicyChunk.tenantId, tenantId));
