@@ -138,6 +138,23 @@ module "lambda_stage_transition_consumer" {
   vpc_id                              = local.vpc_id
 }
 
+module "http_api" {
+  source = "../../modules/http-api"
+
+  aws_region                                  = var.aws_region
+  claims_probe_build_output                   = var.http_api_claims_probe_build_output
+  core_case_internal_base_url                 = var.core_case_internal_base_url
+  core_case_internal_command_token_secret_arn = var.core_case_internal_command_token_secret_arn
+  issue_payment_build_output                  = var.http_api_issue_payment_build_output
+  jwt_audience                                = var.http_api_jwt_audience
+  jwt_issuer                                  = var.http_api_jwt_issuer
+  name_prefix                                 = var.name_prefix
+  private_subnet_ids                          = var.http_api_lambda_vpc_id == null ? [] : local.private_subnet_ids
+  role_permissions_boundary_arn               = var.role_permissions_boundary_arn
+  tags                                        = local.tags
+  vpc_id                                      = var.http_api_lambda_vpc_id
+}
+
 module "spa" {
   source = "../../modules/spa"
 

@@ -113,3 +113,18 @@ output "stage_transition_consumer_event_source_mapping_uuid" {
   value       = module.lambda_stage_transition_consumer.event_source_mapping_uuid
 }
 
+output "http_api_endpoint" {
+  description = "Base invoke URL for the HTTP API stage."
+  value       = module.http_api.api_endpoint
+}
+
+output "http_api_claims_probe_url" {
+  description = "Protected claims-probe URL used by the JWT gateway smoke test."
+  value       = module.http_api.claims_probe_url
+}
+
+output "http_api_issue_payment_url_prefix" {
+  description = "Protected Issue Payment (API Gateway payment path) URL prefix. Append an Expense Report ID before /settlement."
+  value       = module.http_api.issue_payment_url_prefix
+}
+
