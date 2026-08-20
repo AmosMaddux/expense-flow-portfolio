@@ -7,6 +7,7 @@
     "scripts": {
         "build": "tsc --build",
         "dev:demo:seed": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localDemoSeed.js",
+        "policy:corpus:load": "npm run build --workspaces=false && node --env-file=../../.env dist/policyReference/loadPolicyCorpus.js",
         "dev:events:consume": "npm run build --workspaces=false && node --env-file=../../.env dist/events/stageTransitionSqsConsumerMain.js",
         "start": "npm run build --workspaces=false && node --env-file=../../.env dist/index.js",
         "db:generate": "node --env-file=../../.env ../../node_modules/drizzle-kit/bin.cjs generate --config=drizzle.config.ts",

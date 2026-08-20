@@ -528,6 +528,65 @@ export const tenantExpensePolicy = pgTable(
     ],
 );
 
+export const tenantExpensePolicyChunk = pgTable(
+    "tenant_expense_policy_chunk",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        policyHash: text("policy_hash").notNull(),
+        chunkHash: text("chunk_hash").notNull(),
+        section: text("section").notNull(),
+        chunkIndex: integer("chunk_index").notNull(),
+        content: text("content").notNull(),
+        metadata: jsonb("metadata").notNull(),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "tenant_expense_policy_chunk_content_not_blank_check",
+            sql`nullif(btrim(${table.content}), '') is not null`,
+        ),
+        check(
+            "tenant_expense_policy_chunk_section_not_blank_check",
+            sql`nullif(btrim(${table.section}), '') is not null`,
+        ),
+        check(
+            "tenant_expense_policy_chunk_index_check",
+            sql`${table.chunkIndex} >= 0`,
+        ),
+        uniqueIndex("tenant_expense_policy_chunk_policy_index_unique").on(
+            table.tenantId,
+            table.policyHash,
+            table.chunkIndex,
+        ),
+        uniqueIndex("tenant_expense_policy_chunk_hash_unique").on(
+            table.tenantId,
+            table.chunkHash,
+        ),
+        index("tenant_expense_policy_chunk_tenant_idx").on(table.tenantId),
+        index("tenant_expense_policy_chunk_tenant_section_idx").on(
+            table.tenantId,
+            table.section,
+        ),
+        index("tenant_expense_policy_chunk_tenant_policy_idx").on(
+            table.tenantId,
+            table.policyHash,
+        ),
+    ],
+);
+
+export type TenantExpensePolicyChunk = InferSelectModel<
+    typeof tenantExpensePolicyChunk
+>;
+export type NewTenantExpensePolicyChunk = InferInsertModel<
+    typeof tenantExpensePolicyChunk
+>;
+
 export const lineItem = pgTable(
     "line_item",
     {

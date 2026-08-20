@@ -34,6 +34,7 @@ import {
     localAuthEnvironmentSchema,
 } from "./localAuthConfig.js";
 import { seedLocalAuthAccounts } from "./localAuthUser.js";
+import { loadExpensePolicyCorpus } from "../policyReference/policyCorpusLoaderService.js";
 
 type LocalDemoDatabase = NodePgDatabase<typeof schema>;
 type LocalDemoTransaction = Parameters<
@@ -185,6 +186,9 @@ export async function seedLocalDemoData(): Promise<void> {
                 getLocalAuthAccounts()[0]!.userId,
                 receiptObjects,
             );
+        });
+        await loadExpensePolicyCorpus({
+            tenantId: environment.VITE_TENANT_ID,
         });
         await verifyReceiptObjects(
             receiptStorageClient,

@@ -1,9 +1,13 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import { tenantExpensePolicy } from "../db/schema/index.js";
+import {
+    tenantExpensePolicy,
+    type TenantExpensePolicyChunk,
+} from "../db/schema/index.js";
 
 export type TenantExpensePolicyRecord = {
+    tenantId: string;
     policyText: string;
     updatedAt: Date;
 };
@@ -16,6 +20,7 @@ export async function findTenantExpensePolicy(
 ): Promise<TenantExpensePolicyRecord | null> {
     const [policy] = await db
         .select({
+            tenantId: tenantExpensePolicy.tenantId,
             policyText: tenantExpensePolicy.policyText,
             updatedAt: tenantExpensePolicy.updatedAt,
         })
@@ -25,3 +30,20 @@ export async function findTenantExpensePolicy(
 
     return policy ?? null;
 }
+
+/**
+ * Reads all tenant policies available for corpus loading.
+ */
+export async function findTenantPoliciesForCorpusLoad(): Promise<
+    TenantExpensePolicyRecord[]
+> {
+    return db
+        .select({
+            tenantId: tenantExpensePolicy.tenantId,
+            policyText: tenantExpensePolicy.policyText,
+            updatedAt: tenantExpensePolicy.updatedAt,
+        })
+        .from(tenantExpensePolicy);
+}
+
+export type TenantExpensePolicyChunkRecord = TenantExpensePolicyChunk;
