@@ -151,18 +151,6 @@ variable "auth_jwt_key_id" {
   default     = "synthetic-sandbox-key"
 }
 
-variable "redis_url" {
-  description = "ECS-reachable Redis URL. Terraform does not create Redis in this module."
-  type        = string
-  nullable    = false
-
-  validation {
-    # Keep this validation aligned with ../../modules/ecs/variables.tf.
-    condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
-    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
-  }
-}
-
 variable "mfa_totp_secret_key_version" {
   description = "Version label for the MFA TOTP secret encryption key."
   type        = string

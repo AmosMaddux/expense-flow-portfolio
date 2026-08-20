@@ -74,6 +74,7 @@ module "ecs" {
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
   core_case_mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
   core_case_runtime_smoke_shared_secret_arn           = var.core_case_runtime_smoke_shared_secret_arn
+  core_case_redis_url_secret_arn                      = module.redis.redis_url_secret_arn
   core_case_target_group_arn                          = module.alb.core_case_target_group_arn
   core_case_tin_ein_validation_password_secret_arn    = var.core_case_tin_ein_validation_password_secret_arn
   core_case_tin_ein_validation_username_secret_arn    = var.core_case_tin_ein_validation_username_secret_arn
@@ -94,7 +95,6 @@ module "ecs" {
   name_prefix                                         = var.name_prefix
   public_alb_security_group_id                        = module.alb.public_alb_security_group_id
   receipt_storage_bucket_name                         = local.receipt_storage_bucket_name
-  redis_url                                           = var.redis_url
   role_permissions_boundary_arn                       = var.role_permissions_boundary_arn
   runtime_smoke_gl_coding_enabled                     = var.runtime_smoke_gl_coding_enabled
   service_subnet_ids                                  = local.private_subnet_ids
@@ -114,6 +114,19 @@ module "database_core_case" {
     module.lambda_stage_transition_consumer.security_group_id,
   ]
   instance_class     = var.db_instance_class
+  name_prefix        = var.name_prefix
+  private_subnet_ids = local.private_subnet_ids
+  service_name       = "core-case"
+  tags               = local.tags
+  vpc_id             = local.vpc_id
+}
+
+module "redis" {
+  source = "../../modules/redis"
+
+  allowed_security_group_ids = [
+    module.ecs.core_case_security_group_id,
+  ]
   name_prefix        = var.name_prefix
   private_subnet_ids = local.private_subnet_ids
   service_name       = "core-case"

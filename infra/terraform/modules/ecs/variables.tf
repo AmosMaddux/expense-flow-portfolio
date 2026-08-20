@@ -101,16 +101,9 @@ variable "auth_jwt_key_id" {
   default     = "synthetic-sandbox-key"
 }
 
-variable "redis_url" {
-  description = "ECS-reachable Redis URL."
+variable "core_case_redis_url_secret_arn" {
+  description = "Secrets Manager ARN of the assembled Redis connection URL (rediss://:token@host:port), consumed as REDIS_URL."
   type        = string
-  nullable    = false
-
-  validation {
-    # Keep this validation aligned with ../../environments/sandbox/variables.tf.
-    condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
-    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
-  }
 }
 
 variable "mfa_totp_secret_key_version" {

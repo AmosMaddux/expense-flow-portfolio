@@ -242,8 +242,7 @@ jobs:
         run: |
           terraform -chdir=infra/terraform/environments/sandbox plan \
             -input=false \
-            -out=sandbox.tfplan \
-            -var="redis_url=${{ secrets.SANDBOX_REDIS_URL }}"
+            -out=sandbox.tfplan
 
       - name: Save plan text
         if: steps.plan_gate.outputs.enabled == 'true'
