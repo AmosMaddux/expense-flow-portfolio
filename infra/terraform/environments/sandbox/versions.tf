@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.4"
     }
-    postgresql = {
-      source  = "cyrilgdn/postgresql"
-      version = "~> 1.25"
-    }
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"
