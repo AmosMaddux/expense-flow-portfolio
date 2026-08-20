@@ -56,28 +56,26 @@ export async function loadExpensePolicyCorpus(
               (policy) => policy.tenantId === parsedRequest.tenantId,
           )
         : policies;
-    const results: PolicyCorpusLoadResult[] = [];
-
-    for (const policy of selectedPolicies) {
-        const chunks = chunkExpensePolicyCorpus({
-            tenantId: policy.tenantId,
-            policyText: policy.policyText,
-            updatedAt: policy.updatedAt,
-        });
-        const [firstChunk] = chunks;
-        if (firstChunk === undefined) {
-            throw new Error(
-                `Expense policy for tenant ${policy.tenantId} produced no chunks.`,
-            );
-        }
-        results.push(
-            await repository.replaceTenantPolicyChunks({
+    const results = await Promise.all(
+        selectedPolicies.map(async (policy) => {
+            const chunks = chunkExpensePolicyCorpus({
+                tenantId: policy.tenantId,
+                policyText: policy.policyText,
+                updatedAt: policy.updatedAt,
+            });
+            const [firstChunk] = chunks;
+            if (firstChunk === undefined) {
+                throw new Error(
+                    `Expense policy for tenant ${policy.tenantId} produced no chunks.`,
+                );
+            }
+            return repository.replaceTenantPolicyChunks({
                 tenantId: policy.tenantId,
                 policyHash: firstChunk.policyHash,
                 chunks,
-            }),
-        );
-    }
+            });
+        }),
+    );
 
     return {
         loadedTenantCount: results.length,

@@ -1,10 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "../db/client.js";
-import {
-    tenantExpensePolicy,
-    type TenantExpensePolicyChunk,
-} from "../db/schema/index.js";
+import { tenantExpensePolicy } from "../db/schema/index.js";
 
 export type TenantExpensePolicyRecord = {
     tenantId: string;
@@ -45,5 +42,3 @@ export async function findTenantPoliciesForCorpusLoad(): Promise<
         })
         .from(tenantExpensePolicy);
 }
-
-export type TenantExpensePolicyChunkRecord = TenantExpensePolicyChunk;

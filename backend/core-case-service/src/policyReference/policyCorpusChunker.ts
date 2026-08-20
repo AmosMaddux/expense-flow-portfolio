@@ -41,6 +41,17 @@ function sha256(value: string): string {
     return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function isAllCapsHeading(line: string): boolean {
+    return (
+        line.length > 1 &&
+        line === line.toUpperCase() &&
+        /[A-Z]/u.test(line) &&
+        line.length <= 100 &&
+        line.split(/\s+/u).length <= 8 &&
+        !/[.!?]$/u.test(line)
+    );
+}
+
 function detectSection(line: string): string | null {
     const markdownHeading = line.match(/^#{1,3}\s+(.+?)\s*#*$/u);
     if (markdownHeading?.[1] !== undefined) {
@@ -52,12 +63,7 @@ function detectSection(line: string): string | null {
         return numberedHeading[1].trim();
     }
 
-    if (
-        line.length > 1 &&
-        line === line.toUpperCase() &&
-        /[A-Z]/u.test(line) &&
-        line.length <= 100
-    ) {
+    if (isAllCapsHeading(line)) {
         return line;
     }
 
