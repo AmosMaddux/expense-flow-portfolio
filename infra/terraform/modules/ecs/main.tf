@@ -27,7 +27,7 @@ locals {
 
   gl_coding_secret_arns = compact([
     var.gl_coding_auth_jwt_public_keys_json_secret_arn,
-    var.gl_coding_db_credentials_secret_arn,
+    var.gl_coding_db_master_user_secret_arn,
   ])
 
   all_secret_arns = concat(local.core_case_secret_arns, local.gl_coding_secret_arns)
@@ -48,8 +48,8 @@ locals {
   gl_coding_secrets = concat(
     var.gl_coding_auth_jwt_public_keys_json_secret_arn == null ? [] : [{ name = "AUTH_JWT_JWKS_JSON", valueFrom = var.gl_coding_auth_jwt_public_keys_json_secret_arn }],
     [
-      { name = "DB_USERNAME", valueFrom = "${var.gl_coding_db_credentials_secret_arn}:username::" },
-      { name = "DB_PASSWORD", valueFrom = "${var.gl_coding_db_credentials_secret_arn}:password::" },
+      { name = "DB_USERNAME", valueFrom = "${var.gl_coding_db_master_user_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.gl_coding_db_master_user_secret_arn}:password::" },
     ],
   )
 }

@@ -241,8 +241,8 @@ variable "gl_coding_db_name" {
   type        = string
 }
 
-variable "gl_coding_db_credentials_secret_arn" {
-  description = "Secrets Manager ARN of GL-coding's scoped, least-privilege database credential (SELECT-only on its reference tables). Must not be the RDS master user secret."
+variable "gl_coding_db_master_user_secret_arn" {
+  description = "Secrets Manager ARN of the RDS-managed master user secret for the GL-coding database."
   type        = string
 }
 
