@@ -176,10 +176,24 @@ variable "core_case_auth_jwt_private_key_secret_arn" {
   default     = null
 }
 
-variable "core_case_database_url_secret_arn" {
-  description = "Secrets Manager ARN for Core Case database URL."
+variable "core_case_db_host" {
+  description = "Hostname of the Core Case RDS instance."
   type        = string
-  default     = null
+}
+
+variable "core_case_db_port" {
+  description = "Port of the Core Case RDS instance."
+  type        = number
+}
+
+variable "core_case_db_name" {
+  description = "Database name on the Core Case RDS instance."
+  type        = string
+}
+
+variable "core_case_db_master_user_secret_arn" {
+  description = "Secrets Manager ARN of the RDS-managed master user secret for the Core Case database."
+  type        = string
 }
 
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {
@@ -212,10 +226,24 @@ variable "gl_coding_auth_jwt_public_keys_json_secret_arn" {
   default     = null
 }
 
-variable "gl_coding_database_url_secret_arn" {
-  description = "Secrets Manager ARN for GL-coding database URL."
+variable "gl_coding_db_host" {
+  description = "Hostname of the GL-coding RDS instance."
   type        = string
-  default     = null
+}
+
+variable "gl_coding_db_port" {
+  description = "Port of the GL-coding RDS instance."
+  type        = number
+}
+
+variable "gl_coding_db_name" {
+  description = "Database name on the GL-coding RDS instance."
+  type        = string
+}
+
+variable "gl_coding_db_credentials_secret_arn" {
+  description = "Secrets Manager ARN of GL-coding's scoped, least-privilege database credential (SELECT-only on its reference tables). Must not be the RDS master user secret."
+  type        = string
 }
 
 variable "gl_coding_internal_auth_secret_arn" {

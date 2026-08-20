@@ -199,12 +199,6 @@ variable "core_case_auth_jwt_private_key_secret_arn" {
   default     = null
 }
 
-variable "core_case_database_url_secret_arn" {
-  description = "Secrets Manager ARN for Core Case database URL."
-  type        = string
-  default     = null
-}
-
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {
   description = "Secrets Manager ARN for MFA TOTP encryption key."
   type        = string
@@ -241,8 +235,14 @@ variable "gl_coding_auth_jwt_public_keys_json_secret_arn" {
   default     = null
 }
 
-variable "gl_coding_database_url_secret_arn" {
-  description = "Secrets Manager ARN for GL-coding database URL."
+variable "db_instance_class" {
+  description = "RDS instance class for the Core Case database."
   type        = string
-  default     = null
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "Allocated storage in GiB for the Core Case database."
+  type        = number
+  default     = 20
 }

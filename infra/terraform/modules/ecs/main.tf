@@ -17,7 +17,7 @@ locals {
 
   core_case_secret_arns = compact([
     var.core_case_auth_jwt_private_key_secret_arn,
-    var.core_case_database_url_secret_arn,
+    var.core_case_db_master_user_secret_arn,
     var.core_case_mfa_totp_secret_encryption_key_secret_arn,
     var.core_case_runtime_smoke_shared_secret_arn,
     var.core_case_tin_ein_validation_password_secret_arn,
@@ -27,14 +27,17 @@ locals {
 
   gl_coding_secret_arns = compact([
     var.gl_coding_auth_jwt_public_keys_json_secret_arn,
-    var.gl_coding_database_url_secret_arn,
+    var.gl_coding_db_credentials_secret_arn,
   ])
 
   all_secret_arns = concat(local.core_case_secret_arns, local.gl_coding_secret_arns)
 
   core_case_secrets = concat(
     var.core_case_auth_jwt_private_key_secret_arn == null ? [] : [{ name = "AUTH_JWT_PRIVATE_KEY_BASE64", valueFrom = var.core_case_auth_jwt_private_key_secret_arn }],
-    var.core_case_database_url_secret_arn == null ? [] : [{ name = "DATABASE_URL", valueFrom = var.core_case_database_url_secret_arn }],
+    [
+      { name = "DB_USERNAME", valueFrom = "${var.core_case_db_master_user_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.core_case_db_master_user_secret_arn}:password::" },
+    ],
     var.core_case_mfa_totp_secret_encryption_key_secret_arn == null ? [] : [{ name = "MFA_TOTP_SECRET_ENCRYPTION_KEY", valueFrom = var.core_case_mfa_totp_secret_encryption_key_secret_arn }],
     var.core_case_runtime_smoke_shared_secret_arn == null ? [] : [{ name = "RUNTIME_SMOKE_SHARED_SECRET", valueFrom = var.core_case_runtime_smoke_shared_secret_arn }],
     var.core_case_tin_ein_validation_password_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_PASSWORD", valueFrom = var.core_case_tin_ein_validation_password_secret_arn }],
@@ -44,7 +47,10 @@ locals {
 
   gl_coding_secrets = concat(
     var.gl_coding_auth_jwt_public_keys_json_secret_arn == null ? [] : [{ name = "AUTH_JWT_JWKS_JSON", valueFrom = var.gl_coding_auth_jwt_public_keys_json_secret_arn }],
-    var.gl_coding_database_url_secret_arn == null ? [] : [{ name = "DATABASE_URL", valueFrom = var.gl_coding_database_url_secret_arn }],
+    [
+      { name = "DB_USERNAME", valueFrom = "${var.gl_coding_db_credentials_secret_arn}:username::" },
+      { name = "DB_PASSWORD", valueFrom = "${var.gl_coding_db_credentials_secret_arn}:password::" },
+    ],
   )
 }
 
@@ -285,11 +291,19 @@ resource "aws_dynamodb_table" "expense_report_projection" {
   }
 
   global_secondary_index {
-    hash_key           = "tenantId"
     name               = var.dynamodb_expense_report_tenant_index_name
     non_key_attributes = ["dueDate"]
     projection_type    = "INCLUDE"
-    range_key          = "currentStage"
+
+    key_schema {
+      attribute_name = "tenantId"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "currentStage"
+      key_type       = "RANGE"
+    }
   }
 
   point_in_time_recovery {
@@ -314,8 +328,6 @@ resource "aws_iam_role_policy_attachment" "execution_managed" {
 }
 
 data "aws_iam_policy_document" "execution_secrets" {
-  count = length(local.all_secret_arns) == 0 ? 0 : 1
-
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = local.all_secret_arns
@@ -323,10 +335,8 @@ data "aws_iam_policy_document" "execution_secrets" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count = length(local.all_secret_arns) == 0 ? 0 : 1
-
   name   = "${var.name_prefix}-ecs-secrets"
-  policy = data.aws_iam_policy_document.execution_secrets[0].json
+  policy = data.aws_iam_policy_document.execution_secrets.json
   role   = aws_iam_role.execution.id
 }
 
@@ -493,6 +503,9 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
         { name = "CORE_CASE_RATE_LIMIT_REQUESTS", value = "100" },
         { name = "CORE_CASE_RATE_LIMIT_WINDOW_SECONDS", value = "60" },
+        { name = "DB_HOST", value = var.core_case_db_host },
+        { name = "DB_NAME", value = var.core_case_db_name },
+        { name = "DB_PORT", value = tostring(var.core_case_db_port) },
         { name = "DYNAMODB_EXPENSE_REPORT_TABLE", value = aws_dynamodb_table.expense_report_projection.name },
         { name = "DYNAMODB_EXPENSE_REPORT_TENANT_INDEX", value = var.dynamodb_expense_report_tenant_index_name },
         { name = "GL_CODING_BASE_BACKOFF_MS", value = "100" },
@@ -570,6 +583,9 @@ resource "aws_ecs_task_definition" "gl_coding" {
         { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
         { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
+        { name = "DB_HOST", value = var.gl_coding_db_host },
+        { name = "DB_NAME", value = var.gl_coding_db_name },
+        { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
         { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
       ]
       secrets = local.gl_coding_secrets
