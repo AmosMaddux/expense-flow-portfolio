@@ -15,6 +15,11 @@ Required local tools:
 - Node.js, used by the task-definition render script
 - OpenSSL, used to generate synthetic JWT key material for sandbox secrets
 - curl, used by the ALB smoke script
+- Trivy, Syft, and Cosign, used by the secure release gate (see
+  [docs/secure-release-gate.md](../../docs/secure-release-gate.md)). Cosign's
+  default keyless signing opens a browser to authenticate a Sigstore
+  identity; set `COSIGN_KEY`/`COSIGN_PASSWORD` to sign with a key pair
+  instead.
 
 Default AWS target:
 
@@ -112,7 +117,23 @@ This builds both service images for `linux/amd64`, tags them as `scrum-147-smoke
 
 Run this after creating ECR repositories and before registering task definitions.
 
+After each image is pushed, the script runs the secure release gate against
+the pushed image reference: a Trivy scan that fails the script on any
+`CRITICAL` CVE, a Syft CycloneDX SBOM, and a Cosign signature and SBOM
+attestation. The Trivy report and SBOM are written under
+`evidence/secure-release-gate/` (override with
+`SECURE_RELEASE_GATE_EVIDENCE_DIR`) for the release's evidence packet. See
+[docs/secure-release-gate.md](../../docs/secure-release-gate.md).
+
 ### 3. Register Task Definitions
+
+Before rendering task definitions, this script runs
+`scripts/aws/verify-image-signatures.sh` against `CORE_CASE_IMAGE_URI` and
+`GL_CODING_IMAGE_URI` and refuses to register a task definition if either
+image's Cosign signature or CycloneDX SBOM attestation does not verify. Set
+`COSIGN_CERTIFICATE_IDENTITY_REGEXP` and `COSIGN_CERTIFICATE_OIDC_ISSUER` to
+match the identity that ran `build-push-images.sh` (or `COSIGN_KEY` if it
+signed with a key pair).
 
 ```bash
 CORE_CASE_DATABASE_URL="$CORE_CASE_DATABASE_URL" \

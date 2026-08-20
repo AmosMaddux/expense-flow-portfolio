@@ -19,6 +19,8 @@ playwright-report/
 test-results/
 /.lighthouseci/
 /.secure-pr-gate-contract/
+/.secure-release-gate-contract/
+/.secure-release-gate/
 
 # dotenv environment variable files
 .env
