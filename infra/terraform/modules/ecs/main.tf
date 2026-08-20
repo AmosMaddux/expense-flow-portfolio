@@ -291,11 +291,19 @@ resource "aws_dynamodb_table" "expense_report_projection" {
   }
 
   global_secondary_index {
-    hash_key           = "tenantId"
     name               = var.dynamodb_expense_report_tenant_index_name
     non_key_attributes = ["dueDate"]
     projection_type    = "INCLUDE"
-    range_key          = "currentStage"
+
+    key_schema {
+      attribute_name = "tenantId"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "currentStage"
+      key_type       = "RANGE"
+    }
   }
 
   point_in_time_recovery {
@@ -320,8 +328,6 @@ resource "aws_iam_role_policy_attachment" "execution_managed" {
 }
 
 data "aws_iam_policy_document" "execution_secrets" {
-  count = length(local.all_secret_arns) == 0 ? 0 : 1
-
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = local.all_secret_arns
@@ -329,10 +335,8 @@ data "aws_iam_policy_document" "execution_secrets" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count = length(local.all_secret_arns) == 0 ? 0 : 1
-
   name   = "${var.name_prefix}-ecs-secrets"
-  policy = data.aws_iam_policy_document.execution_secrets[0].json
+  policy = data.aws_iam_policy_document.execution_secrets.json
   role   = aws_iam_role.execution.id
 }
 
