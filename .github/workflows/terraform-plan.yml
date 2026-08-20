@@ -221,7 +221,7 @@ jobs:
 
       - name: Determine plan availability
         id: plan_gate
-        run: echo "enabled=${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' }}" >> "$GITHUB_OUTPUT"
+        run: echo "enabled=${{ vars.AWS_ROLE_TO_ASSUME != '' && vars.TERRAFORM_STATE_BUCKET != '' && vars.SANDBOX_HTTP_API_JWT_ISSUER != '' && vars.SANDBOX_CORE_CASE_INTERNAL_BASE_URL != '' && secrets.SANDBOX_CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN != '' }}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         if: steps.plan_gate.outputs.enabled == 'true'
@@ -229,6 +229,21 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Set up Node.js
+        if: steps.plan_gate.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.plan_gate.outputs.enabled == 'true'
+        run: npm ci
+
+      - name: Build HTTP API Lambda bundles
+        if: steps.plan_gate.outputs.enabled == 'true'
+        run: npm run build:lambda --workspace @expense-flow/platform-http-api
 
       - name: Init sandbox backend
         if: steps.plan_gate.outputs.enabled == 'true'
@@ -242,7 +257,10 @@ jobs:
         run: |
           terraform -chdir=infra/terraform/environments/sandbox plan \
             -input=false \
-            -out=sandbox.tfplan
+            -out=sandbox.tfplan \
+            -var="http_api_jwt_issuer=${{ vars.SANDBOX_HTTP_API_JWT_ISSUER }}" \
+            -var="core_case_internal_base_url=${{ vars.SANDBOX_CORE_CASE_INTERNAL_BASE_URL }}" \
+            -var="core_case_internal_command_token_secret_arn=${{ secrets.SANDBOX_CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN }}"
 
       - name: Save plan text
         if: steps.plan_gate.outputs.enabled == 'true'

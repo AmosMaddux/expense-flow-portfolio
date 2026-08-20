@@ -23,6 +23,26 @@ output "internal_alb_dns_name" {
   value       = module.alb.internal_alb_dns_name
 }
 
+output "public_alb_name" {
+  description = "Public ALB name, for AWS CLI name-based lookups."
+  value       = module.alb.public_alb_name
+}
+
+output "internal_alb_name" {
+  description = "Internal ALB name, for AWS CLI name-based lookups."
+  value       = module.alb.internal_alb_name
+}
+
+output "core_case_target_group_name" {
+  description = "Core Case target group name, for AWS CLI name-based lookups."
+  value       = module.alb.core_case_target_group_name
+}
+
+output "gl_coding_target_group_name" {
+  description = "GL-coding target group name, for AWS CLI name-based lookups."
+  value       = module.alb.gl_coding_target_group_name
+}
+
 output "ecs_cluster_name" {
   description = "ECS cluster name."
   value       = module.ecs.cluster_name
@@ -36,6 +56,11 @@ output "core_case_repository_url" {
 output "gl_coding_repository_url" {
   description = "GL-coding ECR repository URL."
   value       = module.ecs.gl_coding_repository_url
+}
+
+output "receipt_storage_bucket_name" {
+  description = "Encrypted receipt storage bucket used by Core Case."
+  value       = local.receipt_storage_bucket_name
 }
 
 output "spa_bucket_name" {
@@ -111,6 +136,11 @@ output "stage_transition_consumer_lambda_repository_url" {
 output "stage_transition_consumer_event_source_mapping_uuid" {
   description = "UUID of the SQS event-source mapping wiring the stage-transition queue to the consumer Lambda."
   value       = module.lambda_stage_transition_consumer.event_source_mapping_uuid
+}
+
+output "stage_transition_consumer_database_url_secret_arn" {
+  description = "Secrets Manager ARN of the assembled database_url secret used by the stage-transition consumer Lambda, and readable by smoke tests to verify projection writes."
+  value       = module.lambda_stage_transition_consumer.database_url_secret_arn
 }
 
 output "http_api_endpoint" {

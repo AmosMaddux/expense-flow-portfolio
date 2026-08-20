@@ -27,3 +27,23 @@ output "internal_alb_dns_name" {
   description = "DNS name of the internal ALB."
   value       = aws_lb.internal.dns_name
 }
+
+output "public_alb_name" {
+  description = "Name of the public ALB, for AWS CLI name-based lookups."
+  value       = aws_lb.public.name
+}
+
+output "internal_alb_name" {
+  description = "Name of the internal ALB, for AWS CLI name-based lookups."
+  value       = aws_lb.internal.name
+}
+
+output "core_case_target_group_name" {
+  description = "Name of the Core Case target group, for AWS CLI name-based lookups."
+  value       = aws_lb_target_group.core_case.name
+}
+
+output "gl_coding_target_group_name" {
+  description = "Name of the GL-coding target group, for AWS CLI name-based lookups."
+  value       = aws_lb_target_group.gl_coding.name
+}
