@@ -24,6 +24,41 @@ The secret value is a JSON object (`username`, `password`, `dbname`, `host`,
 `port`, etc.), not a `DATABASE_URL` connection string. Assembling a connection
 string from it is application-level work, not something this module does.
 
+Only a service that genuinely needs full read/write/DDL on the whole database
+should ever receive `master_user_secret_arn`. A service that only needs
+specific tables should get a `readonly_roles` credential instead (below) —
+handing out the master secret to every consumer defeats the point of scoping
+access at all.
+
+## Least-privilege read-only roles
+
+Set `readonly_roles` to have this module provision a SELECT-only Postgres
+role per entry, scoped to exactly the tables listed, plus a Secrets Manager
+secret holding its credential (same JSON shape as the master secret). Use
+this for any consumer that only reads specific tables — e.g. GL-coding
+reading Core Case's `gl_code`/`gl_mapping` reference tables — instead of
+handing out `master_user_secret_arn`.
+
+```hcl
+readonly_roles = {
+  gl_coding_app = {
+    tables = ["gl_code", "gl_mapping"]
+  }
+}
+```
+
+Each role gets `SELECT` only — no `INSERT`/`UPDATE`/`DELETE`, no DDL, and no
+access to any table not listed. The resulting secret ARN is available from
+`readonly_role_secret_arns[<role name>]`.
+
+This requires the `cyrilgdn/postgresql` provider, which connects to the
+instance directly (see `environments/sandbox/providers.tf`). Applying changes
+under `readonly_roles` therefore needs network reachability to the private
+RDS instance and master-user credentials supplied out-of-band via
+`PGUSER`/`PGPASSWORD` in the apply shell — resolved via `asm-exec`, never
+read into Terraform config or state. See the AWS Secret Safety rule in
+`AGENTS.md`.
+
 ## Out of scope
 
 - No multi-database instances. Each module call provisions one RDS instance
@@ -61,4 +96,6 @@ Consumers need two outputs to wire up a database connection:
 - `db_endpoint` — host:port connection endpoint.
 - `master_user_secret_arn` — Secrets Manager ARN of the RDS-managed secret.
 
-`db_address`, `db_port`, and `security_group_id` are also available.
+`db_address`, `db_port`, and `security_group_id` are also available, along
+with `readonly_role_secret_arns` (map keyed by `readonly_roles` role name)
+for any least-privilege credentials provisioned above.
