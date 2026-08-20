@@ -145,6 +145,12 @@ variable "gl_coding_image_uri" {
   default     = null
 }
 
+variable "stage_transition_lambda_image_uri" {
+  description = "Optional immutable container image URI for the stage-transition consumer Lambda."
+  type        = string
+  default     = null
+}
+
 variable "auth_jwt_key_id" {
   description = "JWT key identifier used by the services."
   type        = string

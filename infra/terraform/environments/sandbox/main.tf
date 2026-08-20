@@ -148,6 +148,7 @@ module "lambda_stage_transition_consumer" {
   core_case_db_master_user_secret_arn = module.database_core_case.master_user_secret_arn
   core_case_db_name                   = module.database_core_case.db_name
   core_case_db_port                   = module.database_core_case.db_port
+  image_uri                           = var.stage_transition_lambda_image_uri
   name_prefix                         = var.name_prefix
   private_subnet_ids                  = local.private_subnet_ids
   role_permissions_boundary_arn       = var.role_permissions_boundary_arn
