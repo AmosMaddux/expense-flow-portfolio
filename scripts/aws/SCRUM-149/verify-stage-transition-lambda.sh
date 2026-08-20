@@ -29,6 +29,10 @@ aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/stage-transition-verify.sh
+source "$SCRIPT_DIR/lib/stage-transition-verify.sh"
+
 queue_url() {
     aws_cli sqs get-queue-url --queue-name "$1" --query QueueUrl --output text
 }
@@ -166,155 +170,11 @@ if (!found) {
 '
 }
 
-publish_synthetic_event() {
-    local stage_transition_topic_arn="$1"
-    local message_file
-
-    message_file="$(mktemp)"
-    SYNTHETIC_EVENT_ID="$SYNTHETIC_EVENT_ID" \
-        SYNTHETIC_CORRELATION_ID="$SYNTHETIC_CORRELATION_ID" \
-        SYNTHETIC_EXPENSE_REPORT_ID="$SYNTHETIC_EXPENSE_REPORT_ID" \
-        SYNTHETIC_TENANT_ID="$SYNTHETIC_TENANT_ID" \
-        node -e "
-const fs = require('fs');
-fs.writeFileSync(process.argv[1], JSON.stringify({
-  specversion: '1.0',
-  type: 'com.expenseflow.expense-report.stage-transitioned.v1',
-  source: 'urn:expenseflow:core-case-service',
-  id: process.env.SYNTHETIC_EVENT_ID,
-  time: new Date().toISOString(),
-  subject: 'expense-reports/' + process.env.SYNTHETIC_EXPENSE_REPORT_ID,
-  datacontenttype: 'application/json',
-  dataschema: 'urn:expenseflow:schema:events:expense-report-stage-transitioned:v1',
-  correlationid: process.env.SYNTHETIC_CORRELATION_ID,
-  data: {
-    caseId: process.env.SYNTHETIC_EXPENSE_REPORT_ID,
-    tenantId: process.env.SYNTHETIC_TENANT_ID,
-    fromStage: 'Submitted',
-    toStage: 'Manager Approval',
-    correlationId: process.env.SYNTHETIC_CORRELATION_ID
-  }
-}));
-" "$message_file"
-
-    aws_cli sns publish \
-        --topic-arn "$stage_transition_topic_arn" \
-        --message "file://$message_file" \
-        --message-attributes "{\"eventType\":{\"DataType\":\"String\",\"StringValue\":\"com.expenseflow.expense-report.stage-transitioned.v1\"},\"correlationId\":{\"DataType\":\"String\",\"StringValue\":\"$SYNTHETIC_CORRELATION_ID\"}}" >/dev/null
-    rm -f "$message_file"
-}
-
 require_database_url() {
     if [[ -z "$VERIFY_DATABASE_URL" ]]; then
         echo "VERIFY_DATABASE_URL or DATABASE_URL must be supplied through asm-exec before verifying consumer behavior." >&2
         exit 1
     fi
-}
-
-query_projection_count() {
-    VERIFY_DATABASE_URL="$VERIFY_DATABASE_URL" \
-        SYNTHETIC_EVENT_ID="$SYNTHETIC_EVENT_ID" \
-        node --input-type=module -e '
-import pg from "pg";
-const pool = new pg.Pool({ connectionString: process.env.VERIFY_DATABASE_URL });
-try {
-  const result = await pool.query(
-    "select count(*)::int as count from stage_transition_projection where event_id = $1",
-    [process.env.SYNTHETIC_EVENT_ID],
-  );
-  process.stdout.write(String(result.rows[0]?.count ?? 0));
-} finally {
-  await pool.end();
-}
-'
-}
-
-require_synthetic_report_exists() {
-    VERIFY_DATABASE_URL="$VERIFY_DATABASE_URL" \
-        SYNTHETIC_EXPENSE_REPORT_ID="$SYNTHETIC_EXPENSE_REPORT_ID" \
-        SYNTHETIC_TENANT_ID="$SYNTHETIC_TENANT_ID" \
-        node --input-type=module -e '
-import pg from "pg";
-const pool = new pg.Pool({ connectionString: process.env.VERIFY_DATABASE_URL });
-try {
-  const result = await pool.query(
-    "select id from expense_report where id = $1 and tenant_id = $2",
-    [process.env.SYNTHETIC_EXPENSE_REPORT_ID, process.env.SYNTHETIC_TENANT_ID],
-  );
-  if (result.rowCount !== 1) {
-    throw new Error("Synthetic Expense Report prerequisite is missing for SCRUM-149 projection verification.");
-  }
-} finally {
-  await pool.end();
-}
-'
-}
-
-require_projection_count() {
-    local expected_count="$1"
-    local actual_count
-
-    actual_count="$(query_projection_count)"
-    if [[ "$actual_count" != "$expected_count" ]]; then
-        echo "Expected projection count $expected_count for synthetic event, got $actual_count." >&2
-        exit 1
-    fi
-}
-
-poll_projection_count() {
-    local expected_count="$1"
-    local deadline actual_count
-
-    deadline=$(( $(date +%s) + VERIFY_TIMEOUT_SECONDS ))
-    while (( $(date +%s) <= deadline )); do
-        actual_count="$(query_projection_count)"
-        if [[ "$actual_count" == "$expected_count" ]]; then
-            return 0
-        fi
-        sleep "$VERIFY_POLL_SECONDS"
-    done
-
-    echo "Timed out waiting for projection count $expected_count for synthetic event." >&2
-    exit 1
-}
-
-lambda_invocation_sum_since() {
-    local start_time="$1"
-    local end_time
-
-    end_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    aws_cli cloudwatch get-metric-statistics \
-        --namespace AWS/Lambda \
-        --metric-name Invocations \
-        --dimensions Name=FunctionName,Value="$FUNCTION_NAME" \
-        --start-time "$start_time" \
-        --end-time "$end_time" \
-        --period 60 \
-        --statistics Sum \
-        --query 'sum(Datapoints[].Sum)' \
-        --output text
-}
-
-poll_lambda_invocations() {
-    local start_time="$1"
-    local minimum_invocations="$2"
-    local deadline invocation_sum
-
-    deadline=$(( $(date +%s) + VERIFY_TIMEOUT_SECONDS ))
-    while (( $(date +%s) <= deadline )); do
-        invocation_sum="$(lambda_invocation_sum_since "$start_time")"
-        if INVOCATION_SUM="$invocation_sum" MINIMUM_INVOCATIONS="$minimum_invocations" node --input-type=module -e '
-const invocationSum = Number(process.env.INVOCATION_SUM);
-const minimumInvocations = Number(process.env.MINIMUM_INVOCATIONS);
-process.exit(Number.isFinite(invocationSum) && invocationSum >= minimumInvocations ? 0 : 1);
-'; then
-            return 0
-        fi
-        sleep "$VERIFY_POLL_SECONDS"
-    done
-
-    echo "Timed out waiting for Lambda invocation metrics to reach $minimum_invocations." >&2
-    exit 1
 }
 
 poll_lambda_failure_logs() {
@@ -403,16 +263,16 @@ verify_consumer_behavior() {
 
     publish_synthetic_event "$stage_transition_topic_arn"
     poll_projection_count 1
-    poll_lambda_invocations "$start_time" 1
+    poll_lambda_invocations "$FUNCTION_NAME" "$start_time" 1
 
     publish_synthetic_event "$stage_transition_topic_arn"
-    poll_lambda_invocations "$start_time" 2
+    poll_lambda_invocations "$FUNCTION_NAME" "$start_time" 2
     require_projection_count 1
 
     max_receive_count="$(redrive_max_receive_count "$source_queue_url")"
     publish_invalid_message "$source_queue_url"
     poll_dlq_for_invalid_message "$dead_letter_queue_url"
-    poll_lambda_invocations "$start_time" "$((1 + max_receive_count))"
+    poll_lambda_invocations "$FUNCTION_NAME" "$start_time" "$((1 + max_receive_count))"
     poll_lambda_failure_logs "$start_epoch_ms"
 
     echo "Verified SCRUM-149 consumer projection, idempotency, invocation metrics, failure logs, and DLQ redrive."
