@@ -119,3 +119,16 @@ variable "skip_final_snapshot" {
   type        = bool
   default     = true
 }
+
+variable "readonly_roles" {
+  description = <<-EOT
+    Optional map of least-privilege database roles to create, keyed by role
+    name. Each role gets SELECT-only access to the listed tables and nothing
+    else - no other tables, no INSERT/UPDATE/DELETE/DDL. Use this instead of
+    handing a consuming service the RDS master user credentials.
+  EOT
+  type = map(object({
+    tables = list(string)
+  }))
+  default = {}
+}
