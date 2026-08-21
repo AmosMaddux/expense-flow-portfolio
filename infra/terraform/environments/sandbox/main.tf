@@ -119,6 +119,10 @@ module "database_core_case" {
   tags               = local.tags
   vpc_id             = local.vpc_id
 
+  # Policy retrieval stores tenant policy chunk embeddings in a pgvector
+  # column, and the service user running migrations cannot create extensions.
+  extensions = ["vector"]
+
   readonly_roles = {
     gl_coding_app = {
       # GL-coding only ever reads GL reference data - see

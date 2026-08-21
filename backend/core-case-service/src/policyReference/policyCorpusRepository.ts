@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, cosineDistance, eq, isNotNull, ne, or, sql } from "drizzle-orm";
 
 import { db } from "../db/client.js";
 import {
@@ -11,6 +11,9 @@ export type ReplaceTenantPolicyChunksRequest = {
     tenantId: string;
     policyHash: string;
     chunks: ExpensePolicyChunk[];
+    /** Chunk embeddings keyed by `chunkHash`, when an embedding provider ran. */
+    embeddings?: ReadonlyMap<string, number[]>;
+    embeddingModel?: string;
 };
 
 export type PolicyCorpusLoadResult = {
@@ -74,6 +77,8 @@ export async function replaceTenantPolicyChunks(
                 updatedCount += 1;
             }
 
+            const embedding = resolveChunkEmbedding(request, chunk, existing);
+
             await transaction
                 .insert(tenantExpensePolicyChunk)
                 .values({
@@ -84,6 +89,9 @@ export async function replaceTenantPolicyChunks(
                     chunkIndex: chunk.chunkIndex,
                     content: chunk.content,
                     metadata: chunk.metadata,
+                    embedding: embedding.embedding,
+                    embeddingModel: embedding.embeddingModel,
+                    embeddedAt: embedding.embeddedAt,
                 })
                 .onConflictDoUpdate({
                     target: [
@@ -96,6 +104,9 @@ export async function replaceTenantPolicyChunks(
                         section: chunk.section,
                         content: chunk.content,
                         metadata: chunk.metadata,
+                        embedding: embedding.embedding,
+                        embeddingModel: embedding.embeddingModel,
+                        embeddedAt: embedding.embeddedAt,
                         updatedAt: new Date(),
                     },
                 });
@@ -121,6 +132,175 @@ export async function replaceTenantPolicyChunks(
             unchanged: false,
         };
     });
+}
+
+type ChunkEmbeddingColumns = {
+    embedding: number[] | null;
+    embeddingModel: string | null;
+    embeddedAt: Date | null;
+};
+
+/**
+ * Decides which embedding a chunk row keeps when the corpus is reloaded.
+ *
+ * A chunk whose text changed must not keep the vector of its previous text, and
+ * a chunk whose text is unchanged must not lose an embedding just because this
+ * load ran without an embedding provider.
+ */
+function resolveChunkEmbedding(
+    request: ReplaceTenantPolicyChunksRequest,
+    chunk: ExpensePolicyChunk,
+    existing: TenantExpensePolicyChunk | undefined,
+): ChunkEmbeddingColumns {
+    const embedding = request.embeddings?.get(chunk.chunkHash);
+    if (embedding !== undefined && request.embeddingModel !== undefined) {
+        return {
+            embedding,
+            embeddingModel: request.embeddingModel,
+            embeddedAt: new Date(),
+        };
+    }
+
+    if (existing?.chunkHash === chunk.chunkHash) {
+        return {
+            embedding: existing.embedding,
+            embeddingModel: existing.embeddingModel,
+            embeddedAt: existing.embeddedAt,
+        };
+    }
+
+    return { embedding: null, embeddingModel: null, embeddedAt: null };
+}
+
+export type FindPolicyChunksMissingEmbeddingsRequest = {
+    tenantId?: string;
+    embeddingModel: string;
+    limit: number;
+};
+
+/**
+ * Reads chunks that still need an embedding for the configured model.
+ */
+export async function findPolicyChunksMissingEmbeddings(
+    request: FindPolicyChunksMissingEmbeddingsRequest,
+    database: Pick<typeof db, "select"> = db,
+): Promise<TenantExpensePolicyChunkRecord[]> {
+    const staleEmbedding = or(
+        sql`${tenantExpensePolicyChunk.embedding} is null`,
+        ne(tenantExpensePolicyChunk.embeddingModel, request.embeddingModel),
+    );
+
+    return database
+        .select()
+        .from(tenantExpensePolicyChunk)
+        .where(
+            request.tenantId === undefined
+                ? staleEmbedding
+                : and(
+                      eq(tenantExpensePolicyChunk.tenantId, request.tenantId),
+                      staleEmbedding,
+                  ),
+        )
+        .orderBy(
+            tenantExpensePolicyChunk.tenantId,
+            tenantExpensePolicyChunk.chunkIndex,
+        )
+        .limit(request.limit);
+}
+
+export type SaveChunkEmbeddingRequest = {
+    id: string;
+    tenantId: string;
+    chunkHash: string;
+    embedding: number[];
+    embeddingModel: string;
+};
+
+/**
+ * Stores one chunk embedding, scoped to the owning tenant.
+ *
+ * The `chunkHash` predicate drops the write when a corpus reload replaced the
+ * chunk text while the embedding was in flight, so no vector is ever attached
+ * to text it was not generated from.
+ */
+export async function saveTenantPolicyChunkEmbedding(
+    request: SaveChunkEmbeddingRequest,
+    database: Pick<typeof db, "update"> = db,
+): Promise<boolean> {
+    const updated = await database
+        .update(tenantExpensePolicyChunk)
+        .set({
+            embedding: request.embedding,
+            embeddingModel: request.embeddingModel,
+            embeddedAt: new Date(),
+            updatedAt: new Date(),
+        })
+        .where(
+            and(
+                eq(tenantExpensePolicyChunk.id, request.id),
+                eq(tenantExpensePolicyChunk.tenantId, request.tenantId),
+                eq(tenantExpensePolicyChunk.chunkHash, request.chunkHash),
+            ),
+        )
+        .returning({ id: tenantExpensePolicyChunk.id });
+
+    return updated.length > 0;
+}
+
+export type FindSimilarPolicyChunksRequest = {
+    tenantId: string;
+    embedding: number[];
+    limit: number;
+};
+
+export type SimilarPolicyChunkRecord = TenantExpensePolicyChunk & {
+    similarity: number;
+};
+
+/**
+ * Ranks one tenant's embedded policy chunks by cosine similarity to a query
+ * vector.
+ *
+ * The tenant predicate is applied in SQL so the HNSW index never returns
+ * another tenant's chunks into retrieval.
+ */
+export async function findSimilarTenantPolicyChunks(
+    request: FindSimilarPolicyChunksRequest,
+    database: Pick<typeof db, "select"> = db,
+): Promise<SimilarPolicyChunkRecord[]> {
+    const similarity = sql<number>`1 - (${cosineDistance(tenantExpensePolicyChunk.embedding, request.embedding)})`;
+
+    return database
+        .select({
+            id: tenantExpensePolicyChunk.id,
+            tenantId: tenantExpensePolicyChunk.tenantId,
+            policyHash: tenantExpensePolicyChunk.policyHash,
+            chunkHash: tenantExpensePolicyChunk.chunkHash,
+            section: tenantExpensePolicyChunk.section,
+            chunkIndex: tenantExpensePolicyChunk.chunkIndex,
+            content: tenantExpensePolicyChunk.content,
+            metadata: tenantExpensePolicyChunk.metadata,
+            embedding: tenantExpensePolicyChunk.embedding,
+            embeddingModel: tenantExpensePolicyChunk.embeddingModel,
+            embeddedAt: tenantExpensePolicyChunk.embeddedAt,
+            createdAt: tenantExpensePolicyChunk.createdAt,
+            updatedAt: tenantExpensePolicyChunk.updatedAt,
+            similarity,
+        })
+        .from(tenantExpensePolicyChunk)
+        .where(
+            and(
+                eq(tenantExpensePolicyChunk.tenantId, request.tenantId),
+                isNotNull(tenantExpensePolicyChunk.embedding),
+            ),
+        )
+        .orderBy(
+            cosineDistance(
+                tenantExpensePolicyChunk.embedding,
+                request.embedding,
+            ),
+        )
+        .limit(request.limit);
 }
 
 /**

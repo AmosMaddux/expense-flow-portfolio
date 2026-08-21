@@ -43,3 +43,10 @@ resource "aws_secretsmanager_secret_version" "readonly_role" {
     dbname   = local.database_name
   })
 }
+
+resource "postgresql_extension" "this" {
+  for_each = var.extensions
+
+  name     = each.value
+  database = local.database_name
+}

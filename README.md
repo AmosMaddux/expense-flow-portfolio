@@ -466,7 +466,7 @@ docker run -d \
   --name expenseflow-postgres-dev \
   --env-file .env \
   -p 55432:5432 \
-  postgres:17-alpine
+  pgvector/pgvector:pg17
 ```
 
 Run the Core Case Service against the Docker database. This command builds the TypeScript service, loads `.env`, applies the checked-in Drizzle migrations, and starts the API:

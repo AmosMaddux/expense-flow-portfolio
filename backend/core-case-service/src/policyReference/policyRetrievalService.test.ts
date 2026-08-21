@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { TenantExpensePolicyChunkRecord } from "./policyCorpusRepository.js";
+import type {
+    SimilarPolicyChunkRecord,
+    TenantExpensePolicyChunkRecord,
+} from "./policyCorpusRepository.js";
 import {
     RetrievePolicyChunksRequestSchema,
     RetrievePolicyChunksResponseSchema,
@@ -25,14 +28,31 @@ function chunk(
         chunkIndex,
         content,
         metadata: {},
+        embedding: null,
+        embeddingModel: null,
+        embeddedAt: null,
         createdAt: new Date("2026-08-20T12:00:00.000Z"),
         updatedAt: new Date("2026-08-20T12:00:00.000Z"),
     };
 }
 
+function similarChunk(
+    record: TenantExpensePolicyChunkRecord,
+    similarity: number,
+): SimilarPolicyChunkRecord {
+    return { ...record, similarity };
+}
+
+function noVectorSearch(): {
+    findSimilarTenantPolicyChunks: ReturnType<typeof vi.fn>;
+} {
+    return { findSimilarTenantPolicyChunks: vi.fn().mockResolvedValue([]) };
+}
+
 void describe("retrievePolicyChunks", () => {
     void test("ranks the most relevant meals and receipt chunk first", async () => {
         const repository = {
+            ...noVectorSearch(),
             findTenantPolicyCorpusChunks: vi
                 .fn()
                 .mockResolvedValue([
@@ -73,6 +93,7 @@ void describe("retrievePolicyChunks", () => {
 
     void test("respects topK and calls the repository with the validated tenant", async () => {
         const repository = {
+            ...noVectorSearch(),
             findTenantPolicyCorpusChunks: vi
                 .fn()
                 .mockResolvedValue([
@@ -95,6 +116,7 @@ void describe("retrievePolicyChunks", () => {
 
     void test("does not return chunks outside the requesting tenant", async () => {
         const repository = {
+            ...noVectorSearch(),
             findTenantPolicyCorpusChunks: vi
                 .fn()
                 .mockResolvedValue([
@@ -114,6 +136,7 @@ void describe("retrievePolicyChunks", () => {
 
     void test("uses section and exact phrase boosts for ranking", async () => {
         const repository = {
+            ...noVectorSearch(),
             findTenantPolicyCorpusChunks: vi
                 .fn()
                 .mockResolvedValue([
@@ -142,6 +165,7 @@ void describe("retrievePolicyChunks", () => {
 
     void test("returns the first chunks when every score is zero", async () => {
         const repository = {
+            ...noVectorSearch(),
             findTenantPolicyCorpusChunks: vi
                 .fn()
                 .mockResolvedValue([
@@ -158,6 +182,124 @@ void describe("retrievePolicyChunks", () => {
         expect(response.chunks).toHaveLength(1);
         expect(response.chunks[0]?.chunkIndex).toBe(0);
         expect(response.chunks[0]?.score).toBe(0);
+    });
+
+    void test("blends vector similarity into the ranking", async () => {
+        const lexicalOnlyMatch = chunk(
+            tenantA,
+            0,
+            "Travel",
+            "Travel spend needs approval.",
+        );
+        const semanticMatch = chunk(
+            tenantA,
+            1,
+            "Client Entertainment",
+            "Taking a customer to dinner is reimbursable with itemised proof of purchase.",
+        );
+        const repository = {
+            findTenantPolicyCorpusChunks: vi
+                .fn()
+                .mockResolvedValue([lexicalOnlyMatch, semanticMatch]),
+            findSimilarTenantPolicyChunks: vi
+                .fn()
+                .mockResolvedValue([similarChunk(semanticMatch, 0.92)]),
+        };
+        const embedder = {
+            model: "text-embedding-3-small",
+            embedTexts: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+        };
+
+        const response = await retrievePolicyChunks(
+            {
+                tenantId: tenantA,
+                query: "can I expense a client dinner",
+                topK: 2,
+            },
+            repository,
+            embedder,
+        );
+
+        expect(repository.findSimilarTenantPolicyChunks).toHaveBeenCalledWith({
+            tenantId: tenantA,
+            embedding: [0.1, 0.2, 0.3],
+            limit: 20,
+        });
+        expect(response.chunks[0]?.section).toBe("Client Entertainment");
+        expect(response.chunks[0]?.vectorSimilarity).toBe(0.92);
+        expect(response.chunks[0]?.score).toBeGreaterThan(
+            response.chunks[0]?.lexicalScore ?? 0,
+        );
+        expect(RetrievePolicyChunksResponseSchema.parse(response)).toEqual(
+            response,
+        );
+    });
+
+    void test("ignores vector candidates from another tenant", async () => {
+        const tenantAChunk = chunk(
+            tenantA,
+            0,
+            "Meals",
+            "Tenant A meals policy.",
+        );
+        const tenantBChunk = chunk(
+            tenantB,
+            1,
+            "Meals",
+            "Tenant B meals policy.",
+        );
+        const repository = {
+            findTenantPolicyCorpusChunks: vi
+                .fn()
+                .mockResolvedValue([tenantAChunk]),
+            findSimilarTenantPolicyChunks: vi
+                .fn()
+                .mockResolvedValue([similarChunk(tenantBChunk, 0.99)]),
+        };
+        const embedder = {
+            model: "text-embedding-3-small",
+            embedTexts: vi.fn().mockResolvedValue([[0.4]]),
+        };
+
+        const response = await retrievePolicyChunks(
+            { tenantId: tenantA, query: "meals", topK: 5 },
+            repository,
+            embedder,
+        );
+
+        expect(response.chunks).toHaveLength(1);
+        expect(response.chunks[0]?.tenantId).toBe(tenantA);
+        expect(response.chunks[0]?.vectorSimilarity).toBeNull();
+    });
+
+    void test("falls back to lexical ranking when embedding fails", async () => {
+        const repository = {
+            findTenantPolicyCorpusChunks: vi
+                .fn()
+                .mockResolvedValue([
+                    chunk(tenantA, 0, "Meals", "Meals need a receipt."),
+                ]),
+            findSimilarTenantPolicyChunks: vi.fn(),
+        };
+        const embedder = {
+            model: "text-embedding-3-small",
+            embedTexts: vi
+                .fn()
+                .mockRejectedValue(new Error("provider unavailable")),
+        };
+
+        const response = await retrievePolicyChunks(
+            { tenantId: tenantA, query: "meals receipt", topK: 5 },
+            repository,
+            embedder,
+        );
+
+        expect(response.chunks).toHaveLength(1);
+        expect(response.chunks[0]?.vectorSimilarity).toBeNull();
+        expect(response.chunks[0]?.score).toBe(
+            response.chunks[0]?.lexicalScore,
+        );
+        expect(repository.findSimilarTenantPolicyChunks).not.toHaveBeenCalled();
     });
 
     void test("validates request and response shapes", () => {

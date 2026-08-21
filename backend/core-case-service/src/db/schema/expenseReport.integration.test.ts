@@ -6,6 +6,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
+import { coreCaseTestPostgresImage } from "../../testSupport/postgresTestHarness.js";
 import { applyPendingCoreCaseMigrations } from "../migrations.js";
 
 import {
@@ -76,7 +77,9 @@ async function applyMigrationRange(
 }
 void describe("audit entry sequence migration", () => {
     void test("backfills populated audit entries while preserving append-only enforcement", async () => {
-        const container = await new PostgreSqlContainer("postgres:17-alpine")
+        const container = await new PostgreSqlContainer(
+            coreCaseTestPostgresImage,
+        )
             .withDatabase("expenseflow_core_case_sequence")
             .withUsername("expenseflow")
             .withPassword("expenseflow")
@@ -161,7 +164,9 @@ $$;
 
 void describe("stage transition outbox ownership migration", () => {
     void test("blocks rollout with preexisting mismatched outbox rows", async () => {
-        const container = await new PostgreSqlContainer("postgres:17-alpine")
+        const container = await new PostgreSqlContainer(
+            coreCaseTestPostgresImage,
+        )
             .withDatabase("expenseflow_core_case_outbox_ownership")
             .withUsername("expenseflow")
             .withPassword("expenseflow")
@@ -515,7 +520,9 @@ $$;
 
 void describe("employer EIN validation migration", () => {
     void test("runs after an environment has already applied migrations through 0032", async () => {
-        const container = await new PostgreSqlContainer("postgres:17-alpine")
+        const container = await new PostgreSqlContainer(
+            coreCaseTestPostgresImage,
+        )
             .withDatabase("expenseflow_core_case_employer_ein_0033")
             .withUsername("expenseflow")
             .withPassword("expenseflow")

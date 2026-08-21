@@ -7,6 +7,13 @@ import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 
 import { applyDrizzleMigrations } from "../db/drizzleMigrationRunner.js";
 
+/**
+ * PostgreSQL image used by Core Case integration tests. The pgvector build is
+ * required because the checked-in migrations create the `vector` extension for
+ * policy chunk embeddings.
+ */
+export const coreCaseTestPostgresImage = "pgvector/pgvector:pg17";
+
 const coreCaseServiceDrizzleUrl = new URL("../../drizzle/", import.meta.url);
 const coreCaseServiceDrizzlePath = fileURLToPath(coreCaseServiceDrizzleUrl);
 
@@ -20,7 +27,7 @@ export type CoreCaseTestDatabase = {
  * Start a disposable PostgreSQL database and apply the Core Case schema.
  */
 export async function startCoreCaseTestDatabase(): Promise<CoreCaseTestDatabase> {
-    const container = await new PostgreSqlContainer("postgres:17-alpine")
+    const container = await new PostgreSqlContainer(coreCaseTestPostgresImage)
         .withDatabase("expenseflow_core_case")
         .withUsername("expenseflow")
         .withPassword("expenseflow")

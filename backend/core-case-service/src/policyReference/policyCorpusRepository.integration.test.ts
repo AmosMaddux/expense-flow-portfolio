@@ -16,12 +16,31 @@ import {
 import * as schema from "../db/schema/index.js";
 import { tenantExpensePolicyChunk } from "../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
-import { findTenantPolicyCorpusChunks } from "./policyCorpusRepository.js";
+import {
+    findPolicyChunksMissingEmbeddings,
+    findSimilarTenantPolicyChunks,
+    findTenantPolicyCorpusChunks,
+    saveTenantPolicyChunkEmbedding,
+} from "./policyCorpusRepository.js";
+import { policyChunkEmbeddingDimensions } from "../db/schema/index.js";
 
 let client: Client;
 let testDb: NodePgDatabase<typeof schema>;
 let tenantA: string;
 let tenantB: string;
+
+const embeddingModel = "text-embedding-3-small";
+
+/**
+ * Builds a unit vector pointing along one axis so cosine similarity between two
+ * fixtures is exactly 1 for the same axis and 0 for different axes.
+ */
+function unitEmbedding(axis: number): number[] {
+    return Array.from(
+        { length: policyChunkEmbeddingDimensions },
+        (_value, index) => (index === axis ? 1 : 0),
+    );
+}
 
 void describe("policy corpus repository", () => {
     beforeAll(async () => {
@@ -68,6 +87,142 @@ void describe("policy corpus repository", () => {
         await testDb
             .delete(tenantExpensePolicyChunk)
             .where(eq(tenantExpensePolicyChunk.tenantId, tenantB));
+    });
+
+    test("stores and searches embeddings within one tenant", async () => {
+        const reimbursableEmbedding = unitEmbedding(0);
+        const unrelatedEmbedding = unitEmbedding(1);
+
+        await testDb.insert(tenantExpensePolicyChunk).values([
+            {
+                tenantId: tenantA,
+                policyHash: "policy-a",
+                chunkHash: "chunk-a-meals",
+                section: "Meals",
+                chunkIndex: 1,
+                content:
+                    "Client meals are reimbursable with an itemised receipt.",
+                metadata: { tenantId: tenantA, section: "Meals" },
+                embedding: reimbursableEmbedding,
+                embeddingModel: embeddingModel,
+                embeddedAt: new Date(),
+            },
+            {
+                tenantId: tenantA,
+                policyHash: "policy-a",
+                chunkHash: "chunk-a-parking",
+                section: "Parking",
+                chunkIndex: 2,
+                content: "Parking fines are never reimbursable.",
+                metadata: { tenantId: tenantA, section: "Parking" },
+                embedding: unrelatedEmbedding,
+                embeddingModel: embeddingModel,
+                embeddedAt: new Date(),
+            },
+            {
+                tenantId: tenantB,
+                policyHash: "policy-b",
+                chunkHash: "chunk-b-meals",
+                section: "Meals",
+                chunkIndex: 1,
+                content: "Tenant B client meals are reimbursable.",
+                metadata: { tenantId: tenantB, section: "Meals" },
+                // Identical to the tenant A vector: a tenant-scoped search must
+                // still never surface it for tenant A.
+                embedding: reimbursableEmbedding,
+                embeddingModel: embeddingModel,
+                embeddedAt: new Date(),
+            },
+        ]);
+
+        const results = await findSimilarTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                embedding: reimbursableEmbedding,
+                limit: 5,
+            },
+            testDb,
+        );
+
+        expect(results.every((chunk) => chunk.tenantId === tenantA)).toBe(true);
+        expect(results[0]?.chunkHash).toBe("chunk-a-meals");
+        expect(results[0]?.similarity).toBeGreaterThan(0.99);
+        expect(results[0]?.metadata).toMatchObject({ tenantId: tenantA });
+        expect(results.map((chunk) => chunk.chunkHash)).not.toContain(
+            "chunk-b-meals",
+        );
+        // The unembedded seed chunk must stay out of similarity results.
+        expect(results.map((chunk) => chunk.chunkHash)).not.toContain(
+            "chunk-a",
+        );
+    });
+
+    test("backfills a chunk embedding and clears it from the pending set", async () => {
+        const [pending] = await findPolicyChunksMissingEmbeddings(
+            { tenantId: tenantA, embeddingModel, limit: 10 },
+            testDb,
+        );
+
+        expect(pending?.chunkHash).toBe("chunk-a");
+
+        const saved = await saveTenantPolicyChunkEmbedding(
+            {
+                id: pending?.id ?? "",
+                tenantId: tenantA,
+                chunkHash: pending?.chunkHash ?? "",
+                embedding: unitEmbedding(2),
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(saved).toBe(true);
+        await expect(
+            findPolicyChunksMissingEmbeddings(
+                { tenantId: tenantA, embeddingModel, limit: 10 },
+                testDb,
+            ),
+        ).resolves.toHaveLength(0);
+    });
+
+    test("refuses to attach an embedding to replaced chunk text", async () => {
+        const [pending] = await findPolicyChunksMissingEmbeddings(
+            { tenantId: tenantA, embeddingModel, limit: 10 },
+            testDb,
+        );
+
+        const saved = await saveTenantPolicyChunkEmbedding(
+            {
+                id: pending?.id ?? "",
+                tenantId: tenantA,
+                chunkHash: "chunk-hash-from-an-older-policy",
+                embedding: unitEmbedding(3),
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(saved).toBe(false);
+    });
+
+    test("refuses to write an embedding across tenants", async () => {
+        const [pending] = await findPolicyChunksMissingEmbeddings(
+            { tenantId: tenantA, embeddingModel, limit: 10 },
+            testDb,
+        );
+
+        const saved = await saveTenantPolicyChunkEmbedding(
+            {
+                id: pending?.id ?? "",
+                tenantId: tenantB,
+                chunkHash: pending?.chunkHash ?? "",
+                embedding: unitEmbedding(4),
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(saved).toBe(false);
     });
 
     test("returns only chunks for the requested tenant", async () => {

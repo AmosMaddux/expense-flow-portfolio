@@ -59,6 +59,21 @@ RDS instance and master-user credentials supplied out-of-band via
 read into Terraform config or state. See the AWS Secret Safety rule in
 `AGENTS.md`.
 
+## Extensions
+
+Set `extensions` to have the module create PostgreSQL extensions as the master
+user. Application migrations run as the service user and cannot issue
+`CREATE EXTENSION`, so any extension the schema depends on must be listed
+here. Core Case passes `["vector"]` because policy retrieval stores chunk
+embeddings in a pgvector column.
+
+```hcl
+extensions = ["vector"]
+```
+
+Like `readonly_roles`, this uses the `cyrilgdn/postgresql` provider and so
+needs network reachability to the private RDS instance at apply time.
+
 ## Out of scope
 
 - No multi-database instances. Each module call provisions one RDS instance
