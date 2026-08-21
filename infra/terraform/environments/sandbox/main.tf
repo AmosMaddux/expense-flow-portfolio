@@ -53,21 +53,23 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  allow_plain_http_public_api        = var.allow_plain_http_public_api
-  gl_coding_internal_auth_secret_arn = var.gl_coding_internal_auth_secret_arn
-  internal_subnet_ids                = local.private_subnet_ids
-  name_prefix                        = var.name_prefix
-  public_alb_certificate_arn         = var.public_alb_certificate_arn
-  public_subnet_ids                  = local.public_subnet_ids
-  runtime_smoke_source_cidrs         = var.runtime_smoke_source_cidrs
-  tags                               = local.tags
-  vpc_id                             = local.vpc_id
+  allow_plain_http_public_api            = var.allow_plain_http_public_api
+  gl_coding_internal_auth_secret_arn     = var.gl_coding_internal_auth_secret_arn
+  internal_subnet_ids                    = local.private_subnet_ids
+  issue_payment_lambda_security_group_id = module.http_api.issue_payment_lambda_security_group_id
+  name_prefix                            = var.name_prefix
+  public_alb_certificate_arn             = var.public_alb_certificate_arn
+  public_subnet_ids                      = local.public_subnet_ids
+  runtime_smoke_source_cidrs             = var.runtime_smoke_source_cidrs
+  tags                                   = local.tags
+  vpc_id                                 = local.vpc_id
 }
 
 module "ecs" {
   source = "../../modules/ecs"
 
   assign_public_ip                                    = false
+  auth_jwt_issuer                                     = var.http_api_jwt_issuer
   auth_jwt_key_id                                     = var.auth_jwt_key_id
   aws_region                                          = var.aws_region
   core_case_auth_jwt_private_key_secret_arn           = var.core_case_auth_jwt_private_key_secret_arn
@@ -76,6 +78,7 @@ module "ecs" {
   core_case_db_name                                   = module.database_core_case.db_name
   core_case_db_port                                   = module.database_core_case.db_port
   core_case_image_uri                                 = var.core_case_image_uri
+  core_case_internal_command_token_secret_arn         = var.core_case_internal_command_token_secret_arn
   core_case_internal_target_group_arn                 = module.alb.core_case_internal_target_group_arn
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
   core_case_mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
@@ -104,6 +107,7 @@ module "ecs" {
   role_permissions_boundary_arn                       = var.role_permissions_boundary_arn
   runtime_smoke_gl_coding_enabled                     = var.runtime_smoke_gl_coding_enabled
   service_subnet_ids                                  = local.private_subnet_ids
+  spa_origin                                          = "https://${module.spa.cloudfront_domain_name}"
   tin_ein_validation_endpoint_url                     = var.tin_ein_validation_endpoint_url
   tin_ein_validation_wsdl_url                         = var.tin_ein_validation_wsdl_url
   tags                                                = local.tags
@@ -119,12 +123,14 @@ module "database_core_case" {
     module.ecs.gl_coding_security_group_id,
     module.lambda_stage_transition_consumer.security_group_id,
   ]
-  instance_class     = var.db_instance_class
-  name_prefix        = var.name_prefix
-  private_subnet_ids = local.private_subnet_ids
-  service_name       = "core-case"
-  tags               = local.tags
-  vpc_id             = local.vpc_id
+  enable_enhanced_monitoring    = var.db_enable_enhanced_monitoring
+  instance_class                = var.db_instance_class
+  name_prefix                   = var.name_prefix
+  private_subnet_ids            = local.private_subnet_ids
+  role_permissions_boundary_arn = var.role_permissions_boundary_arn
+  service_name                  = "core-case"
+  tags                          = local.tags
+  vpc_id                        = local.vpc_id
 }
 
 module "redis" {

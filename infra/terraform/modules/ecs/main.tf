@@ -18,6 +18,7 @@ locals {
   core_case_secret_arns = compact([
     var.core_case_auth_jwt_private_key_secret_arn,
     var.core_case_db_master_user_secret_arn,
+    var.core_case_internal_command_token_secret_arn,
     var.core_case_mfa_totp_secret_encryption_key_secret_arn,
     var.core_case_redis_url_secret_arn,
     var.core_case_runtime_smoke_shared_secret_arn,
@@ -39,6 +40,7 @@ locals {
       { name = "DB_USERNAME", valueFrom = "${var.core_case_db_master_user_secret_arn}:username::" },
       { name = "DB_PASSWORD", valueFrom = "${var.core_case_db_master_user_secret_arn}:password::" },
     ],
+    var.core_case_internal_command_token_secret_arn == null ? [] : [{ name = "CORE_CASE_INTERNAL_COMMAND_TOKEN", valueFrom = var.core_case_internal_command_token_secret_arn }],
     var.core_case_mfa_totp_secret_encryption_key_secret_arn == null ? [] : [{ name = "MFA_TOTP_SECRET_ENCRYPTION_KEY", valueFrom = var.core_case_mfa_totp_secret_encryption_key_secret_arn }],
     [{ name = "REDIS_URL", valueFrom = var.core_case_redis_url_secret_arn }],
     var.core_case_runtime_smoke_shared_secret_arn == null ? [] : [{ name = "RUNTIME_SMOKE_SHARED_SECRET", valueFrom = var.core_case_runtime_smoke_shared_secret_arn }],
@@ -506,7 +508,7 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "ARGON2_PARALLELISM", value = "1" },
         { name = "ARGON2_TIME_COST", value = "2" },
         { name = "AUTH_ACCESS_TOKEN_TTL_SECONDS", value = "900" },
-        { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
+        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
         { name = "AUTO_APPLY_MIGRATIONS", value = "false" },
         { name = "AWS_REGION", value = var.aws_region },
@@ -531,6 +533,7 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
         { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
         { name = "RUNTIME_SMOKE_GL_CODING_ENABLED", value = tostring(var.runtime_smoke_gl_coding_enabled) },
+        { name = "SPA_ORIGIN", value = var.spa_origin },
         { name = "STAGE_TRANSITION_SNS_TOPIC_ARN", value = aws_sns_topic.stage_transitions.arn },
         { name = "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE", value = "50" },
         { name = "TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS", value = "30000" },
@@ -591,7 +594,7 @@ resource "aws_ecs_task_definition" "gl_coding" {
       }]
       environment = [
         { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
-        { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
+        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
         { name = "DB_HOST", value = var.gl_coding_db_host },
         { name = "DB_NAME", value = var.gl_coding_db_name },

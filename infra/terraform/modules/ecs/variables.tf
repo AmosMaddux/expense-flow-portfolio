@@ -106,6 +106,11 @@ variable "auth_jwt_key_id" {
   default     = "synthetic-sandbox-key"
 }
 
+variable "auth_jwt_issuer" {
+  description = "Issuer claim Core Case signs into access tokens. Must match the HTTP API JWT authorizer's configured issuer (module.http_api's jwt_issuer) or every access token fails authorization."
+  type        = string
+}
+
 variable "core_case_redis_url_secret_arn" {
   description = "Secrets Manager ARN of the assembled Redis connection URL (rediss://:token@host:port), consumed as REDIS_URL."
   type        = string
@@ -143,6 +148,11 @@ variable "tin_ein_validation_wsdl_url" {
 
 variable "receipt_storage_bucket_name" {
   description = "Name for the encrypted receipt storage bucket."
+  type        = string
+}
+
+variable "spa_origin" {
+  description = "HTTPS origin of the SPA (e.g. the CloudFront domain). Required by Core Case in production for credentialed CORS."
   type        = string
 }
 
@@ -192,6 +202,12 @@ variable "core_case_db_name" {
 variable "core_case_db_master_user_secret_arn" {
   description = "Secrets Manager ARN of the RDS-managed master user secret for the Core Case database."
   type        = string
+}
+
+variable "core_case_internal_command_token_secret_arn" {
+  description = "Secrets Manager ARN for the shared internal command token. Core Case validates this against the x-core-case-internal-command-token header on internal routes; must be the same secret the Issue Payment Lambda (module.http_api) reads to send that header."
+  type        = string
+  default     = null
 }
 
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {

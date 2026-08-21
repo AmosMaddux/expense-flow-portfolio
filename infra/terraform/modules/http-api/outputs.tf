@@ -32,3 +32,8 @@ output "issue_payment_url_prefix" {
   description = "Protected Issue Payment URL prefix. Append an Expense Report ID before /settlement, e.g. \"$${issue_payment_url_prefix}$${expense_report_id}/settlement\"."
   value       = "${aws_apigatewayv2_api.this.api_endpoint}/${aws_apigatewayv2_stage.this.name}/expense-reports/"
 }
+
+output "issue_payment_lambda_security_group_id" {
+  description = "Security group ID for the VPC-attached Issue Payment Lambda, or null when it runs outside the VPC. Callers reaching Core Case's internal route over the internal ALB must allow ingress from this security group."
+  value       = local.vpc_config_enabled ? aws_security_group.issue_payment[0].id : null
+}

@@ -44,8 +44,13 @@ main() {
     create_or_tag_ecr_repository "$LAMBDA_REPOSITORY"
     aws_cli ecr get-login-password | docker login --username AWS --password-stdin "$registry_uri"
 
+    # --provenance=false --sbom=false: Lambda's CreateFunction rejects the
+    # attestation manifest buildx otherwise attaches to the pushed image
+    # ("image manifest, config or layer media type ... is not supported").
     docker buildx build \
         --platform linux/amd64 \
+        --provenance=false \
+        --sbom=false \
         --file backend/core-case-service/Dockerfile.lambda \
         --tag "$image_uri" \
         --push \

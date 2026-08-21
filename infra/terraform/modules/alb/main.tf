@@ -67,6 +67,18 @@ resource "aws_vpc_security_group_egress_rule" "internal_alb_all" {
   ip_protocol       = "-1"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_issue_payment_lambda" {
+  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Issue Payment Lambda security group, not public CIDR, owner platform-security, review by 2026-12-31
+  count = var.issue_payment_lambda_security_group_id == null ? 0 : 1
+
+  security_group_id            = aws_security_group.internal_alb.id
+  description                  = "Allow the VPC-attached Issue Payment Lambda to reach the Core Case internal settlement route."
+  referenced_security_group_id = var.issue_payment_lambda_security_group_id
+  from_port                    = 80
+  ip_protocol                  = "tcp"
+  to_port                      = 80
+}
+
 #tfsec:ignore:aws-elb-alb-not-public Public API must be internet-facing in sandbox, owner platform-security, review by 2026-12-31
 resource "aws_lb" "public" {
   #checkov:skip=CKV2_AWS_20: HTTP listener is retained for certificate-free sandbox smoke testing, owner platform-security, review by 2026-12-31

@@ -18,7 +18,7 @@ resource "aws_vpc_security_group_ingress_rule" "redis_from_allowed" {
   for_each = { for idx, sg_id in var.allowed_security_group_ids : idx => sg_id }
 
   security_group_id            = aws_security_group.this.id
-  description                  = "Allow Redis access from ${var.service_name}'s allowed security group."
+  description                  = "Allow Redis access from the ${var.service_name} allowed security group."
   referenced_security_group_id = each.value
   from_port                    = var.port
   ip_protocol                  = "tcp"

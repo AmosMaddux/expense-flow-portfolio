@@ -36,6 +36,11 @@ TERRAFORM_DIR="${TERRAFORM_DIR:-infra/terraform/environments/sandbox}"
 IMAGE_TAG="${IMAGE_TAG:-demo-$(date -u +%Y%m%dt%H%M%Sz)}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 
+# This sandbox account's TraineeSelfServiceIAM policy only allows
+# iam:CreateRole when a matching permissions boundary is attached - every
+# aws_iam_role resource in this config fails to create without it.
+ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-arn:aws:iam::208096650110:policy/TraineeSandboxBoundary}"
+
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
     exit 1
@@ -92,19 +97,48 @@ rm -f "$issuer_deploy_log"
 echo "JWT issuer URL: $http_api_jwt_issuer"
 
 echo "=== 3/5: Creating ECR repositories (targeted apply) ==="
+# Terraform validates every declared root variable has a value before it
+# even looks at -target, regardless of whether the targeted resources
+# actually depend on it - so every required variable must be passed here
+# too, even ones the ECR repos themselves don't use.
 terraform_apply \
+    -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
+    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
+    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
+    -var="enable_nat_gateway=false" \
+    -var="db_enable_enhanced_monitoring=false" \
     -target=module.ecs.aws_ecr_repository.core_case \
     -target=module.ecs.aws_ecr_repository.gl_coding \
     -target=module.lambda_stage_transition_consumer.aws_ecr_repository.this
 
 echo "=== 4/5: Building and pushing images (tag: $IMAGE_TAG) ==="
+# Cosign keyless (OIDC/Sigstore) signing needs an interactive browser flow
+# and cannot run unattended, so this resolves a pre-generated key pair from
+# Secrets Manager instead. The private key is written to a temp file only
+# for the duration of the signing step and shredded immediately after.
+cosign_key_file="$(mktemp)"
+aws --profile "$AWS_PROFILE" --region "$AWS_REGION" secretsmanager get-secret-value \
+    --secret-id expenseflow/sandbox/cosign/private-key --query SecretString --output text >"$cosign_key_file"
+cosign_password="$(aws --profile "$AWS_PROFILE" --region "$AWS_REGION" secretsmanager get-secret-value \
+    --secret-id expenseflow/sandbox/cosign/password --query SecretString --output text)"
+
+cleanup_cosign_key() {
+    shred -u "$cosign_key_file" 2>/dev/null || rm -f "$cosign_key_file"
+}
+trap cleanup_cosign_key EXIT
+
 CORE_CASE_REPOSITORY="${NAME_PREFIX}-core-case-service" \
     GL_CODING_REPOSITORY="${NAME_PREFIX}-gl-coding-service" \
     IMAGE_TAG="$IMAGE_TAG" \
     AWS_PROFILE="$AWS_PROFILE" \
     AWS_REGION="$AWS_REGION" \
     ALLOW_NON_SMOKE_PROFILE="$ALLOW_NON_SMOKE_PROFILE" \
+    COSIGN_KEY="$cosign_key_file" \
+    COSIGN_PASSWORD="$cosign_password" \
     scripts/aws/build-push-images.sh
+
+cleanup_cosign_key
+trap - EXIT
 
 LAMBDA_REPOSITORY="${NAME_PREFIX}-stage-transition-consumer-lambda" \
     IMAGE_TAG="$IMAGE_TAG" \
@@ -126,6 +160,9 @@ terraform_apply \
     -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
     -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
     -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
+    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
+    -var="enable_nat_gateway=false" \
+    -var="db_enable_enhanced_monitoring=false" \
     -var="allow_plain_http_public_api=true" \
     -var="core_case_internal_routes_enabled=true" \
     -var="core_case_image_uri=$core_case_image_uri" \

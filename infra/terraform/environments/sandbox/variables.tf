@@ -235,6 +235,12 @@ variable "db_instance_class" {
   default     = "db.t3.micro"
 }
 
+variable "db_enable_enhanced_monitoring" {
+  description = "Whether to enable RDS Enhanced Monitoring. Some sandbox accounts deny iam:PassRole to monitoring.rds.amazonaws.com; set to false there."
+  type        = bool
+  default     = true
+}
+
 variable "db_allocated_storage" {
   description = "Allocated storage in GiB for the Core Case database."
   type        = number

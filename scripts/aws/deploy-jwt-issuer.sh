@@ -77,16 +77,35 @@ main() {
         exit 1
     fi
 
-    sam deploy \
+    # sam deploy's --parameter-overrides splits its value on characters that
+    # also appear inside JSON (commas, colons, braces), silently truncating
+    # JwksJson to just "{". aws cloudformation deploy's --parameter-overrides
+    # file:// form parses a real JSON array instead of a delimited string, so
+    # it round-trips the JWKS correctly.
+    parameters_file="$(mktemp --suffix=.json)"
+    trap 'rm -f "$parameters_file"' RETURN
+    ENVIRONMENT_TAG="sandbox" USER_TAG="muhilramesh" JWKS_JSON_VALUE="$resolved_jwks_json" node -e '
+const fs = require("fs");
+fs.writeFileSync(process.argv[1], JSON.stringify([
+  { ParameterKey: "EnvironmentTag", ParameterValue: process.env.ENVIRONMENT_TAG },
+  { ParameterKey: "UserTag", ParameterValue: process.env.USER_TAG },
+  { ParameterKey: "JwksJson", ParameterValue: process.env.JWKS_JSON_VALUE },
+]));
+' "$parameters_file"
+
+    aws_cli cloudformation package \
         --template-file "$TEMPLATE_FILE" \
-        --stack-name "$STACK_NAME" \
-        --region "$AWS_REGION" \
-        --profile "$AWS_PROFILE" \
-        --capabilities CAPABILITY_IAM \
         --s3-bucket "$deployment_artifact_bucket" \
+        --output-template-file "$parameters_file.packaged.yaml"
+
+    aws_cli cloudformation deploy \
+        --template-file "$parameters_file.packaged.yaml" \
+        --stack-name "$STACK_NAME" \
+        --capabilities CAPABILITY_IAM \
         --no-fail-on-empty-changeset \
         --tags user=muhilramesh env=sandbox ticket=SCRUM-156 \
-        --parameter-overrides "EnvironmentTag=sandbox" "UserTag=muhilramesh" "JwksJson=$resolved_jwks_json"
+        --parameter-overrides "file://$parameters_file"
+    rm -f "$parameters_file.packaged.yaml"
 
     echo "Deployed JWT issuer stack $STACK_NAME."
     aws_cli cloudformation describe-stacks \
