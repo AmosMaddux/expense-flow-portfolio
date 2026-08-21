@@ -130,6 +130,8 @@ Install and configure these before starting:
 - `jq`.
 - OpenSSL.
 - AWS Session Manager plugin, required for SSM port forwarding.
+- `asm-exec`, required when Terraform's PostgreSQL provider needs the RDS
+  master password resolved from Secrets Manager.
 - Trivy, Syft, and Cosign when using the secure image build script.
 
 Verify AWS access first:

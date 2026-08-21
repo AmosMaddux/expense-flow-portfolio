@@ -260,10 +260,8 @@ echo "    --parameters '{\"host\":[\"$core_case_db_host\"],\"portNumber\":[\"543
 echo
 echo "  # in providers.tf, temporarily set the postgresql provider's"
 echo "  # host = \"localhost\" and port = 15432, then revert before committing"
-echo "  export PGUSER=core_case_admin"
-echo "  export PGPASSWORD=\$(aws --profile $AWS_PROFILE secretsmanager get-secret-value \\"
-echo "    --secret-id $core_case_db_master_user_secret_arn \\"
-echo "    --query SecretString --output text | python3 -c \"import json,sys; print(json.load(sys.stdin)['password'])\")"
-echo "  terraform -chdir=$TERRAFORM_DIR apply"
+echo "  PGUSER=core_case_admin \\"
+echo "  PGPASSWORD='{{resolve:secretsmanager:$core_case_db_master_user_secret_arn:SecretString:password}}' \\"
+echo "    asm-exec -- terraform -chdir=$TERRAFORM_DIR apply"
 echo
 echo "See infra/terraform/README.md for full details."
