@@ -39,6 +39,15 @@ this for any consumer that only reads specific tables — e.g. GL-coding
 reading Core Case's `gl_code`/`gl_mapping` reference tables — instead of
 handing out `master_user_secret_arn`.
 
+Each read-only role secret is encrypted with a customer-managed KMS key
+(`aws_kms_key.readonly_role_secrets`, alias
+`alias/<name_prefix>-<service_name>-db-readonly`) rather than the AWS-managed
+default, with key rotation enabled and a key policy granting use only to the
+account root and the Secrets Manager service. Automatic secret rotation is not
+enabled: rotating these credentials needs a rotation Lambda that can re-apply
+the Postgres role password, which is tracked as a follow-up and recorded as a
+scoped `CKV2_AWS_57` suppression on the secret.
+
 ```hcl
 readonly_roles = {
   gl_coding_app = {
