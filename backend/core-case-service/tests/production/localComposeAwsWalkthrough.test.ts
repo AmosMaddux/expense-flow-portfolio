@@ -286,7 +286,7 @@ const shouldRunProductionTests =
     process.env.EXPENSE_FLOW_RUN_PRODUCTION_TESTS === "1";
 const describeProduction = shouldRunProductionTests ? describe : describe.skip;
 
-describeProduction("SCRUM-146 local Compose AWS walkthrough", () => {
+describeProduction("local Compose AWS walkthrough", () => {
     test("walks local compose workflow through real SNS, SQS, and DynamoDB resources", async () => {
         const env = localComposeAwsEnvSchema.parse(process.env);
         const { createDynamoExpenseReportCaseStore } =
