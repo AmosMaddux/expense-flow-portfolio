@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # One-command demo deploy for the Terraform-managed sandbox
-# (infra/terraform/environments/sandbox). Runs everything a fresh apply
-# needs in order:
+# (infra/terraform/environments/sandbox). Runs everything a fresh spin-up
+# needs, in order:
 #
 #   1. Generates/rotates the demo-grade Secrets Manager secrets
 #      (scripts/aws/generate-sandbox-secrets.sh) - safe to re-run.
@@ -16,7 +16,19 @@ set -euo pipefail
 #      consumer Lambda images, tagged with the current UTC timestamp so
 #      re-runs never collide with the ECR repositories' IMMUTABLE tag
 #      setting.
-#   5. Runs the full terraform apply with everything wired together.
+#   5. Runs the full terraform apply with everything wired together. This
+#      also creates the bastion (module.bastion).
+#   6. Builds the SPA with VITE_TENANT_ID baked in and deploys it to the SPA
+#      bucket + CloudFront.
+#   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
+#      and seeds demo expense data, all via the bastion over SSM
+#      (scripts/aws/bastion-run.sh) - no tunnel needed for any of these.
+#
+# What this script does NOT do: GL-coding's least-privilege database role
+# (module.database_core_case's readonly_roles) needs Terraform's postgresql
+# provider to reach RDS directly, which only works from inside the VPC. That
+# needs an SSM tunnel through the bastion and is left as one manual step -
+# this script prints the exact commands at the end.
 #
 # This does not run the Trivy/Syft/Cosign secure release gate that
 # build-push-images.sh normally runs after each push - see that script's
@@ -41,6 +53,13 @@ AUTO_APPROVE="${AUTO_APPROVE:-false}"
 # aws_iam_role resource in this config fails to create without it.
 ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-arn:aws:iam::208096650110:policy/TraineeSandboxBoundary}"
 
+# The primary synthetic tenant - see backend/core-case-service/src/dev/localAuthConfig.ts.
+# Baked into the SPA build; also the default tenant scripts/aws/bastion-run.sh
+# seed/demo-seed writes to.
+VITE_TENANT_ID="${VITE_TENANT_ID:-8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb}"
+SKIP_SPA_DEPLOY="${SKIP_SPA_DEPLOY:-false}"
+SKIP_BASTION_SEED="${SKIP_BASTION_SEED:-false}"
+
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
     exit 1
@@ -55,7 +74,7 @@ require_tool() {
     fi
 }
 
-for tool in terraform sam docker aws openssl node; do
+for tool in terraform sam docker aws openssl node jq; do
     require_tool "$tool"
 done
 
@@ -73,7 +92,7 @@ terraform_apply() {
     terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" "$@"
 }
 
-echo "=== 1/5: Generating demo secrets ==="
+echo "=== 1/7: Generating demo secrets ==="
 secrets_output="$(AWS_PROFILE="$AWS_PROFILE" AWS_REGION="$AWS_REGION" ALLOW_NON_SMOKE_PROFILE="$ALLOW_NON_SMOKE_PROFILE" scripts/aws/generate-sandbox-secrets.sh)"
 echo "$secrets_output"
 
@@ -88,7 +107,7 @@ gl_coding_auth_jwt_public_keys_json_secret_arn="$(extract_var gl_coding_auth_jwt
 core_case_mfa_totp_secret_encryption_key_secret_arn="$(extract_var core_case_mfa_totp_secret_encryption_key_secret_arn)"
 core_case_internal_command_token_secret_arn="$(extract_var core_case_internal_command_token_secret_arn)"
 
-echo "=== 2/5: Deploying the shared JWT issuer stack ==="
+echo "=== 2/7: Deploying the shared JWT issuer stack ==="
 AWS_PROFILE="$AWS_PROFILE" AWS_REGION="$AWS_REGION" ALLOW_NON_SMOKE_PROFILE="$ALLOW_NON_SMOKE_PROFILE" scripts/aws/package-jwt-issuer.sh
 issuer_deploy_log="$(mktemp)"
 AWS_PROFILE="$AWS_PROFILE" AWS_REGION="$AWS_REGION" ALLOW_NON_SMOKE_PROFILE="$ALLOW_NON_SMOKE_PROFILE" scripts/aws/deploy-jwt-issuer.sh | tee "$issuer_deploy_log"
@@ -96,7 +115,7 @@ http_api_jwt_issuer="$(tail -1 "$issuer_deploy_log")"
 rm -f "$issuer_deploy_log"
 echo "JWT issuer URL: $http_api_jwt_issuer"
 
-echo "=== 3/5: Creating ECR repositories (targeted apply) ==="
+echo "=== 3/7: Creating ECR repositories (targeted apply) ==="
 # Terraform validates every declared root variable has a value before it
 # even looks at -target, regardless of whether the targeted resources
 # actually depend on it - so every required variable must be passed here
@@ -111,7 +130,7 @@ terraform_apply \
     -target=module.ecs.aws_ecr_repository.gl_coding \
     -target=module.lambda_stage_transition_consumer.aws_ecr_repository.this
 
-echo "=== 4/5: Building and pushing images (tag: $IMAGE_TAG) ==="
+echo "=== 4/7: Building and pushing images (tag: $IMAGE_TAG) ==="
 # Cosign keyless (OIDC/Sigstore) signing needs an interactive browser flow
 # and cannot run unattended, so this resolves a pre-generated key pair from
 # Secrets Manager instead. The private key is written to a temp file only
@@ -153,7 +172,7 @@ core_case_image_uri="$registry_uri/${NAME_PREFIX}-core-case-service:$IMAGE_TAG"
 gl_coding_image_uri="$registry_uri/${NAME_PREFIX}-gl-coding-service:$IMAGE_TAG"
 stage_transition_lambda_image_uri="$registry_uri/${NAME_PREFIX}-stage-transition-consumer-lambda:$IMAGE_TAG"
 
-echo "=== 5/5: Full terraform apply ==="
+echo "=== 5/7: Full terraform apply ==="
 terraform_apply \
     -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
     -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
@@ -169,10 +188,82 @@ terraform_apply \
     -var="gl_coding_image_uri=$gl_coding_image_uri" \
     -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri"
 
+tf_output() {
+    terraform -chdir="$TERRAFORM_DIR" output -raw "$1"
+}
+
+if [[ "$SKIP_SPA_DEPLOY" != "true" ]]; then
+    echo "=== 6/7: Building and deploying the SPA ==="
+    # VITE_API_BASE_URL is deliberately left unset/empty so the SPA calls the
+    # API with a relative path, which CloudFront proxies to the ALB
+    # (module.spa's ordered_cache_behavior for /v1/*) - this keeps the
+    # browser talking HTTPS-only to CloudFront even though the ALB itself
+    # has no certificate. The repo-root .env sets VITE_API_BASE_URL for
+    # local docker-compose dev and Vite loads it by default; the explicit
+    # empty assignment here overrides that for this build.
+    VITE_API_BASE_URL="" VITE_TENANT_ID="$VITE_TENANT_ID" \
+        npm --workspace frontend/app run build
+
+    spa_bucket="$(tf_output spa_bucket_name)"
+    spa_domain="$(tf_output spa_cloudfront_domain_name)"
+    spa_distribution_id="$(aws --profile "$AWS_PROFILE" --region "$AWS_REGION" cloudfront list-distributions \
+        --query "DistributionList.Items[?DomainName=='$spa_domain'].Id | [0]" --output text)"
+
+    aws --profile "$AWS_PROFILE" --region "$AWS_REGION" s3 sync frontend/app/dist "s3://$spa_bucket" \
+        --delete --cache-control 'public,max-age=3600'
+    aws --profile "$AWS_PROFILE" --region "$AWS_REGION" s3 cp frontend/app/dist/index.html "s3://$spa_bucket/index.html" \
+        --cache-control 'no-cache,no-store,must-revalidate' --content-type 'text/html'
+    aws --profile "$AWS_PROFILE" --region "$AWS_REGION" cloudfront create-invalidation \
+        --distribution-id "$spa_distribution_id" --paths '/*' >/dev/null
+else
+    echo "=== 6/7: Skipping SPA deploy (SKIP_SPA_DEPLOY=true) ==="
+fi
+
+if [[ "$SKIP_BASTION_SEED" != "true" ]]; then
+    echo "=== 7/7: Migrating and seeding via the bastion ==="
+    export BASTION_INSTANCE_ID="$(tf_output bastion_instance_id)"
+    export CORE_CASE_DB_MASTER_USER_SECRET_ARN="$(tf_output core_case_db_master_user_secret_arn)"
+    export CORE_CASE_DB_HOST="$(tf_output core_case_db_endpoint | cut -d: -f1)"
+    export CORE_CASE_DB_NAME="core_case"
+    export MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="$core_case_mfa_totp_secret_encryption_key_secret_arn"
+    export CORE_CASE_IMAGE_URI="$core_case_image_uri"
+    export CORE_CASE_IMAGE_TAG="$IMAGE_TAG"
+    export RECEIPT_STORAGE_BUCKET="$(tf_output receipt_storage_bucket_name)"
+
+    scripts/aws/bastion-run.sh migrate
+    scripts/aws/bastion-run.sh seed
+    scripts/aws/bastion-run.sh demo-seed
+else
+    echo "=== 7/7: Skipping bastion migrate/seed/demo-seed (SKIP_BASTION_SEED=true) ==="
+fi
+
+bastion_instance_id="$(tf_output bastion_instance_id)"
+core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
+core_case_db_master_user_secret_arn="$(tf_output core_case_db_master_user_secret_arn)"
+
 echo
 echo "Demo deploy complete."
-echo "Public ALB:    http://$(terraform -chdir="$TERRAFORM_DIR" output -raw public_alb_dns_name)"
-echo "CloudFront:    https://$(terraform -chdir="$TERRAFORM_DIR" output -raw spa_cloudfront_domain_name)"
+echo "Public ALB:    http://$(tf_output public_alb_dns_name)"
+echo "CloudFront:    https://$(tf_output spa_cloudfront_domain_name)"
 echo "Image tag:     $IMAGE_TAG"
 echo
 echo "Nothing was torn down. This environment is running real, billed AWS resources."
+echo
+echo "One step is not automated: GL-coding's least-privilege database role"
+echo "needs Terraform's postgresql provider to reach RDS directly, which only"
+echo "works from inside the VPC. Tunnel through the bastion, then apply:"
+echo
+echo "  aws ssm start-session --profile $AWS_PROFILE \\"
+echo "    --target $bastion_instance_id \\"
+echo "    --document-name AWS-StartPortForwardingSessionToRemoteHost \\"
+echo "    --parameters '{\"host\":[\"$core_case_db_host\"],\"portNumber\":[\"5432\"],\"localPortNumber\":[\"15432\"]}'"
+echo
+echo "  # in providers.tf, temporarily set the postgresql provider's"
+echo "  # host = \"localhost\" and port = 15432, then revert before committing"
+echo "  export PGUSER=core_case_admin"
+echo "  export PGPASSWORD=\$(aws --profile $AWS_PROFILE secretsmanager get-secret-value \\"
+echo "    --secret-id $core_case_db_master_user_secret_arn \\"
+echo "    --query SecretString --output text | python3 -c \"import json,sys; print(json.load(sys.stdin)['password'])\")"
+echo "  terraform -chdir=$TERRAFORM_DIR apply"
+echo
+echo "See infra/terraform/README.md for full details."

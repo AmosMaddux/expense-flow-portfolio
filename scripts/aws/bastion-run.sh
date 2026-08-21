@@ -21,49 +21,41 @@ set -euo pipefail
 #
 # "demo-seed" additionally creates GL codes, one demo expense report with line
 # items, and synthetic receipt files uploaded to the real sandbox receipts S3
-# bucket (RECEIPT_STORAGE_BUCKET). Requires RECEIPT_STORAGE_BUCKET to be set
-# and the bastion's IAM role to have PutObject/HeadObject there (see
-# receipt_storage_bucket_arn on the bastion module).
+# bucket (RECEIPT_STORAGE_BUCKET). The bucket name is resolved from Terraform
+# output by default. The bastion's IAM role must have PutObject/HeadObject
+# there (see receipt_storage_bucket_arn on the bastion module).
 #
-# Requires: BASTION_INSTANCE_ID, CORE_CASE_DB_MASTER_USER_SECRET_ARN,
-# CORE_CASE_DB_HOST, CORE_CASE_DB_NAME, MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN,
-# CORE_CASE_IMAGE_URI - all available from
-# `terraform -chdir=infra/terraform/environments/sandbox output`. demo-seed
-# additionally requires RECEIPT_STORAGE_BUCKET. The RDS-managed master secret
+# The script resolves its common sandbox values from Terraform outputs and AWS
+# APIs by default. Override any value with an environment variable when needed.
+# demo-seed additionally requires RECEIPT_STORAGE_BUCKET, which is also
+# resolved from Terraform output when possible. The RDS-managed master secret
 # (manage_master_user_password = true) only contains username/password, not
 # host/dbname, so those two are passed separately rather than parsed from the
 # secret.
 #
-# CORE_CASE_IMAGE_TAG defaults to "latest", but this workflow's build/push
-# script (build-push-images.sh) never actually pushes a "latest" tag - only
-# timestamped demo-* tags. Pass the tag that's actually deployed, e.g.
-# CORE_CASE_IMAGE_TAG=$(aws ecs describe-task-definition --task-definition
-# expenseflow-sandbox-core-case-service --query
-# 'taskDefinition.containerDefinitions[0].image' --output text | cut -d: -f2)
+# CORE_CASE_IMAGE_TAG is resolved from the running ECS task definition by
+# default. If that lookup fails, pass the deployed image tag explicitly.
 
 EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 EXPENSEFLOW_DEV_PASSWORD="${EXPENSEFLOW_DEV_PASSWORD:-expenseflow-local-dev-only}"
-CORE_CASE_IMAGE_TAG="${CORE_CASE_IMAGE_TAG:-latest}"
+TERRAFORM_DIR="${TERRAFORM_DIR:-infra/terraform/environments/sandbox}"
+NAME_PREFIX="${NAME_PREFIX:-expenseflow-sandbox}"
+AUTO_RESOLVE_SANDBOX_ENV="${AUTO_RESOLVE_SANDBOX_ENV:-true}"
+MFA_TOTP_SECRET_ID="${MFA_TOTP_SECRET_ID:-expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key}"
+CORE_CASE_IMAGE_TAG="${CORE_CASE_IMAGE_TAG:-}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
     exit 1
 fi
 
-: "${BASTION_INSTANCE_ID:?BASTION_INSTANCE_ID is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw bastion_instance_id}"
-: "${CORE_CASE_DB_MASTER_USER_SECRET_ARN:?CORE_CASE_DB_MASTER_USER_SECRET_ARN is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_db_master_user_secret_arn}"
-: "${CORE_CASE_DB_HOST:?CORE_CASE_DB_HOST is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -json | jq -r .core_case_db_endpoint.value | cut -d: -f1}"
-: "${CORE_CASE_DB_NAME:?CORE_CASE_DB_NAME is required (the database name, e.g. core_case).}"
-: "${MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:?MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN is required (same ARN passed as core_case_mfa_totp_secret_encryption_key_secret_arn on terraform apply).}"
-: "${CORE_CASE_IMAGE_URI:?CORE_CASE_IMAGE_URI is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_repository_url}"
-
 command="${1:-}"
 account="${2:-}"
-
 demo_seed_env=""
+
 case "$command" in
     migrate)
         node_command="node backend/core-case-service/dist/db/runMigrationsCli.js"
@@ -72,9 +64,7 @@ case "$command" in
         node_command="node backend/core-case-service/dist/dev/localAuthUser.js seed"
         ;;
     demo-seed)
-        : "${RECEIPT_STORAGE_BUCKET:?RECEIPT_STORAGE_BUCKET is required for demo-seed. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw receipt_storage_bucket_name}"
         node_command="node backend/core-case-service/dist/dev/localDemoSeed.js"
-        demo_seed_env="-e RECEIPT_STORAGE_BUCKET=$RECEIPT_STORAGE_BUCKET -e ALLOW_NON_LOOPBACK_RECEIPT_SEED=true"
         ;;
     code)
         if [[ -z "$account" ]]; then
@@ -92,6 +82,64 @@ esac
 aws_cli() {
     aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
 }
+
+terraform_output() {
+    terraform -chdir="$TERRAFORM_DIR" output -raw "$1" 2>/dev/null || true
+}
+
+describe_secret_arn() {
+    aws_cli secretsmanager describe-secret \
+        --secret-id "$1" \
+        --query ARN \
+        --output text 2>/dev/null || true
+}
+
+running_core_case_image() {
+    aws_cli ecs describe-task-definition \
+        --task-definition "${NAME_PREFIX}-core-case-service" \
+        --query 'taskDefinition.containerDefinitions[0].image' \
+        --output text 2>/dev/null || true
+}
+
+resolve_sandbox_env() {
+    if [[ "$AUTO_RESOLVE_SANDBOX_ENV" != "true" ]]; then
+        return 0
+    fi
+
+    BASTION_INSTANCE_ID="${BASTION_INSTANCE_ID:-$(terraform_output bastion_instance_id)}"
+    CORE_CASE_DB_MASTER_USER_SECRET_ARN="${CORE_CASE_DB_MASTER_USER_SECRET_ARN:-$(terraform_output core_case_db_master_user_secret_arn)}"
+    CORE_CASE_DB_HOST="${CORE_CASE_DB_HOST:-$(terraform_output core_case_db_endpoint | cut -d: -f1)}"
+    CORE_CASE_DB_NAME="${CORE_CASE_DB_NAME:-core_case}"
+    MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="${MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:-$(describe_secret_arn "$MFA_TOTP_SECRET_ID")}"
+    CORE_CASE_IMAGE_URI="${CORE_CASE_IMAGE_URI:-$(terraform_output core_case_repository_url)}"
+
+    if [[ -z "$CORE_CASE_IMAGE_TAG" ]]; then
+        local image
+        image="$(running_core_case_image)"
+        if [[ "$image" == *:* && "$image" != *@* ]]; then
+            CORE_CASE_IMAGE_TAG="${image##*:}"
+        fi
+    fi
+
+    if [[ "$command" == "demo-seed" ]]; then
+        RECEIPT_STORAGE_BUCKET="${RECEIPT_STORAGE_BUCKET:-$(terraform_output receipt_storage_bucket_name)}"
+    fi
+}
+
+resolve_sandbox_env
+
+: "${BASTION_INSTANCE_ID:?BASTION_INSTANCE_ID is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw bastion_instance_id}"
+: "${CORE_CASE_DB_MASTER_USER_SECRET_ARN:?CORE_CASE_DB_MASTER_USER_SECRET_ARN is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_db_master_user_secret_arn}"
+: "${CORE_CASE_DB_HOST:?CORE_CASE_DB_HOST is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -json | jq -r .core_case_db_endpoint.value | cut -d: -f1}"
+: "${CORE_CASE_DB_NAME:?CORE_CASE_DB_NAME is required (the database name, e.g. core_case).}"
+: "${MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:?MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN is required (same ARN passed as core_case_mfa_totp_secret_encryption_key_secret_arn on terraform apply).}"
+: "${CORE_CASE_IMAGE_URI:?CORE_CASE_IMAGE_URI is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_repository_url}"
+: "${CORE_CASE_IMAGE_TAG:?CORE_CASE_IMAGE_TAG is required. Run: aws ecs describe-task-definition --task-definition ${NAME_PREFIX}-core-case-service --query 'taskDefinition.containerDefinitions[0].image' --output text}"
+
+if [[ "$command" == "demo-seed" ]]; then
+    : "${RECEIPT_STORAGE_BUCKET:?RECEIPT_STORAGE_BUCKET is required for demo-seed. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw receipt_storage_bucket_name}"
+    demo_seed_env="-e RECEIPT_STORAGE_BUCKET=$RECEIPT_STORAGE_BUCKET -e ALLOW_NON_LOOPBACK_RECEIPT_SEED=true"
+fi
 
 registry="${CORE_CASE_IMAGE_URI%%/*}"
 
