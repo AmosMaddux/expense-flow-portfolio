@@ -28,6 +28,16 @@ output "core_case_repository_url" {
   value       = aws_ecr_repository.core_case.repository_url
 }
 
+output "core_case_repository_arn" {
+  description = "Core Case ECR repository ARN."
+  value       = aws_ecr_repository.core_case.arn
+}
+
+output "receipt_storage_bucket_arn" {
+  description = "Receipt storage S3 bucket ARN."
+  value       = aws_s3_bucket.receipts.arn
+}
+
 output "gl_coding_repository_url" {
   description = "GL-coding ECR repository URL."
   value       = aws_ecr_repository.gl_coding.repository_url

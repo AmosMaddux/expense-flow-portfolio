@@ -58,6 +58,14 @@ locals {
     "logs",
     "sqs",
     "sns",
+    # SSM Session Manager connectivity for the bastion (module.bastion) and
+    # any other private-subnet operational access, without a public IP or an
+    # internet route. All three are required together: ssm is the
+    # control-plane API, ec2messages/ssmmessages carry the actual session
+    # data channel.
+    "ssm",
+    "ssmmessages",
+    "ec2messages",
   ]
 }
 

@@ -128,6 +128,18 @@ variable "core_case_internal_routes_enabled" {
   default     = false
 }
 
+variable "core_case_enable_execute_command" {
+  description = "Whether ECS Exec is enabled on the Core Case service, for interactive debugging via `aws ecs execute-command`. Leave off outside active debugging."
+  type        = bool
+  default     = false
+}
+
+variable "core_case_auto_apply_migrations" {
+  description = "Whether Core Case applies pending Drizzle migrations on boot."
+  type        = bool
+  default     = false
+}
+
 variable "runtime_smoke_gl_coding_enabled" {
   description = "Whether Core Case exposes the GL-coding runtime smoke route."
   type        = bool

@@ -124,10 +124,7 @@ const localAuthAccounts = [
 
 export const localAuthEnvironmentSchema = z
     .object({
-        DATABASE_URL: z.url().refine(isLocalDatabaseUrl, {
-            message:
-                "The synthetic auth bootstrap can connect only to a loopback database.",
-        }),
+        DATABASE_URL: z.url(),
         VITE_TENANT_ID: z
             .uuid()
             .default("8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb"),
@@ -138,6 +135,12 @@ export const localAuthEnvironmentSchema = z
             .string()
             .min(12)
             .default("expenseflow-local-dev-only"),
+        // Deliberately opt-in only: the sandbox bastion (infra/terraform/modules/bastion,
+        // scripts/aws/bastion-run.sh) sets this to seed synthetic accounts against the
+        // real sandbox database, which is not a loopback host. Never set for local dev.
+        ALLOW_NON_LOOPBACK_AUTH_SEED: z
+            .enum(["true", "false"])
+            .default("false"),
     })
     .refine(
         (environment) =>
@@ -145,6 +148,16 @@ export const localAuthEnvironmentSchema = z
         {
             message: "Synthetic tenant IDs must be different.",
             path: ["VITE_SECONDARY_TENANT_ID"],
+        },
+    )
+    .refine(
+        (environment) =>
+            environment.ALLOW_NON_LOOPBACK_AUTH_SEED === "true" ||
+            isLocalDatabaseUrl(environment.DATABASE_URL),
+        {
+            message:
+                "The synthetic auth bootstrap can connect only to a loopback database, unless ALLOW_NON_LOOPBACK_AUTH_SEED=true.",
+            path: ["DATABASE_URL"],
         },
     );
 

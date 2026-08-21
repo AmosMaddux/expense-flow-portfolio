@@ -92,6 +92,22 @@ resource "aws_cloudfront_distribution" "this" {
     origin_id                = "expenseflow-spa-s3"
   }
 
+  dynamic "origin" {
+    for_each = var.api_origin_domain_name == null ? [] : [var.api_origin_domain_name]
+
+    content {
+      domain_name = origin.value
+      origin_id   = "expenseflow-api"
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
@@ -99,6 +115,23 @@ resource "aws_cloudfront_distribution" "this" {
     compress               = true
     target_origin_id       = "expenseflow-spa-s3"
     viewer_protocol_policy = "redirect-to-https"
+  }
+
+  dynamic "ordered_cache_behavior" {
+    for_each = var.api_origin_domain_name == null ? [] : [1]
+
+    content {
+      path_pattern    = "/v1/*"
+      allowed_methods = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods  = ["GET", "HEAD"]
+      compress        = true
+      # Managed-CachingDisabled: dynamic API responses must never be cached.
+      cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+      # Managed-AllViewer: forwards all headers/cookies/query strings the API needs.
+      origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3"
+      target_origin_id         = "expenseflow-api"
+      viewer_protocol_policy   = "https-only"
+    }
   }
 
   custom_error_response {

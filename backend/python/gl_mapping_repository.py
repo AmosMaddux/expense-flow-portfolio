@@ -57,7 +57,7 @@ class PostgresGlAccountMappingRepository:
         encoded_password = quote(db_password, safe="")
         return cls(
             f"postgresql://{encoded_username}:{encoded_password}"
-            f"@{db_host}:{db_port}/{db_name}"
+            f"@{db_host}:{db_port}/{db_name}?sslmode=require"
         )
 
     async def get_accounts_for_categories(

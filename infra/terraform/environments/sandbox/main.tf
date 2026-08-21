@@ -114,6 +114,21 @@ module "ecs" {
   vpc_id                                              = local.vpc_id
 }
 
+module "bastion" {
+  source = "../../modules/bastion"
+
+  core_case_repository_url                  = module.ecs.core_case_repository_url
+  core_case_repository_url_arn              = module.ecs.core_case_repository_arn
+  database_master_user_secret_arn           = module.database_core_case.master_user_secret_arn
+  mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
+  name_prefix                               = var.name_prefix
+  private_subnet_id                         = local.private_subnet_ids[0]
+  receipt_storage_bucket_arn                = module.ecs.receipt_storage_bucket_arn
+  role_permissions_boundary_arn             = var.role_permissions_boundary_arn
+  tags                                      = local.tags
+  vpc_id                                    = local.vpc_id
+}
+
 module "database_core_case" {
   source = "../../modules/database"
 
@@ -140,6 +155,18 @@ module "database_core_case" {
       tables = ["gl_code", "gl_mapping"]
     }
   }
+}
+
+# Declared here rather than inside either module to avoid a module cycle:
+# bastion needs database_core_case's master secret ARN, and this rule needs
+# both modules' security group IDs.
+resource "aws_vpc_security_group_ingress_rule" "database_from_bastion" {
+  security_group_id            = module.database_core_case.security_group_id
+  description                  = "Allow PostgreSQL access from the sandbox bastion."
+  referenced_security_group_id = module.bastion.security_group_id
+  from_port                    = 5432
+  ip_protocol                  = "tcp"
+  to_port                      = 5432
 }
 
 module "redis" {
@@ -193,7 +220,8 @@ module "http_api" {
 module "spa" {
   source = "../../modules/spa"
 
-  bucket_name = local.spa_bucket_name
-  name_prefix = var.name_prefix
-  tags        = local.tags
+  api_origin_domain_name = module.alb.public_alb_dns_name
+  bucket_name            = local.spa_bucket_name
+  name_prefix            = var.name_prefix
+  tags                   = local.tags
 }

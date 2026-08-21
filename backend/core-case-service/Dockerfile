@@ -38,6 +38,11 @@ COPY --from=production-deps --chown=node:node /workspace/backend/core-case-servi
 COPY --from=production-deps --chown=node:node /workspace/backend/core-case-service/node_modules backend/core-case-service/node_modules
 COPY --from=build --chown=node:node /workspace/backend/core-case-service/dist backend/core-case-service/dist
 COPY --chown=node:node backend/core-case-service/drizzle backend/core-case-service/drizzle
+# Synthetic demo-seed fixtures for scripts/aws/bastion-run.sh demo-seed
+# (backend/core-case-service/src/dev/localDemoSeed.ts). Not used by the
+# running service itself.
+COPY --chown=node:node scripts/fixtures/receipts scripts/fixtures/receipts
+COPY --chown=node:node scripts/seed-demo-transactions.sql scripts/seed-demo-transactions.sql
 
 USER node
 

@@ -103,6 +103,11 @@ output "stage_transition_sqs_dlq_arn" {
   value       = module.ecs.stage_transition_sqs_dlq_arn
 }
 
+output "bastion_instance_id" {
+  description = "EC2 instance ID of the sandbox bastion. Pass as BASTION_INSTANCE_ID to scripts/aws/bastion-run.sh."
+  value       = module.bastion.instance_id
+}
+
 output "stage_transition_sqs_dlq_url" {
   description = "SQS DLQ URL for Expense Report stage-transition events."
   value       = module.ecs.stage_transition_sqs_dlq_url

@@ -20,7 +20,7 @@ void describe("loadDatabaseConfig", () => {
         });
     });
 
-    void test("assembles a connection string from discrete DB_* env vars", () => {
+    void test("assembles a connection string from discrete DB_* env vars, requiring SSL", () => {
         const config = loadDatabaseConfig({
             DB_HOST: "db.example.invalid",
             DB_NAME: "expenseflow",
@@ -31,7 +31,7 @@ void describe("loadDatabaseConfig", () => {
 
         expect(config).toStrictEqual({
             connectionString:
-                "postgres://synthetic-user:synthetic-password@db.example.invalid:5432/expenseflow",
+                "postgres://synthetic-user:synthetic-password@db.example.invalid:5432/expenseflow?uselibpqcompat=true&sslmode=require",
         });
     });
 
@@ -46,7 +46,7 @@ void describe("loadDatabaseConfig", () => {
 
         expect(config).toStrictEqual({
             connectionString:
-                "postgres://synthetic%20user:p%40ss%3Aw%2Ford%3F%23@db.example.invalid:5432/expenseflow",
+                "postgres://synthetic%20user:p%40ss%3Aw%2Ford%3F%23@db.example.invalid:5432/expenseflow?uselibpqcompat=true&sslmode=require",
         });
     });
 

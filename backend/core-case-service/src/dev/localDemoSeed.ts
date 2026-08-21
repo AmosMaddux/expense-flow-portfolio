@@ -156,7 +156,7 @@ const receiptFixtures = [
 export async function seedLocalDemoData(): Promise<void> {
     const environment = localAuthEnvironmentSchema.parse(process.env);
     const receiptStorageConfig = loadReceiptStorageConfig();
-    assertLocalReceiptStorageEndpoint(receiptStorageConfig);
+    assertLocalOrExplicitlyAllowedReceiptStorageEndpoint(receiptStorageConfig);
 
     await applyPendingCoreCaseMigrations(environment.DATABASE_URL);
 
@@ -169,7 +169,9 @@ export async function seedLocalDemoData(): Promise<void> {
         ...(receiptStorageConfig.credentials === undefined
             ? {}
             : { credentials: receiptStorageConfig.credentials }),
-        endpoint: receiptStorageConfig.endpoint,
+        ...(receiptStorageConfig.endpoint === undefined
+            ? {}
+            : { endpoint: receiptStorageConfig.endpoint }),
         forcePathStyle: receiptStorageConfig.forcePathStyle,
         region: receiptStorageConfig.region,
     });
@@ -715,9 +717,17 @@ async function verifyReceiptObjects(
     );
 }
 
-function assertLocalReceiptStorageEndpoint(
+function assertLocalOrExplicitlyAllowedReceiptStorageEndpoint(
     config: ReceiptStorageConfig,
-): asserts config is ReceiptStorageConfig & { endpoint: string } {
+): void {
+    // Deliberately opt-in only: the sandbox bastion (infra/terraform/modules/bastion,
+    // scripts/aws/bastion-run.sh) sets this to seed synthetic demo receipts against the
+    // real sandbox S3 bucket (RECEIPT_STORAGE_ENDPOINT unset - real AWS). Never set for
+    // local dev, which always points RECEIPT_STORAGE_ENDPOINT at loopback MinIO.
+    if (process.env.ALLOW_NON_LOOPBACK_RECEIPT_SEED === "true") {
+        return;
+    }
+
     if (config.endpoint === undefined) {
         throw new Error(
             "RECEIPT_STORAGE_ENDPOINT is required for synthetic local demo seeding.",

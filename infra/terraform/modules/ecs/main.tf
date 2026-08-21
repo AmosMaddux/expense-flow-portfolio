@@ -360,6 +360,18 @@ resource "aws_iam_role" "gl_coding_task" {
 
 data "aws_iam_policy_document" "core_case_runtime" {
   statement {
+    sid = "EcsExec"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    # ECS Exec's SSM data channel APIs do not support resource-level scoping.
+    resources = ["*"]
+  }
+
+  statement {
     actions = [
       "s3:DeleteObject",
       "s3:GetObject",
@@ -510,7 +522,7 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "AUTH_ACCESS_TOKEN_TTL_SECONDS", value = "900" },
         { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
-        { name = "AUTO_APPLY_MIGRATIONS", value = "false" },
+        { name = "AUTO_APPLY_MIGRATIONS", value = tostring(var.core_case_auto_apply_migrations) },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "CASE_QUEUE_ROLLUP_TTL_SECONDS", value = "30" },
         { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
@@ -630,6 +642,7 @@ resource "aws_ecs_service" "core_case" {
   launch_type                       = "FARGATE"
   platform_version                  = "LATEST"
   enable_ecs_managed_tags           = true
+  enable_execute_command            = var.core_case_enable_execute_command
   tags                              = var.tags
 
   load_balancer {
