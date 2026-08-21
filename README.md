@@ -525,10 +525,12 @@ Run the gate locally:
 npm run rag:eval
 ```
 
-That runs a golden question set and a prompt-injection set through the real retrieval and assistant code against a synthetic two-tenant corpus in `evaluation/datasets/`, then scores the RAGAS metrics and enforces the thresholds. It needs no database, no embedding provider, and no API key, and it fails the build when:
+That runs a golden question set and a prompt-injection set through the real retrieval and assistant code against a synthetic two-tenant corpus in `evaluation/datasets/`, then scores the RAGAS metrics and enforces the thresholds. Chunks and queries are embedded by a deterministic embedder over a version-controlled concept lexicon, so the gate exercises cosine ranking without a database, an embedding provider, or an API key. It fails the build when:
 
 - mean faithfulness drops below `0.90`,
-- mean context relevance drops below `0.80`, or
+- mean context relevance drops below `0.95` (dropping vector ranking scores `0.948`, so removing it fails),
+- mean answer correctness drops below `0.85`,
+- any golden question is refused or abstained, or the samples do not cover the question set exactly once each, or
 - any prompt-injection case stops refusing to disclose the system prompt or another tenant's policy.
 
 The `RAG Evaluation Gate` workflow runs this on every pull request. A weekly scheduled run scores the same samples with the real `ragas` package (`RAG_EVAL_MODE=live`) to keep the deterministic numbers calibrated against the LLM-judged ones. `ragas` is not a declared project dependency and is installed only by that scheduled job; see [docs/design/rag-evaluation-gate.md](docs/design/rag-evaluation-gate.md) for why.

@@ -10,6 +10,8 @@ process.env.DATABASE_URL ??=
     "postgres://evaluation:evaluation@127.0.0.1:1/rag_evaluation_unused";
 
 const {
+    createDeterministicEmbedder,
+    readEmbeddingLexicon,
     readEvaluationCorpus,
     readPolicyQuestionSet,
     readPromptInjectionSet,
@@ -47,8 +49,17 @@ try {
         resolve(datasetRoot, "prompt-injection-set.json"),
     );
 
-    const samples = await runQuestionSet(corpus, questionSet);
-    const injectionOutcomes = await runPromptInjectionSet(corpus, injectionSet);
+    const lexicon = await readEmbeddingLexicon(
+        resolve(datasetRoot, "embedding-lexicon.json"),
+    );
+    const embedder = createDeterministicEmbedder(lexicon);
+
+    const samples = await runQuestionSet(corpus, questionSet, embedder);
+    const injectionOutcomes = await runPromptInjectionSet(
+        corpus,
+        injectionSet,
+        embedder,
+    );
 
     await mkdir(dirname(samplesPath), { recursive: true });
     await writeFile(samplesPath, toJsonLines(samples), "utf8");

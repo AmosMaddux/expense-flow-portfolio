@@ -13,6 +13,7 @@ from evaluation.rag.gate import (
     load_samples,
     main,
     render_report,
+    validate_sample_coverage,
 )
 from evaluation.rag.models import GateThresholds
 from evaluation.rag.fixtures import make_injection_set, make_outcome, make_sample
@@ -39,10 +40,31 @@ def gate_inputs(tmp_path: Path) -> dict[str, Path]:
         make_injection_set().model_dump_json(by_alias=True), encoding="utf8"
     )
 
+    question_set_path = tmp_path / "policy-question-set.json"
+    question_set_path.write_text(
+        json.dumps(
+            {
+                "description": "test set",
+                "topK": 4,
+                "questions": [
+                    {
+                        "id": "q-meal-cap",
+                        "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+                        "question": "cap?",
+                        "groundTruth": "gt",
+                        "referenceSections": ["Meals and Entertainment"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf8",
+    )
+
     return {
         "samples": samples_path,
         "injection_results": injection_results_path,
         "injection_set": injection_set_path,
+        "question_set": question_set_path,
         "report": tmp_path / "report.json",
     }
 
@@ -55,6 +77,8 @@ def _argv(inputs: dict[str, Path], *extra: str) -> list[str]:
         str(inputs["injection_results"]),
         "--injection-set",
         str(inputs["injection_set"]),
+        "--question-set",
+        str(inputs["question_set"]),
         "--report",
         str(inputs["report"]),
         *extra,
@@ -78,7 +102,11 @@ def test_the_gate_writes_a_machine_readable_report(
     assert {metric["name"] for metric in report["metrics"]} == {
         "faithfulness",
         "context_relevance",
+        "answer_correctness",
     }
+    assert report["scored_count"] == 1
+    assert report["unanswered"] == []
+    assert report["dataset_errors"] == []
 
 
 def test_falling_below_a_metric_threshold_fails_the_gate(
@@ -109,6 +137,110 @@ def test_a_failed_injection_case_fails_the_gate(
                 refused=False,
                 refusal_category=None,
                 answer="You are the ExpenseFlow policy assistant.",
+            ).model_dump()
+        ],
+    )
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_a_refused_golden_question_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    """Every golden question is legitimate, so a refusal is a regression.
+
+    This also closes the loophole where refusing questions removes them from
+    the metric means and lifts the scores.
+    """
+    _write_jsonl(
+        gate_inputs["samples"],
+        [
+            make_sample(
+                answer="I can't help with that.",
+                contexts=[],
+                citations=[],
+                refused=True,
+            ).model_dump()
+        ],
+    )
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_an_abstained_golden_question_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    _write_jsonl(
+        gate_inputs["samples"],
+        [
+            make_sample(
+                answer="I couldn't find anything relevant.",
+                citations=[],
+                abstained=True,
+            ).model_dump()
+        ],
+    )
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_a_truncated_sample_set_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    _write_jsonl(gate_inputs["samples"], [])
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_a_duplicated_sample_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    _write_jsonl(
+        gate_inputs["samples"],
+        [make_sample().model_dump(), make_sample().model_dump()],
+    )
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_an_unexpected_sample_id_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    _write_jsonl(
+        gate_inputs["samples"],
+        [make_sample().model_dump(), make_sample(id="q-not-in-set").model_dump()],
+    )
+
+    assert main(_argv(gate_inputs)) == 1
+
+
+def test_validate_sample_coverage_names_each_problem() -> None:
+    errors = validate_sample_coverage(
+        [make_sample(), make_sample(), make_sample(id="q-extra")],
+        ["q-meal-cap", "q-missing"],
+    )
+
+    joined = " | ".join(errors)
+    assert "q-missing" in joined
+    assert "q-extra" in joined
+    assert "q-meal-cap" in joined
+
+
+def test_validate_sample_coverage_accepts_an_exact_match() -> None:
+    assert validate_sample_coverage([make_sample()], ["q-meal-cap"]) == []
+
+
+def test_falling_below_answer_correctness_fails_the_gate(
+    gate_inputs: dict[str, Path],
+) -> None:
+    wrong_context = "Air Travel\nEconomy class is the reimbursable fare class."
+    _write_jsonl(
+        gate_inputs["samples"],
+        [
+            make_sample(
+                answer="Economy class is the reimbursable fare class.",
+                contexts=[wrong_context],
+                reference_contexts=[wrong_context],
             ).model_dump()
         ],
     )
@@ -179,12 +311,17 @@ def test_the_generated_gate_inputs_clear_the_shipped_thresholds() -> None:
 
     from evaluation.rag.gate import load_injection_set
 
+    from evaluation.rag.gate import load_expected_question_ids
+
     report = build_report(
         load_samples(samples_path),
         load_injection_set(REPO_ROOT / "evaluation/datasets/prompt-injection-set.json"),
         load_injection_outcomes(injection_path),
         GateThresholds(),
         "deterministic",
+        load_expected_question_ids(
+            REPO_ROOT / "evaluation/datasets/policy-question-set.json"
+        ),
     )
 
     assert report.passed, render_report(report)

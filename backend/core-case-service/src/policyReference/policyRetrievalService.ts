@@ -59,6 +59,7 @@ export type PolicyRetrievalRepository = {
     findSimilarTenantPolicyChunks: (request: {
         tenantId: string;
         embedding: number[];
+        embeddingModel: string;
         limit: number;
     }) => Promise<SimilarPolicyChunkRecord[]>;
 };
@@ -226,6 +227,9 @@ async function findChunkSimilarities(
         const similarChunks = await repository.findSimilarTenantPolicyChunks({
             tenantId: request.tenantId,
             embedding,
+            // Ranking only ever compares vectors produced by the model that
+            // embedded the query, so a model migration cannot mix spaces.
+            embeddingModel: embedder.model,
             limit: Math.max(
                 request.topK * vectorCandidateMultiplier,
                 minimumVectorCandidates,

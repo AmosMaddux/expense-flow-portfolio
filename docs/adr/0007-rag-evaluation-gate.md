@@ -32,6 +32,11 @@ The pull request gate scores with a deterministic lexical adjudicator that imple
 
 - `faithfulness` is the fraction of claims in the answer that the retrieved contexts support.
 - `context_relevance` is average precision over the retrieved contexts against the question's reference contexts, so ranking regressions are caught and not just recall regressions.
+- `answer_correctness` is the fraction of the reference answer the response actually states. Faithfulness is near-tautological against an extractive assistant, so this is the metric carrying real signal about answer quality.
+
+Declining to answer is a gate failure rather than a scored outcome. Every golden question is legitimate, so a refusal or abstention on one is a regression; unanswered samples fail the gate and are excluded from the metric means. Scoring them as perfect would let an assistant that regressed into refusing everything report 1.000 and pass, and excluding them without failing them would let a system dodge its hardest questions to lift its average.
+
+The samples must also cover the question set exactly once each, so a truncated or partially failed generation cannot leave only the easy questions behind.
 
 Setting `RAG_EVAL_MODE=live` scores the same samples with the real `ragas` package instead. Live mode runs on a weekly schedule and on manual dispatch, which keeps the deterministic numbers calibrated against the LLM-judged ones without gating every pull request on a paid, non-reproducible judge. Both modes emit the same report shape, so the threshold contract does not change with the mode.
 
@@ -43,7 +48,15 @@ A Node CLI runs the question set and the injection set through the real retrieva
 
 ### Evaluation runs against a fixed corpus, not a database
 
-The question set is scored against a version-controlled synthetic two-tenant corpus rather than whatever a database happens to hold. The gate therefore measures the ranking and answering code, needs no database or embedding provider in CI, and produces the same score for the same commit. Vector ranking is covered by the pgvector integration tests, which do need a live database.
+The question set is scored against a version-controlled synthetic two-tenant corpus rather than whatever a database happens to hold. The gate therefore measures the ranking and answering code, needs no database or embedding provider in CI, and produces the same score for the same commit.
+
+### Vector retrieval is exercised by a deterministic embedding space
+
+Chunks and queries are embedded by a deterministic embedder built over a version-controlled concept lexicon, and the evaluation repository ranks by real cosine similarity under the same tenant and embedding-model predicates the SQL repository applies. The gate covers the whole vector path rather than assuming it.
+
+The embedder is a stand-in for an embedding model, not an imitation of one: each lexicon axis is a dimension, a vector counts axis terms, and the result is L2-normalised. Its semantics are entirely visible to a reviewer, which is what makes it reproducible and reviewable where a real model is neither.
+
+This is load-bearing and measured rather than asserted. Dropping to lexical-only ranking moves `context_relevance` from 1.000 to 0.948 and leaves three paraphrase questions unanswered, so removing vector ranking fails the gate on two counts. Real pgvector behaviour — the HNSW index, the SQL predicates, cosine distance in the database — remains covered by the integration tests, which do need a live database.
 
 ### The prompt-injection set is a pass-or-fail contract
 
@@ -61,6 +74,8 @@ Positive:
 Negative:
 
 - The deterministic adjudicator is a lexical approximation of an LLM judge. It cannot detect a semantically unfaithful claim that reuses the context's vocabulary, and it would score a fluent generative assistant less accurately than it scores the current extractive one.
+- `faithfulness` is near-tautological against an extractive assistant and is a floor check, not an answer-quality score. `answer_correctness` carries that signal instead.
+- The deterministic embedder models paraphrase only where a human wrote the synonym into the lexicon. It proves the vector path is wired and ranked correctly; it does not predict how a real embedding model generalises.
 - The golden question set and the corpus are hand-maintained. They will drift from real tenant policies unless deliberately extended.
 - Deterministic and live scores are not directly comparable, so a live run's numbers must be read against the live baseline, not the deterministic thresholds.
 - The live path's `ragas` version is pinned in the workflow rather than in `uv.lock`, so it is reproducible only by that pin and is not covered by dependency scanning.
@@ -78,6 +93,8 @@ Neutral:
 **Implement the metrics in TypeScript and drop the Python harness.** One language, simplest CI wiring. Rejected because it forecloses ever running the real `ragas` library, and because it would make the gate a bespoke scorer with no relationship to the metric definitions it claims to implement.
 
 **Score against a seeded database instead of a fixture corpus.** Closer to production. Rejected because it makes the pull request gate depend on database provisioning and an embedding provider, and makes the score depend on seed data rather than on the commit under test. The pgvector integration tests already cover the database path.
+
+**Scoring refusals as faithful.** The first implementation returned 1.0 for a refusal on the grounds that a refusal makes no claim about policy. Rejected on review: it made the gate blind to the single most likely assistant regression, since an assistant that refused every question would have reported a perfect score.
 
 **Sentence-level context relevance.** The classic RAGAS `context_relevancy` formulation, scored as the fraction of retrieved context sentences that bear on the question. Rejected because chunk granularity dominates it: a perfectly retrieved single section scores about 0.33 for a single-fact question, so the metric mostly measures how sections were split rather than how well retrieval worked. Average precision against reference contexts moves when ranking moves, which is the regression the gate exists to catch.
 

@@ -6,6 +6,14 @@ The metric definitions follow RAGAS:
   the retrieved contexts.
 - ``context_relevance`` is the rank-aware relevance of the retrieved contexts
   to the question, scored as average precision against the reference contexts.
+- ``answer_correctness`` is how much of the reference answer the response
+  actually states. Unlike faithfulness, this cannot be satisfied by copying
+  arbitrary context text, so it is the metric that fails when retrieval surfaces
+  the wrong section.
+
+Only answered samples are scored. A refusal or abstention on a golden question
+is a gate failure in its own right (see ``evaluation.rag.gate``) rather than a
+free 1.0, so declining to answer can never lift a metric mean.
 
 RAGAS scores both with an LLM judge. The judge is replaced here with a
 deterministic lexical adjudicator so the CI gate is reproducible, free, and runs
@@ -107,15 +115,11 @@ def _coverage(needle: set[str], haystack: set[str]) -> float:
 def faithfulness(sample: EvaluationSample) -> float:
     """Fraction of the answer's claims that the retrieved contexts support.
 
-    A refusal or an abstention makes no claim about policy, so both are faithful
-    by construction. An answer with no supporting context scores zero.
-
-    Abstaining cannot be used to inflate this metric: an abstention retrieves
-    nothing usable and so scores zero on context relevance.
+    Because the assistant answers extractively, a healthy run scores at or near
+    1.0 here by construction. That makes this a floor check that catches an
+    answer drifting away from its cited context, not a measure of answer
+    quality; ``answer_correctness`` is the metric with real signal.
     """
-    if sample.refused or sample.abstained:
-        return 1.0
-
     claims = _claims(sample.answer)
     if not claims:
         return 0.0
@@ -141,14 +145,7 @@ def context_relevance(sample: EvaluationSample) -> float:
     sample's reference contexts. Averaging precision at the ranks that hold a
     relevant context rewards putting the answering section first, so the score
     falls as soon as ranking regresses rather than only when recall does.
-
-    A refusal retrieves nothing and scores 1.0, because there is no irrelevant
-    context to penalise. An abstention is scored normally, so a system that
-    declines to answer questions it did retrieve context for is still measured.
     """
-    if sample.refused:
-        return 1.0
-
     if not sample.contexts:
         return 0.0
 
@@ -180,13 +177,33 @@ def _covers_reference(
     )
 
 
+def answer_correctness(sample: EvaluationSample) -> float:
+    """How much of the reference answer the response actually states.
+
+    Scored as the fraction of the ground truth's content tokens that appear in
+    the answer. Copying an unrelated context cannot satisfy this, so it is the
+    metric that moves when retrieval surfaces the wrong section while the answer
+    still quotes faithfully from it.
+    """
+    ground_truth_tokens = tokenize(sample.ground_truth)
+    if not ground_truth_tokens:
+        return 0.0
+
+    return _coverage(ground_truth_tokens, tokenize(sample.answer))
+
+
 def score_samples(samples: Iterable[EvaluationSample]) -> list[SampleScore]:
-    """Scores every sample with both metrics."""
+    """Scores every answered sample.
+
+    Callers must filter out refused and abstained samples first; the gate treats
+    those as failures rather than scoring them.
+    """
     return [
         SampleScore(
             id=sample.id,
             faithfulness=faithfulness(sample),
             context_relevance=context_relevance(sample),
+            answer_correctness=answer_correctness(sample),
         )
         for sample in samples
     ]

@@ -3,11 +3,13 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 import { answerPolicyQuestion } from "../policyAssistantService.js";
+import type { PolicyEmbedder } from "../policyEmbeddingService.js";
 import { retrievePolicyChunks } from "../policyRetrievalService.js";
 
 import {
     buildEvaluationChunks,
     createEvaluationRetrievalRepository,
+    embedEvaluationChunks,
     readEvaluationCorpus,
     type EvaluationCorpus,
     type EvaluationPolicySection,
@@ -135,8 +137,12 @@ export async function readPromptInjectionSet(
 export async function runQuestionSet(
     corpus: EvaluationCorpus,
     questionSet: PolicyQuestionSet,
+    embedder: PolicyEmbedder,
 ): Promise<RagEvaluationSample[]> {
-    const chunks = buildEvaluationChunks(corpus);
+    const chunks = await embedEvaluationChunks(
+        buildEvaluationChunks(corpus),
+        embedder,
+    );
     const repository = createEvaluationRetrievalRepository(chunks);
     const sectionsByTenant = new Map(
         corpus.tenants.map((tenant) => [
@@ -159,7 +165,7 @@ export async function runQuestionSet(
                     topK: questionSet.topK,
                 },
                 (request) =>
-                    retrievePolicyChunks(request, repository, undefined),
+                    retrievePolicyChunks(request, repository, embedder),
             );
             const tenantSections = sectionsByTenant.get(question.tenantId);
             const referenceContexts = question.referenceSections.map(
@@ -201,6 +207,7 @@ export async function runQuestionSet(
 export async function runPromptInjectionSet(
     corpus: EvaluationCorpus,
     injectionSet: PromptInjectionSet,
+    embedder: PolicyEmbedder,
 ): Promise<PromptInjectionOutcome[]> {
     return Promise.all(
         injectionSet.cases.map(async (injectionCase) => {
@@ -215,7 +222,10 @@ export async function runPromptInjectionSet(
             }
 
             const repository = createEvaluationRetrievalRepository(
-                buildEvaluationChunks(corpus, extraSections),
+                await embedEvaluationChunks(
+                    buildEvaluationChunks(corpus, extraSections),
+                    embedder,
+                ),
             );
             const answer = await answerPolicyQuestion(
                 {
@@ -224,7 +234,7 @@ export async function runPromptInjectionSet(
                     topK: injectionSet.topK,
                 },
                 (request) =>
-                    retrievePolicyChunks(request, repository, undefined),
+                    retrievePolicyChunks(request, repository, embedder),
             );
 
             return {
@@ -243,4 +253,8 @@ export async function runPromptInjectionSet(
     );
 }
 
+export {
+    createDeterministicEmbedder,
+    readEmbeddingLexicon,
+} from "./deterministicEmbedder.js";
 export { readEvaluationCorpus };

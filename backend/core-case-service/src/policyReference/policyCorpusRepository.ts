@@ -31,8 +31,9 @@ export type PolicyCorpusLoadResult = {
  */
 export async function replaceTenantPolicyChunks(
     request: ReplaceTenantPolicyChunksRequest,
+    database: Pick<typeof db, "transaction"> = db,
 ): Promise<PolicyCorpusLoadResult> {
-    return db.transaction(async (transaction) => {
+    return database.transaction(async (transaction) => {
         const existingChunks = await transaction
             .select()
             .from(tenantExpensePolicyChunk)
@@ -41,14 +42,19 @@ export async function replaceTenantPolicyChunks(
             (chunk) => chunk.policyHash === request.policyHash,
         );
 
-        if (
+        // Unchanged text is not enough to skip the write. A corpus loaded before
+        // an embedding provider was configured holds the same chunks with no
+        // vectors, so returning early on text alone would leave those chunks
+        // permanently unembedded while reporting success.
+        const textUnchanged =
             currentChunks.length === request.chunks.length &&
             currentChunks.every((chunk) =>
                 request.chunks.some(
                     (candidate) => candidate.chunkHash === chunk.chunkHash,
                 ),
-            )
-        ) {
+            );
+
+        if (textUnchanged && !hasPendingEmbeddings(request, currentChunks)) {
             return {
                 tenantId: request.tenantId,
                 policyHash: request.policyHash,
@@ -131,6 +137,42 @@ export async function replaceTenantPolicyChunks(
             deletedCount: deleted.length,
             unchanged: false,
         };
+    });
+}
+
+/**
+ * Reports whether this load carries embeddings the stored chunks do not have.
+ *
+ * A supplied vector is pending when the stored chunk has none, or has one from
+ * a different model, because vectors from two models are not interchangeable.
+ */
+function hasPendingEmbeddings(
+    request: ReplaceTenantPolicyChunksRequest,
+    currentChunks: readonly TenantExpensePolicyChunk[],
+): boolean {
+    if (
+        request.embeddings === undefined ||
+        request.embeddingModel === undefined
+    ) {
+        return false;
+    }
+
+    const storedByChunkHash = new Map(
+        currentChunks.map((chunk) => [chunk.chunkHash, chunk]),
+    );
+
+    return request.chunks.some((chunk) => {
+        if (!request.embeddings?.has(chunk.chunkHash)) {
+            return false;
+        }
+
+        const stored = storedByChunkHash.get(chunk.chunkHash);
+
+        return (
+            stored === undefined ||
+            stored.embedding === null ||
+            stored.embeddingModel !== request.embeddingModel
+        );
     });
 }
 
@@ -250,6 +292,7 @@ export async function saveTenantPolicyChunkEmbedding(
 export type FindSimilarPolicyChunksRequest = {
     tenantId: string;
     embedding: number[];
+    embeddingModel: string;
     limit: number;
 };
 
@@ -263,6 +306,11 @@ export type SimilarPolicyChunkRecord = TenantExpensePolicyChunk & {
  *
  * The tenant predicate is applied in SQL so the HNSW index never returns
  * another tenant's chunks into retrieval.
+ *
+ * The model predicate is applied for the same reason the backfill treats a
+ * different model as stale: vectors from two models occupy unrelated spaces, so
+ * comparing them produces a meaningless distance. During a model migration the
+ * corpus holds both, and only this filter keeps the old space out of ranking.
  */
 export async function findSimilarTenantPolicyChunks(
     request: FindSimilarPolicyChunksRequest,
@@ -292,6 +340,10 @@ export async function findSimilarTenantPolicyChunks(
             and(
                 eq(tenantExpensePolicyChunk.tenantId, request.tenantId),
                 isNotNull(tenantExpensePolicyChunk.embedding),
+                eq(
+                    tenantExpensePolicyChunk.embeddingModel,
+                    request.embeddingModel,
+                ),
             ),
         )
         .orderBy(

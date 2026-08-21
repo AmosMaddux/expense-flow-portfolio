@@ -20,8 +20,10 @@ import {
     findPolicyChunksMissingEmbeddings,
     findSimilarTenantPolicyChunks,
     findTenantPolicyCorpusChunks,
+    replaceTenantPolicyChunks,
     saveTenantPolicyChunkEmbedding,
 } from "./policyCorpusRepository.js";
+import type { ExpensePolicyChunk } from "./policyCorpusChunker.js";
 import { policyChunkEmbeddingDimensions } from "../db/schema/index.js";
 
 let client: Client;
@@ -139,6 +141,7 @@ void describe("policy corpus repository", () => {
             {
                 tenantId: tenantA,
                 embedding: reimbursableEmbedding,
+                embeddingModel,
                 limit: 5,
             },
             testDb,
@@ -223,6 +226,176 @@ void describe("policy corpus repository", () => {
         );
 
         expect(saved).toBe(false);
+    });
+
+    test("excludes vectors embedded by a different model from ranking", async () => {
+        const currentModelEmbedding = unitEmbedding(0);
+
+        await testDb.insert(tenantExpensePolicyChunk).values([
+            {
+                tenantId: tenantA,
+                policyHash: "policy-a",
+                chunkHash: "chunk-a-current-model",
+                section: "Meals",
+                chunkIndex: 1,
+                content: "Tenant A meals are reimbursable.",
+                metadata: {},
+                embedding: currentModelEmbedding,
+                embeddingModel,
+                embeddedAt: new Date(),
+            },
+            {
+                tenantId: tenantA,
+                policyHash: "policy-a",
+                chunkHash: "chunk-a-stale-model",
+                section: "Meals",
+                chunkIndex: 2,
+                content:
+                    "Tenant A meals were reimbursable under the old model.",
+                metadata: {},
+                // An identical vector from a different model. Cosine distance
+                // cannot tell the two spaces apart, so only the model predicate
+                // keeps this chunk out of ranking during a migration.
+                embedding: currentModelEmbedding,
+                embeddingModel: "text-embedding-3-large",
+                embeddedAt: new Date(),
+            },
+        ]);
+
+        const results = await findSimilarTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                embedding: currentModelEmbedding,
+                embeddingModel,
+                limit: 10,
+            },
+            testDb,
+        );
+
+        expect(results.map((chunk) => chunk.chunkHash)).toStrictEqual([
+            "chunk-a-current-model",
+        ]);
+        expect(results.map((chunk) => chunk.chunkHash)).not.toContain(
+            "chunk-a-stale-model",
+        );
+    });
+
+    test("embeds a corpus that was first loaded without an embedding provider", async () => {
+        const chunk: ExpensePolicyChunk = {
+            tenantId: tenantA,
+            policyHash: "policy-embed",
+            chunkHash: "chunk-embed-0",
+            section: "Receipts",
+            chunkIndex: 0,
+            content: "Receipts are required over 25 dollars.",
+            metadata: {
+                tenantId: tenantA,
+                section: "Receipts",
+                chunkIndex: 0,
+                policyHash: "policy-embed",
+                chunkHash: "chunk-embed-0",
+                source: "tenant_expense_policy",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+        };
+
+        // First load: no embedding provider configured.
+        const withoutEmbeddings = await replaceTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                policyHash: "policy-embed",
+                chunks: [chunk],
+            },
+            testDb,
+        );
+
+        expect(withoutEmbeddings.unchanged).toBe(false);
+        const [storedWithout] = await findTenantPolicyCorpusChunks(
+            tenantA,
+            testDb,
+        );
+        expect(storedWithout?.embedding).toBeNull();
+
+        // Second load: same text, but credentials are now available.
+        const withEmbeddings = await replaceTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                policyHash: "policy-embed",
+                chunks: [chunk],
+                embeddings: new Map([[chunk.chunkHash, unitEmbedding(3)]]),
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(withEmbeddings.unchanged).toBe(false);
+        const [storedWith] = await findTenantPolicyCorpusChunks(
+            tenantA,
+            testDb,
+        );
+        expect(storedWith?.embedding).not.toBeNull();
+        expect(storedWith?.embeddingModel).toBe(embeddingModel);
+
+        // Third load: nothing left to do, so the write is skipped.
+        const alreadyEmbedded = await replaceTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                policyHash: "policy-embed",
+                chunks: [chunk],
+                embeddings: new Map([[chunk.chunkHash, unitEmbedding(3)]]),
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(alreadyEmbedded.unchanged).toBe(true);
+    });
+
+    test("re-embeds a corpus whose vectors came from a different model", async () => {
+        const chunk: ExpensePolicyChunk = {
+            tenantId: tenantA,
+            policyHash: "policy-migrate",
+            chunkHash: "chunk-migrate-0",
+            section: "Mileage",
+            chunkIndex: 0,
+            content: "Mileage is reimbursed at 67 cents per mile.",
+            metadata: {
+                tenantId: tenantA,
+                section: "Mileage",
+                chunkIndex: 0,
+                policyHash: "policy-migrate",
+                chunkHash: "chunk-migrate-0",
+                source: "tenant_expense_policy",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+        };
+        const embeddings = new Map([[chunk.chunkHash, unitEmbedding(5)]]);
+
+        await replaceTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                policyHash: "policy-migrate",
+                chunks: [chunk],
+                embeddings,
+                embeddingModel: "text-embedding-3-large",
+            },
+            testDb,
+        );
+
+        const migrated = await replaceTenantPolicyChunks(
+            {
+                tenantId: tenantA,
+                policyHash: "policy-migrate",
+                chunks: [chunk],
+                embeddings,
+                embeddingModel,
+            },
+            testDb,
+        );
+
+        expect(migrated.unchanged).toBe(false);
+        const [stored] = await findTenantPolicyCorpusChunks(tenantA, testDb);
+        expect(stored?.embeddingModel).toBe(embeddingModel);
     });
 
     test("returns only chunks for the requested tenant", async () => {

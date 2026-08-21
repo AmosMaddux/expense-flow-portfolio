@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from evaluation.rag.metrics import (
+    answer_correctness,
     context_relevance,
     faithfulness,
     mean,
@@ -41,25 +42,6 @@ def test_faithfulness_is_zero_without_any_retrieved_context() -> None:
     assert faithfulness(make_sample(contexts=[])) == 0.0
 
 
-def test_a_refusal_makes_no_policy_claim_and_is_faithful() -> None:
-    sample = make_sample(
-        answer="I can't read another tenant's policy.",
-        contexts=[],
-        refused=True,
-    )
-
-    assert faithfulness(sample) == 1.0
-
-
-def test_an_abstention_makes_no_policy_claim_and_is_faithful() -> None:
-    sample = make_sample(
-        answer="I couldn't find anything in your workspace's expense policy.",
-        abstained=True,
-    )
-
-    assert faithfulness(sample) == 1.0
-
-
 def test_the_citation_tail_is_not_scored_as_a_claim() -> None:
     with_citation = make_sample()
     without_citation = make_sample(answer=GROUND_TRUTH)
@@ -87,27 +69,59 @@ def test_context_relevance_is_zero_without_any_retrieved_context() -> None:
     assert context_relevance(make_sample(contexts=[])) == 0.0
 
 
-def test_a_refusal_retrieves_no_irrelevant_context() -> None:
-    sample = make_sample(answer="I can't do that.", contexts=[], refused=True)
+def test_a_refusal_is_no_longer_scored_as_perfect() -> None:
+    """Refusals must not short-circuit to 1.0.
 
-    assert context_relevance(sample) == 1.0
-
-
-def test_an_abstention_is_still_scored_on_retrieval_quality() -> None:
+    The gate excludes them from the means and fails them separately; if they
+    were scored here instead, an over-refusing assistant would look perfect.
+    """
     sample = make_sample(
-        answer="I couldn't find anything relevant.",
-        contexts=["Mileage\nUnrelated mileage text."],
-        abstained=True,
+        answer="I can't read another tenant's policy.",
+        contexts=[],
+        refused=True,
     )
 
+    assert faithfulness(sample) == 0.0
     assert context_relevance(sample) == 0.0
+    assert answer_correctness(sample) == 0.0
 
 
-def test_score_samples_reports_both_metrics_per_sample() -> None:
+def test_answer_correctness_is_one_when_the_answer_states_the_ground_truth() -> None:
+    assert answer_correctness(make_sample()) == 1.0
+
+
+def test_answer_correctness_falls_when_the_answer_misses_the_ground_truth() -> None:
+    sample = make_sample(
+        answer="Mileage is reimbursed at 67 cents per mile.",
+        contexts=["Mileage\nMileage is reimbursed at 67 cents per mile."],
+    )
+
+    assert answer_correctness(sample) < 0.5
+
+
+def test_answer_correctness_is_not_satisfied_by_copying_unrelated_context() -> None:
+    """This is what separates correctness from faithfulness.
+
+    Quoting a retrieved chunk verbatim always satisfies faithfulness, so only
+    correctness moves when retrieval surfaces the wrong section.
+    """
+    wrong_context = "Air Travel\nEconomy class is the reimbursable fare class."
+    sample = make_sample(
+        answer="Economy class is the reimbursable fare class.",
+        contexts=[wrong_context],
+        reference_contexts=[wrong_context],
+    )
+
+    assert faithfulness(sample) == 1.0
+    assert answer_correctness(sample) < 0.3
+
+
+def test_score_samples_reports_every_metric_per_sample() -> None:
     scores = score_samples([make_sample(), make_sample(id="q-second")])
 
     assert [score.id for score in scores] == ["q-meal-cap", "q-second"]
     assert all(score.faithfulness == 1.0 for score in scores)
+    assert all(score.answer_correctness == 1.0 for score in scores)
 
 
 def test_tokenize_drops_stop_words_and_short_tokens() -> None:

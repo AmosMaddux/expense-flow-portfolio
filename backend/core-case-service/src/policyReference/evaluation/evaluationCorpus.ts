@@ -4,7 +4,11 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 import type { TenantExpensePolicyChunkRecord } from "../policyCorpusRepository.js";
+import { embeddingInputForChunk } from "../policyEmbeddingService.js";
+import type { PolicyEmbedder } from "../policyEmbeddingService.js";
 import type { PolicyRetrievalRepository } from "../policyRetrievalService.js";
+
+import { cosineSimilarity } from "./deterministicEmbedder.js";
 
 const PolicySectionSchema = z
     .object({
@@ -91,11 +95,36 @@ export function buildEvaluationChunks(
 }
 
 /**
+ * Embeds every chunk with the supplied embedder.
+ *
+ * Chunks are embedded through `embeddingInputForChunk`, the same function the
+ * production loader uses, so the evaluation vectors are built from the same
+ * text the real corpus would embed.
+ */
+export async function embedEvaluationChunks(
+    chunks: readonly TenantExpensePolicyChunkRecord[],
+    embedder: PolicyEmbedder,
+): Promise<TenantExpensePolicyChunkRecord[]> {
+    const vectors = await embedder.embedTexts(
+        chunks.map((chunk) => embeddingInputForChunk(chunk)),
+    );
+
+    return chunks.map((chunk, index) => ({
+        ...chunk,
+        embedding: vectors[index] ?? null,
+        embeddingModel: embedder.model,
+        embeddedAt: new Date("2026-01-01T00:00:00.000Z"),
+    }));
+}
+
+/**
  * Returns a retrieval repository backed by the evaluation corpus.
  *
- * Similarity search returns nothing, so the gate measures the deterministic
- * lexical ranking. Vector ranking is exercised by the pgvector integration
- * tests, which need a live database.
+ * Similarity search ranks by real cosine similarity over the chunk vectors and
+ * applies the same tenant and embedding-model predicates the SQL repository
+ * applies, so the gate exercises vector retrieval rather than assuming it. A
+ * corpus with no vectors degrades to lexical-only ranking, which is the same
+ * behaviour retrieval has when no embedding provider is configured.
  */
 export function createEvaluationRetrievalRepository(
     chunks: readonly TenantExpensePolicyChunkRecord[],
@@ -105,7 +134,25 @@ export function createEvaluationRetrievalRepository(
             Promise.resolve(
                 chunks.filter((chunk) => chunk.tenantId === tenantId),
             ),
-        findSimilarTenantPolicyChunks: () => Promise.resolve([]),
+        findSimilarTenantPolicyChunks: (request) =>
+            Promise.resolve(
+                chunks
+                    .filter(
+                        (chunk) =>
+                            chunk.tenantId === request.tenantId &&
+                            chunk.embedding !== null &&
+                            chunk.embeddingModel === request.embeddingModel,
+                    )
+                    .map((chunk) => ({
+                        ...chunk,
+                        similarity: cosineSimilarity(
+                            chunk.embedding ?? [],
+                            request.embedding,
+                        ),
+                    }))
+                    .sort((left, right) => right.similarity - left.similarity)
+                    .slice(0, request.limit),
+            ),
     };
 }
 

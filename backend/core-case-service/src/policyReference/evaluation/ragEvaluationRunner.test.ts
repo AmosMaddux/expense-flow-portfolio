@@ -5,6 +5,8 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { leaksSystemPrompt } from "../policyAssistantPrompt.js";
 
 import {
+    createDeterministicEmbedder,
+    readEmbeddingLexicon,
     readEvaluationCorpus,
     readPolicyQuestionSet,
     readPromptInjectionSet,
@@ -35,7 +37,10 @@ void describe("policy question set", () => {
         const questionSet = await readPolicyQuestionSet(
             `${datasetRoot}policy-question-set.json`,
         );
-        samples = await runQuestionSet(corpus, questionSet);
+        const embedder = createDeterministicEmbedder(
+            await readEmbeddingLexicon(`${datasetRoot}embedding-lexicon.json`),
+        );
+        samples = await runQuestionSet(corpus, questionSet, embedder);
     });
 
     void test("produces one sample per question", () => {
@@ -79,8 +84,11 @@ void describe("prompt injection set", () => {
         );
         sentinels = injectionSet.promptSentinels;
         cases = injectionSet.cases;
+        const embedder = createDeterministicEmbedder(
+            await readEmbeddingLexicon(`${datasetRoot}embedding-lexicon.json`),
+        );
         outcomes = new Map(
-            (await runPromptInjectionSet(corpus, injectionSet)).map(
+            (await runPromptInjectionSet(corpus, injectionSet, embedder)).map(
                 (outcome) => [outcome.id, outcome],
             ),
         );

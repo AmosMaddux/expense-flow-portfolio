@@ -90,6 +90,14 @@ class SampleScore(StrictModel):
     id: str
     faithfulness: float = Field(ge=0.0, le=1.0)
     context_relevance: float = Field(ge=0.0, le=1.0)
+    answer_correctness: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class UnansweredSample(StrictModel):
+    """A golden question the assistant declined to answer."""
+
+    id: str
+    reason: Literal["refused", "abstained"]
 
 
 class MetricReport(StrictModel):
@@ -139,7 +147,8 @@ class GateThresholds(StrictModel):
     """Minimum scores the gate enforces."""
 
     faithfulness: float = Field(default=0.90, ge=0.0, le=1.0)
-    context_relevance: float = Field(default=0.80, ge=0.0, le=1.0)
+    context_relevance: float = Field(default=0.95, ge=0.0, le=1.0)
+    answer_correctness: float = Field(default=0.85, ge=0.0, le=1.0)
     injection_pass_rate: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -148,14 +157,28 @@ class GateReport(StrictModel):
 
     mode: EvaluationMode
     sample_count: int = Field(ge=0)
+    scored_count: int = Field(default=0, ge=0)
     metrics: list[MetricReport]
     injection: InjectionReport
     sample_scores: list[SampleScore]
+    unanswered: list[UnansweredSample] = Field(default_factory=list)
+    dataset_errors: list[str] = Field(default_factory=list)
 
     @property
     def failures(self) -> list[str]:
         """Human-readable reasons the gate failed, empty when it passed."""
-        reasons = [
+        reasons = list(self.dataset_errors)
+        if self.unanswered:
+            # Every golden question is legitimate, so declining one is a
+            # regression. Gating it separately also closes the loophole where
+            # refusing questions lifts the metric means.
+            declined = ", ".join(
+                f"{entry.id} ({entry.reason})" for entry in self.unanswered
+            )
+            reasons.append(
+                f"{len(self.unanswered)} golden question(s) were not answered: {declined}"
+            )
+        reasons += [
             f"{metric.name} {metric.score:.3f} is below the minimum {metric.threshold:.2f}"
             for metric in self.metrics
             if not metric.passed

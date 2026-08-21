@@ -27,6 +27,7 @@ from evaluation.rag.models import (
     InjectionSet,
     MetricReport,
     SampleScore,
+    UnansweredSample,
 )
 
 DEFAULT_SAMPLES_PATH = Path("evaluation/output/rag-samples.jsonl")
@@ -34,6 +35,7 @@ DEFAULT_INJECTION_RESULTS_PATH = Path(
     "evaluation/output/prompt-injection-results.jsonl"
 )
 DEFAULT_INJECTION_SET_PATH = Path("evaluation/datasets/prompt-injection-set.json")
+DEFAULT_QUESTION_SET_PATH = Path("evaluation/datasets/policy-question-set.json")
 DEFAULT_REPORT_PATH = Path("evaluation/output/rag-evaluation-report.json")
 
 
@@ -72,21 +74,97 @@ def load_injection_set(path: Path) -> InjectionSet:
     return InjectionSet.model_validate_json(path.read_text(encoding="utf8"))
 
 
+def load_expected_question_ids(path: Path) -> list[str]:
+    """Reads the question IDs the sample file is expected to cover."""
+    question_set = json.loads(path.read_text(encoding="utf8"))
+    questions = question_set.get("questions")
+    if not isinstance(questions, list) or not questions:
+        raise ValueError(f"{path} contains no questions.")
+
+    return [str(question["id"]) for question in questions]
+
+
+def validate_sample_coverage(
+    samples: Sequence[EvaluationSample], expected_ids: Sequence[str]
+) -> list[str]:
+    """Checks the samples cover the question set exactly once each.
+
+    A truncated or partially failed generation would otherwise leave only the
+    questions that happened to succeed, and an easier subset can clear
+    thresholds the full set would not.
+    """
+    errors: list[str] = []
+    seen: dict[str, int] = {}
+    for sample in samples:
+        seen[sample.id] = seen.get(sample.id, 0) + 1
+
+    expected = set(expected_ids)
+    missing = sorted(expected - seen.keys())
+    if missing:
+        errors.append(
+            f"{len(missing)} expected question(s) have no sample: {', '.join(missing)}"
+        )
+
+    extra = sorted(seen.keys() - expected)
+    if extra:
+        errors.append(
+            f"{len(extra)} sample(s) are not in the question set: {', '.join(extra)}"
+        )
+
+    duplicated = sorted(sample_id for sample_id, count in seen.items() if count > 1)
+    if duplicated:
+        errors.append(
+            f"{len(duplicated)} question(s) have more than one sample: "
+            f"{', '.join(duplicated)}"
+        )
+
+    if len(samples) < len(expected_ids):
+        errors.append(
+            f"expected at least {len(expected_ids)} samples, got {len(samples)}"
+        )
+
+    return errors
+
+
 def build_report(
     samples: Sequence[EvaluationSample],
     injection_set: InjectionSet,
     injection_outcomes: Sequence[InjectionOutcome],
     thresholds: GateThresholds,
     mode: EvaluationMode,
+    expected_question_ids: Sequence[str] | None = None,
 ) -> GateReport:
-    """Scores every sample and injection case into a single gate report."""
+    """Scores every sample and injection case into a single gate report.
+
+    Refused and abstained samples are reported as failures instead of being
+    scored. Every question in the golden set is legitimate, so declining one is
+    a regression, and excluding them from the means stops a decline from
+    inflating a metric.
+    """
+    unanswered = [
+        UnansweredSample(
+            id=sample.id,
+            reason="refused" if sample.refused else "abstained",
+        )
+        for sample in samples
+        if sample.refused or sample.abstained
+    ]
+    answered = [
+        sample for sample in samples if not sample.refused and not sample.abstained
+    ]
     scores: list[SampleScore] = (
-        score_samples_live(samples) if mode == "live" else score_samples(samples)
+        score_samples_live(answered) if mode == "live" else score_samples(answered)
+    )
+    dataset_errors = (
+        validate_sample_coverage(samples, expected_question_ids)
+        if expected_question_ids is not None
+        else []
     )
 
     return GateReport(
         mode=mode,
         sample_count=len(samples),
+        scored_count=len(scores),
         metrics=[
             MetricReport(
                 name="faithfulness",
@@ -98,18 +176,26 @@ def build_report(
                 score=mean(score.context_relevance for score in scores),
                 threshold=thresholds.context_relevance,
             ),
+            MetricReport(
+                name="answer_correctness",
+                score=mean(score.answer_correctness for score in scores),
+                threshold=thresholds.answer_correctness,
+            ),
         ],
         injection=evaluate_injection_set(
             injection_set, injection_outcomes, thresholds.injection_pass_rate
         ),
         sample_scores=scores,
+        unanswered=unanswered,
+        dataset_errors=dataset_errors,
     )
 
 
 def render_report(report: GateReport) -> str:
     """Renders the gate report for a CI log."""
     lines = [
-        f"RAG evaluation gate ({report.mode} mode, {report.sample_count} samples)",
+        f"RAG evaluation gate ({report.mode} mode, "
+        f"{report.scored_count} of {report.sample_count} samples scored)",
         "",
     ]
     for metric in report.metrics:
@@ -126,6 +212,22 @@ def render_report(report: GateReport) -> str:
         f"{injection.passed_count}/{injection.total} "
         f"({injection.pass_rate:.3f}, minimum {injection.threshold:.2f})"
     )
+
+    unanswered_status = "PASS" if not report.unanswered else "FAIL"
+    lines.append(
+        f"  [{unanswered_status}] {'answered':18s} "
+        f"{report.scored_count}/{report.sample_count} golden questions answered"
+    )
+
+    if report.dataset_errors:
+        lines.append("")
+        lines.append("Dataset errors:")
+        lines.extend(f"  - {error}" for error in report.dataset_errors)
+
+    if report.unanswered:
+        lines.append("")
+        lines.append("Unanswered golden questions:")
+        lines.extend(f"  - {entry.id} [{entry.reason}]" for entry in report.unanswered)
 
     failed_cases = [result for result in injection.results if not result.passed]
     if failed_cases:
@@ -170,6 +272,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--injection-set", type=Path, default=DEFAULT_INJECTION_SET_PATH
     )
+    parser.add_argument(
+        "--question-set",
+        type=Path,
+        default=DEFAULT_QUESTION_SET_PATH,
+        help="Question set the samples must cover exactly once each.",
+    )
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--mode", choices=("deterministic", "live"), default=None)
     parser.add_argument(
@@ -183,6 +291,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=float,
         default=GateThresholds().context_relevance,
         help="Minimum mean context relevance required to pass.",
+    )
+    parser.add_argument(
+        "--min-answer-correctness",
+        type=float,
+        default=GateThresholds().answer_correctness,
+        help="Minimum mean answer correctness required to pass.",
     )
     parser.add_argument(
         "--min-injection-pass-rate",
@@ -203,6 +317,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         thresholds = GateThresholds(
             faithfulness=args.min_faithfulness,
             context_relevance=args.min_context_relevance,
+            answer_correctness=args.min_answer_correctness,
             injection_pass_rate=args.min_injection_pass_rate,
         )
         report = build_report(
@@ -211,6 +326,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_injection_outcomes(args.injection_results),
             thresholds,
             mode,
+            load_expected_question_ids(args.question_set),
         )
     except (FileNotFoundError, ValidationError, ValueError) as error:
         sys.stderr.write(f"RAG evaluation gate could not run: {error}\n")

@@ -223,6 +223,9 @@ void describe("retrievePolicyChunks", () => {
         expect(repository.findSimilarTenantPolicyChunks).toHaveBeenCalledWith({
             tenantId: tenantA,
             embedding: [0.1, 0.2, 0.3],
+            // Ranking must only ever compare vectors from the model that
+            // embedded the query.
+            embeddingModel: "text-embedding-3-small",
             limit: 20,
         });
         expect(response.chunks[0]?.section).toBe("Client Entertainment");

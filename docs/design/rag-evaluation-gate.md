@@ -28,7 +28,8 @@ Nothing here calls an LLM. The pipeline is deterministic end to end, which is wh
 All three datasets are synthetic and version controlled under `evaluation/datasets/`, per [data classification](../data-classification.md).
 
 - `policy-corpus.json` — a two-tenant expense policy corpus. Two tenants, because the cross-tenant assertions need a second tenant's policy to be genuinely present and genuinely unreachable.
-- `policy-question-set.json` — questions with a ground truth answer and the corpus sections a correct retrieval should surface. It deliberately includes paraphrased questions that share little vocabulary with the policy text, so the score has headroom below 1.0 and moves when ranking moves.
+- `policy-question-set.json` — questions with a ground truth answer and the corpus sections a correct retrieval should surface. It deliberately includes paraphrased questions that share little vocabulary with the policy text, which are the questions that fail without vector ranking.
+- `embedding-lexicon.json` — the concept axes defining the deterministic embedding space.
 - `prompt-injection-set.json` — attacks with an expected refusal decision, an expected category, and substring contracts.
 
 ## Metrics
@@ -78,10 +79,14 @@ Live scores are not directly comparable to deterministic ones and must be read a
 
 ## Extending the gate
 
-Adding a question means adding an entry to `policy-question-set.json` whose `referenceSections` name sections that exist in the corpus for that tenant; the runner fails loudly if they do not. Adding an injection case means adding an entry to `prompt-injection-set.json`. Both datasets are schema-validated on load in TypeScript and Python, with unknown fields rejected, so dataset drift fails rather than being silently ignored.
+Adding a question means adding an entry to `policy-question-set.json` whose `referenceSections` name sections that exist in the corpus for that tenant; the runner fails loudly if they do not. The gate also requires a sample per question, so a new question is scored from the moment it is added. Adding an injection case means adding an entry to `prompt-injection-set.json`. All datasets are schema-validated on load in TypeScript and Python, with unknown fields rejected, so dataset drift fails rather than being silently ignored.
+
+A paraphrased question that no lexicon axis covers will abstain and fail the gate. Either add the missing terms to the relevant axis in `embedding-lexicon.json`, or keep the question and accept that it documents a genuine retrieval gap.
 
 `evaluation.rag.fixtures` provides builders for samples, cases, and outcomes, so harness tests do not hand-write JSON.
 
 ## Limits
 
-The deterministic adjudicator is a lexical approximation of an LLM judge. It cannot detect a semantically unfaithful claim that reuses the context's vocabulary, and it suits the current extractive assistant better than it would suit a generative one. Guardrails are pattern based, so a novel phrasing can evade them — the injection set is the regression record for phrasings already known, not proof that none exist. The corpus is synthetic and hand-maintained, and will drift from real tenant policies unless deliberately extended.
+The deterministic adjudicator is a lexical approximation of an LLM judge. It cannot detect a semantically unfaithful claim that reuses the context's vocabulary, and it suits the current extractive assistant better than it would suit a generative one. `faithfulness` in particular is near-tautological against an extractive assistant and should not be read as an answer-quality score.
+
+The deterministic embedder's semantics are exactly its lexicon. It models paraphrase only where a human wrote the synonym down, so it proves the vector path is wired and ranked correctly — it does not predict how a real embedding model will generalise. Guardrails are pattern based, so a novel phrasing can evade them — the injection set is the regression record for phrasings already known, not proof that none exist. The corpus is synthetic and hand-maintained, and will drift from real tenant policies unless deliberately extended.

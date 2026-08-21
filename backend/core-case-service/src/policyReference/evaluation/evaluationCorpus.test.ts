@@ -94,6 +94,7 @@ void describe("evaluation corpus", () => {
             repository.findSimilarTenantPolicyChunks({
                 tenantId: target.tenantId,
                 embedding: [],
+                embeddingModel: "evaluation-deterministic-v1",
                 limit: 5,
             }),
         ).resolves.toStrictEqual([]);
