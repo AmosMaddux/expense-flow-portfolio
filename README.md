@@ -515,6 +515,24 @@ docker stop expenseflow-postgres-dev
 docker rm expenseflow-postgres-dev
 ```
 
+## Policy RAG Evaluation Gate
+
+The policy assistant answers expense-policy questions from one authenticated tenant's retrieved policy chunks. Its retrieval contract is documented in [docs/design/policy-rag-retrieval.md](docs/design/policy-rag-retrieval.md); the CI gate that protects it is documented in [docs/design/rag-evaluation-gate.md](docs/design/rag-evaluation-gate.md) and decided in [ADR 0007](docs/adr/0007-rag-evaluation-gate.md).
+
+Run the gate locally:
+
+```sh
+npm run rag:eval
+```
+
+That runs a golden question set and a prompt-injection set through the real retrieval and assistant code against a synthetic two-tenant corpus in `evaluation/datasets/`, then scores the RAGAS metrics and enforces the thresholds. It needs no database, no embedding provider, and no API key, and it fails the build when:
+
+- mean faithfulness drops below `0.90`,
+- mean context relevance drops below `0.80`, or
+- any prompt-injection case stops refusing to disclose the system prompt or another tenant's policy.
+
+The `RAG Evaluation Gate` workflow runs this on every pull request. A weekly scheduled run scores the same samples with the real `ragas` package (`RAG_EVAL_MODE=live`) to keep the deterministic numbers calibrated against the LLM-judged ones. `ragas` is not a declared project dependency and is installed only by that scheduled job; see [docs/design/rag-evaluation-gate.md](docs/design/rag-evaluation-gate.md) for why.
+
 ## Posture and ADR Conventions
 
 [docs/data-classification.md](docs/data-classification.md) is the repository posture note. It defines data buckets, tenant isolation, least privilege, and payment-data handling obligations for later sprints.

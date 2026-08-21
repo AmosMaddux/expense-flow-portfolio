@@ -37,6 +37,14 @@ tenant_expense_policy:<policyHash>:chunk-<chunkIndex>
 
 Every answer generated from policy retrieval must cite every policy chunk used to produce that answer.
 
+## Assistant contract
+
+`answerPolicyQuestion` composes an answer extractively from the chunks retrieval returned for the authenticated tenant, so every sentence is quoted from a cited chunk and the assistant cannot invent policy.
+
+Guardrails run before retrieval and again over each retrieved sentence, refusing `prompt_disclosure`, `cross_tenant`, and `instruction_override` requests. A refusal returns no context and no citations. Retrieved policy text is data, never instructions: a retrieved sentence that trips a guardrail is dropped rather than quoted, so an instruction planted in a policy document cannot reach the answer. The composed answer is checked for system prompt leakage before it is returned.
+
+Retrieval quality and the refusal contract are enforced in CI by the [RAG evaluation gate](rag-evaluation-gate.md).
+
 ## Tenant isolation
 
 Embeddings must not weaken the tenant filter or allow cross-tenant chunks into ranking or response generation. Two chunks from different tenants can hold identical vectors; only the `tenant_id` predicate keeps them apart.

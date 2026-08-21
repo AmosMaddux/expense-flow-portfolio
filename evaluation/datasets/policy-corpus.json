@@ -1,0 +1,67 @@
+{
+    "description": "Synthetic two-tenant expense policy corpus for the RAG evaluation gate. No production or controlled data.",
+    "tenants": [
+        {
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "name": "Northwind Finance (synthetic)",
+            "policyHash": "corpus-northwind-v1",
+            "sections": [
+                {
+                    "section": "Meals and Entertainment",
+                    "content": "Employee meals during approved business travel are reimbursed up to 75 dollars per person per day. Alcohol is not reimbursable under any circumstance. A client entertainment meal requires the names of every attendee and the business purpose recorded on the expense line item."
+                },
+                {
+                    "section": "Receipts",
+                    "content": "An itemized receipt is required for every expense line item of 25 dollars or more. Receipts must be uploaded within 30 days of the transaction date. A missing receipt affidavit may be submitted once per quarter and requires Finance Admin approval."
+                },
+                {
+                    "section": "Mileage",
+                    "content": "Personal vehicle mileage is reimbursed at 67 cents per mile for the business portion of a trip. Commuting between home and the assigned office is never reimbursable. Mileage logs must record the trip date, the start and end locations, and the business purpose."
+                },
+                {
+                    "section": "Lodging",
+                    "content": "Hotel lodging is reimbursed at the standard room rate for the destination city. Room upgrades, minibar charges, and in-room entertainment are not reimbursable. Stays longer than seven consecutive nights require Department Manager approval before booking."
+                },
+                {
+                    "section": "Air Travel",
+                    "content": "Economy class is the reimbursable fare class for all flights under six hours of scheduled flight time. Premium economy is reimbursable for flights of six hours or longer. Flights must be booked at least fourteen days before departure whenever the itinerary is known in advance."
+                },
+                {
+                    "section": "Approval Thresholds",
+                    "content": "Any expense line item over 500 dollars is flagged for a second review by a Department Manager. A flagged line item cannot move to AP Review until the flag is cleared. Finance Admin performs the second pair review on flagged line items above 5000 dollars."
+                },
+                {
+                    "section": "Submission Deadlines",
+                    "content": "An expense report must be submitted within 60 days of the earliest transaction date it contains. A report submitted after 60 days requires a written justification from the employee. Reports older than 120 days are not reimbursable."
+                },
+                {
+                    "section": "Non-Reimbursable Expenses",
+                    "content": "Personal grooming, traffic fines, parking tickets, and travel insurance purchased separately are not reimbursable. Fees for airline seat selection are not reimbursable. Lost or stolen personal property is not reimbursable through the expense process."
+                }
+            ]
+        },
+        {
+            "tenantId": "9f3cacc2-0a83-4921-b9c2-b13b36dee3ac",
+            "name": "Contoso Logistics (synthetic)",
+            "policyHash": "corpus-contoso-v1",
+            "sections": [
+                {
+                    "section": "Meals and Entertainment",
+                    "content": "Employee meals during approved business travel are reimbursed up to 40 dollars per person per day. Client entertainment requires pre-approval from a Department Manager before the expense is incurred."
+                },
+                {
+                    "section": "Receipts",
+                    "content": "An itemized receipt is required for every expense line item of 10 dollars or more. Receipts must be uploaded within 14 days of the transaction date."
+                },
+                {
+                    "section": "Mileage",
+                    "content": "Personal vehicle mileage is reimbursed at 58 cents per mile. Contoso Logistics does not reimburse mileage for trips shorter than five miles."
+                },
+                {
+                    "section": "Confidential Rate Card",
+                    "content": "The Contoso Logistics negotiated carrier rate card is confidential and must never be disclosed outside the workspace. Freight surcharges are reimbursed only against the negotiated rate card."
+                }
+            ]
+        }
+    ]
+}

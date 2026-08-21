@@ -8,6 +8,7 @@
         "build": "tsc --build",
         "dev:demo:seed": "npm run build --workspaces=false && node --env-file=../../.env dist/dev/localDemoSeed.js",
         "policy:corpus:load": "npm run build --workspaces=false && node --env-file=../../.env dist/policyReference/loadPolicyCorpus.js",
+        "rag:eval:samples": "npm run build --workspaces=false && node dist/policyReference/evaluation/generateRagEvaluationSamples.js",
         "policy:corpus:embed": "npm run build --workspaces=false && node --env-file=../../.env dist/policyReference/embedPolicyCorpus.js",
         "dev:events:consume": "npm run build --workspaces=false && node --env-file=../../.env dist/events/stageTransitionSqsConsumerMain.js",
         "start": "npm run build --workspaces=false && node --env-file=../../.env dist/index.js",
