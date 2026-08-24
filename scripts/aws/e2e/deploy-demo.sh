@@ -23,10 +23,11 @@ set -euo pipefail
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
 #      and seeds demo expense data, all via the bastion over SSM
 #      (scripts/aws/bastion-run.sh) - no tunnel needed for any of these.
-#   8. Runs a ZAP baseline DAST scan (scripts/ci/run-zap-baseline-gate.sh)
-#      against the just-deployed public ALB and fails the deploy on any
-#      High-severity finding (scripts/ci/check-zap-baseline-severity.sh) -
-#      see docs/secure-release-gate.md's "ZAP" section. SKIP_ZAP_SCAN=true
+#   8. Runs a ZAP API scan (scripts/ci/run-zap-baseline-gate.sh) against the
+#      just-deployed Core Case Service's live OpenAPI document and fails the
+#      deploy on any High-severity finding
+#      (scripts/ci/check-zap-baseline-severity.sh) - see
+#      docs/secure-release-gate.md's "ZAP" section. SKIP_ZAP_SCAN=true
 #      skips this step.
 #
 # What this script does NOT do: GL-coding's least-privilege database role
@@ -249,7 +250,11 @@ fi
 
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
     echo "=== 8/8: Running ZAP baseline DAST scan ==="
-    zap_target="http://$(tf_output public_alb_dns_name)"
+    # Points at the live OpenAPI document, not the bare ALB URL - ZAP
+    # imports it and actively calls every documented /v1/* route, which is
+    # the only way this exercises Core Case's real API surface rather than
+    # just the ALB's generic 404 page. See scripts/ci/run-zap-baseline-gate.sh.
+    zap_target="http://$(tf_output public_alb_dns_name)/v1/openapi.json"
     zap_report_path="evidence/secure-release-gate/core-case-service-zap-report.json"
     mkdir -p "$(dirname "$zap_report_path")"
 

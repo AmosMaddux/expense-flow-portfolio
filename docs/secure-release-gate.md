@@ -95,16 +95,25 @@ signs images, not blobs.
 
 ## ZAP
 
-ZAP runs a baseline DAST scan against the Core Case Service's deployed public
-ALB (`scripts/ci/run-zap-baseline-gate.sh`, wrapping OWASP ZAP's
-`zap-baseline.py`) and blocks on any High-severity alert
+ZAP runs a DAST scan against the Core Case Service's deployed public ALB
+(`scripts/ci/run-zap-baseline-gate.sh`, wrapping OWASP ZAP's
+`zap-api-scan.py`) and blocks on any High-severity alert
 (`scripts/ci/check-zap-baseline-severity.sh`, which parses the JSON report's
-`riskcode` field rather than trusting `zap-baseline.py`'s own exit code,
+`riskcode` field rather than trusting `zap-api-scan.py`'s own exit code,
 since that code conflates warnings and failures the same way Trivy's default
-exit code would without an explicit `--severity`/`--exit-code` pair). Both
-scripts are invoked from `scripts/aws/e2e/deploy-demo.sh` as its final step,
-against the ALB DNS name the same deploy just produced
-(`terraform output public_alb_dns_name`), and can be skipped with
+exit code would without an explicit `--severity`/`--exit-code` pair). The
+scan targets the service's live OpenAPI document
+(`http://<alb-dns>/v1/openapi.json`, served at `GET /v1/openapi.json` by
+Core Case itself) rather than the bare ALB URL: `zap-baseline.py`'s GET-only
+link spider cannot discover a JSON REST API's `POST`/`PUT`/`DELETE` routes,
+since there is nothing on an unauthenticated root page for it to crawl to,
+so it only ever finds the ALB's generic 404 page. `zap-api-scan.py` imports
+the OpenAPI document instead and actively calls every route it documents,
+which is what actually exercises `/v1/*`.
+
+Both scripts are invoked from `scripts/aws/e2e/deploy-demo.sh` as its final
+step, against the OpenAPI document URL built from the same deploy's ALB DNS
+name (`terraform output public_alb_dns_name`), and can be skipped with
 `SKIP_ZAP_SCAN=true`. The scan runs after the deploy has fully applied, so a
 High finding fails the script but does not undo the deploy - see the
 "Evidence packet" section below for where the report lands, and the

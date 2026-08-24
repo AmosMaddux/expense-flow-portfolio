@@ -42,6 +42,13 @@ data "aws_iam_policy_document" "readonly_role_secrets_kms" {
       "kms:UntagResource",
       "kms:ScheduleKeyDeletion",
       "kms:CancelKeyDeletion",
+      # Secrets Manager's CreateSecret call encrypts the initial secret value
+      # under the caller's own KMS grant, not only the service principal's -
+      # without this, CreateSecret fails "Access to KMS is not allowed" even
+      # though the caller can otherwise administer the key.
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:GenerateDataKey*",
     ]
     resources = [
       "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*",
@@ -59,6 +66,7 @@ data "aws_iam_policy_document" "readonly_role_secrets_kms" {
       "kms:Decrypt",
       "kms:GenerateDataKey*",
       "kms:DescribeKey",
+      "kms:CreateGrant",
     ]
     resources = [
       "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*",
@@ -67,6 +75,12 @@ data "aws_iam_policy_document" "readonly_role_secrets_kms" {
     principals {
       type        = "Service"
       identifiers = ["secretsmanager.amazonaws.com"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "kms:GrantIsForAWSResource"
+      values   = ["true"]
     }
   }
 }

@@ -41,6 +41,9 @@ expect_success "Zero alerts pass the gate" \
 expect_failure "Malformed JSON fails safe" \
   "$script" "$fixtures_dir/malformed.json"
 
+expect_failure "Empty report file fails safe" \
+  "$script" "$fixtures_dir/empty.json"
+
 expect_failure "Missing report file fails safe" \
   "$script" "$fixtures_dir/does-not-exist.json"
 
