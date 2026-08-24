@@ -118,6 +118,46 @@ AWS_PROFILE=expenseflow-smoke \
 That smoke test requires valid JWT inputs and other runtime values; read the
 script README before running it.
 
+## Tear Down
+
+`scripts/aws/e2e/tear-down-demo.sh` tears down everything `deploy-demo.sh`
+creates: it empties the SPA and receipt S3 buckets and the three ECR
+repositories (none of them have `force_destroy`/`force_delete` set, so a
+plain `terraform destroy` fails on all three otherwise), runs
+`terraform destroy` through the same bastion SSM tunnel pattern as
+`RUN_READONLY_ROLE_STEP` (required even if that step was never used - once
+`postgresql_role`/`postgresql_extension` exist in state, every plan or
+destroy needs the tunnel to refresh them), and deletes the JWT issuer
+CloudFormation stack.
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+  AUTO_APPROVE=true \
+  scripts/aws/e2e/tear-down-demo.sh
+```
+
+Requires the AWS Session Manager plugin, `nc`, and AWS credentials with
+`ssm:StartSession` on the bastion - the same prerequisites as
+`RUN_READONLY_ROLE_STEP=true`.
+
+This does **not** touch: `infra/terraform/bootstrap` (owns the Terraform
+state bucket - keep it so the next `deploy-demo.sh` run has somewhere to
+store state), or `expenseflow-platform-bootstrap-sandbox` (the JWT issuer's
+own SAM deployment-artifact bucket, reused across every JWT issuer deploy).
+The script's own header comment also flags two older CloudFormation stacks
+found in this account (`expenseflow-http-api-sandbox`,
+`expenseflow-jwt-issuer-sandbox`) that predate this bastion/deploy-demo.sh
+setup and aren't referenced by any script in this flow - it does not touch
+them either, and they should be investigated separately before deleting.
+
+This runs a real `terraform destroy` against real, billed AWS
+infrastructure. Nothing here is reversible.
+
+To redeploy from scratch after tearing down, just run `deploy-demo.sh`
+again (see "Spin Up With Scripts" below) - `backend.hcl` and any local
+Terraform config are untouched by teardown, so no reconfiguration is
+needed.
+
 ## Prerequisites
 
 Install and configure these before starting:
@@ -129,10 +169,17 @@ Install and configure these before starting:
 - Node.js `>= 24`.
 - `jq`.
 - OpenSSL.
-- AWS Session Manager plugin, required for SSM port forwarding.
-- `asm-exec`, required when Terraform's PostgreSQL provider needs the RDS
-  master password resolved from Secrets Manager.
+- AWS Session Manager plugin (`session-manager-plugin`), required for SSM
+  port forwarding to the bastion - needed for
+  `RUN_READONLY_ROLE_STEP=true` (see "Finish The GL-Coding Readonly Role"
+  below), `tear-down-demo.sh` (see "Tear Down" above), and for any bastion
+  operation.
+- `nc` (netcat), required by `RUN_READONLY_ROLE_STEP=true` and
+  `tear-down-demo.sh` to detect when their SSM tunnel is ready.
 - Trivy, Syft, and Cosign when using the secure image build script.
+- OWASP ZAP is not installed locally - `deploy-demo.sh`'s ZAP scan step runs
+  it via `docker run` against the pinned `ZAP_IMAGE`, so only Docker is
+  required for that step.
 
 Verify AWS access first:
 
@@ -163,6 +210,12 @@ Edit `backend.hcl` and set `bucket` to the `state_bucket_name` output from the
 bootstrap stack. `backend.hcl` is ignored by git and must not be committed.
 
 ### Sandbox Variables
+
+**Only needed for the "Spin Up Manually" path below.** The recommended
+scripted path (`deploy-demo.sh`, see "Spin Up With Scripts") passes every
+required value to Terraform as `-var` arguments itself and never reads
+`terraform.tfvars` - skip this section entirely if you're following that
+path.
 
 Create `infra/terraform/environments/sandbox/terraform.tfvars` from the
 example:
@@ -228,12 +281,34 @@ This is the recommended path for a new developer.
 2. Packages and deploys the JWT issuer stack.
 3. Creates the ECR repositories with a targeted Terraform apply.
 4. Builds and pushes Core Case, GL-coding, and stage-transition Lambda images.
-5. Runs the full Terraform apply.
-6. Builds and deploys the SPA to S3 and CloudFront.
-7. Runs migrations, account seeding, and demo-data seeding through the bastion.
+5. Runs the full Terraform apply. GL-coding's readonly database role and the
+   `vector` extension are always skipped here (see "Finish The GL-Coding
+   Readonly Role" below) - this step alone never fully provisions a working
+   environment.
+6. Optionally applies GL-coding's readonly role and the `vector` extension,
+   only when `RUN_READONLY_ROLE_STEP=true` - opens its own SSM tunnel to the
+   bastion, applies, and tears the tunnel down. Skipped by default.
+7. Builds and deploys the SPA to S3 and CloudFront.
+8. Runs migrations, account seeding, and demo-data seeding through the
+   bastion.
+9. Runs a ZAP API scan against the deployed Core Case Service's OpenAPI
+   document and fails the script on any High-severity finding - see
+   `docs/secure-release-gate.md`'s "ZAP" section. The report lands at
+   `evidence/secure-release-gate/core-case-service-zap-report.json`; a
+   finding here does not undo the deploy, and the summary below still
+   prints before the script exits non-zero.
+
+The script's own `=== N/M ===` progress messages number these steps
+differently (skipping numbers, reusing `5b`) - the list above is the
+accurate order; the printed numbers are cosmetic only.
 
 The script is idempotent and safe to re-run, but it deploys real, billed AWS
-infrastructure. It does not tear the environment down.
+infrastructure. It does not tear the environment down. On a brand-new
+environment, expect to run it twice: once for steps 1-5 and 7-9 (the
+default), then once more with `RUN_READONLY_ROLE_STEP=true` (or the manual
+path below) to complete step 6 - GL-coding's ECS tasks will not go healthy
+and Core Case's pgvector-backed policy retrieval will not work until that
+step has run at least once against a given environment.
 
 ### One-Time Bootstrap
 
@@ -278,8 +353,12 @@ Useful environment variables:
 | `AUTO_APPROVE` | `false` | Set `true` to pass `-auto-approve` to Terraform applies. |
 | `SKIP_SPA_DEPLOY` | `false` | Set `true` when only backend infrastructure/images need redeploying. |
 | `SKIP_BASTION_SEED` | `false` | Set `true` to skip migration and seed commands. |
+| `SKIP_ZAP_SCAN` | `false` | Set `true` to skip the ZAP API scan step. |
 | `VITE_TENANT_ID` | Primary synthetic tenant ID | Tenant baked into the SPA build. |
 | `ROLE_PERMISSIONS_BOUNDARY_ARN` | Sandbox boundary ARN | Override if the account boundary ARN changes. |
+| `RUN_READONLY_ROLE_STEP` | `false` | Set `true` to have the script open its own bastion SSM tunnel and apply GL-coding's readonly role and the `vector` extension - see "Finish The GL-Coding Readonly Role" below. Requires `session-manager-plugin` and `nc`, and AWS credentials with `ssm:StartSession` on the bastion. |
+| `READONLY_ROLE_STEP_LOCAL_PORT` | `15432` | Local port for `RUN_READONLY_ROLE_STEP=true`'s SSM tunnel. Change only if `15432` is already in use locally. |
+| `ZAP_IMAGE` | Pinned `ghcr.io/zaproxy/zaproxy` digest | Override the ZAP scan's container image, matching how `TRIVY_IMAGE`/`SYFT_IMAGE` are pinned in `secure-release-gate.yml`. |
 
 The script passes required secrets, issuer URL, image URIs, and sandbox account
 overrides to Terraform as `-var` arguments. You do not need to paste those into
@@ -288,16 +367,49 @@ useful for later manual plans.
 
 ### Finish The GL-Coding Readonly Role
 
-One step is intentionally not automated. The GL-coding readonly database role
-is managed through Terraform's `postgresql` provider, which must reach the
-private RDS endpoint. From a laptop, that requires an SSM tunnel through the
-bastion after the first apply has created it.
+One step is not automated by default. The GL-coding readonly database role
+and the `vector` extension are managed through Terraform's `postgresql`
+provider, which must reach the private RDS endpoint - only possible from
+inside the VPC. Until this step has run at least once against a given
+environment, GL-coding's ECS tasks cannot read their database credentials
+and will not go healthy, and Core Case's pgvector-backed policy retrieval
+will not work.
 
-Use the command printed at the end of `deploy-demo.sh` to open the tunnel.
-Then run Terraform from an environment where `PGUSER` and `PGPASSWORD` are
-provided through the approved `asm-exec` dynamic-reference pattern described in
-`infra/terraform/modules/database/README.md`. Do not print or paste the RDS
-master password into terminal output.
+**Simplest: let the script do it.** Re-run `deploy-demo.sh` with
+`RUN_READONLY_ROLE_STEP=true` - it opens its own SSM tunnel to the bastion,
+fetches the RDS master password itself (directly via
+`aws secretsmanager get-secret-value`, not `asm-exec` - this is not an
+agent context, so the "keep secrets out of a model's context window" rule
+that pattern exists for does not apply here), applies just the readonly-role
+and extension resources, and tears the tunnel down when done, whether the
+apply succeeds or fails:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+  RUN_READONLY_ROLE_STEP=true \
+  AUTO_APPROVE=true \
+  scripts/aws/e2e/deploy-demo.sh
+```
+
+This re-runs the full script (secrets, images, main apply, SPA, seed, ZAP
+scan included) with the readonly-role step turned on. To apply only that
+step against an already-deployed environment, add
+`SKIP_SPA_DEPLOY=true SKIP_BASTION_SEED=true SKIP_ZAP_SCAN=true` to skip
+the rest.
+
+Requires the AWS Session Manager plugin, `nc`, and AWS credentials with
+`ssm:StartSession` on the bastion.
+
+**Manual fallback**, if you want to apply just that step by hand: `deploy-demo.sh`
+prints the exact commands at the end of every run where
+`RUN_READONLY_ROLE_STEP` was not `true`. They open the same SSM tunnel, then
+run `terraform apply` with `PGUSER`/`PGPASSWORD` fetched the same
+direct way (never printed, never in shell history) and
+`postgresql_provider_host`/`postgresql_provider_port` pointed at the tunnel
+as `-var` flags - `providers.tf` itself never needs editing. Do not read,
+print, or paste the RDS master password anywhere outside that one
+`PGPASSWORD=...` assignment. See `infra/terraform/modules/database/README.md`
+for the underlying secret-safety rule.
 
 ## Spin Up Manually
 
@@ -449,10 +561,13 @@ AWS_PROFILE=expenseflow-smoke \
   -var-file=terraform.tfvars
 ```
 
-If the apply reaches the GL-coding readonly-role resources and cannot connect
-to PostgreSQL, let the rest of the infrastructure finish, then complete the
-readonly-role step through the bastion as described in
-`Finish The GL-Coding Readonly Role`.
+This apply always skips GL-coding's readonly database role and the `vector`
+extension - `db_readonly_roles_and_extensions_enabled` defaults to `false`
+because both need the `postgresql` provider to reach RDS directly, which is
+only possible from inside the VPC. Complete that step separately as
+described in "Finish The GL-Coding Readonly Role" above once the rest of the
+infrastructure is up - GL-coding's ECS tasks and Core Case's pgvector-backed
+policy retrieval will not work correctly until it has run.
 
 ### 9. Run Migrations And Seed Data
 
@@ -606,17 +721,15 @@ db_enable_enhanced_monitoring = false
 ### GL-Coding Readonly Role Requires Private RDS Access
 
 The `database` module provisions a least-privilege Postgres role for
-GL-coding. Terraform uses the `cyrilgdn/postgresql` provider for that role, so
-the apply shell needs both:
-
-- Network access to the private RDS endpoint, usually through the bastion SSM
-  tunnel.
-- `PGUSER` and `PGPASSWORD` supplied out of band using the approved
-  `asm-exec` dynamic-reference pattern.
-
-Do not read, print, or paste the RDS master password. See
-`infra/terraform/modules/database/README.md` for the secret-safety rule and
-the dynamic reference format.
+GL-coding, and separately creates the `vector` extension Core Case's policy
+retrieval needs, both through Terraform's `cyrilgdn/postgresql` provider -
+which must reach the private RDS endpoint directly, only possible from
+inside the VPC. `db_readonly_roles_and_extensions_enabled` defaults to
+`false` so a routine apply from outside the VPC skips these resources
+instead of failing on a connection timeout. See "Finish The GL-Coding
+Readonly Role" above for how to complete this step, and
+`infra/terraform/modules/database/README.md` for the secret-safety rule
+around the RDS master password it needs.
 
 ### `latest` Images Are Not Used
 

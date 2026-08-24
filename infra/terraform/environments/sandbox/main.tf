@@ -150,7 +150,8 @@ module "database_core_case" {
 
   # Policy retrieval stores tenant policy chunk embeddings in a pgvector
   # column, and the service user running migrations cannot create extensions.
-  extensions = ["vector"]
+  extensions                            = ["vector"]
+  readonly_roles_and_extensions_enabled = var.db_readonly_roles_and_extensions_enabled
 
   readonly_roles = {
     gl_coding_app = {

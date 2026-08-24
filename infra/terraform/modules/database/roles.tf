@@ -1,3 +1,13 @@
+locals {
+  # postgresql_role/postgresql_grant/postgresql_extension all use the
+  # postgresql provider, which needs network access to the private RDS
+  # instance - gated by readonly_roles_and_extensions_enabled so a routine
+  # apply from outside the VPC skips them instead of failing on a
+  # connection timeout. See the variable's description.
+  enabled_readonly_roles = var.readonly_roles_and_extensions_enabled ? var.readonly_roles : {}
+  enabled_extensions     = var.readonly_roles_and_extensions_enabled ? var.extensions : []
+}
+
 resource "random_password" "readonly_role" {
   for_each = var.readonly_roles
 
@@ -6,7 +16,7 @@ resource "random_password" "readonly_role" {
 }
 
 resource "postgresql_role" "readonly" {
-  for_each = var.readonly_roles
+  for_each = local.enabled_readonly_roles
 
   name     = each.key
   login    = true
@@ -14,7 +24,7 @@ resource "postgresql_role" "readonly" {
 }
 
 resource "postgresql_grant" "readonly_tables" {
-  for_each = var.readonly_roles
+  for_each = local.enabled_readonly_roles
 
   database    = local.database_name
   role        = postgresql_role.readonly[each.key].name
@@ -107,7 +117,7 @@ resource "aws_secretsmanager_secret" "readonly_role" {
 }
 
 resource "aws_secretsmanager_secret_version" "readonly_role" {
-  for_each = var.readonly_roles
+  for_each = local.enabled_readonly_roles
 
   secret_id = aws_secretsmanager_secret.readonly_role[each.key].id
   secret_string = jsonencode({
@@ -120,7 +130,7 @@ resource "aws_secretsmanager_secret_version" "readonly_role" {
 }
 
 resource "postgresql_extension" "this" {
-  for_each = var.extensions
+  for_each = local.enabled_extensions
 
   name     = each.value
   database = local.database_name

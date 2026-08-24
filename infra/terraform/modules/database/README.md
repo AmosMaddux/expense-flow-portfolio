@@ -10,15 +10,35 @@ example.
 
 The instance uses `manage_master_user_password = true`, so RDS creates and
 owns the master password in Secrets Manager. No password value is set in this
-module and none appears in Terraform state. Never call `secretsmanager
-get-secret-value` (or `batch-get-secret-value`) against `master_user_secret_arn`
-— that prints the plaintext password to terminal output and potentially
-captured logs, which this repository's AWS Secret Safety rule forbids.
-Resolve it at runtime instead, via `asm-exec` with a dynamic reference:
+module and none appears in Terraform state. The rule this repository's AWS
+Secret Safety policy actually enforces is: the plaintext password must never
+be printed, logged, or otherwise land somewhere with a longer lifetime or
+wider audience than the one process that needs it - not that
+`secretsmanager get-secret-value` itself is forbidden. Two approved ways to
+get it into `PGPASSWORD`:
 
-```
-{{resolve:secretsmanager:<master_user_secret_arn>:SecretString:password}}
-```
+- **In an AI agent context** (an agent's own shell, or any process an
+  agent's context could observe), resolve it via `asm-exec` with a dynamic
+  reference, so the plaintext never enters the agent's context window at
+  all:
+
+  ```
+  {{resolve:secretsmanager:<master_user_secret_arn>:SecretString:password}}
+  ```
+
+- **In a plain human/CI shell with no agent involved** (e.g.
+  `scripts/aws/e2e/deploy-demo.sh`'s `RUN_READONLY_ROLE_STEP=true` path -
+  see `infra/terraform/README.md`), fetch it directly with
+  `aws secretsmanager get-secret-value ... | jq -r .password` into a shell
+  variable that is exported to the one `terraform apply` process that needs
+  it and never echoed, printed, or captured in shell history. `asm-exec` is
+  an Agent Toolkit for AWS component and is not something every environment
+  has installed; this direct fetch is the pattern to use where it isn't
+  present.
+
+Never call `secretsmanager get-secret-value` (or `batch-get-secret-value`)
+and then print, echo, or log the result — that is what actually violates the
+Secret Safety rule.
 
 The secret value is a JSON object (`username`, `password`, `dbname`, `host`,
 `port`, etc.), not a `DATABASE_URL` connection string. Assembling a connection
@@ -61,12 +81,17 @@ access to any table not listed. The resulting secret ARN is available from
 `readonly_role_secret_arns[<role name>]`.
 
 This requires the `cyrilgdn/postgresql` provider, which connects to the
-instance directly (see `environments/sandbox/providers.tf`). Applying changes
-under `readonly_roles` therefore needs network reachability to the private
-RDS instance and master-user credentials supplied out-of-band via
-`PGUSER`/`PGPASSWORD` in the apply shell — resolved via `asm-exec`, never
-read into Terraform config or state. See the AWS Secret Safety rule in
-`AGENTS.md`.
+instance directly (see `environments/sandbox/providers.tf`'s
+`postgresql_provider_host`/`postgresql_provider_port` override variables).
+Applying changes under `readonly_roles` therefore needs network reachability
+to the private RDS instance and master-user credentials supplied out-of-band
+via `PGUSER`/`PGPASSWORD` in the apply shell — see "Master credentials"
+above for the two approved ways to resolve them, never read into Terraform
+config or state. See the AWS Secret Safety rule in `AGENTS.md`. Because of
+this requirement, `readonly_roles_and_extensions_enabled` (see `variables.tf`)
+defaults to `false` in every environment that calls this module — see
+`infra/terraform/README.md`'s "Finish The GL-Coding Readonly Role" section
+for the sandbox's specific workflow.
 
 ## Extensions
 

@@ -241,6 +241,24 @@ variable "db_enable_enhanced_monitoring" {
   default     = true
 }
 
+variable "db_readonly_roles_and_extensions_enabled" {
+  description = "Whether to apply Core Case's readonly_roles and extensions (module.database_core_case). Both need the postgresql provider tunneled through the bastion - see infra/terraform/README.md's manual step. Defaults to false so scripts/aws/e2e/deploy-demo.sh's routine apply from outside the VPC does not fail on a connection timeout."
+  type        = bool
+  default     = false
+}
+
+variable "postgresql_provider_host" {
+  description = "Overrides the postgresql provider's host (providers.tf), normally module.database_core_case.db_address. Set to \"localhost\" when applying through an SSM port-forward to the bastion, so that override is a -var flag instead of an edit to a committed file. Leave unset for a normal apply."
+  type        = string
+  default     = null
+}
+
+variable "postgresql_provider_port" {
+  description = "Overrides the postgresql provider's port (providers.tf), normally module.database_core_case.db_port. Set to the local tunnel port (e.g. 15432) alongside postgresql_provider_host when applying through an SSM port-forward to the bastion. Leave unset for a normal apply."
+  type        = number
+  default     = null
+}
+
 variable "db_allocated_storage" {
   description = "Allocated storage in GiB for the Core Case database."
   type        = number
