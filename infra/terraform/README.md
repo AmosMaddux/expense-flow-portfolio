@@ -7,6 +7,46 @@ application images, publish the SPA, seed demo data, and sign in.
 Run commands from the repository root unless a step explicitly says otherwise.
 The sandbox creates real AWS resources and may incur charges.
 
+## Using An AI Agent To Spin Up Or Tear Down
+
+You can tell an AI coding agent (Claude Code or similar) to "follow the
+instructions in `infra/terraform/README.md` to spin up the sandbox" or "...to
+tear it down," and it can drive most of the work: resolving Terraform
+outputs, running the read-only and non-secret parts of each script, checking
+results, and telling you what to run next. But **neither
+`scripts/aws/e2e/deploy-demo.sh` nor `scripts/aws/e2e/tear-down-demo.sh` can
+be handed to an agent to run end-to-end unsupervised** - both call
+`aws secretsmanager get-secret-value` directly and hold the plaintext result
+in a shell variable, which is a hard line for an agent under this
+repository's AWS Secret Safety rule (`AGENTS.md`), even though it is a
+completely ordinary thing for a human to do from their own shell:
+
+- **`deploy-demo.sh`** does this unconditionally in its image-build step
+  (Cosign's signing key/password, needed because keyless OIDC signing can't
+  run unattended) - this happens early, in the default path, not only when
+  `RUN_READONLY_ROLE_STEP=true` is set. `RUN_READONLY_ROLE_STEP=true` adds a
+  second instance (the RDS master password) later in the same run.
+- **`tear-down-demo.sh`** does this once, for the same RDS master password,
+  as an unconditional part of its `terraform destroy` step - not opt-in the
+  way `RUN_READONLY_ROLE_STEP` is on the deploy side.
+
+The rule itself: an AI agent must never call `secretsmanager get-secret-value`
+(or `batch-get-secret-value`) and hold the plaintext result itself, even
+briefly, even without printing it — the rule is about the value ever
+entering the agent's own process, not just about it appearing in terminal
+output. A human running the same command from their own shell is not bound
+by that rule; an agent is. This is the same boundary `asm-exec` (the
+approved agent-safe alternative — see
+`infra/terraform/modules/database/README.md`) exists to work around when
+it's installed; treat its absence the same way whether or not it happens to
+be present.
+
+In practice: ask an agent to run `deploy-demo.sh` or `tear-down-demo.sh` and
+it should tell you this and hand you the exact command to run yourself,
+rather than invoking either script itself. It can still do essentially
+everything else in this document - reading Terraform outputs, running
+`bastion-run.sh` operations, checking on ECS/ALB health, and so on.
+
 ## Overview
 
 The sandbox runs the ExpenseFlow demo environment in AWS:
@@ -413,7 +453,10 @@ for the underlying secret-safety rule.
 
 ## Spin Up Manually
 
-Use this path for troubleshooting or when you want to run each command by hand.
+**This is an alternative to "Spin Up With Scripts" above, not a follow-on to
+it.** Use this path for troubleshooting or when you want to run each command
+by hand instead of via `deploy-demo.sh`. Do not run both paths against the
+same environment in the same session - pick one.
 
 ### 1. Create Remote State
 
@@ -623,8 +666,12 @@ AWS_PROFILE=expenseflow-smoke \
 
 ## Bastion Operations
 
-All commands in this section use `scripts/aws/bastion-run.sh` over SSM Session
-Manager. They do not require SSH.
+**Reference material, not a spin-up step.** `deploy-demo.sh` already runs
+`migrate`, `seed`, and `demo-seed` for you (see "Spin Up With Scripts"
+above) - only come here to re-run one of them individually, or to generate
+a sign-in TOTP code (see "Sign In And Validate" above). All commands in this
+section use `scripts/aws/bastion-run.sh` over SSM Session Manager. They do
+not require SSH.
 
 By default, the script resolves common sandbox values from Terraform outputs,
 the fixed MFA Secrets Manager secret name, and the running Core Case ECS task
@@ -676,6 +723,12 @@ Valid aliases are `employee`, `manager`, `finance-admin`, and
 `finance-admin-2` also work. TOTP codes rotate every 30 seconds.
 
 ## Known Constraints And Troubleshooting
+
+**Background/reference, not a sequential step.** `deploy-demo.sh` already
+passes every value below as a `-var` flag - nothing here needs to be set by
+hand on the scripted path. Read this section when something fails and you
+need to understand why, or when following "Spin Up Manually" and assembling
+`terraform.tfvars` yourself.
 
 ### No ACM Certificate In The Sandbox Account
 
