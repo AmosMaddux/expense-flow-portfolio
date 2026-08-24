@@ -272,6 +272,11 @@ variable "gl_coding_db_credentials_secret_arn" {
   type        = string
 }
 
+variable "gl_coding_db_credentials_kms_key_arn" {
+  description = "ARN of the customer-managed KMS key encrypting gl_coding_db_credentials_secret_arn (module.database's readonly_role_secrets_kms_key_arn output). The execution role needs kms:Decrypt on this key in addition to secretsmanager:GetSecretValue on the secret itself - Secrets Manager retrieving the record does not imply permission to decrypt it."
+  type        = string
+}
+
 variable "gl_coding_internal_auth_secret_arn" {
   description = "Secrets Manager ARN for GL-coding internal authentication. Core Case reads this secret and includes X-Internal-Auth header in GL-coding requests. GL-coding service validates the header value."
   type        = string

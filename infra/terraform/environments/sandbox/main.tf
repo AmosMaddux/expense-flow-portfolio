@@ -91,6 +91,7 @@ module "ecs" {
   dynamodb_expense_report_table_name                  = local.dynamodb_expense_report_table_name
   dynamodb_expense_report_tenant_index_name           = "${var.name_prefix}-expense-report-tenant-index"
   gl_coding_auth_jwt_public_keys_json_secret_arn      = var.gl_coding_auth_jwt_public_keys_json_secret_arn
+  gl_coding_db_credentials_kms_key_arn                = module.database_core_case.readonly_role_secrets_kms_key_arn
   gl_coding_db_credentials_secret_arn                 = module.database_core_case.readonly_role_secret_arns["gl_coding_app"]
   gl_coding_db_host                                   = module.database_core_case.db_address
   gl_coding_db_name                                   = module.database_core_case.db_name

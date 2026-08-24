@@ -336,6 +336,16 @@ data "aws_iam_policy_document" "execution_secrets" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = local.all_secret_arns
   }
+
+  # gl_coding_db_credentials_secret_arn is encrypted with a customer-managed
+  # KMS key, not the AWS-managed default - secretsmanager:GetSecretValue
+  # alone is not enough to decrypt it. Without this, ECS fails to place
+  # tasks with "AccessDeniedException: Access to KMS is not allowed" even
+  # though the secret-retrieval permission above is correct.
+  statement {
+    actions   = ["kms:Decrypt"]
+    resources = [var.gl_coding_db_credentials_kms_key_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
