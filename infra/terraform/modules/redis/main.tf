@@ -33,6 +33,7 @@ resource "random_password" "auth_token" {
 #tfsec:ignore:aws-elasticache-add-description Description is set via aws_secretsmanager_secret.description; this argument name collides with a reserved provider key, owner platform-security, review by 2026-12-31
 resource "aws_secretsmanager_secret" "auth_token" {
   #checkov:skip=CKV_AWS_149: Sandbox Secrets Manager uses the default AWS-managed KMS key while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_57: Automatic rotation requires a rotation Lambda that understands the ElastiCache AUTH token update flow, out of scope for sandbox; rotation is a manual, documented process, owner platform-security, review by 2026-11-22
   name = "${var.name_prefix}-${var.service_name}-redis-auth-token"
   tags = var.tags
 }
@@ -45,6 +46,7 @@ resource "aws_secretsmanager_secret_version" "auth_token" {
 #tfsec:ignore:aws-elasticache-enable-in-transit-encryption Encryption in transit is enabled via transit_encryption_enabled below; this rule does not detect the attribute on this resource version, owner platform-security, review by 2026-12-31
 resource "aws_elasticache_replication_group" "this" {
   #checkov:skip=CKV_AWS_191: Sandbox ElastiCache uses the default AWS-managed KMS key while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_50: Multi-AZ automatic failover requires a second cache node, doubling sandbox ElastiCache cost for a non-production environment; single-node is an accepted risk here, owner platform-security, review by 2026-11-22
   replication_group_id = "${var.name_prefix}-${var.service_name}-redis"
   description          = "Redis cache and idempotency store for ${var.service_name}."
   tags                 = var.tags
@@ -80,6 +82,7 @@ locals {
 
 resource "aws_secretsmanager_secret" "redis_url" {
   #checkov:skip=CKV_AWS_149: Sandbox Secrets Manager uses the default AWS-managed KMS key while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_57: This secret is derived from aws_secretsmanager_secret.auth_token and rotates when that value is manually rotated; automatic rotation is deferred for sandbox, owner platform-security, review by 2026-11-22
   name = "${var.name_prefix}-${var.service_name}-redis-url"
   tags = var.tags
 }

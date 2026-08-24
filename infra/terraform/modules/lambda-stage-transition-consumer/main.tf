@@ -38,6 +38,7 @@ locals {
 
 resource "aws_secretsmanager_secret" "database_url" {
   #checkov:skip=CKV_AWS_149: Sandbox Secrets Manager uses the default AWS-managed KMS key while CMK ownership is reviewed separately, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV2_AWS_57: This secret is derived from the RDS-managed master user secret, which is not rotated by this module either; automatic rotation is deferred for sandbox pending a rotation Lambda that re-derives the connection string, owner platform-security, review by 2026-11-22
   name = "${var.name_prefix}-stage-transition-consumer-database-url"
   tags = var.tags
 }
@@ -98,6 +99,8 @@ resource "aws_iam_role" "this" {
 }
 
 data "aws_iam_policy_document" "this" {
+  #checkov:skip=CKV_AWS_111: AllowManageLambdaNetworkInterfaces uses resource "*" because ec2:CreateNetworkInterface and related ENI actions do not support resource-level restriction for Lambda VPC attachment (AWS-documented constraint), owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_356: Same as CKV_AWS_111: the ec2:*NetworkInterface* actions required for Lambda VPC ENI management are not scopable to a specific resource ARN, owner platform-security, review by 2026-11-22
   statement {
     sid       = "AllowLogging"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
@@ -128,6 +131,12 @@ data "aws_iam_policy_document" "this" {
   }
 
   statement {
+    sid       = "AllowXRayTracing"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
+  }
+
+  statement {
     sid = "AllowManageLambdaNetworkInterfaces"
     actions = [
       "ec2:CreateNetworkInterface",
@@ -149,6 +158,8 @@ resource "aws_iam_role_policy" "this" {
 resource "aws_lambda_function" "this" {
   #checkov:skip=CKV_AWS_116: Dead-letter handling is provided by the SQS event-source mapping's ReportBatchItemFailures and the queue's own redrive policy, not a Lambda DLQ target, owner platform-security, review by 2026-12-31
   #checkov:skip=CKV_AWS_173: Lambda environment variables here are non-sensitive (Secrets Manager ARN only); no secret values are stored in plain environment variables, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_272: Lambda code-signing requires a signing profile and code-signing config not yet provisioned for sandbox; this function deploys a container image whose provenance is separately covered by ECR image_scanning_configuration and IMMUTABLE tags, owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_115: Reserved concurrency is deferred until sandbox traffic patterns justify a specific limit; setting one prematurely risks throttling this SQS consumer without capacity data, owner platform-security, review by 2026-11-22
   function_name = local.function_name
   role          = aws_iam_role.this.arn
   package_type  = "Image"
@@ -162,6 +173,10 @@ resource "aws_lambda_function" "this" {
     variables = {
       DATABASE_SECRET_ARN = aws_secretsmanager_secret.database_url.arn
     }
+  }
+
+  tracing_config {
+    mode = "Active"
   }
 
   vpc_config {

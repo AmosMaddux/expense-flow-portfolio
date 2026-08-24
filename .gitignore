@@ -21,6 +21,7 @@ test-results/
 /.secure-pr-gate-contract/
 /.secure-release-gate-contract/
 /.secure-release-gate/
+/evidence/secure-release-gate/
 
 # dotenv environment variable files
 .env

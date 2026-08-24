@@ -45,7 +45,7 @@ variable "jwt_audience" {
 variable "log_retention_days" {
   description = "CloudWatch log retention in days for the HTTP API Lambda functions."
   type        = number
-  default     = 14
+  default     = 365
 }
 
 # Claims-probe function (proves the JWT authorizer forwards verified claims).

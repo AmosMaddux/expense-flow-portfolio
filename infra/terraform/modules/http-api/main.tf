@@ -51,6 +51,13 @@ resource "aws_apigatewayv2_authorizer" "shared_jwt" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "access_logs" {
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-11-22
+  name              = "/aws/apigateway/${var.name_prefix}-http-api"
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
 resource "aws_apigatewayv2_stage" "this" {
   api_id      = aws_apigatewayv2_api.this.id
   name        = var.stage_name
@@ -60,6 +67,21 @@ resource "aws_apigatewayv2_stage" "this" {
   default_route_settings {
     throttling_burst_limit = 10
     throttling_rate_limit  = 5
+  }
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.access_logs.arn
+    format = jsonencode({
+      requestId        = "$context.requestId"
+      ip               = "$context.identity.sourceIp"
+      requestTime      = "$context.requestTime"
+      httpMethod       = "$context.httpMethod"
+      routeKey         = "$context.routeKey"
+      status           = "$context.status"
+      protocol         = "$context.protocol"
+      responseLength   = "$context.responseLength"
+      integrationError = "$context.integrationErrorMessage"
+    })
   }
 }
 
@@ -85,8 +107,16 @@ resource "aws_iam_role_policy_attachment" "claims_probe_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "claims_probe_xray" {
+  role       = aws_iam_role.claims_probe.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
 resource "aws_lambda_function" "claims_probe" {
   #checkov:skip=CKV_AWS_116: This function is a synchronous API Gateway integration; failures return an error response to the caller rather than needing a Lambda DLQ, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_272: Lambda code-signing requires a signing profile and code-signing config not yet provisioned for sandbox; deployment package integrity is otherwise covered by source_code_hash, owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_117: This function only verifies JWT claims already validated by the API Gateway authorizer and calls no VPC-private resources (no database/Redis access), so it intentionally runs outside the VPC, owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_115: Reserved concurrency is deferred until sandbox traffic patterns justify a specific limit; setting one prematurely risks throttling without capacity data, owner platform-security, review by 2026-11-22
   function_name    = "${var.name_prefix}-claims-probe"
   role             = aws_iam_role.claims_probe.arn
   handler          = "claimsProbe.handler"
@@ -97,6 +127,10 @@ resource "aws_lambda_function" "claims_probe" {
   filename         = data.archive_file.claims_probe.output_path
   source_code_hash = data.archive_file.claims_probe.output_base64sha256
   tags             = var.tags
+
+  tracing_config {
+    mode = "Active"
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.claims_probe_basic_execution,
@@ -175,6 +209,12 @@ data "aws_iam_policy_document" "issue_payment" {
   }
 
   statement {
+    sid       = "AllowXRayTracing"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
+  }
+
+  statement {
     sid       = "AllowReadInternalCommandTokenSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [var.core_case_internal_command_token_secret_arn]
@@ -205,6 +245,9 @@ resource "aws_iam_role_policy" "issue_payment" {
 
 resource "aws_lambda_function" "issue_payment" {
   #checkov:skip=CKV_AWS_116: This function is a synchronous API Gateway integration; failures return an error response to the caller rather than needing a Lambda DLQ, owner platform-security, review by 2026-12-31
+  #checkov:skip=CKV_AWS_272: Lambda code-signing requires a signing profile and code-signing config not yet provisioned for sandbox; deployment package integrity is otherwise covered by source_code_hash, owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_115: Reserved concurrency is deferred until sandbox traffic patterns justify a specific limit; setting one prematurely risks throttling without capacity data, owner platform-security, review by 2026-11-22
+  #checkov:skip=CKV_AWS_173: Environment variables are a base URL, a Secrets Manager ARN, and a timeout value, none of which are secret material; the actual command token is fetched at runtime via secretsmanager:GetSecretValue, owner platform-security, review by 2026-11-22
   function_name    = "${var.name_prefix}-issue-payment"
   role             = aws_iam_role.issue_payment.arn
   handler          = "issuePaymentStub.handler"
@@ -222,6 +265,10 @@ resource "aws_lambda_function" "issue_payment" {
       CORE_CASE_INTERNAL_COMMAND_TOKEN_SECRET_ARN = var.core_case_internal_command_token_secret_arn
       CORE_CASE_INTERNAL_TIMEOUT_MS               = tostring(var.core_case_internal_timeout_ms)
     }
+  }
+
+  tracing_config {
+    mode = "Active"
   }
 
   dynamic "vpc_config" {
