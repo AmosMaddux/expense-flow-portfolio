@@ -18,7 +18,12 @@ on:
             - "scripts/ci/check-secure-release-suppression-metadata.sh"
             - "scripts/ci/test-secure-release-gate.sh"
             - "scripts/ci/test-check-secure-release-suppression-metadata.sh"
+            - "scripts/ci/run-zap-baseline-gate.sh"
+            - "scripts/ci/check-zap-baseline-severity.sh"
+            - "scripts/ci/test-zap-baseline-gate.sh"
+            - "scripts/aws/e2e/deploy-demo.sh"
             - "tests/fixtures/security/trivy/**"
+            - "tests/fixtures/security/zap/**"
     push:
         branches:
             - main
@@ -70,6 +75,9 @@ jobs:
 
             - name: Validate Trivy, Syft, and Cosign scripts
               run: scripts/ci/test-secure-release-gate.sh
+
+            - name: Validate ZAP baseline gate script
+              run: scripts/ci/test-zap-baseline-gate.sh
 
     release-scan:
         name: Scan and sign ${{ matrix.service.name }} image

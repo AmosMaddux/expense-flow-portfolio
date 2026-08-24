@@ -23,6 +23,11 @@ set -euo pipefail
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
 #      and seeds demo expense data, all via the bastion over SSM
 #      (scripts/aws/bastion-run.sh) - no tunnel needed for any of these.
+#   8. Runs a ZAP baseline DAST scan (scripts/ci/run-zap-baseline-gate.sh)
+#      against the just-deployed public ALB and fails the deploy on any
+#      High-severity finding (scripts/ci/check-zap-baseline-severity.sh) -
+#      see docs/secure-release-gate.md's "ZAP" section. SKIP_ZAP_SCAN=true
+#      skips this step.
 #
 # What this script does NOT do: GL-coding's least-privilege database role
 # (module.database_core_case's readonly_roles) needs Terraform's postgresql
@@ -59,6 +64,11 @@ ROLE_PERMISSIONS_BOUNDARY_ARN="${ROLE_PERMISSIONS_BOUNDARY_ARN:-arn:aws:iam::208
 VITE_TENANT_ID="${VITE_TENANT_ID:-8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb}"
 SKIP_SPA_DEPLOY="${SKIP_SPA_DEPLOY:-false}"
 SKIP_BASTION_SEED="${SKIP_BASTION_SEED:-false}"
+SKIP_ZAP_SCAN="${SKIP_ZAP_SCAN:-false}"
+
+# Pinned by digest, matching TRIVY_IMAGE/SYFT_IMAGE in
+# .github/workflows/secure-release-gate.yml.
+ZAP_IMAGE="${ZAP_IMAGE:-ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -237,6 +247,27 @@ else
     echo "=== 7/7: Skipping bastion migrate/seed/demo-seed (SKIP_BASTION_SEED=true) ==="
 fi
 
+if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
+    echo "=== 8/8: Running ZAP baseline DAST scan ==="
+    zap_target="http://$(tf_output public_alb_dns_name)"
+    zap_report_path="evidence/secure-release-gate/core-case-service-zap-report.json"
+    mkdir -p "$(dirname "$zap_report_path")"
+
+    ZAP_IMAGE="$ZAP_IMAGE" scripts/ci/run-zap-baseline-gate.sh \
+        --target "$zap_target" \
+        --output "$zap_report_path"
+
+    # Deferred past the summary below (not run inline here) so a High
+    # finding still lets the operator see the ALB/CloudFront URLs and the
+    # "nothing was torn down" warning - the environment is already fully
+    # deployed and billing by this point regardless of the scan result.
+    zap_severity_status=0
+    scripts/ci/check-zap-baseline-severity.sh "$zap_report_path" || zap_severity_status=$?
+else
+    echo "=== 8/8: Skipping ZAP baseline scan (SKIP_ZAP_SCAN=true) ==="
+    zap_severity_status=0
+fi
+
 bastion_instance_id="$(tf_output bastion_instance_id)"
 core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
 core_case_db_master_user_secret_arn="$(tf_output core_case_db_master_user_secret_arn)"
@@ -246,6 +277,9 @@ echo "Demo deploy complete."
 echo "Public ALB:    http://$(tf_output public_alb_dns_name)"
 echo "CloudFront:    https://$(tf_output spa_cloudfront_domain_name)"
 echo "Image tag:     $IMAGE_TAG"
+if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
+    echo "ZAP report:    evidence/secure-release-gate/core-case-service-zap-report.json"
+fi
 echo
 echo "Nothing was torn down. This environment is running real, billed AWS resources."
 echo
@@ -265,3 +299,10 @@ echo "  PGPASSWORD='{{resolve:secretsmanager:$core_case_db_master_user_secret_ar
 echo "    asm-exec -- terraform -chdir=$TERRAFORM_DIR apply"
 echo
 echo "See infra/terraform/README.md for full details."
+
+if [[ "$zap_severity_status" -ne 0 ]]; then
+    echo
+    echo "ZAP baseline scan found a High-severity finding - see" >&2
+    echo "evidence/secure-release-gate/core-case-service-zap-report.json." >&2
+    exit "$zap_severity_status"
+fi
