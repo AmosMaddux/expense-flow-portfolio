@@ -1,0 +1,230 @@
+{
+    "description": "Golden question set for the policy RAG evaluation gate. Ground truth is derived from evaluation/datasets/policy-corpus.json.",
+    "topK": 4,
+    "questions": [
+        {
+            "id": "q-meal-cap",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What is the daily meal reimbursement cap per person during business travel?",
+            "groundTruth": "Employee meals during approved business travel are reimbursed up to 75 dollars per person per day.",
+            "referenceSections": ["Meals and Entertainment"]
+        },
+        {
+            "id": "q-alcohol",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Is alcohol reimbursable on a business meal?",
+            "groundTruth": "Alcohol is not reimbursable under any circumstance.",
+            "referenceSections": ["Meals and Entertainment"]
+        },
+        {
+            "id": "q-client-meal-attendees",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What must be recorded on a client entertainment meal line item?",
+            "groundTruth": "A client entertainment meal requires the names of every attendee and the business purpose recorded on the expense line item.",
+            "referenceSections": ["Meals and Entertainment"]
+        },
+        {
+            "id": "q-receipt-threshold",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "At what amount does an expense line item require an itemized receipt?",
+            "groundTruth": "An itemized receipt is required for every expense line item of 25 dollars or more.",
+            "referenceSections": ["Receipts"]
+        },
+        {
+            "id": "q-receipt-upload-window",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "How many days do employees have to upload receipts after the transaction date?",
+            "groundTruth": "Receipts must be uploaded within 30 days of the transaction date.",
+            "referenceSections": ["Receipts"]
+        },
+        {
+            "id": "q-missing-receipt-affidavit",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "How often may a missing receipt affidavit be submitted and who approves it?",
+            "groundTruth": "A missing receipt affidavit may be submitted once per quarter and requires Finance Admin approval.",
+            "referenceSections": ["Receipts"]
+        },
+        {
+            "id": "q-mileage-rate",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What is the personal vehicle mileage reimbursement rate per mile?",
+            "groundTruth": "Personal vehicle mileage is reimbursed at 67 cents per mile for the business portion of a trip.",
+            "referenceSections": ["Mileage"]
+        },
+        {
+            "id": "q-commute-mileage",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Is commuting mileage between home and the assigned office reimbursable?",
+            "groundTruth": "Commuting between home and the assigned office is never reimbursable.",
+            "referenceSections": ["Mileage"]
+        },
+        {
+            "id": "q-mileage-log-fields",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What must a mileage log record for each trip?",
+            "groundTruth": "Mileage logs must record the trip date, the start and end locations, and the business purpose.",
+            "referenceSections": ["Mileage"]
+        },
+        {
+            "id": "q-lodging-exclusions",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Which hotel lodging charges are not reimbursable?",
+            "groundTruth": "Room upgrades, minibar charges, and in-room entertainment are not reimbursable.",
+            "referenceSections": ["Lodging"]
+        },
+        {
+            "id": "q-long-stay-approval",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What approval is needed for hotel stays longer than seven consecutive nights?",
+            "groundTruth": "Stays longer than seven consecutive nights require Department Manager approval before booking.",
+            "referenceSections": ["Lodging"]
+        },
+        {
+            "id": "q-fare-class",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Which fare class is reimbursable for flights under six hours of scheduled flight time?",
+            "groundTruth": "Economy class is the reimbursable fare class for all flights under six hours of scheduled flight time.",
+            "referenceSections": ["Air Travel"]
+        },
+        {
+            "id": "q-premium-economy",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "When is premium economy reimbursable for a flight?",
+            "groundTruth": "Premium economy is reimbursable for flights of six hours or longer.",
+            "referenceSections": ["Air Travel"]
+        },
+        {
+            "id": "q-advance-booking",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "How far before departure must flights be booked when the itinerary is known in advance?",
+            "groundTruth": "Flights must be booked at least fourteen days before departure whenever the itinerary is known in advance.",
+            "referenceSections": ["Air Travel"]
+        },
+        {
+            "id": "q-flag-threshold",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "At what expense line item amount is a second review flag raised?",
+            "groundTruth": "Any expense line item over 500 dollars is flagged for a second review by a Department Manager.",
+            "referenceSections": ["Approval Thresholds"]
+        },
+        {
+            "id": "q-flag-blocks-ap-review",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Can a flagged line item move to AP Review before the flag is cleared?",
+            "groundTruth": "A flagged line item cannot move to AP Review until the flag is cleared.",
+            "referenceSections": ["Approval Thresholds"]
+        },
+        {
+            "id": "q-second-pair-review",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Who performs the second pair review on flagged line items above 5000 dollars?",
+            "groundTruth": "Finance Admin performs the second pair review on flagged line items above 5000 dollars.",
+            "referenceSections": ["Approval Thresholds"]
+        },
+        {
+            "id": "q-submission-deadline",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Within how many days of the earliest transaction date must an expense report be submitted?",
+            "groundTruth": "An expense report must be submitted within 60 days of the earliest transaction date it contains.",
+            "referenceSections": ["Submission Deadlines"]
+        },
+        {
+            "id": "q-stale-report",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Are expense reports older than 120 days reimbursable?",
+            "groundTruth": "Reports older than 120 days are not reimbursable.",
+            "referenceSections": ["Submission Deadlines"]
+        },
+        {
+            "id": "q-non-reimbursable",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Are traffic fines and parking tickets reimbursable?",
+            "groundTruth": "Personal grooming, traffic fines, parking tickets, and travel insurance purchased separately are not reimbursable.",
+            "referenceSections": ["Non-Reimbursable Expenses"]
+        },
+        {
+            "id": "q-seat-selection",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Are airline seat selection fees reimbursable?",
+            "groundTruth": "Fees for airline seat selection are not reimbursable.",
+            "referenceSections": ["Non-Reimbursable Expenses"]
+        },
+        {
+            "id": "q-contoso-meal-cap",
+            "tenantId": "9f3cacc2-0a83-4921-b9c2-b13b36dee3ac",
+            "question": "What is the daily meal reimbursement cap per person during business travel?",
+            "groundTruth": "Employee meals during approved business travel are reimbursed up to 40 dollars per person per day.",
+            "referenceSections": ["Meals and Entertainment"]
+        },
+        {
+            "id": "q-contoso-receipt-threshold",
+            "tenantId": "9f3cacc2-0a83-4921-b9c2-b13b36dee3ac",
+            "question": "At what amount does an expense line item require an itemized receipt?",
+            "groundTruth": "An itemized receipt is required for every expense line item of 10 dollars or more.",
+            "referenceSections": ["Receipts"]
+        },
+        {
+            "id": "q-contoso-short-trip-mileage",
+            "tenantId": "9f3cacc2-0a83-4921-b9c2-b13b36dee3ac",
+            "question": "Is mileage reimbursed for trips shorter than five miles?",
+            "groundTruth": "Contoso Logistics does not reimburse mileage for trips shorter than five miles.",
+            "referenceSections": ["Mileage"]
+        },
+        {
+            "id": "q-paraphrase-dinner",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "How much can I spend on dinner while I am travelling for work?",
+            "groundTruth": "Employee meals during approved business travel are reimbursed up to 75 dollars per person per day.",
+            "referenceSections": ["Meals and Entertainment"]
+        },
+        {
+            "id": "q-paraphrase-proof-of-purchase",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Do I need proof of purchase for a 30 dollar taxi ride?",
+            "groundTruth": "An itemized receipt is required for every expense line item of 25 dollars or more.",
+            "referenceSections": ["Receipts"]
+        },
+        {
+            "id": "q-paraphrase-own-car",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "What do I get back for driving my own car to a client site?",
+            "groundTruth": "Personal vehicle mileage is reimbursed at 67 cents per mile for the business portion of a trip.",
+            "referenceSections": ["Mileage"]
+        },
+        {
+            "id": "q-paraphrase-fridge-snacks",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Can I claim the snacks from the fridge in my hotel room?",
+            "groundTruth": "Room upgrades, minibar charges, and in-room entertainment are not reimbursable.",
+            "referenceSections": ["Lodging"]
+        },
+        {
+            "id": "q-paraphrase-two-week-trip",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Do I need sign-off before I book a two week hotel stay?",
+            "groundTruth": "Stays longer than seven consecutive nights require Department Manager approval before booking.",
+            "referenceSections": ["Lodging"]
+        },
+        {
+            "id": "q-paraphrase-speeding-fine",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Is a speeding fine something I can claim back?",
+            "groundTruth": "Personal grooming, traffic fines, parking tickets, and travel insurance purchased separately are not reimbursable.",
+            "referenceSections": ["Non-Reimbursable Expenses"]
+        },
+        {
+            "id": "q-paraphrase-late-report",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "How late can I hand in a report before it stops being paid at all?",
+            "groundTruth": "Reports older than 120 days are not reimbursable.",
+            "referenceSections": ["Submission Deadlines"]
+        },
+        {
+            "id": "q-paraphrase-long-haul-seat",
+            "tenantId": "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb",
+            "question": "Can I book a better seat on a long haul flight?",
+            "groundTruth": "Premium economy is reimbursable for flights of six hours or longer.",
+            "referenceSections": ["Air Travel"]
+        }
+    ]
+}

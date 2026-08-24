@@ -14,6 +14,7 @@ import {
     timestamp,
     uniqueIndex,
     uuid,
+    vector,
 } from "drizzle-orm/pg-core";
 
 export const approvedWorkflowStages = [
@@ -528,6 +529,12 @@ export const tenantExpensePolicy = pgTable(
     ],
 );
 
+/**
+ * Dimension count produced by the OpenAI `text-embedding-3-small` model, which
+ * is the default policy embedding model. Changing models requires a migration.
+ */
+export const policyChunkEmbeddingDimensions = 1536;
+
 export const tenantExpensePolicyChunk = pgTable(
     "tenant_expense_policy_chunk",
     {
@@ -539,6 +546,11 @@ export const tenantExpensePolicyChunk = pgTable(
         chunkIndex: integer("chunk_index").notNull(),
         content: text("content").notNull(),
         metadata: jsonb("metadata").notNull(),
+        embedding: vector("embedding", {
+            dimensions: policyChunkEmbeddingDimensions,
+        }),
+        embeddingModel: text("embedding_model"),
+        embeddedAt: timestamp("embedded_at", { withTimezone: true }),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -547,6 +559,10 @@ export const tenantExpensePolicyChunk = pgTable(
             .defaultNow(),
     },
     (table) => [
+        check(
+            "tenant_expense_policy_chunk_embedding_metadata_check",
+            sql`(${table.embedding} is null) = (${table.embeddingModel} is null)`,
+        ),
         check(
             "tenant_expense_policy_chunk_content_not_blank_check",
             sql`nullif(btrim(${table.content}), '') is not null`,
@@ -576,6 +592,12 @@ export const tenantExpensePolicyChunk = pgTable(
         index("tenant_expense_policy_chunk_tenant_policy_idx").on(
             table.tenantId,
             table.policyHash,
+        ),
+        // HNSW cannot filter by tenant itself, so similarity search must always
+        // pair this index with a tenant_id predicate to stay tenant-scoped.
+        index("tenant_expense_policy_chunk_embedding_idx").using(
+            "hnsw",
+            table.embedding.op("vector_cosine_ops"),
         ),
     ],
 );

@@ -1,9 +1,16 @@
 import { z } from "zod";
 
 import {
+    findSimilarTenantPolicyChunks,
     findTenantPolicyCorpusChunks,
+    type SimilarPolicyChunkRecord,
     type TenantExpensePolicyChunkRecord,
 } from "./policyCorpusRepository.js";
+import {
+    createOptionalPolicyEmbedder,
+    embedPolicyQuery,
+    type PolicyEmbedder,
+} from "./policyEmbeddingService.js";
 
 export const RetrievePolicyChunksRequestSchema = z
     .object({
@@ -27,6 +34,8 @@ export const RetrievedPolicyChunkSchema = z
         chunkIndex: z.number().int().nonnegative(),
         content: z.string().min(1),
         score: z.number().nonnegative(),
+        lexicalScore: z.number().nonnegative(),
+        vectorSimilarity: z.number().nullable(),
         citation: z.string().min(1),
     })
     .strict();
@@ -47,11 +56,25 @@ export type PolicyRetrievalRepository = {
     findTenantPolicyCorpusChunks: (
         tenantId: string,
     ) => Promise<TenantExpensePolicyChunkRecord[]>;
+    findSimilarTenantPolicyChunks: (request: {
+        tenantId: string;
+        embedding: number[];
+        embeddingModel: string;
+        limit: number;
+    }) => Promise<SimilarPolicyChunkRecord[]>;
 };
 
 const defaultPolicyRetrievalRepository: PolicyRetrievalRepository = {
     findTenantPolicyCorpusChunks,
+    findSimilarTenantPolicyChunks: async (request) =>
+        findSimilarTenantPolicyChunks(request),
 };
+
+// Lexical scores reach roughly 30 for a strong match, so vector similarity is
+// scaled to contribute meaningfully without overriding an exact policy phrase.
+const vectorScoreWeight = 10;
+const vectorCandidateMultiplier = 4;
+const minimumVectorCandidates = 20;
 
 const stopWords = new Set([
     "a",
@@ -125,22 +148,41 @@ function scoreChunk(
 
 /**
  * Retrieves the most relevant policy chunks within one authenticated tenant's corpus.
+ *
+ * Ranking is hybrid: the deterministic lexical score is blended with pgvector
+ * cosine similarity when the corpus is embedded. Similarity search is a ranking
+ * aid only, so an embedding provider outage degrades retrieval to lexical-only
+ * instead of failing the request.
  */
 export async function retrievePolicyChunks(
     request: RetrievePolicyChunksRequest,
     repository: PolicyRetrievalRepository = defaultPolicyRetrievalRepository,
+    embedder: PolicyEmbedder | undefined = createOptionalPolicyEmbedder(),
 ): Promise<RetrievePolicyChunksResponse> {
     const parsedRequest = RetrievePolicyChunksRequestSchema.parse(request);
     const chunks = await repository.findTenantPolicyCorpusChunks(
         parsedRequest.tenantId,
     );
+    const similarityByChunkId = await findChunkSimilarities(
+        parsedRequest,
+        repository,
+        embedder,
+    );
     const rankedChunks = chunks
         .filter((chunk) => chunk.tenantId === parsedRequest.tenantId)
-        .map((chunk, originalIndex) => ({
-            chunk,
-            originalIndex,
-            score: scoreChunk(parsedRequest.query, chunk),
-        }))
+        .map((chunk, originalIndex) => {
+            const lexicalScore = scoreChunk(parsedRequest.query, chunk);
+            const vectorSimilarity = similarityByChunkId.get(chunk.id) ?? null;
+
+            return {
+                chunk,
+                originalIndex,
+                lexicalScore,
+                vectorSimilarity,
+                score:
+                    lexicalScore + (vectorSimilarity ?? 0) * vectorScoreWeight,
+            };
+        })
         .sort(
             (left, right) =>
                 right.score - left.score ||
@@ -154,7 +196,7 @@ export async function retrievePolicyChunks(
     return {
         chunks: relevantChunks
             .slice(0, parsedRequest.topK)
-            .map(({ chunk, score }) => ({
+            .map(({ chunk, score, lexicalScore, vectorSimilarity }) => ({
                 id: chunk.id,
                 tenantId: chunk.tenantId,
                 policyHash: chunk.policyHash,
@@ -163,7 +205,50 @@ export async function retrievePolicyChunks(
                 chunkIndex: chunk.chunkIndex,
                 content: chunk.content,
                 score,
+                lexicalScore,
+                vectorSimilarity,
                 citation: `tenant_expense_policy:${chunk.policyHash}:chunk-${chunk.chunkIndex}`,
             })),
     };
+}
+
+async function findChunkSimilarities(
+    request: RetrievePolicyChunksRequest,
+    repository: PolicyRetrievalRepository,
+    embedder: PolicyEmbedder | undefined,
+): Promise<Map<string, number>> {
+    const similarityByChunkId = new Map<string, number>();
+    if (embedder === undefined) {
+        return similarityByChunkId;
+    }
+
+    try {
+        const embedding = await embedPolicyQuery(request.query, embedder);
+        const similarChunks = await repository.findSimilarTenantPolicyChunks({
+            tenantId: request.tenantId,
+            embedding,
+            // Ranking only ever compares vectors produced by the model that
+            // embedded the query, so a model migration cannot mix spaces.
+            embeddingModel: embedder.model,
+            limit: Math.max(
+                request.topK * vectorCandidateMultiplier,
+                minimumVectorCandidates,
+            ),
+        });
+
+        for (const chunk of similarChunks) {
+            // Vector candidates are re-checked against the validated tenant so a
+            // similarity result can never widen the tenant boundary.
+            if (chunk.tenantId === request.tenantId) {
+                similarityByChunkId.set(
+                    chunk.id,
+                    Math.max(0, Math.min(1, chunk.similarity)),
+                );
+            }
+        }
+    } catch {
+        return new Map<string, number>();
+    }
+
+    return similarityByChunkId;
 }

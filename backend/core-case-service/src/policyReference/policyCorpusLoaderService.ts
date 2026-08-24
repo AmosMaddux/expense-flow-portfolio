@@ -12,6 +12,11 @@ import {
     replaceTenantPolicyChunks,
     type PolicyCorpusLoadResult,
 } from "./policyCorpusRepository.js";
+import {
+    createOptionalPolicyEmbedder,
+    embeddingInputForChunk,
+    type PolicyEmbedder,
+} from "./policyEmbeddingService.js";
 
 export const LoadExpensePolicyCorpusRequestSchema = z
     .object({
@@ -25,6 +30,7 @@ export type LoadExpensePolicyCorpusRequest = z.infer<
 
 export type PolicyCorpusLoadSummary = {
     loadedTenantCount: number;
+    embeddedTenantCount: number;
     results: PolicyCorpusLoadResult[];
 };
 
@@ -34,6 +40,8 @@ export type PolicyCorpusLoaderRepository = {
         tenantId: string;
         policyHash: string;
         chunks: ExpensePolicyChunk[];
+        embeddings?: ReadonlyMap<string, number[]>;
+        embeddingModel?: string;
     }) => Promise<PolicyCorpusLoadResult>;
 };
 
@@ -44,10 +52,15 @@ const defaultPolicyCorpusLoaderRepository: PolicyCorpusLoaderRepository = {
 
 /**
  * Loads tenant expense policies into tenant-scoped retrieval chunks.
+ *
+ * Chunks are embedded during the load when an embedding provider is
+ * configured. A provider failure is not fatal: the chunks are still persisted
+ * without vectors and can be embedded later by the corpus embedding command.
  */
 export async function loadExpensePolicyCorpus(
     request: LoadExpensePolicyCorpusRequest,
     repository: PolicyCorpusLoaderRepository = defaultPolicyCorpusLoaderRepository,
+    embedder: PolicyEmbedder | undefined = createOptionalPolicyEmbedder(),
 ): Promise<PolicyCorpusLoadSummary> {
     const parsedRequest = LoadExpensePolicyCorpusRequestSchema.parse(request);
     const policies = await repository.findTenantPoliciesForCorpusLoad();
@@ -69,16 +82,53 @@ export async function loadExpensePolicyCorpus(
                     `Expense policy for tenant ${policy.tenantId} produced no chunks.`,
                 );
             }
-            return repository.replaceTenantPolicyChunks({
+            const embeddings = await embedChunks(chunks, embedder);
+            const result = await repository.replaceTenantPolicyChunks({
                 tenantId: policy.tenantId,
                 policyHash: firstChunk.policyHash,
                 chunks,
+                ...(embeddings === undefined || embedder === undefined
+                    ? {}
+                    : { embeddings, embeddingModel: embedder.model }),
             });
+
+            return { result, embedded: embeddings !== undefined };
         }),
     );
 
     return {
         loadedTenantCount: results.length,
-        results,
+        embeddedTenantCount: results.filter((entry) => entry.embedded).length,
+        results: results.map((entry) => entry.result),
     };
+}
+
+async function embedChunks(
+    chunks: ExpensePolicyChunk[],
+    embedder: PolicyEmbedder | undefined,
+): Promise<ReadonlyMap<string, number[]> | undefined> {
+    if (embedder === undefined) {
+        return undefined;
+    }
+
+    try {
+        const embeddings = await embedder.embedTexts(
+            chunks.map((chunk) => embeddingInputForChunk(chunk)),
+        );
+        if (embeddings.length !== chunks.length) {
+            return undefined;
+        }
+
+        const embeddingsByChunkHash = new Map<string, number[]>();
+        for (const [index, chunk] of chunks.entries()) {
+            const embedding = embeddings[index];
+            if (embedding !== undefined) {
+                embeddingsByChunkHash.set(chunk.chunkHash, embedding);
+            }
+        }
+
+        return embeddingsByChunkHash;
+    } catch {
+        return undefined;
+    }
 }

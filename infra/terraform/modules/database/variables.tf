@@ -120,3 +120,14 @@ variable "readonly_roles" {
   }))
   default = {}
 }
+
+variable "extensions" {
+  description = <<-EOT
+    PostgreSQL extensions to create in the database. Application migrations run
+    as the service user and cannot create extensions themselves, so any
+    extension the schema depends on must be provisioned here by the master
+    user. Core Case needs "vector" for policy retrieval embeddings.
+  EOT
+  type        = set(string)
+  default     = []
+}

@@ -96,4 +96,71 @@ void describe("loadExpensePolicyCorpus", () => {
             tenantB,
         ]);
     });
+
+    void test("stores chunk embeddings when an embedding provider is configured", async () => {
+        const testRepository = repository();
+        const embedder = {
+            model: "text-embedding-3-small",
+            embedTexts: vi
+                .fn()
+                .mockImplementation((texts: string[]) =>
+                    Promise.resolve(texts.map((_text, index) => [index])),
+                ),
+        };
+
+        const result = await loadExpensePolicyCorpus(
+            { tenantId: tenantA },
+            testRepository,
+            embedder,
+        );
+
+        expect(result.embeddedTenantCount).toBe(1);
+        const [request] =
+            vi.mocked(testRepository.replaceTenantPolicyChunks).mock.calls[0] ??
+            [];
+        expect(request?.embeddingModel).toBe("text-embedding-3-small");
+        expect(
+            request?.embeddings?.get(request.chunks[0]?.chunkHash ?? ""),
+        ).toStrictEqual([0]);
+    });
+
+    void test("still persists chunks when the embedding provider fails", async () => {
+        const testRepository = repository();
+        const embedder = {
+            model: "text-embedding-3-small",
+            embedTexts: vi
+                .fn()
+                .mockRejectedValue(new Error("provider unavailable")),
+        };
+
+        const result = await loadExpensePolicyCorpus(
+            { tenantId: tenantA },
+            testRepository,
+            embedder,
+        );
+
+        expect(result.loadedTenantCount).toBe(1);
+        expect(result.embeddedTenantCount).toBe(0);
+        const [request] =
+            vi.mocked(testRepository.replaceTenantPolicyChunks).mock.calls[0] ??
+            [];
+        expect(request?.embeddings).toBeUndefined();
+        expect(request?.embeddingModel).toBeUndefined();
+    });
+
+    void test("loads without embeddings when no provider is configured", async () => {
+        const testRepository = repository();
+
+        const result = await loadExpensePolicyCorpus(
+            { tenantId: tenantA },
+            testRepository,
+            undefined,
+        );
+
+        expect(result.embeddedTenantCount).toBe(0);
+        const [request] =
+            vi.mocked(testRepository.replaceTenantPolicyChunks).mock.calls[0] ??
+            [];
+        expect(request?.embeddings).toBeUndefined();
+    });
 });

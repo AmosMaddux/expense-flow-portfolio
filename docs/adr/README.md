@@ -13,3 +13,5 @@ ADRs must use only synthetic examples and must not include customer data, tenant
 - [0003. Use storage per bounded context](0003-storage-per-bounded-context.md)
 - [0004. Run containerized services on ECS Fargate](0004-run-containerized-services-on-ecs-fargate.md)
 - [0005. Manage sandbox AWS infrastructure with Terraform](0005-manage-sandbox-aws-infrastructure-with-terraform.md)
+- [0006. Store policy retrieval embeddings in pgvector with an external embedding provider](0006-pgvector-policy-embeddings.md)
+- [0007. Gate policy RAG changes on deterministic RAGAS metrics and a prompt-injection set](0007-rag-evaluation-gate.md)

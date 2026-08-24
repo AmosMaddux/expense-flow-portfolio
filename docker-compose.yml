@@ -1,6 +1,8 @@
 services:
     postgres:
-        image: postgres:17-alpine
+        # pgvector image, not stock postgres: policy retrieval stores chunk
+        # embeddings in a vector column and the migrations create the extension.
+        image: pgvector/pgvector:pg17
         environment:
             POSTGRES_DB: expenseflow_core_case
             POSTGRES_USER: expenseflow

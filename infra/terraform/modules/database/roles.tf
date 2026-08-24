@@ -24,11 +24,72 @@ resource "postgresql_grant" "readonly_tables" {
   privileges  = ["SELECT"]
 }
 
+data "aws_iam_policy_document" "readonly_role_secrets_kms" {
+  statement {
+    sid = "AllowAccountRootKeyAdministration"
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+    ]
+    resources = [
+      "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*",
+    ]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid = "AllowSecretsManagerUseOfKey"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey",
+    ]
+    resources = [
+      "arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*",
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["secretsmanager.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_kms_key" "readonly_role_secrets" {
+  description         = "Encrypts the ${var.service_name} read-only database role secrets."
+  enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.readonly_role_secrets_kms.json
+  tags                = var.tags
+}
+
+resource "aws_kms_alias" "readonly_role_secrets" {
+  name          = "alias/${var.name_prefix}-${var.service_name}-db-readonly"
+  target_key_id = aws_kms_key.readonly_role_secrets.key_id
+}
+
 resource "aws_secretsmanager_secret" "readonly_role" {
+  #checkov:skip=CKV2_AWS_57: Rotating these credentials needs a rotation Lambda and the postgresql provider to re-apply the role password; tracked as follow-up, owner platform-security, review by 2026-11-30
   for_each = var.readonly_roles
 
-  name = "${var.name_prefix}-${var.service_name}-db-${each.key}"
-  tags = var.tags
+  name       = "${var.name_prefix}-${var.service_name}-db-${each.key}"
+  kms_key_id = aws_kms_key.readonly_role_secrets.arn
+  tags       = var.tags
 }
 
 resource "aws_secretsmanager_secret_version" "readonly_role" {
@@ -42,4 +103,11 @@ resource "aws_secretsmanager_secret_version" "readonly_role" {
     port     = aws_db_instance.this.port
     dbname   = local.database_name
   })
+}
+
+resource "postgresql_extension" "this" {
+  for_each = var.extensions
+
+  name     = each.value
+  database = local.database_name
 }

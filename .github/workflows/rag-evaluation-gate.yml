@@ -1,0 +1,88 @@
+name: RAG Evaluation Gate
+
+on:
+    pull_request:
+    push:
+        branches:
+            - development
+            - main
+    schedule:
+        # Weekly LLM-judged run, so the deterministic gate stays calibrated
+        # against the real RAGAS metrics without gating every pull request on a
+        # paid, non-reproducible judge.
+        - cron: "17 6 * * 1"
+    workflow_dispatch:
+        inputs:
+            mode:
+                description: Scoring mode
+                type: choice
+                options:
+                    - deterministic
+                    - live
+                default: deterministic
+
+permissions:
+    contents: read
+
+concurrency:
+    group: rag-evaluation-gate-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    rag-evaluation-gate:
+        name: RAGAS metrics and prompt-injection set
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 20
+        env:
+            RAG_EVAL_MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'live') || 'deterministic' }}
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: npm
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.13"
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+
+            - name: Install Node dependencies
+              run: npm ci
+
+            - name: Install Python dependencies
+              run: uv sync
+
+            # ragas is deliberately absent from pyproject.toml and uv.lock: every
+            # published version carries unfixed advisories, and locking it would
+            # fail the Secure PR Gate for a package the pull request gate never
+            # runs. It is installed here only, in the scheduled live job, where it
+            # never reaches a deployed image or tenant data.
+            - name: Install live RAGAS dependencies
+              if: env.RAG_EVAL_MODE == 'live'
+              run: uv pip install "ragas==0.4.3" "datasets>=3.2.0"
+
+            - name: Run the policy question set and prompt-injection set
+              run: npm run rag:eval:samples
+
+            - name: Enforce RAGAS thresholds and the prompt-injection contract
+              env:
+                  OPENAI_API_KEY: ${{ secrets.RAG_EVAL_OPENAI_API_KEY }}
+              run: uv run python -m evaluation.rag
+
+            - name: Upload the evaluation report
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: rag-evaluation-report
+                  path: evaluation/output/
+                  if-no-files-found: warn

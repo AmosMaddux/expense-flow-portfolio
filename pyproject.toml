@@ -34,4 +34,10 @@ fail_under = 80
 
 [tool.mypy]
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
-packages = ["backend", "tests"]
+packages = ["backend", "evaluation", "tests"]
+
+# ragas and datasets are installed only for a live RAG evaluation run, are not
+# declared as project dependencies, and ship no stubs.
+[[tool.mypy.overrides]]
+module = ["datasets", "ragas", "ragas.*"]
+ignore_missing_imports = true
