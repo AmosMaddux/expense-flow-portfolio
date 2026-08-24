@@ -44,6 +44,6 @@ export function loadDatabaseConfig(
     const encodedPassword = encodeURIComponent(DB_PASSWORD);
 
     return {
-        connectionString: `postgres://${encodedUsername}:${encodedPassword}@${DB_HOST}:${DB_PORT}/${DB_NAME}`,
+        connectionString: `postgres://${encodedUsername}:${encodedPassword}@${DB_HOST}:${DB_PORT}/${DB_NAME}?uselibpqcompat=true&sslmode=require`,
     };
 }

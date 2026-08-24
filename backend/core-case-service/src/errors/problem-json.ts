@@ -101,6 +101,10 @@ export const problemJsonErrorHandler: ErrorRequestHandler = (
         res.set("Retry-After", String(error.retryAfterSeconds));
     }
 
+    if (problem.status >= 500) {
+        console.error(`Unhandled error on ${req.originalUrl}:`, error);
+    }
+
     res.status(problem.status).type("application/problem+json").json(problem);
 };
 

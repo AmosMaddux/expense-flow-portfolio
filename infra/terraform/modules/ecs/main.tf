@@ -18,7 +18,9 @@ locals {
   core_case_secret_arns = compact([
     var.core_case_auth_jwt_private_key_secret_arn,
     var.core_case_db_master_user_secret_arn,
+    var.core_case_internal_command_token_secret_arn,
     var.core_case_mfa_totp_secret_encryption_key_secret_arn,
+    var.core_case_redis_url_secret_arn,
     var.core_case_runtime_smoke_shared_secret_arn,
     var.core_case_tin_ein_validation_password_secret_arn,
     var.core_case_tin_ein_validation_username_secret_arn,
@@ -38,7 +40,9 @@ locals {
       { name = "DB_USERNAME", valueFrom = "${var.core_case_db_master_user_secret_arn}:username::" },
       { name = "DB_PASSWORD", valueFrom = "${var.core_case_db_master_user_secret_arn}:password::" },
     ],
+    var.core_case_internal_command_token_secret_arn == null ? [] : [{ name = "CORE_CASE_INTERNAL_COMMAND_TOKEN", valueFrom = var.core_case_internal_command_token_secret_arn }],
     var.core_case_mfa_totp_secret_encryption_key_secret_arn == null ? [] : [{ name = "MFA_TOTP_SECRET_ENCRYPTION_KEY", valueFrom = var.core_case_mfa_totp_secret_encryption_key_secret_arn }],
+    [{ name = "REDIS_URL", valueFrom = var.core_case_redis_url_secret_arn }],
     var.core_case_runtime_smoke_shared_secret_arn == null ? [] : [{ name = "RUNTIME_SMOKE_SHARED_SECRET", valueFrom = var.core_case_runtime_smoke_shared_secret_arn }],
     var.core_case_tin_ein_validation_password_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_PASSWORD", valueFrom = var.core_case_tin_ein_validation_password_secret_arn }],
     var.core_case_tin_ein_validation_username_secret_arn == null ? [] : [{ name = "TIN_EIN_VALIDATION_USERNAME", valueFrom = var.core_case_tin_ein_validation_username_secret_arn }],
@@ -356,6 +360,18 @@ resource "aws_iam_role" "gl_coding_task" {
 
 data "aws_iam_policy_document" "core_case_runtime" {
   statement {
+    sid = "EcsExec"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    # ECS Exec's SSM data channel APIs do not support resource-level scoping.
+    resources = ["*"]
+  }
+
+  statement {
     actions = [
       "s3:DeleteObject",
       "s3:GetObject",
@@ -422,6 +438,15 @@ resource "aws_vpc_security_group_egress_rule" "core_case_all" {
   description       = "Allow Core Case outbound access to AWS APIs and validation endpoints."
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "core_case_from_internal_alb" {
+  security_group_id            = aws_security_group.core_case.id
+  description                  = "Allow internal ALB traffic to Core Case tasks."
+  referenced_security_group_id = var.internal_alb_security_group_id
+  from_port                    = 3000
+  ip_protocol                  = "tcp"
+  to_port                      = 3000
 }
 
 resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_core_case" {
@@ -495,9 +520,9 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "ARGON2_PARALLELISM", value = "1" },
         { name = "ARGON2_TIME_COST", value = "2" },
         { name = "AUTH_ACCESS_TOKEN_TTL_SECONDS", value = "900" },
-        { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
+        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
-        { name = "AUTO_APPLY_MIGRATIONS", value = "false" },
+        { name = "AUTO_APPLY_MIGRATIONS", value = tostring(var.core_case_auto_apply_migrations) },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "CASE_QUEUE_ROLLUP_TTL_SECONDS", value = "30" },
         { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
@@ -519,8 +544,8 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "PORT", value = "3000" },
         { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
         { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
-        { name = "REDIS_URL", value = var.redis_url },
         { name = "RUNTIME_SMOKE_GL_CODING_ENABLED", value = tostring(var.runtime_smoke_gl_coding_enabled) },
+        { name = "SPA_ORIGIN", value = var.spa_origin },
         { name = "STAGE_TRANSITION_SNS_TOPIC_ARN", value = aws_sns_topic.stage_transitions.arn },
         { name = "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE", value = "50" },
         { name = "TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS", value = "30000" },
@@ -581,7 +606,7 @@ resource "aws_ecs_task_definition" "gl_coding" {
       }]
       environment = [
         { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
-        { name = "AUTH_JWT_ISSUER", value = "expenseflow-core-case-service" },
+        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
         { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
         { name = "DB_HOST", value = var.gl_coding_db_host },
         { name = "DB_NAME", value = var.gl_coding_db_name },
@@ -617,12 +642,19 @@ resource "aws_ecs_service" "core_case" {
   launch_type                       = "FARGATE"
   platform_version                  = "LATEST"
   enable_ecs_managed_tags           = true
+  enable_execute_command            = var.core_case_enable_execute_command
   tags                              = var.tags
 
   load_balancer {
     container_name   = "core-case-service"
     container_port   = 3000
     target_group_arn = var.core_case_target_group_arn
+  }
+
+  load_balancer {
+    container_name   = "core-case-service"
+    container_port   = 3000
+    target_group_arn = var.core_case_internal_target_group_arn
   }
 
   network_configuration {

@@ -53,6 +53,17 @@ variable "gl_coding_target_group_name" {
   }
 }
 
+variable "core_case_internal_target_group_name" {
+  description = "Name for the Core Case internal target group. AWS requires 32 characters or fewer."
+  type        = string
+  default     = "ef-sbox-core-int-tg"
+
+  validation {
+    condition     = length(var.core_case_internal_target_group_name) <= 32
+    error_message = "core_case_internal_target_group_name must be 32 characters or fewer."
+  }
+}
+
 variable "vpc_id" {
   description = "VPC ID for load balancers and target groups."
   type        = string
@@ -98,6 +109,12 @@ variable "runtime_smoke_source_cidrs" {
 
 variable "gl_coding_internal_auth_secret_arn" {
   description = "Optional Secrets Manager ARN for GL-coding internal authentication. Core Case must include the corresponding header when calling GL-coding. When supplied, the ALB enforces explicit routing rules."
+  type        = string
+  default     = null
+}
+
+variable "issue_payment_lambda_security_group_id" {
+  description = "Optional security group ID for a VPC-attached Issue Payment Lambda. When supplied, the internal ALB allows ingress from it so the Lambda can reach Core Case's internal settlement route."
   type        = string
   default     = null
 }

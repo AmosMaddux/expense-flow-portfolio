@@ -28,7 +28,7 @@ resource "aws_vpc_security_group_ingress_rule" "db_from_allowed" {
   for_each = { for idx, sg_id in var.allowed_security_group_ids : idx => sg_id }
 
   security_group_id            = aws_security_group.this.id
-  description                  = "Allow PostgreSQL access from ${var.service_name}'s allowed security group."
+  description                  = "Allow PostgreSQL access from the ${var.service_name} allowed security group."
   referenced_security_group_id = each.value
   from_port                    = 5432
   ip_protocol                  = "tcp"
@@ -36,6 +36,8 @@ resource "aws_vpc_security_group_ingress_rule" "db_from_allowed" {
 }
 
 data "aws_iam_policy_document" "rds_monitoring_assume_role" {
+  count = var.enable_enhanced_monitoring ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRole"]
 
@@ -47,13 +49,18 @@ data "aws_iam_policy_document" "rds_monitoring_assume_role" {
 }
 
 resource "aws_iam_role" "rds_monitoring" {
-  name               = "${var.name_prefix}-${var.service_name}-rds-monitoring"
-  assume_role_policy = data.aws_iam_policy_document.rds_monitoring_assume_role.json
-  tags               = var.tags
+  count = var.enable_enhanced_monitoring ? 1 : 0
+
+  name                 = "${var.name_prefix}-${var.service_name}-rds-monitoring"
+  assume_role_policy   = data.aws_iam_policy_document.rds_monitoring_assume_role[0].json
+  permissions_boundary = var.role_permissions_boundary_arn
+  tags                 = var.tags
 }
 
 resource "aws_iam_role_policy_attachment" "rds_monitoring" {
-  role       = aws_iam_role.rds_monitoring.name
+  count = var.enable_enhanced_monitoring ? 1 : 0
+
+  role       = aws_iam_role.rds_monitoring[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
@@ -171,8 +178,8 @@ resource "aws_db_instance" "this" {
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
-  monitoring_interval = 60
-  monitoring_role_arn = aws_iam_role.rds_monitoring.arn
+  monitoring_interval = var.enable_enhanced_monitoring ? 60 : 0
+  monitoring_role_arn = var.enable_enhanced_monitoring ? aws_iam_role.rds_monitoring[0].arn : null
 
   performance_insights_enabled    = true
   performance_insights_kms_key_id = aws_kms_key.performance_insights.arn

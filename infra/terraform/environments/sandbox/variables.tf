@@ -145,22 +145,16 @@ variable "gl_coding_image_uri" {
   default     = null
 }
 
+variable "stage_transition_lambda_image_uri" {
+  description = "Optional immutable container image URI for the stage-transition consumer Lambda."
+  type        = string
+  default     = null
+}
+
 variable "auth_jwt_key_id" {
   description = "JWT key identifier used by the services."
   type        = string
   default     = "synthetic-sandbox-key"
-}
-
-variable "redis_url" {
-  description = "ECS-reachable Redis URL. Terraform does not create Redis in this module."
-  type        = string
-  nullable    = false
-
-  validation {
-    # Keep this validation aligned with ../../modules/ecs/variables.tf.
-    condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
-    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
-  }
 }
 
 variable "mfa_totp_secret_key_version" {
@@ -241,8 +235,53 @@ variable "db_instance_class" {
   default     = "db.t3.micro"
 }
 
+variable "db_enable_enhanced_monitoring" {
+  description = "Whether to enable RDS Enhanced Monitoring. Some sandbox accounts deny iam:PassRole to monitoring.rds.amazonaws.com; set to false there."
+  type        = bool
+  default     = true
+}
+
 variable "db_allocated_storage" {
   description = "Allocated storage in GiB for the Core Case database."
   type        = number
   default     = 20
+}
+
+variable "http_api_jwt_issuer" {
+  description = "HTTPS issuer URL that publishes OIDC metadata and the shared JWKS for the HTTP API's JWT authorizer."
+  type        = string
+
+  validation {
+    condition     = can(regex("^https://.+", var.http_api_jwt_issuer))
+    error_message = "http_api_jwt_issuer must be an https:// URL."
+  }
+}
+
+variable "http_api_jwt_audience" {
+  description = "Expected audience claim for the HTTP API's shared JWT authorizer."
+  type        = string
+  default     = "expenseflow-http-api"
+}
+
+variable "http_api_claims_probe_build_output" {
+  description = "Path to the built claims-probe Lambda bundle (platform/http-api build:lambda output)."
+  type        = string
+  default     = "../../../../platform/http-api/build/claimsProbe.js"
+}
+
+variable "http_api_issue_payment_build_output" {
+  description = "Path to the built Issue Payment Lambda bundle (platform/http-api build:lambda output)."
+  type        = string
+  default     = "../../../../platform/http-api/build/issuePaymentStub.js"
+}
+
+variable "core_case_internal_command_token_secret_arn" {
+  description = "Secrets Manager secret ARN containing the shared internal command token accepted by Core Case. Read by the Issue Payment Lambda."
+  type        = string
+}
+
+variable "http_api_lambda_vpc_id" {
+  description = "Optional VPC ID for the Issue Payment Lambda when it must run in the VPC to reach a private Core Case endpoint. Leave null to run outside the VPC."
+  type        = string
+  default     = null
 }

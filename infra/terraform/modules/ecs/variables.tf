@@ -60,6 +60,11 @@ variable "gl_coding_target_group_arn" {
   type        = string
 }
 
+variable "core_case_internal_target_group_arn" {
+  description = "Target group ARN for Core Case on the internal ALB."
+  type        = string
+}
+
 variable "internal_alb_dns_name" {
   description = "DNS name for the internal GL-coding ALB."
   type        = string
@@ -101,16 +106,14 @@ variable "auth_jwt_key_id" {
   default     = "synthetic-sandbox-key"
 }
 
-variable "redis_url" {
-  description = "ECS-reachable Redis URL."
+variable "auth_jwt_issuer" {
+  description = "Issuer claim Core Case signs into access tokens. Must match the HTTP API JWT authorizer's configured issuer (module.http_api's jwt_issuer) or every access token fails authorization."
   type        = string
-  nullable    = false
+}
 
-  validation {
-    # Keep this validation aligned with ../../environments/sandbox/variables.tf.
-    condition     = can(regex("^rediss?://([^/@]+@)?[A-Za-z0-9.-]*[A-Za-z][A-Za-z0-9.-]*(?::[0-9]+)?(?:/.*)?$", var.redis_url)) && !can(regex("(?i)^rediss?://([^/@]+@)?localhost(?::|/|$)", var.redis_url))
-    error_message = "redis_url must be an ECS-reachable redis:// or rediss:// hostname URL, not localhost, loopback, bind-all, or an IP literal."
-  }
+variable "core_case_redis_url_secret_arn" {
+  description = "Secrets Manager ARN of the assembled Redis connection URL (rediss://:token@host:port), consumed as REDIS_URL."
+  type        = string
 }
 
 variable "mfa_totp_secret_key_version" {
@@ -121,6 +124,18 @@ variable "mfa_totp_secret_key_version" {
 
 variable "core_case_internal_routes_enabled" {
   description = "Whether internal Core Case routes are enabled."
+  type        = bool
+  default     = false
+}
+
+variable "core_case_enable_execute_command" {
+  description = "Whether ECS Exec is enabled on the Core Case service, for interactive debugging via `aws ecs execute-command`. Leave off outside active debugging."
+  type        = bool
+  default     = false
+}
+
+variable "core_case_auto_apply_migrations" {
+  description = "Whether Core Case applies pending Drizzle migrations on boot."
   type        = bool
   default     = false
 }
@@ -145,6 +160,11 @@ variable "tin_ein_validation_wsdl_url" {
 
 variable "receipt_storage_bucket_name" {
   description = "Name for the encrypted receipt storage bucket."
+  type        = string
+}
+
+variable "spa_origin" {
+  description = "HTTPS origin of the SPA (e.g. the CloudFront domain). Required by Core Case in production for credentialed CORS."
   type        = string
 }
 
@@ -194,6 +214,12 @@ variable "core_case_db_name" {
 variable "core_case_db_master_user_secret_arn" {
   description = "Secrets Manager ARN of the RDS-managed master user secret for the Core Case database."
   type        = string
+}
+
+variable "core_case_internal_command_token_secret_arn" {
+  description = "Secrets Manager ARN for the shared internal command token. Core Case validates this against the x-core-case-internal-command-token header on internal routes; must be the same secret the Issue Payment Lambda (module.http_api) reads to send that header."
+  type        = string
+  default     = null
 }
 
 variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {

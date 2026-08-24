@@ -22,18 +22,60 @@ aws_region = "us-east-1"
 # Plain HTTP forwarding is disabled by default when no certificate is configured.
 # allow_plain_http_public_api = false
 
-# Optional. Required by some sandbox IAM policies.
-# role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/SYNTHETIC_BOUNDARY_NAME"
+# Optional in Terraform, but this account's TraineeSelfServiceIAM policy only allows
+# iam:CreateRole when this exact boundary is attached - every aws_iam_role resource fails
+# to create without it. Confirmed required for the expenseflow-smoke sandbox account.
+# role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/TraineeSandboxBoundary"
+
+# This account's TraineeSelfServiceIAM policy does not allow iam:PassRole to
+# monitoring.rds.amazonaws.com, so RDS Enhanced Monitoring cannot be enabled here.
+# db_enable_enhanced_monitoring = true
+
+# This account's Organizations SCP denies ec2:CreateNatGateway. Private subnets reach
+# ECR/Secrets Manager/CloudWatch Logs/SQS/SNS via the VPC endpoints in endpoints.tf instead.
+# enable_nat_gateway = true
 
 # Use immutable pushed images when deploying runnable services.
 # core_case_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-core-case-service@sha256:SYNTHETIC_DIGEST"
 # gl_coding_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-gl-coding-service@sha256:SYNTHETIC_DIGEST"
 
-# Required. Terraform does not create Redis in this module.
-# redis_url = "rediss://redis.example.internal:6379"
+# Redis is provisioned by module.redis (ElastiCache) directly in this root;
+# there is no redis_url variable to set here.
 
 # Use Secrets Manager ARNs only. Do not put secret values in tfvars.
 # Core Case and GL-coding database credentials come from their RDS-managed master user secrets; no ARN to set here.
+
+# Required. No default. Run scripts/aws/generate-sandbox-secrets.sh to generate and publish these,
+# then paste the printed ARNs below. auth_jwt_key_id (below) must match the AUTH_JWT_KEY_ID the
+# script was run with (default: synthetic-sandbox-key).
+# core_case_auth_jwt_private_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/auth-jwt-private-key-base64-SYNTHETIC"
+# gl_coding_auth_jwt_public_keys_json_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/gl-coding/auth-jwt-public-keys-json-SYNTHETIC"
+# core_case_mfa_totp_secret_encryption_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key-SYNTHETIC"
+# core_case_internal_command_token_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/internal-command-token-SYNTHETIC"
+
+# Optional. Only needed to exercise the /v1/runtime-smoke/gl-coding health check. Generate with
+# scripts/aws/generate-sandbox-secrets.sh INCLUDE_RUNTIME_SMOKE_SECRET=true.
+# core_case_runtime_smoke_shared_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/runtime-smoke-shared-secret-SYNTHETIC"
+# runtime_smoke_gl_coding_enabled = false
+
+# auth_jwt_key_id must match AUTH_JWT_KEY_ID used when generating the JWT keypair above.
+# auth_jwt_key_id = "synthetic-sandbox-key"
+
+# Required. No default. HTTPS issuer URL serving /.well-known/openid-configuration and
+# /.well-known/jwks.json for the HTTP API's JWT authorizer. Deploy
+# platform/http-api/issuer-template.yaml with scripts/aws/package-jwt-issuer.sh and
+# scripts/aws/deploy-jwt-issuer.sh (which reads the JWKS from
+# gl_coding_auth_jwt_public_keys_json_secret_arn above), then paste the printed IssuerUrl below.
+# This same URL is also passed to module.ecs as Core Case's AUTH_JWT_ISSUER (the iss claim it
+# signs into access tokens) - the two must always match or every access token fails the HTTP
+# API's JWT authorizer with 401.
+# http_api_jwt_issuer = "https://SYNTHETIC_API_ID.execute-api.us-east-1.amazonaws.com"
+
+# Required for the Issue Payment Lambda to reach Core Case's internal settlement route over the
+# internal ALB - the internal ALB's security group only allows ingress from an explicit
+# allowlist (Core Case's SG, and this Lambda's SG once VPC-attached). Leave unset and the Lambda
+# runs outside the VPC, where every call to CORE_CASE_INTERNAL_BASE_URL times out.
+# http_api_lambda_vpc_id = "vpc-xxx"
 
 # Optional GL-coding internal authentication. When configured, Core Case must authenticate with this
 # secret when calling GL-coding. Enables defense-in-depth: the ALB enforces explicit routing rules
@@ -44,3 +86,6 @@ aws_region = "us-east-1"
 # Defaults are sandbox-cheap.
 # db_instance_class = "db.t3.micro"
 # db_allocated_storage = 20
+
+# Core Case's SPA_ORIGIN (required for credentialed CORS in production) is computed
+# automatically from module.spa's CloudFront domain - no variable to set here.

@@ -31,6 +31,30 @@ describe("local auth configuration", () => {
         ).toThrow();
     });
 
+    test("accepts a non-local database URL when ALLOW_NON_LOOPBACK_AUTH_SEED is true", () => {
+        const databaseUrl =
+            "postgres://expenseflow:synthetic@database.internal:5432/expenseflow";
+
+        expect(() =>
+            localAuthEnvironmentSchema.parse({
+                DATABASE_URL: databaseUrl,
+                ALLOW_NON_LOOPBACK_AUTH_SEED: "true",
+            }),
+        ).not.toThrow();
+    });
+
+    test("still rejects a non-local database URL when ALLOW_NON_LOOPBACK_AUTH_SEED is false", () => {
+        const databaseUrl =
+            "postgres://expenseflow:synthetic@database.internal:5432/expenseflow";
+
+        expect(() =>
+            localAuthEnvironmentSchema.parse({
+                DATABASE_URL: databaseUrl,
+                ALLOW_NON_LOOPBACK_AUTH_SEED: "false",
+            }),
+        ).toThrow();
+    });
+
     test("defines one unique synthetic identity per role in each tenant", () => {
         const accounts = getLocalAuthAccounts();
 

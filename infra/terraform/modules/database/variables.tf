@@ -9,6 +9,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "role_permissions_boundary_arn" {
+  description = "Optional IAM permissions boundary ARN for the RDS enhanced-monitoring role."
+  type        = string
+  default     = null
+}
+
+variable "enable_enhanced_monitoring" {
+  description = "Whether to enable RDS Enhanced Monitoring. Some sandbox accounts deny iam:PassRole to monitoring.rds.amazonaws.com; set to false there."
+  type        = bool
+  default     = true
+}
+
 variable "vpc_id" {
   description = "VPC ID for the database security group."
   type        = string

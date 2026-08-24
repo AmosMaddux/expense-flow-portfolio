@@ -34,6 +34,7 @@ def test_from_environment_assembles_connection_string_from_discrete_vars() -> No
     )
     assert repository._connection_string == (
         "postgresql://gl_coding_admin:p%40ss%2Fword@db.internal:5432/expenseflow_core_case"
+        "?sslmode=require"
     )
 
 

@@ -35,6 +35,7 @@ CORE_CASE_GL_CODING_SMOKE_PATH="${CORE_CASE_GL_CODING_SMOKE_PATH:-/v1/runtime-sm
 INTERNAL_GL_CODING_SMOKE_TASK_FAMILY="${INTERNAL_GL_CODING_SMOKE_TASK_FAMILY:-expenseflow-internal-gl-coding-alb-smoke}"
 INTERNAL_GL_CODING_SMOKE_IMAGE="${INTERNAL_GL_CODING_SMOKE_IMAGE:-public.ecr.aws/docker/library/busybox:1.36}"
 ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE="${ALLOW_MISSING_RECEIPT_BUCKET_FOR_ALB_SMOKE:-false}"
+ALLOW_PLAIN_HTTP_SMOKE="${ALLOW_PLAIN_HTTP_SMOKE:-false}"
 
 if [[ "$AWS_PROFILE" != "$EXPECTED_PROFILE" && "$ALLOW_NON_SMOKE_PROFILE" != "true" ]]; then
     echo "Refusing to run with AWS_PROFILE=$AWS_PROFILE. Set ALLOW_NON_SMOKE_PROFILE=true to override." >&2
@@ -72,13 +73,17 @@ load_balancer_dns_name() {
 
 public_alb_smoke_base_url() {
     if [[ -z "$PUBLIC_ALB_SMOKE_BASE_URL" ]]; then
-        echo "PUBLIC_ALB_SMOKE_BASE_URL must be set to the HTTPS hostname covered by PUBLIC_ALB_CERTIFICATE_ARN." >&2
+        echo "PUBLIC_ALB_SMOKE_BASE_URL must be set to the HTTPS hostname covered by PUBLIC_ALB_CERTIFICATE_ARN (or, for a cert-free demo ALB, an http:// URL with ALLOW_PLAIN_HTTP_SMOKE=true)." >&2
         return 1
     fi
 
     if [[ "$PUBLIC_ALB_SMOKE_BASE_URL" != https://* ]]; then
-        echo "PUBLIC_ALB_SMOKE_BASE_URL must start with https:// so the runtime smoke token is never sent over plaintext HTTP." >&2
-        return 1
+        if [[ "$PUBLIC_ALB_SMOKE_BASE_URL" == http://* && "$ALLOW_PLAIN_HTTP_SMOKE" == "true" ]]; then
+            echo "WARNING: PUBLIC_ALB_SMOKE_BASE_URL is http:// — the runtime smoke token will be sent over plaintext HTTP (ALLOW_PLAIN_HTTP_SMOKE=true)." >&2
+        else
+            echo "PUBLIC_ALB_SMOKE_BASE_URL must start with https:// so the runtime smoke token is never sent over plaintext HTTP. Set ALLOW_PLAIN_HTTP_SMOKE=true to explicitly opt into an http:// URL for a cert-free demo ALB." >&2
+            return 1
+        fi
     fi
 
     echo "${PUBLIC_ALB_SMOKE_BASE_URL%/}"
