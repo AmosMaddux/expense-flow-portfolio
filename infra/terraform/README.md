@@ -152,11 +152,20 @@ documented in `scripts/aws/README.md`:
 
 ```bash
 AWS_PROFILE=expenseflow-smoke \
-  scripts/aws/run-terraform-e2e-smoke.sh
+  scripts/aws/e2e/run-deployed-smoke.sh
 ```
 
-That smoke test requires valid JWT inputs and other runtime values; read the
-script README before running it.
+The wrapper resolves Terraform outputs, derives the ALB smoke URL, mints
+synthetic valid/expired JWTs, and selects seeded synthetic Expense Report IDs.
+If it reports that runtime-smoke is not enabled, run:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+  AUTO_APPROVE=true \
+  scripts/aws/e2e/prepare-smoke-prereqs.sh
+```
+
+Then re-run `scripts/aws/e2e/run-deployed-smoke.sh`.
 
 ## Tear Down
 

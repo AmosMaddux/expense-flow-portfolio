@@ -27,7 +27,7 @@ data "aws_secretsmanager_secret_version" "core_case_db_master_user" {
 locals {
   core_case_db_master_user_credentials = jsondecode(data.aws_secretsmanager_secret_version.core_case_db_master_user.secret_string)
   core_case_database_url = format(
-    "postgres://%s:%s@%s:%s/%s",
+    "postgres://%s:%s@%s:%s/%s?uselibpqcompat=true&sslmode=require",
     urlencode(local.core_case_db_master_user_credentials.username),
     urlencode(local.core_case_db_master_user_credentials.password),
     var.core_case_db_host,

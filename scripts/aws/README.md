@@ -230,6 +230,41 @@ It runs three checks in one invocation:
 2. **API Gateway payment path → Lambda → Core Case internal route**: wraps `scripts/aws/SCRUM-150/smoke-issue-payment-http-api.sh`, building `ISSUE_PAYMENT_URL` from the Terraform `http_api_issue_payment_url_prefix` output.
 3. **SQS event flow**: publishes a synthetic stage-transition CloudEvent to the Terraform-managed SNS topic, then polls the Postgres `stage_transition_projection` table (via the stage-transition consumer Lambda's own `database_url` Secrets Manager secret) and Lambda invocation metrics to prove SNS → SQS → Lambda → Postgres runs end to end.
 
+For normal deployed-sandbox validation, use the one-command wrapper. It derives
+the public ALB URL, mints valid/expired synthetic access tokens, selects seeded
+synthetic Expense Report IDs, and passes the Terraform-managed resource names to
+the lower-level smoke scripts. The event-flow check opens a temporary SSM
+port-forward through the bastion so it can poll the private RDS database, so
+`session-manager-plugin` and `nc` must be installed for the full default suite:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/e2e/run-deployed-smoke.sh
+```
+
+The wrapper gives the asynchronous SNS/SQS/Lambda/Postgres projection check up
+to 10 minutes by default. Override `VERIFY_TIMEOUT_SECONDS` or
+`VERIFY_POLL_SECONDS` when troubleshooting.
+
+If the wrapper reports that runtime-smoke is not enabled, run the prep command
+once. It creates or reuses the runtime-smoke shared secret, detects your public
+IP for the listener allowlist, and applies only the runtime-smoke Terraform
+settings. Because Terraform may need to refresh already-managed PostgreSQL
+roles/extensions, the prep command also opens a temporary SSM port-forward to
+RDS through the bastion; set `PREP_DB_TUNNEL_LOCAL_PORT` if local port `15432`
+is already in use:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+AUTO_APPROVE=true \
+scripts/aws/e2e/prepare-smoke-prereqs.sh
+```
+
+Then re-run `scripts/aws/e2e/run-deployed-smoke.sh`.
+
+The lower-level script can still be run directly when troubleshooting, but then
+you must supply every runtime input yourself:
+
 ```bash
 PUBLIC_ALB_SMOKE_BASE_URL="https://<certificate-covered-public-hostname>" \
 VALID_ACCESS_TOKEN="$VALID_ACCESS_TOKEN" \
