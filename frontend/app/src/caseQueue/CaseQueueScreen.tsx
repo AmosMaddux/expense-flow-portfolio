@@ -38,6 +38,7 @@ import {
     type ExpenseReportStage,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
+import { AssistPanel } from "../expenseReports/AssistPanel";
 
 const policyCheckSchema = z.object({
     code: z.string().min(1),
@@ -1310,6 +1311,20 @@ export function ApprovalQueueReviewDialog({
                         <strong>{formatMileageDistance(mileageTotal)}</strong>
                     </span>
                 </div>
+                <AssistPanel
+                    caseContext={{
+                        expenseReportId,
+                        lineItems: lineItems
+                            .filter(
+                                (lineItem) =>
+                                    lineItem.sourceType === "line_item",
+                            )
+                            .map((lineItem) => ({
+                                id: lineItem.id,
+                                label: `${lineItem.merchant} - ${formatCurrency(lineItem.amount)}`,
+                            })),
+                    }}
+                />
                 <ReceiptGallery
                     activeLineItemId={activeLineItemId}
                     expenseReportId={reportLineItem.expenseReportId}
