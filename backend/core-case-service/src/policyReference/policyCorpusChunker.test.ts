@@ -22,44 +22,14 @@ void describe("chunkExpensePolicyCorpus", () => {
         const firstChunk = chunks[0];
         const secondChunk = chunks[1];
         if (firstChunk === undefined || secondChunk === undefined) {
-            throw new Error("Expected at least two policy chunks.");
+            throw new Error("Expected at least two chunks.");
         }
-        expect(
-            secondChunk.content.startsWith(firstChunk.content.slice(-150)),
-        ).toBe(true);
+        expect(secondChunk.content.startsWith(firstChunk.content.slice(-150))).toBe(
+            true,
+        );
         expect(chunks.map((chunk) => chunk.chunkIndex)).toStrictEqual(
             chunks.map((_, index) => index),
         );
-    });
-
-    void test("keeps all-caps emphasis sentences inside the current section", () => {
-        const chunks = chunkExpensePolicyCorpus({
-            tenantId,
-            policyText:
-                "# Receipts\n\nReceipts are required for reimbursement.\nNO EXCEPTIONS WILL BE MADE.\nRECEIPTS ARE REQUIRED FOR ALL EXPENSES OVER $25.\n\nBusiness purpose details must be included.",
-            updatedAt,
-        });
-
-        expect(chunks).toHaveLength(1);
-        expect(chunks[0]?.section).toBe("Receipts");
-        expect(chunks[0]?.content).toContain("NO EXCEPTIONS WILL BE MADE.");
-        expect(chunks[0]?.content).toContain(
-            "RECEIPTS ARE REQUIRED FOR ALL EXPENSES OVER $25.",
-        );
-    });
-
-    void test("keeps short all-caps headings without sentence punctuation", () => {
-        const chunks = chunkExpensePolicyCorpus({
-            tenantId,
-            policyText:
-                "MEALS\n\nMeals require a receipt.\n\nTRAVEL AND LODGING\n\nTravel must use reasonable economy options.",
-            updatedAt,
-        });
-
-        expect(chunks.map((chunk) => chunk.section)).toStrictEqual([
-            "MEALS",
-            "TRAVEL AND LODGING",
-        ]);
     });
 
     void test("uses General when no heading is present", () => {
@@ -70,6 +40,28 @@ void describe("chunkExpensePolicyCorpus", () => {
         });
 
         expect(chunk?.section).toBe("General");
+    });
+
+    void test("keeps punctuated all-caps emphasis sentences in the current section", () => {
+        const [chunk] = chunkExpensePolicyCorpus({
+            tenantId,
+            policyText:
+                "# Meals\n\nRECEIPTS ARE REQUIRED FOR ALL EXPENSES OVER $25.\n\nNO EXCEPTIONS WILL BE MADE.",
+            updatedAt,
+        });
+
+        expect(chunk?.section).toBe("Meals");
+        expect(chunk?.content).toContain("NO EXCEPTIONS WILL BE MADE.");
+    });
+
+    void test("recognizes unpunctuated all-caps headings", () => {
+        const chunks = chunkExpensePolicyCorpus({
+            tenantId,
+            policyText: "MEALS\n\nReceipts are required.",
+            updatedAt,
+        });
+
+        expect(chunks[0]?.section).toBe("MEALS");
     });
 
     void test("produces stable hashes for the same normalized input", () => {

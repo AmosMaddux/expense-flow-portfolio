@@ -27,3 +27,8 @@ output "event_source_mapping_uuid" {
   description = "UUID of the SQS event-source mapping."
   value       = aws_lambda_event_source_mapping.stage_transition_events.uuid
 }
+
+output "log_group_name" {
+  description = "CloudWatch log group name for the stage-transition consumer Lambda."
+  value       = aws_cloudwatch_log_group.this.name
+}

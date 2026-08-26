@@ -41,6 +41,7 @@ import {
     createRuntimeSmokeRouter,
     isGlCodingRuntimeSmokeEnabled,
 } from "./runtimeSmoke/runtimeSmokeRoutes.js";
+import { httpRequestLoggingMiddleware } from "./logging/httpRequestLoggingMiddleware.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
@@ -52,6 +53,7 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
 );
 loadDefaultGlCodingConfig();
 app.use(createCorsMiddleware(loadCorsConfig()));
+app.use(httpRequestLoggingMiddleware);
 const v1Router = express.Router();
 const protectedRoutePrefixes = [
     "/expense-reports",

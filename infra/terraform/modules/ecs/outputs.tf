@@ -82,3 +82,13 @@ output "dynamodb_expense_report_tenant_index_name" {
   description = "Tenant index name for the Expense Report read projection."
   value       = var.dynamodb_expense_report_tenant_index_name
 }
+
+output "core_case_log_group_name" {
+  description = "CloudWatch log group name for Core Case."
+  value       = aws_cloudwatch_log_group.core_case.name
+}
+
+output "gl_coding_log_group_name" {
+  description = "CloudWatch log group name for GL-coding."
+  value       = aws_cloudwatch_log_group.gl_coding.name
+}

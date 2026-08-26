@@ -5,6 +5,7 @@ import type { IdempotencyResult } from "../../idempotency/idempotencyStore.js";
 
 const logExpenseReportAuditErrorMock = vi.hoisted(() => vi.fn());
 const logExpenseReportAuditSuccessMock = vi.hoisted(() => vi.fn());
+const logCoreCaseMetricMock = vi.hoisted(() => vi.fn());
 const idempotencyRecords = vi.hoisted(
     () => new Map<string, IdempotencyResult>(),
 );
@@ -22,6 +23,7 @@ const idempotencyStoreMock = vi.hoisted(() => ({
 vi.mock("../../logging/coreCaseLogger.js", () => ({
     logExpenseReportAuditError: logExpenseReportAuditErrorMock,
     logExpenseReportAuditSuccess: logExpenseReportAuditSuccessMock,
+    logCoreCaseMetric: logCoreCaseMetricMock,
 }));
 
 vi.mock("../../idempotency/defaultIdempotencyStore.js", () => ({
@@ -77,6 +79,7 @@ void describe("Expense Report controller authorization", () => {
         idempotencyStoreMock.saveResult.mockClear();
         logExpenseReportAuditErrorMock.mockClear();
         logExpenseReportAuditSuccessMock.mockClear();
+        logCoreCaseMetricMock.mockClear();
     });
 
     void test("rejects direct handler invocation without auth context", async () => {
@@ -419,6 +422,13 @@ void describe("Expense Report controller authorization", () => {
         });
         expect(JSON.stringify(payload)).not.toContain(
             "synthetic-payment-reference",
+        );
+        expect(logCoreCaseMetricMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metricName: "StageTransitionSuccessCount",
+                tenantId,
+                toStage: "Manager Approval",
+            }),
         );
         expect(set).toHaveBeenCalledWith("X-Correlation-Id", correlationId);
         expect(status).toHaveBeenCalledWith(200);

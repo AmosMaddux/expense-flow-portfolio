@@ -1,6 +1,7 @@
 import { app } from "./app.js";
 import { applyPendingCoreCaseMigrations } from "./db/migrations.js";
 import { startStageTransitionOutboxDispatcher } from "./events/stageTransitionOutboxDispatcher.js";
+import { logCoreCaseInfo } from "./logging/coreCaseLogger.js";
 
 export {
     readCaseQueueReportsForStage,
@@ -46,17 +47,20 @@ async function startCoreCaseService(): Promise<void> {
 
     startStageTransitionOutboxDispatcher();
     app.listen(PORT, () => {
-        console.log(`Server is running locally at http://localhost:${PORT}`);
-        console.log(
-            `Health check available at http://localhost:${PORT}/health`,
-        );
+        logCoreCaseInfo({
+            eventType: "service_startup",
+            message: "Core Case Service is running locally.",
+            port: PORT,
+            service: "core-case-service",
+        });
     });
 }
 
 startCoreCaseService().catch((error: unknown) => {
-    console.error("Core Case Service failed to start.");
-    console.error(
-        error instanceof Error ? error.message : "Unknown startup error.",
-    );
+    logCoreCaseInfo({
+        eventType: "service_startup_failed",
+        error: error instanceof Error ? error.message : "Unknown startup error.",
+        service: "core-case-service",
+    });
     process.exit(1);
 });

@@ -56,6 +56,7 @@ import {
 import {
     logExpenseReportAuditError,
     logExpenseReportAuditSuccess,
+    logCoreCaseMetric,
 } from "../../logging/coreCaseLogger.js";
 import {
     addDraftExpenseContent,
@@ -707,6 +708,17 @@ export async function postExpenseReportTransition(
             tenantId: auth.tenantId,
             toStage: parsedRequest.toStage,
         });
+        logCoreCaseMetric({
+            environment: "sandbox",
+            eventType: "stage_transition",
+            metricName: "StageTransitionSuccessCount",
+            metricValue: 1,
+            outcome: "success",
+            route: transitionExpenseReportRouteLogName,
+            service: "core-case-service",
+            tenantId: auth.tenantId,
+            toStage: parsedRequest.toStage,
+        });
         res.status(200).json(report);
     } catch (error: unknown) {
         logExpenseReportAuditError({
@@ -716,6 +728,16 @@ export async function postExpenseReportTransition(
             expenseReportId: parsedExpenseReportId,
             route: transitionExpenseReportRouteLogName,
             tenantId: req.auth?.tenantId,
+        });
+        logCoreCaseMetric({
+            environment: "sandbox",
+            eventType: "stage_transition",
+            metricName: "StageTransitionErrorCount",
+            metricValue: 1,
+            outcome: "error",
+            route: transitionExpenseReportRouteLogName,
+            service: "core-case-service",
+            tenantId: req.auth?.tenantId ?? "unknown",
         });
         next(error);
     }

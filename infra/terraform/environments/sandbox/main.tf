@@ -221,6 +221,17 @@ module "http_api" {
   vpc_id                                      = var.http_api_lambda_vpc_id
 }
 
+module "observability" {
+  source = "../../modules/observability"
+
+  aws_region                             = var.aws_region
+  core_case_log_group_name               = module.ecs.core_case_log_group_name
+  gl_coding_log_group_name               = module.ecs.gl_coding_log_group_name
+  name_prefix                            = var.name_prefix
+  stage_transition_lambda_log_group_name = module.lambda_stage_transition_consumer.log_group_name
+  tags                                   = local.tags
+}
+
 module "spa" {
   source = "../../modules/spa"
 

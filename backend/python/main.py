@@ -22,6 +22,7 @@ from .gl_coding import (
     get_mileage_reimbursement_rate,
 )
 from .gl_mapping_repository import PostgresGlAccountMappingRepository
+from .observability import log_metric, log_service_event, request_metrics_middleware
 from .service_health import ServiceHealth
 
 
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(lifespan=lifespan)
+app.middleware("http")(request_metrics_middleware("gl-coding-service"))
 
 AP_REVIEW_GL_CODING_ROLES: frozenset[RoleName] = frozenset(
     {"Finance Admin", "Department Manager"}
@@ -122,17 +124,39 @@ async def gl_coding_line_items(
     ],
 ) -> GlCodingComputeResponse:
     """Return GL account coding results for AP Review line items."""
-    return await code_line_items_to_gl_accounts(
-        request,
-        context.tenant_id,
-        mapping_repository,
-        mileage_reimbursement_rate,
-    )
+    try:
+        response = await code_line_items_to_gl_accounts(
+            request,
+            context.tenant_id,
+            mapping_repository,
+            mileage_reimbursement_rate,
+        )
+        log_metric(
+            service="gl-coding-service",
+            event_type="gl_coding_request",
+            metric_name="GlCodingRequestCount",
+            tenant_id=str(context.tenant_id),
+            outcome="success",
+        )
+        return response
+    except Exception:
+        log_metric(
+            service="gl-coding-service",
+            event_type="gl_coding_request",
+            metric_name="GlCodingErrorCount",
+            tenant_id=str(context.tenant_id),
+            outcome="error",
+        )
+        raise
 
 
 def main():
     """Run the local command-line entry point for the Python service."""
-    print("Hello from expense-flow-project-team-3!")
+    log_service_event(
+        service="gl-coding-service",
+        eventType="service_startup",
+        outcome="success",
+    )
 
 
 if __name__ == "__main__":

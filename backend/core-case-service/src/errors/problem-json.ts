@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, NextFunction, Request } from "express";
 import { ZodError } from "zod";
+import { logCoreCaseError } from "../logging/coreCaseLogger.js";
 
 type ProblemJsonBody = {
     type: string;
@@ -102,7 +103,14 @@ export const problemJsonErrorHandler: ErrorRequestHandler = (
     }
 
     if (problem.status >= 500) {
-        console.error(`Unhandled error on ${req.originalUrl}:`, error);
+        logCoreCaseError({
+            eventType: "unhandled_error",
+            instance: req.originalUrl,
+            outcome: "error",
+            route: req.originalUrl,
+            service: "core-case-service",
+            statusCode: problem.status,
+        });
     }
 
     res.status(problem.status).type("application/problem+json").json(problem);
