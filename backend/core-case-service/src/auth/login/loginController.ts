@@ -6,6 +6,8 @@ import {
     InvalidMfaCodeError,
     MfaRequiredError,
 } from "../shared/authenticationErrors.js";
+import type { RefreshTokenCookieConfig } from "../shared/refreshTokenCookie.js";
+import { buildRefreshTokenCookie } from "../shared/refreshTokenCookie.js";
 import {
     loginRequestSchema,
     loginResponseSchema,
@@ -41,7 +43,10 @@ export const unsupportedAuthProblemResponseSchema = z.object({
 /**
  * Creates the HTTP handler for the primary login credential step.
  */
-export function createPostLogin(loginService: LoginService): RequestHandler {
+export function createPostLogin(
+    loginService: LoginService,
+    cookieConfig: RefreshTokenCookieConfig,
+): RequestHandler {
     return async (
         req: Request,
         res: Response,
@@ -52,6 +57,14 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
             const result = await loginService.login(requestBody);
             const responseBody = loginResponseSchema.parse(result);
 
+            res.append(
+                "Set-Cookie",
+                buildRefreshTokenCookie(
+                    responseBody.refreshToken,
+                    new Date(responseBody.refreshTokenExpiresAt),
+                    cookieConfig,
+                ),
+            );
             res.status(200).json(responseBody);
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {

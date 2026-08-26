@@ -55,9 +55,18 @@ import {
     UpdateGlMappingInboundRequestSchema,
 } from "../glMappings/glMappingDto.js";
 import {
+    InviteTeamUserInboundRequestSchema,
+    TeamUserOutboundResponseSchema,
+    TeamUserPathParamsSchema,
+    TeamUsersListOutboundResponseSchema,
+    UpdateTeamUserRoleInboundRequestSchema,
+    UpdateTeamUserStatusInboundRequestSchema,
+} from "../teamUsers/teamUsersDto.js";
+import {
     loginRequestSchema,
     loginResponseSchema,
 } from "../auth/login/loginService.js";
+import { TokenOutboundResponseSchema } from "../auth/refresh/refreshService.js";
 import { loginErrorResponseSchema } from "../auth/login/loginController.js";
 import {
     mfaEnrollmentRequestSchema,
@@ -272,6 +281,30 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "GlMappingPathParams",
         GlMappingPathParamsSchema,
     );
+    const teamUsersListResponse = registry.register(
+        "TeamUsersListResponse",
+        TeamUsersListOutboundResponseSchema,
+    );
+    const teamUserResponse = registry.register(
+        "TeamUserResponse",
+        TeamUserOutboundResponseSchema,
+    );
+    const inviteTeamUserRequest = registry.register(
+        "InviteTeamUserRequest",
+        InviteTeamUserInboundRequestSchema,
+    );
+    const updateTeamUserRoleRequest = registry.register(
+        "UpdateTeamUserRoleRequest",
+        UpdateTeamUserRoleInboundRequestSchema,
+    );
+    const updateTeamUserStatusRequest = registry.register(
+        "UpdateTeamUserStatusRequest",
+        UpdateTeamUserStatusInboundRequestSchema,
+    );
+    const teamUserPathParams = registry.register(
+        "TeamUserPathParams",
+        TeamUserPathParamsSchema,
+    );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
         mfaEnrollmentRequestSchema,
@@ -327,6 +360,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
         },
+    );
+    const refreshTokenResponse = registry.register(
+        "RefreshTokenResponse",
+        TokenOutboundResponseSchema,
     );
     const loginRequest = registry.register("LoginRequest", loginRequestSchema);
     const loginResponse = registry.register(
@@ -794,6 +831,146 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
     registry.registerPath({
+        method: "get",
+        path: "/v1/users",
+        summary: "List Team & Users members",
+        description:
+            "Loads every tenant-scoped user with their role and status for the Finance Admin workspace.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Team & Users members found.",
+                content: {
+                    "application/json": {
+                        schema: teamUsersListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Team & Users access is limited to Finance Admins.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/users/invite",
+        summary: "Invite a Team & Users member",
+        description:
+            "Allows Finance Admins to invite a new tenant user with an assigned role and records a reference-data audit entry in the same transaction.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: inviteTeamUserRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: "Team member invited.",
+                content: {
+                    "application/json": {
+                        schema: teamUserResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed invite request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Team & Users changes are limited to Finance Admins.",
+            ),
+            409: problemJsonResponse(
+                "A user with this email already exists in the tenant.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "patch",
+        path: "/v1/users/{id}/role",
+        summary: "Change a Team & Users member's role",
+        description:
+            "Allows Finance Admins to replace one tenant user's assigned role and records a reference-data audit entry in the same transaction.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: teamUserPathParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: updateTeamUserRoleRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Team member role updated.",
+                content: {
+                    "application/json": {
+                        schema: teamUserResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed role update request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Team & Users changes are limited to Finance Admins.",
+            ),
+            404: problemJsonResponse("Team member was not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "patch",
+        path: "/v1/users/{id}/status",
+        summary: "Change a Team & Users member's status",
+        description:
+            "Allows Finance Admins to activate or deactivate one tenant user and records a reference-data audit entry in the same transaction.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: teamUserPathParams,
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: updateTeamUserStatusRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Team member status updated.",
+                content: {
+                    "application/json": {
+                        schema: teamUserResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed status update request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Team & Users changes are limited to Finance Admins.",
+            ),
+            404: problemJsonResponse("Team member was not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
         method: "post",
         path: "/v1/auth/login",
         summary: "Authenticate with email, password, and optional TOTP MFA",
@@ -828,6 +1005,42 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 },
             },
             400: problemJsonResponse("Malformed login request."),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/auth/refresh",
+        summary: "Rotate a refresh token cookie into a fresh access token",
+        description:
+            "Reads the HttpOnly refresh token cookie set by login, re-checks the user's status and roles from the database, and issues a new short-lived access JWT alongside a rotated refresh token cookie.",
+        responses: {
+            200: {
+                description: "A fresh access token was issued.",
+                content: {
+                    "application/json": {
+                        schema: refreshTokenResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse(
+                "The refresh token cookie is missing, invalid, expired, revoked, or belongs to a user who is no longer active.",
+            ),
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/auth/logout",
+        summary: "Revoke the current refresh token",
+        description:
+            "Revokes the refresh token named by the HttpOnly cookie, if any, and clears the cookie. Always succeeds so the client can finish signing out.",
+        responses: {
+            204: {
+                description: "The session was signed out.",
+            },
             500: problemJsonResponse("Unexpected server error."),
         },
     });

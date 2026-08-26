@@ -32,6 +32,7 @@ import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
 import { PolicyReferenceScreen } from "./policyReference/PolicyReferenceScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
+import { TeamAndUsersScreen } from "./teamUsers/TeamAndUsersScreen";
 import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
 import {
     getNavigationItemsForRoles,
@@ -87,6 +88,8 @@ const protectedRoutes = navigationItems.map((item) =>
                 <AllTransactionsScreen />
             ) : item.path === "/gl-mapping" ? (
                 <GlMappingScreen />
+            ) : item.path === "/team-users" ? (
+                <TeamAndUsersScreen />
             ) : item.path === "/my-submissions" ? (
                 <MySubmissionsScreen />
             ) : item.path === "/log-mileage" ? (
