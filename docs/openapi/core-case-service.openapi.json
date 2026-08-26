@@ -764,6 +764,147 @@
                     "receipts"
                 ]
             },
+            "AssistRequest": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                    },
+                    "caseContext": {
+                        "type": "object",
+                        "properties": {
+                            "expenseReportId": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "lineItemId": {
+                                "type": "string",
+                                "format": "uuid"
+                            }
+                        },
+                        "required": ["expenseReportId"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["question", "caseContext"],
+                "additionalProperties": false
+            },
+            "AssistResponse": {
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "citations": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    },
+                    "contexts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "citation": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "section": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "score": {
+                                    "type": "number"
+                                }
+                            },
+                            "required": [
+                                "citation",
+                                "section",
+                                "content",
+                                "score"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "refused": {
+                        "type": "boolean"
+                    },
+                    "abstained": {
+                        "type": "boolean"
+                    },
+                    "refusalCategory": {
+                        "type": ["string", "null"],
+                        "enum": [
+                            "prompt_disclosure",
+                            "cross_tenant",
+                            "instruction_override",
+                            null
+                        ]
+                    },
+                    "caseContext": {
+                        "type": "object",
+                        "properties": {
+                            "expenseReportId": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "lineItemId": {
+                                "type": ["string", "null"],
+                                "format": "uuid"
+                            }
+                        },
+                        "required": ["expenseReportId", "lineItemId"],
+                        "additionalProperties": false
+                    },
+                    "flagAssessment": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "amount": {
+                                "type": "string",
+                                "pattern": "^-?\\d+\\.\\d{2}$"
+                            },
+                            "threshold": {
+                                "type": "string",
+                                "enum": ["500.00"]
+                            },
+                            "isFlagged": {
+                                "type": "boolean"
+                            },
+                            "rule": {
+                                "type": "string",
+                                "enum": ["line_item_amount_over_500"]
+                            }
+                        },
+                        "required": [
+                            "amount",
+                            "threshold",
+                            "isFlagged",
+                            "rule"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "answer",
+                    "citations",
+                    "contexts",
+                    "refused",
+                    "abstained",
+                    "refusalCategory",
+                    "caseContext",
+                    "flagAssessment"
+                ],
+                "additionalProperties": false
+            },
             "AuditEntryListResponse": {
                 "type": "array",
                 "items": {
@@ -3930,6 +4071,104 @@
                     },
                     "403": {
                         "description": "Finance Dashboard access is limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/assist": {
+            "post": {
+                "summary": "Answer a cited tenant policy question",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AssistRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Grounded policy answer.",
+                        "headers": {
+                            "RateLimit-Limit": {
+                                "$ref": "#/components/headers/RateLimitLimit"
+                            },
+                            "RateLimit-Remaining": {
+                                "$ref": "#/components/headers/RateLimitRemaining"
+                            },
+                            "RateLimit-Reset": {
+                                "$ref": "#/components/headers/RateLimitReset"
+                            },
+                            "X-RateLimit-Cost": {
+                                "$ref": "#/components/headers/RateLimitCost"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AssistResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed assist request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "AI Assist access is limited to internal roles.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Expense Report or line item not found.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

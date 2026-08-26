@@ -46,6 +46,16 @@ import { PolicyReferenceOutboundResponseSchema } from "../dto/expenseReportDto.j
 import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDatabase.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
+const answerPolicyQuestionMock = vi.hoisted(() => vi.fn());
+vi.mock(
+    "../../policyReference/policyAssistantService.js",
+    async (importOriginal) => ({
+        ...(await importOriginal<
+            typeof import("../../policyReference/policyAssistantService.js")
+        >()),
+        answerPolicyQuestion: answerPolicyQuestionMock,
+    }),
+);
 const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
@@ -261,6 +271,7 @@ function refreshAuthorizationHeader(tenantId: string, userId: string): string {
 
 void describe("Expense Report routes", () => {
     beforeEach(() => {
+        answerPolicyQuestionMock.mockReset();
         einValidationAclValidateMock.mockReset();
         einValidationAclValidateMock.mockResolvedValue({
             status: "valid",
@@ -7915,5 +7926,115 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             title: "Unauthorized",
             status: 401,
         });
+    });
+    void test("routes Assist through protected tenant-scoped HTTP middleware", async () => {
+        const tenantA = "40000000-0000-4000-8000-000000009901";
+        const tenantB = "40000000-0000-4000-8000-000000009902";
+        const managerA = "50000000-0000-4000-8000-000000009901";
+        const managerB = "50000000-0000-4000-8000-000000009902";
+        const reportA = "60000000-0000-4000-8000-000000009901";
+        const lineItemA = "70000000-0000-4000-8000-000000009901";
+        await db.insert(expenseReport).values({
+            id: reportA,
+            tenantId: tenantA,
+            owner: managerA,
+            dueDate: "2026-08-01",
+            currentStage: "Manager Approval",
+        });
+        await db.insert(lineItem).values({
+            id: lineItemA,
+            tenantId: tenantA,
+            expenseReportId: reportA,
+            merchant: "Synthetic Air",
+            expenseDate: "2026-08-01",
+            category: "Travel",
+            amount: "501.00",
+            currency: "USD",
+        });
+        answerPolicyQuestionMock.mockResolvedValue({
+            tenantId: tenantA,
+            question: "Is this reimbursable?",
+            answer: "Synthetic policy answer.",
+            citations: ["policy:synthetic"],
+            contexts: [
+                {
+                    citation: "policy:synthetic",
+                    section: "Synthetic policy",
+                    content: "Synthetic policy text.",
+                    score: 1,
+                },
+            ],
+            refused: false,
+            abstained: false,
+            refusalCategory: null,
+        });
+        const post = (
+            tenantId: string,
+            userId: string,
+            roles: RoleName[],
+            body: unknown,
+        ) =>
+            requestApp("/v1/assist", {
+                method: "POST",
+                headers: {
+                    authorization: authorizationHeader(tenantId, userId, roles),
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify(body),
+            });
+        const validBody = {
+            question: "Is this reimbursable?",
+            caseContext: { expenseReportId: reportA, lineItemId: lineItemA },
+        };
+        expect(
+            (await requestApp("/v1/assist", { method: "POST" })).status,
+        ).toBe(401);
+        expect(
+            (await post(tenantA, managerA, ["Employee"], validBody)).status,
+        ).toBe(403);
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantA));
+        expect(
+            (await post(tenantA, managerA, ["Admin"], validBody)).status,
+        ).toBe(403);
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantA));
+        expect(
+            (
+                await post(tenantA, managerA, ["Department Manager"], {
+                    question: "",
+                    caseContext: {},
+                })
+            ).status,
+        ).toBe(400);
+        await db
+            .delete(tenantRateLimitWindow)
+            .where(eq(tenantRateLimitWindow.tenantId, tenantA));
+        expect(
+            (await post(tenantB, managerB, ["Department Manager"], validBody))
+                .status,
+        ).toBe(404);
+        expect(answerPolicyQuestionMock).not.toHaveBeenCalled();
+        const success = await post(
+            tenantA,
+            managerA,
+            ["Department Manager"],
+            validBody,
+        );
+        expect(success.status).toBe(200);
+        await expect(success.json()).resolves.toMatchObject({
+            caseContext: { expenseReportId: reportA, lineItemId: lineItemA },
+        });
+        expect(answerPolicyQuestionMock).toHaveBeenCalledTimes(1);
+        expect(
+            (
+                await db
+                    .select()
+                    .from(tenantRateLimitWindow)
+                    .where(eq(tenantRateLimitWindow.tenantId, tenantA))
+            ).length,
+        ).toBeGreaterThan(0);
     });
 });

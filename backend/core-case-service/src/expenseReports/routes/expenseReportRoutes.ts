@@ -1,5 +1,6 @@
 import { Router, raw } from "express";
 
+import { postAssist } from "../../policyReference/assistController.js";
 import { getPolicyReference } from "../../policyReference/policyReferenceController.js";
 import {
     deleteDraftLineItemEntry,
@@ -36,6 +37,8 @@ import {
 } from "../controllers/expenseReportController.js";
 
 export const expenseReportRouter = Router();
+
+expenseReportRouter.post("/assist", postAssist);
 
 expenseReportRouter.get("/case-queue/line-items", getCaseQueueLineItems);
 expenseReportRouter.get("/case-queue/rollups", getCaseQueueStageRollups);

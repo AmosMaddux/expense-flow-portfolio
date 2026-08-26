@@ -20,6 +20,7 @@ export const AnswerPolicyQuestionRequestSchema = z
         tenantId: z.uuid(),
         question: z.string().trim().min(1).max(2_000),
         topK: z.number().int().min(1).max(10).default(4),
+        retrievalHints: z.array(z.string().trim().min(1).max(120)).max(3).default([]),
     })
     .strict();
 
@@ -95,7 +96,7 @@ export async function answerPolicyQuestion(
 
     const { chunks } = await retriever({
         tenantId: parsedRequest.tenantId,
-        query: parsedRequest.question,
+        query: [parsedRequest.question, ...parsedRequest.retrievalHints].join(" "),
         topK: parsedRequest.topK,
     });
     // Retrieval already filters by tenant; this repeats the check so a future

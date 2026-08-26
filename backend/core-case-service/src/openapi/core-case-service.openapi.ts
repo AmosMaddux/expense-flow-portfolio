@@ -69,6 +69,10 @@ import {
 import { TokenOutboundResponseSchema } from "../auth/refresh/refreshService.js";
 import { loginErrorResponseSchema } from "../auth/login/loginController.js";
 import {
+    AssistInboundRequestSchema,
+    AssistOutboundResponseSchema,
+} from "../policyReference/assistService.js";
+import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
 } from "../auth/mfa/mfaEnrollmentService.js";
@@ -144,6 +148,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const mileageConfigResponse = registry.register(
         "MileageConfigResponse",
         MileageConfigOutboundResponseSchema,
+    );
+    const assistRequest = registry.register(
+        "AssistRequest",
+        AssistInboundRequestSchema,
+    );
+    const assistResponse = registry.register(
+        "AssistResponse",
+        AssistOutboundResponseSchema,
     );
     const policyReferenceResponse = registry.register(
         "PolicyReferenceResponse",
@@ -715,6 +727,22 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
     });
 
+    registry.registerPath({
+        method: "post",
+        path: "/v1/assist",
+        summary: "Answer a cited tenant policy question",
+        security: [{ bearerAuth: [] }],
+        request: { body: { content: { "application/json": { schema: assistRequest } } } },
+        responses: {
+            200: { description: "Grounded policy answer.", headers: rateLimitHeaders, content: { "application/json": { schema: assistResponse } } },
+            400: problemJsonResponse("Malformed assist request."),
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse("AI Assist access is limited to internal roles."),
+            404: problemJsonResponse("Expense Report or line item not found."),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
     registry.registerPath({
         method: "get",
         path: "/v1/policy-reference",
