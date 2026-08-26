@@ -36,9 +36,14 @@ variable "role_permissions_boundary_arn" {
 }
 
 variable "image_uri" {
-  description = "Optional immutable container image URI for the stage-transition consumer Lambda. Defaults to the module-managed ECR repository's :latest tag."
+  description = "Optional immutable container image URI for the stage-transition consumer Lambda. Defaults to the persistent ECR repository's :latest tag."
   type        = string
   default     = null
+}
+
+variable "repository_url" {
+  description = "Persistent ECR repository URL for stage-transition consumer Lambda images."
+  type        = string
 }
 
 variable "timeout_seconds" {

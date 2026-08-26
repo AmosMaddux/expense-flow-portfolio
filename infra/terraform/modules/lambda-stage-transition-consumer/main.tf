@@ -50,21 +50,6 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   })
 }
 
-resource "aws_ecr_repository" "this" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
-  name                 = "${var.name_prefix}-stage-transition-consumer-lambda"
-  image_tag_mutability = "IMMUTABLE"
-  tags                 = var.tags
-
-  encryption_configuration {
-    encryption_type = "AES256"
-  }
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
 resource "aws_cloudwatch_log_group" "this" {
   #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
   name              = local.log_group_name
@@ -163,7 +148,7 @@ resource "aws_lambda_function" "this" {
   function_name = local.function_name
   role          = aws_iam_role.this.arn
   package_type  = "Image"
-  image_uri     = coalesce(var.image_uri, "${aws_ecr_repository.this.repository_url}:latest")
+  image_uri     = coalesce(var.image_uri, "${var.repository_url}:latest")
   architectures = ["x86_64"]
   timeout       = var.timeout_seconds
   memory_size   = var.memory_size

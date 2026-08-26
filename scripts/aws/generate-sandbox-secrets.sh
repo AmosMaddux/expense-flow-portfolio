@@ -67,7 +67,7 @@ put_secret() {
 generate_jwt_key_material() {
     local temp_dir private_key_file public_key_file
     temp_dir="$(mktemp -d)"
-    trap 'rm -rf "$temp_dir"; trap - RETURN' RETURN
+    trap 'rm -rf "$temp_dir"; trap - RETURN EXIT' RETURN EXIT
     private_key_file="$temp_dir/private.pem"
     public_key_file="$temp_dir/public.pem"
 

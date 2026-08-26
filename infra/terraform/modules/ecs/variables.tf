@@ -94,10 +94,25 @@ variable "core_case_image_uri" {
   default     = null
 }
 
+variable "core_case_repository_url" {
+  description = "Persistent ECR repository URL for Core Case images."
+  type        = string
+}
+
+variable "core_case_repository_arn" {
+  description = "Persistent ECR repository ARN for Core Case images."
+  type        = string
+}
+
 variable "gl_coding_image_uri" {
   description = "Optional immutable image URI for GL-coding."
   type        = string
   default     = null
+}
+
+variable "gl_coding_repository_url" {
+  description = "Persistent ECR repository URL for GL-coding images."
+  type        = string
 }
 
 variable "auth_jwt_key_id" {

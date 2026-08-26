@@ -4,10 +4,9 @@ set -euo pipefail
 # Tears down everything scripts/aws/e2e/deploy-demo.sh creates, in order:
 #
 #   1. Empties the SPA and receipt-storage S3 buckets (all object versions,
-#      including delete markers) and the three ECR repositories. None of
-#      these have force_destroy/force_delete set in Terraform - a plain
-#      `terraform destroy` fails on all three otherwise, since every
-#      deploy-demo.sh run leaves objects/images in them.
+#      including delete markers). The persistent ECR root is intentionally
+#      left untouched so repositories and images stay available for a later
+#      deploy-demo.sh run.
 #   2. Runs `terraform destroy` against infra/terraform/environments/sandbox,
 #      routed through an SSM tunnel to the bastion. This is required even if
 #      RUN_READONLY_ROLE_STEP was never used to apply GL-coding's readonly
@@ -21,11 +20,18 @@ set -euo pipefail
 #      stays usable for the whole destroy.
 #   3. Deletes the JWT issuer CloudFormation stack
 #      (scripts/aws/deploy-jwt-issuer.sh's STACK_NAME).
+#   4. Force-deletes Terraform-managed ephemeral runtime Secrets Manager
+#      secrets so immediate redeploys do not collide with names that are
+#      scheduled for deletion.
 #
 # What this script does NOT touch:
 #   - infra/terraform/bootstrap (owns the Terraform state bucket - destroying
 #     it would delete the state this destroy needs to run, and there is no
 #     reason to recreate it for a routine teardown/redeploy cycle).
+#   - The three deploy-demo.sh ECR repositories and any images they contain:
+#     expenseflow-sandbox-core-case-service,
+#     expenseflow-sandbox-gl-coding-service, and
+#     expenseflow-sandbox-stage-transition-consumer-lambda.
 #   - expenseflow-platform-bootstrap-sandbox (the JWT issuer's own SAM
 #     deployment-artifact-bucket stack - reused across every JWT issuer
 #     deploy, not something deploy-demo.sh creates per run).
@@ -43,6 +49,7 @@ EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
+export AWS_PAGER=""
 
 NAME_PREFIX="${NAME_PREFIX:-expenseflow-sandbox}"
 TERRAFORM_DIR="${TERRAFORM_DIR:-infra/terraform/environments/sandbox}"
@@ -113,7 +120,7 @@ empty_versioned_bucket() {
 
 run_destroy_through_tunnel() {
     local bastion_instance_id core_case_db_host db_secret_arn tunnel_pid
-    local tunnel_log destroy_status
+    local tunnel_log destroy_status tunnel_cleaned
 
     bastion_instance_id="$(tf_output bastion_instance_id)"
     core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
@@ -142,11 +149,16 @@ run_destroy_through_tunnel() {
     set +m
 
     cleanup_tunnel() {
+        if [[ "${tunnel_cleaned:-false}" == "true" ]]; then
+            return
+        fi
+        tunnel_cleaned=true
         kill -- "-$tunnel_pid" 2>/dev/null || true
         wait "$tunnel_pid" 2>/dev/null || true
         rm -f "$tunnel_log"
+        trap - RETURN EXIT
     }
-    trap cleanup_tunnel RETURN
+    trap cleanup_tunnel RETURN EXIT
 
     local waited=0
     until nc -z localhost "$TUNNEL_LOCAL_PORT" 2>/dev/null; do
@@ -207,37 +219,50 @@ run_destroy_direct() {
         -var="db_enable_enhanced_monitoring=false" \
         -var="allow_plain_http_public_api=true" \
         -var="core_case_internal_routes_enabled=true" \
+        -var="core_case_repository_url=$placeholder_image" \
+        -var="core_case_repository_arn=arn:aws:ecr:$AWS_REGION:$account_id:repository/placeholder" \
+        -var="gl_coding_repository_url=$placeholder_image" \
+        -var="stage_transition_lambda_repository_url=$placeholder_image" \
         -var="core_case_image_uri=$placeholder_image" \
         -var="gl_coding_image_uri=$placeholder_image" \
         -var="stage_transition_lambda_image_uri=$placeholder_image"
 }
 
-empty_ecr_repository() {
-    local repository_name="$1"
-    local image_ids
+force_delete_runtime_secret() {
+    local secret_id="$1"
+    local waited=0
 
-    image_ids="$(aws_cli ecr list-images \
-        --repository-name "$repository_name" \
-        --query 'imageIds' \
-        --output json 2>/dev/null || echo '[]')"
+    echo "  Force-deleting $secret_id..."
+    aws_cli secretsmanager delete-secret \
+        --secret-id "$secret_id" \
+        --force-delete-without-recovery >/dev/null
 
-    if [[ "$image_ids" == "[]" ]]; then
-        echo "  $repository_name has no images, skipping."
-        return 0
-    fi
-
-    echo "  Deleting all images in $repository_name..."
-    # batch-delete-image accepts at most 100 image IDs per call.
-    echo "$image_ids" \
-        | jq -c '[range(0; length; 100) as $i | .[$i:$i+100]] | .[]' \
-        | while read -r batch; do
-            aws_cli ecr batch-delete-image \
-                --repository-name "$repository_name" \
-                --image-ids "$batch" >/dev/null
-        done
+    # Secrets Manager permanent deletion is asynchronous; wait briefly so a
+    # follow-on deploy can recreate the same fixed sandbox secret names.
+    until ! aws_cli secretsmanager describe-secret --secret-id "$secret_id" >/dev/null 2>&1; do
+        if (( waited >= 60 )); then
+            echo "  $secret_id is still visible after 60 seconds; Secrets Manager may still be finishing deletion." >&2
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
 }
 
-echo "=== 1/3: Emptying S3 buckets and ECR repositories ==="
+force_delete_runtime_secrets() {
+    local runtime_secret_names=(
+        "${NAME_PREFIX}-core-case-db-gl_coding_app"
+        "${NAME_PREFIX}-stage-transition-consumer-database-url"
+        "${NAME_PREFIX}-core-case-redis-auth-token"
+        "${NAME_PREFIX}-core-case-redis-url"
+    )
+
+    for secret_name in "${runtime_secret_names[@]}"; do
+        force_delete_runtime_secret "$secret_name"
+    done
+}
+
+echo "=== 1/3: Emptying S3 buckets ==="
 spa_bucket="$(tf_output spa_bucket_name)"
 receipt_bucket="$(tf_output receipt_storage_bucket_name)"
 
@@ -253,10 +278,6 @@ else
     echo "  receipt_storage_bucket_name output not found (already destroyed?), skipping receipt bucket."
 fi
 
-empty_ecr_repository "${NAME_PREFIX}-core-case-service"
-empty_ecr_repository "${NAME_PREFIX}-gl-coding-service"
-empty_ecr_repository "${NAME_PREFIX}-stage-transition-consumer-lambda"
-
 echo "=== 2/3: Running terraform destroy (via bastion tunnel) ==="
 # Every root variable must be supplied for destroy to validate, the same way
 # deploy-demo.sh's targeted applies do - the values do not need to be the
@@ -266,6 +287,9 @@ echo "=== 2/3: Running terraform destroy (via bastion tunnel) ==="
 # run_destroy_through_tunnel above for why the tunnel is required even if
 # RUN_READONLY_ROLE_STEP was never used during deploy.
 run_destroy_through_tunnel
+
+echo "=== 2b/3: Force-deleting ephemeral runtime secrets ==="
+force_delete_runtime_secrets
 
 echo "=== 3/3: Deleting the JWT issuer CloudFormation stack ==="
 if aws_cli cloudformation describe-stacks --stack-name "$JWT_ISSUER_STACK_NAME" >/dev/null 2>&1; then
@@ -283,6 +307,7 @@ echo "Teardown complete."
 echo
 echo "Not touched (see this script's header comment for why):"
 echo "  - infra/terraform/bootstrap (Terraform state bucket)"
+echo "  - infra/terraform/environments/sandbox-ecr (persistent ECR repositories/images)"
 echo "  - expenseflow-platform-bootstrap-sandbox (JWT issuer SAM artifact bucket)"
 echo "  - expenseflow-http-api-sandbox / expenseflow-jwt-issuer-sandbox (older,"
 echo "    unreferenced stacks - investigate separately before deleting)"

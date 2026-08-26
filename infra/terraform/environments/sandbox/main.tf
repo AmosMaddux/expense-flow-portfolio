@@ -53,16 +53,15 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  allow_plain_http_public_api            = var.allow_plain_http_public_api
-  gl_coding_internal_auth_secret_arn     = var.gl_coding_internal_auth_secret_arn
-  internal_subnet_ids                    = local.private_subnet_ids
-  issue_payment_lambda_security_group_id = module.http_api.issue_payment_lambda_security_group_id
-  name_prefix                            = var.name_prefix
-  public_alb_certificate_arn             = var.public_alb_certificate_arn
-  public_subnet_ids                      = local.public_subnet_ids
-  runtime_smoke_source_cidrs             = var.runtime_smoke_source_cidrs
-  tags                                   = local.tags
-  vpc_id                                 = local.vpc_id
+  allow_plain_http_public_api        = var.allow_plain_http_public_api
+  gl_coding_internal_auth_secret_arn = var.gl_coding_internal_auth_secret_arn
+  internal_subnet_ids                = local.private_subnet_ids
+  name_prefix                        = var.name_prefix
+  public_alb_certificate_arn         = var.public_alb_certificate_arn
+  public_subnet_ids                  = local.public_subnet_ids
+  runtime_smoke_source_cidrs         = var.runtime_smoke_source_cidrs
+  tags                               = local.tags
+  vpc_id                             = local.vpc_id
 }
 
 module "ecs" {
@@ -78,6 +77,8 @@ module "ecs" {
   core_case_db_name                                   = module.database_core_case.db_name
   core_case_db_port                                   = module.database_core_case.db_port
   core_case_image_uri                                 = var.core_case_image_uri
+  core_case_repository_arn                            = var.core_case_repository_arn
+  core_case_repository_url                            = var.core_case_repository_url
   core_case_internal_command_token_secret_arn         = var.core_case_internal_command_token_secret_arn
   core_case_internal_target_group_arn                 = module.alb.core_case_internal_target_group_arn
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
@@ -98,6 +99,7 @@ module "ecs" {
   gl_coding_db_port                                   = module.database_core_case.db_port
   gl_coding_image_uri                                 = var.gl_coding_image_uri
   gl_coding_internal_auth_secret_arn                  = var.gl_coding_internal_auth_secret_arn
+  gl_coding_repository_url                            = var.gl_coding_repository_url
   gl_coding_target_group_arn                          = module.alb.gl_coding_target_group_arn
   internal_alb_dns_name                               = module.alb.internal_alb_dns_name
   internal_alb_security_group_id                      = module.alb.internal_alb_security_group_id
@@ -199,6 +201,7 @@ module "lambda_stage_transition_consumer" {
   image_uri                           = var.stage_transition_lambda_image_uri
   name_prefix                         = var.name_prefix
   private_subnet_ids                  = local.private_subnet_ids
+  repository_url                      = var.stage_transition_lambda_repository_url
   role_permissions_boundary_arn       = var.role_permissions_boundary_arn
   stage_transition_sqs_dlq_arn        = module.ecs.stage_transition_sqs_dlq_arn
   stage_transition_sqs_queue_arn      = module.ecs.stage_transition_sqs_queue_arn
@@ -221,6 +224,21 @@ module "http_api" {
   role_permissions_boundary_arn               = var.role_permissions_boundary_arn
   tags                                        = local.tags
   vpc_id                                      = var.http_api_lambda_vpc_id
+}
+
+# Declared here rather than inside either module to avoid a module cycle:
+# the HTTP API Lambda needs the internal ALB DNS name, and this rule needs
+# both the internal ALB and Lambda security group IDs.
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_issue_payment_lambda" {
+  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Issue Payment Lambda security group, not public CIDR, owner platform-security, review by 2026-12-31
+  count = var.http_api_lambda_vpc_id == null ? 0 : 1
+
+  security_group_id            = module.alb.internal_alb_security_group_id
+  description                  = "Allow the VPC-attached Issue Payment Lambda to reach the Core Case internal settlement route."
+  referenced_security_group_id = module.http_api.issue_payment_lambda_security_group_id
+  from_port                    = 80
+  ip_protocol                  = "tcp"
+  to_port                      = 80
 }
 
 module "spa" {

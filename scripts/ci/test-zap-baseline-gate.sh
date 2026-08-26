@@ -38,6 +38,12 @@ expect_success "Medium/Low-only alerts pass the gate" \
 expect_success "Zero alerts pass the gate" \
   "$script" "$fixtures_dir/no-alerts.json"
 
+expect_failure "Missing scanned site results fail safe" \
+  "$script" "$fixtures_dir/missing-site.json"
+
+expect_failure "Empty scanned site results fail safe" \
+  "$script" "$fixtures_dir/empty-site.json"
+
 expect_failure "Malformed JSON fails safe" \
   "$script" "$fixtures_dir/malformed.json"
 

@@ -40,6 +40,7 @@ EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
+export AWS_PAGER=""
 EXPENSEFLOW_DEV_PASSWORD="${EXPENSEFLOW_DEV_PASSWORD:-expenseflow-local-dev-only}"
 TERRAFORM_DIR="${TERRAFORM_DIR:-infra/terraform/environments/sandbox}"
 NAME_PREFIX="${NAME_PREFIX:-expenseflow-sandbox}"
@@ -139,6 +140,11 @@ resolve_sandbox_env
 if [[ "$command" == "demo-seed" ]]; then
     : "${RECEIPT_STORAGE_BUCKET:?RECEIPT_STORAGE_BUCKET is required for demo-seed. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw receipt_storage_bucket_name}"
     demo_seed_env="-e RECEIPT_STORAGE_BUCKET=$RECEIPT_STORAGE_BUCKET -e ALLOW_NON_LOOPBACK_RECEIPT_SEED=true"
+fi
+
+if [[ "$CORE_CASE_IMAGE_URI" == *:* && "$CORE_CASE_IMAGE_URI" != *@* ]]; then
+    CORE_CASE_IMAGE_TAG="${CORE_CASE_IMAGE_URI##*:}"
+    CORE_CASE_IMAGE_URI="${CORE_CASE_IMAGE_URI%:*}"
 fi
 
 registry="${CORE_CASE_IMAGE_URI%%/*}"

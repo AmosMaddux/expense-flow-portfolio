@@ -112,9 +112,3 @@ variable "gl_coding_internal_auth_secret_arn" {
   type        = string
   default     = null
 }
-
-variable "issue_payment_lambda_security_group_id" {
-  description = "Optional security group ID for a VPC-attached Issue Payment Lambda. When supplied, the internal ALB allows ingress from it so the Lambda can reach Core Case's internal settlement route."
-  type        = string
-  default     = null
-}

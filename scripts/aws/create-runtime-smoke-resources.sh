@@ -616,7 +616,7 @@ put_secret() {
 create_jwt_secret_values() {
     local temp_dir private_key public_key
     temp_dir="$(mktemp -d)"
-    trap 'rm -rf "$temp_dir"; trap - RETURN' RETURN
+    trap 'rm -rf "$temp_dir"; trap - RETURN EXIT' RETURN EXIT
     private_key="$temp_dir/scrum-147-private.pem"
     public_key="$temp_dir/scrum-147-public.pem"
 

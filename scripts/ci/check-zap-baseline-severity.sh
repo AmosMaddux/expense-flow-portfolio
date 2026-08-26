@@ -18,6 +18,11 @@ if ! jq empty "$report" >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! jq -e '(.site | type == "array" and length > 0)' "$report" >/dev/null; then
+  echo "ZAP report does not contain any scanned site results: $report" >&2
+  exit 1
+fi
+
 # ZAP's riskcode is a string ("0"=Info, "1"=Low, "2"=Medium, "3"=High).
 high_alerts=$(jq -c '[.site[]?.alerts[]? | select(.riskcode == "3")]' "$report")
 high_count=$(echo "$high_alerts" | jq 'length')
