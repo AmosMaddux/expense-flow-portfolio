@@ -20,7 +20,7 @@ fixtures. On every push to `main`, its `release-scan` job runs as a matrix
 over both service Dockerfiles: it builds the image, runs the Trivy scan and
 Syft SBOM, pushes the build to `ghcr.io/<repo>/secure-release-gate/<service>`
 as a per-commit evidence image using the workflow's own `GITHUB_TOKEN` (no
-extra credentials needed), and then signs and attests *that pushed image*
+extra credentials needed), and then signs and attests _that pushed image_
 with Cosign. Signing the pushed image, rather than signing the SBOM alone as
 a detached blob, is what cryptographically binds the signature to the exact
 scanned artifact digest — a bare SBOM signature does not prove anything about
@@ -158,3 +158,11 @@ is available in the evidence directory either way. Unlike the Trivy/SBOM
 evidence, this is written directly to the local filesystem by the manual
 script (there is no `secure-release-gate.yml` workflow artifact for it,
 since the scan does not run in CI - see the "ZAP" section above).
+
+The Core Case Service also has a push-triggered CI evidence packet workflow:
+`.github/workflows/core-case-evidence-packet.yml`. That packet bundles the
+Core Case test output, coverage, Semgrep and Bandit source reports, Trivy image
+report, Syft SBOM, Cosign signing and verification output, and a manifest that
+maps each artifact to its producing gate. See
+`docs/core-case-evidence-packet.md` for the packet contents and tagged-build
+reproduction procedure.

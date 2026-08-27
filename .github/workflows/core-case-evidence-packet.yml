@@ -1,0 +1,201 @@
+name: Core Case Evidence Packet
+
+on:
+    push:
+
+permissions:
+    contents: read
+    packages: write
+    id-token: write
+
+concurrency:
+    group: core-case-evidence-packet-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    evidence-packet:
+        name: Core Case CI-built evidence packet
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 35
+        env:
+            EVIDENCE_INPUT_ROOT: .evidence-packet-input/core-case-service
+            EVIDENCE_OUTPUT_ROOT: .evidence-packet/core-case-service
+            SEMGREP_IMAGE: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+            SYFT_IMAGE: anchore/syft@sha256:b8c170b8e51bfc4779ec3ef4399942c57290f5ce76a9c3af564c9d00d4946a6b
+            TRIVY_IMAGE: aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: npm
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.13"
+                  cache: pip
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+
+            - name: Install Cosign
+              uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+            - name: Install dependencies
+              run: |
+                  npm ci
+                  uv sync --frozen
+                  python -m pip install --disable-pip-version-check bandit==1.9.4
+
+            - name: Validate evidence packet assembler
+              run: scripts/ci/test-core-case-evidence-packet.sh
+
+            - name: Prepare evidence workspace
+              run: |
+                  rm -rf "$EVIDENCE_INPUT_ROOT" "$EVIDENCE_OUTPUT_ROOT" .secure-release-gate
+                  mkdir -p \
+                    "$EVIDENCE_INPUT_ROOT/test-output" \
+                    "$EVIDENCE_INPUT_ROOT/coverage" \
+                    "$EVIDENCE_INPUT_ROOT/security" \
+                    "$EVIDENCE_INPUT_ROOT/signing" \
+                    .secure-release-gate
+
+            - name: Run TypeScript tests with coverage
+              run: |
+                  set -o pipefail
+                  npm run build
+                  npx vitest run --coverage --project unit --project integration --project production \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/typescript-vitest.txt"
+                  cp -R coverage/typescript "$EVIDENCE_INPUT_ROOT/coverage/typescript"
+
+            - name: Run Python tests with coverage
+              run: |
+                  set -o pipefail
+                  mkdir -p coverage/python
+                  UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest \
+                    --cov=backend \
+                    --cov=evaluation \
+                    --cov-report=term \
+                    --cov-report=xml:coverage/python/coverage.xml \
+                    --cov-report=html:coverage/python/html \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/python-pytest.txt"
+                  cp -R coverage/python "$EVIDENCE_INPUT_ROOT/coverage/python"
+
+            - name: Run Semgrep source gate
+              run: |
+                  docker run --rm \
+                    --volume "$GITHUB_WORKSPACE:/src" \
+                    --workdir /src \
+                    --entrypoint bash \
+                    "$SEMGREP_IMAGE" \
+                    /src/scripts/ci/run-semgrep-gate.sh \
+                    backend/core-case-service/src \
+                    "$EVIDENCE_INPUT_ROOT/security/semgrep-report.json"
+
+            - name: Run Bandit source gate
+              run: >
+                  scripts/ci/run-bandit-gate.sh
+                  --output "$EVIDENCE_INPUT_ROOT/security/bandit-report.json"
+                  backend
+                  tests
+
+            - name: Compute evidence image reference
+              run: |
+                  repo_lc=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+                  echo "IMAGE_REF=ghcr.io/$repo_lc/evidence/core-case-service:${{ github.sha }}" >> "$GITHUB_ENV"
+
+            - name: Build Core Case Service image
+              run: |
+                  docker build \
+                    --file backend/core-case-service/Dockerfile \
+                    --tag "$IMAGE_REF" \
+                    .
+                  docker save "$IMAGE_REF" -o .secure-release-gate/core-case-service-image.tar
+
+            - name: Run Trivy image gate
+              run: |
+                  scripts/ci/run-trivy-gate.sh \
+                    --input .secure-release-gate/core-case-service-image.tar \
+                    --severity CRITICAL \
+                    --exit-code 1 \
+                    --ignorefile .trivyignore \
+                    --format json \
+                    --output "$EVIDENCE_INPUT_ROOT/security/trivy-report.json"
+
+            - name: Generate Syft SBOM
+              run: |
+                  scripts/ci/run-syft-sbom.sh \
+                    docker-archive:/repo/.secure-release-gate/core-case-service-image.tar \
+                    -o "cyclonedx-json=/repo/$EVIDENCE_INPUT_ROOT/security/sbom.cdx.json"
+
+            - name: Log in to GHCR
+              run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            - name: Push evidence image
+              run: docker push "$IMAGE_REF"
+
+            - name: Resolve evidence image digest
+              run: |
+                  image_digest="$(docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+                  echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
+
+            - name: Sign evidence image
+              run: |
+                  set -o pipefail
+                  scripts/ci/run-cosign-sign-image.sh "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-sign-image.txt"
+
+            - name: Attest SBOM to evidence image
+              run: |
+                  set -o pipefail
+                  scripts/ci/run-cosign-attest-sbom.sh \
+                    "$IMAGE_REF" \
+                    "$EVIDENCE_INPUT_ROOT/security/sbom.cdx.json" \
+                    cyclonedx \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-attest-sbom.txt"
+
+            - name: Verify evidence image signature
+              env:
+                  COSIGN_CERTIFICATE_IDENTITY_REGEXP: ^https://github\.com/${{ github.repository }}/\.github/workflows/core-case-evidence-packet\.yml@refs/(heads|tags)/.+$
+                  COSIGN_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+              run: |
+                  set -o pipefail
+                  cosign verify \
+                    --certificate-identity-regexp "$COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
+                    --certificate-oidc-issuer "$COSIGN_CERTIFICATE_OIDC_ISSUER" \
+                    "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-verify-image.txt"
+
+            - name: Verify SBOM attestation
+              env:
+                  COSIGN_CERTIFICATE_IDENTITY_REGEXP: ^https://github\.com/${{ github.repository }}/\.github/workflows/core-case-evidence-packet\.yml@refs/(heads|tags)/.+$
+                  COSIGN_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+              run: |
+                  set -o pipefail
+                  cosign verify-attestation \
+                    --type cyclonedx \
+                    --certificate-identity-regexp "$COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
+                    --certificate-oidc-issuer "$COSIGN_CERTIFICATE_OIDC_ISSUER" \
+                    "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-verify-attestation.txt"
+
+            - name: Assemble evidence packet
+              env:
+                  EVIDENCE_PACKET_INPUT_ROOT: ${{ env.EVIDENCE_INPUT_ROOT }}
+                  EVIDENCE_PACKET_OUTPUT_ROOT: ${{ env.EVIDENCE_OUTPUT_ROOT }}
+              run: node scripts/ci/assemble-core-case-evidence-packet.mjs
+
+            - name: Upload evidence packet
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: core-case-service-evidence-packet-${{ github.sha }}
+                  path: .evidence-packet/core-case-service/
+                  if-no-files-found: error
+                  retention-days: 90

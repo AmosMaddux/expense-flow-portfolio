@@ -89,6 +89,16 @@ expect_success "Bandit clean fixture" \
   "$repo_root/scripts/ci/run-bandit-gate.sh" "$runtime_dir/bandit/clean.py"
 expect_failure "Bandit vulnerable fixture" \
   "$repo_root/scripts/ci/run-bandit-gate.sh" "$runtime_dir/bandit/vulnerable.py"
+expect_success "Bandit clean fixture writes JSON evidence" \
+  "$repo_root/scripts/ci/run-bandit-gate.sh" \
+    --output "$runtime_dir/bandit/clean-report.json" \
+    "$runtime_dir/bandit/clean.py"
+test -f "$runtime_dir/bandit/clean-report.json"
+expect_failure "Bandit vulnerable fixture writes JSON evidence" \
+  "$repo_root/scripts/ci/run-bandit-gate.sh" \
+    --output "$runtime_dir/bandit/vulnerable-report.json" \
+    "$runtime_dir/bandit/vulnerable.py"
+test -f "$runtime_dir/bandit/vulnerable-report.json"
 expect_failure "Bandit execution error" \
   env BANDIT_BIN=missing-bandit-command \
     "$repo_root/scripts/ci/run-bandit-gate.sh" "$runtime_dir/bandit/clean.py"
