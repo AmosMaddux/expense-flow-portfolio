@@ -11,6 +11,8 @@ __pycache__/
 node_modules
 build/
 issuer-build/
+.tmp/
+AWSCLIV2/
 .aws-sam/
 *.tsbuildinfo
 **/dist
@@ -30,6 +32,7 @@ test-results/
 
 # terraform
 **/.terraform/
+**/.build/
 *.tfstate
 *.tfstate.*
 *.tfplan
