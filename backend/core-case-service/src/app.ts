@@ -59,6 +59,7 @@ const protectedRoutePrefixes = [
     "/expense-reports",
     "/case-queue",
     "/finance-dashboard",
+    "/assist",
     "/policy-reference",
     "/transactions",
     "/gl-mappings",
@@ -134,6 +135,7 @@ v1Router.use(
 v1Router.use("/expense-reports", express.json());
 v1Router.use("/case-queue", express.json());
 v1Router.use("/finance-dashboard", express.json());
+v1Router.use("/assist", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());

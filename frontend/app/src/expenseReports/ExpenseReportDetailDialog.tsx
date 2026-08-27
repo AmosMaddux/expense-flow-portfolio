@@ -24,6 +24,7 @@ import {
     StageStepper,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
+import { AssistPanel } from "./AssistPanel";
 
 const expenseReportReviewDetailSourceSchema = z.object({
     id: z.string().uuid(),
@@ -342,6 +343,15 @@ export function ExpenseReportDetailDialog({
                                 </dl>
                             </aside>
                         </div>
+                        <AssistPanel
+                            caseContext={{
+                                expenseReportId: report.expenseReportId,
+                                lineItems: report.lineItems.map((item) => ({
+                                    id: item.id,
+                                    label: `${item.merchant} - ${item.amount} ${item.currency}`,
+                                })),
+                            }}
+                        />
                         <CaseDetailTabs
                             activeTab={activeTab}
                             onChange={setActiveTab}

@@ -3075,3 +3075,37 @@ button:disabled {
         flex-direction: column;
     }
 }
+
+.assist-panel {
+    border: 1px solid var(--border-color, #d6dce4);
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+    padding: 1rem;
+}
+
+.assist-panel form,
+.assist-panel label {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.assist-panel form {
+    margin-top: 0.75rem;
+}
+
+.assist-panel select,
+.assist-panel textarea {
+    font: inherit;
+    padding: 0.5rem;
+}
+
+.assist-panel__sources {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0.75rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.assist-panel__sources p {
+    margin: 0.25rem 0;
+}
