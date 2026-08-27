@@ -22,7 +22,13 @@ from .gl_coding import (
     get_mileage_reimbursement_rate,
 )
 from .gl_mapping_repository import PostgresGlAccountMappingRepository
-from .observability import log_metric, log_service_event, request_metrics_middleware
+from .observability import (
+    initialize_tracing,
+    log_metric,
+    log_service_event,
+    request_metrics_middleware,
+    request_tracing_middleware,
+)
 from .service_health import ServiceHealth
 
 
@@ -33,11 +39,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # AuthJwtConfigurationError here and prevents the app from starting at all.
     app.state.auth_jwt_verifier = AuthJwtVerifier.from_environment()
     app.state.mileage_reimbursement_rate = get_mileage_reimbursement_rate()
+    initialize_tracing("gl-coding-service")
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 app.middleware("http")(request_metrics_middleware("gl-coding-service"))
+app.middleware("http")(request_tracing_middleware("gl-coding-service"))
 
 AP_REVIEW_GL_CODING_ROLES: frozenset[RoleName] = frozenset(
     {"Finance Admin", "Department Manager"}

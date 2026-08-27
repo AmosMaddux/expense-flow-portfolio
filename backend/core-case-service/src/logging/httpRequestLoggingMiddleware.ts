@@ -20,14 +20,18 @@ export function httpRequestLoggingMiddleware(
     res.on("finish", () => {
         const tenantId = req.auth?.tenantId ?? "unknown";
         const route = normalizePath(req.originalUrl.split("?")[0] ?? req.originalUrl);
+        const traceId = req.tracing?.span.spanContext().traceId ?? "unknown";
+        const correlationId = req.tracing?.correlationId ?? "unknown";
         const baseEvent = {
             environment: "sandbox",
             eventType: "http_request",
+            correlationId,
             method: req.method,
             metricValue: 1,
             route,
             service: "core-case-service",
             tenantId,
+            traceId,
         };
 
         logCoreCaseMetric({

@@ -612,6 +612,7 @@ export async function postExpenseReportSubmission(
             req.body,
         );
         const correlationId = parseOrCreateCorrelationId(req);
+        annotateRequestTrace(req, correlationId, "submit_expense_report");
         if (
             auth.roles.includes("Employee") &&
             !hasInternalExpenseReportRole(auth)
@@ -634,6 +635,9 @@ export async function postExpenseReportSubmission(
                 actorId: auth.userId,
                 roles: auth.roles,
                 correlationId,
+                ...(req.tracing?.span === undefined
+                    ? {}
+                    : { traceSpan: req.tracing.span }),
                 idempotencyKey,
                 requestHash,
                 ...(parsedRequest.employerEin === undefined
@@ -688,6 +692,11 @@ export async function postExpenseReportTransition(
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
         const correlationId = parseOrCreateCorrelationId(req);
+        annotateRequestTrace(
+            req,
+            correlationId,
+            "transition_expense_report",
+        );
         res.set("X-Correlation-Id", correlationId);
         const report = await transitionExpenseReportWorkflow({
             id: parsedParams.id,
@@ -763,6 +772,11 @@ export async function postInternalExpenseReportPaymentStubSettlement(
             "idempotency-key": req.get("idempotency-key"),
             "x-correlation-id": req.get("x-correlation-id"),
         });
+        annotateRequestTrace(
+            req,
+            parsedHeaders["x-correlation-id"],
+            "internal_payment_stub_settlement",
+        );
         const parsedRequest = InternalSettlePaymentStubBodySchema.parse(
             req.body ?? {},
         );
@@ -776,6 +790,9 @@ export async function postInternalExpenseReportPaymentStubSettlement(
                 reason: parsedRequest.reason,
                 correlationId: parsedHeaders["x-correlation-id"],
                 idempotencyKey: parsedHeaders["idempotency-key"],
+                ...(req.tracing?.span === undefined
+                    ? {}
+                    : { traceSpan: req.tracing.span }),
             });
         const requestHash = createIdempotencyRequestHash({
             command: "internal_payment_stub_settlement",
@@ -1355,6 +1372,20 @@ function parseOrCreateCorrelationId(req: Request): string {
             correlationId: req.get("x-correlation-id"),
         }).correlationId ?? randomUUID()
     );
+}
+
+function annotateRequestTrace(
+    req: Request,
+    correlationId: string,
+    eventType: string,
+): void {
+    if (req.tracing === undefined) {
+        return;
+    }
+
+    req.tracing.correlationId = correlationId;
+    req.tracing.span.setAttribute("expenseflow.correlation_id", correlationId);
+    req.tracing.span.setAttribute("expenseflow.event_type", eventType);
 }
 
 function verifyInternalCommandTrust(req: Request): void {

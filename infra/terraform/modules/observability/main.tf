@@ -19,6 +19,13 @@ locals {
     | sort errorRate desc
     | limit 20
   EOT
+  alert_disposition_query = <<-EOT
+    SOURCE '${var.core_case_log_group_name}'
+    | fields @timestamp, tenantId, alertId, alertName, severity, status, resolution, correlationId, traceId, investigatedBy
+    | filter eventType = "alert_disposition"
+    | sort @timestamp desc
+    | limit 25
+  EOT
 }
 
 resource "aws_cloudwatch_log_metric_filter" "core_case_http_request" {
@@ -146,6 +153,23 @@ resource "aws_cloudwatch_log_metric_filter" "stage_transition_consumer_error" {
     value     = "1"
     dimensions = {
       Service  = "$.service"
+      TenantId = "$.tenantId"
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "core_case_alert_disposition" {
+  name           = "${var.name_prefix}-core-case-alert-disposition"
+  log_group_name = var.core_case_log_group_name
+  pattern        = "{ $.metricName = \"AlertDispositionRecordedCount\" }"
+
+  metric_transformation {
+    name      = "AlertDispositionRecordedCount"
+    namespace = local.namespace
+    value     = "1"
+    dimensions = {
+      Service = "$.service"
+      Status  = "$.status"
       TenantId = "$.tenantId"
     }
   }
@@ -317,6 +341,42 @@ resource "aws_cloudwatch_dashboard" "this" {
               },
             ],
           ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 30
+        width  = 12
+        height = 6
+        properties = {
+          view   = "timeSeries"
+          region = var.aws_region
+          title  = "Alert Dispositions by Tenant"
+          period = 300
+          metrics = [
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service,Status} MetricName=\"AlertDispositionRecordedCount\" AND Service=\"${local.core_case_service_name}\"', 'Sum')"
+                id         = "alert_disposition_count"
+                label      = "Alert dispositions by tenant"
+                visible    = true
+              },
+            ],
+          ]
+        }
+      },
+      {
+        type   = "log"
+        x      = 12
+        y      = 30
+        width  = 12
+        height = 6
+        properties = {
+          region = var.aws_region
+          title  = "Alert Disposition Log Entries"
+          view   = "table"
+          query  = local.alert_disposition_query
         }
       },
     ]

@@ -12,12 +12,69 @@ const successResponse = {
     coded_items: [],
     flags: [],
 };
+const tracingModule = vi.hoisted(() => ({
+    buildDownstreamTraceHeader: vi.fn<(span: unknown) => string | undefined>(
+        () => undefined,
+    ),
+    isTracingEnabled: vi.fn<() => boolean>(() => false),
+    startChildSpan: vi.fn<(...args: unknown[]) => unknown>(),
+}));
+
+vi.mock("../tracing.js", () => tracingModule);
 type FetchProcedure = (
     input: string | URL | Request,
     init?: RequestInit,
 ) => Promise<Response>;
 
 describe("GL-coding client", () => {
+    it("sends tracing headers when a parent span is available", async () => {
+        const fakeSpan = {
+            end: vi.fn(),
+            setAttribute: vi.fn(),
+            setStatus: vi.fn(),
+            spanContext: () => ({
+                spanId: "2222222222222222",
+                traceFlags: 1,
+                traceId: "11111111111111111111111111111111",
+                traceState: {
+                    serialize: () => "",
+                    set: () => undefined,
+                    unset: () => undefined,
+                    get: () => undefined,
+                    keys: () => [],
+                },
+                isRemote: false,
+            }),
+        } as never;
+
+        tracingModule.isTracingEnabled.mockReturnValue(true);
+        tracingModule.startChildSpan.mockReturnValue(fakeSpan);
+        tracingModule.buildDownstreamTraceHeader.mockReturnValue(
+            "Root=1-11111111-111111111111111111111111;Parent=2222222222222222;Sampled=1",
+        );
+        const fetchImplementation = vi.fn<FetchProcedure>(() =>
+            Promise.resolve(Response.json(successResponse)),
+        );
+
+        await codeExpenseLineItems(
+            "http://gl-coding.example.test",
+            emptyRequest,
+            {
+                correlationId: "70000000-0000-4000-8000-000000000123",
+                fetchImplementation:
+                    fetchImplementation as unknown as typeof fetch,
+                parentSpan: {} as never,
+            },
+        );
+
+        const call = fetchImplementation.mock.calls[0];
+        expect(call?.[1]?.headers).toMatchObject({
+            "X-Amzn-Trace-Id":
+                "Root=1-11111111-111111111111111111111111;Parent=2222222222222222;Sampled=1",
+            "x-correlation-id": "70000000-0000-4000-8000-000000000123",
+        });
+    });
+
     it("rejects a zero mileage distance", () => {
         expect(() =>
             GlCodingRequestSchema.parse({

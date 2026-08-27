@@ -14,6 +14,7 @@ import { signAccessToken } from "../../auth/shared/accessTokenSigner.js";
 import type { RoleName } from "../../db/schema/index.js";
 import { codeExpenseLineItems } from "../../glCoding/glCodingClient.js";
 import { GlCodingServiceError } from "../../glCoding/glCodingErrors.js";
+import type { Span } from "@opentelemetry/api";
 import {
     createEinValidationAcl,
     type EinValidationAcl,
@@ -652,6 +653,7 @@ export async function submitExpenseReport(
         actorId: string;
         roles: RoleName[];
         correlationId: string;
+        traceSpan?: Span;
         idempotencyKey: string;
         requestHash: string;
         employerEin?: string;
@@ -754,6 +756,10 @@ export async function submitExpenseReport(
                 maxRetries: glConfig.GL_CODING_MAX_RETRIES,
                 baseBackoffMs: glConfig.GL_CODING_BASE_BACKOFF_MS,
                 maxBackoffMs: glConfig.GL_CODING_MAX_BACKOFF_MS,
+                correlationId: request.correlationId,
+                ...(request.traceSpan === undefined
+                    ? {}
+                    : { parentSpan: request.traceSpan }),
             },
         );
         const outboxEventId = randomUUID();
@@ -1090,6 +1096,7 @@ export async function settleExpenseReportWorkflow(
         roles: RoleName[];
         correlationId: string;
         idempotencyKey: string;
+        traceSpan?: Span;
     },
     dependencies: SettlementSagaDependencies = {},
 ): Promise<ExpenseReportResponse> {
