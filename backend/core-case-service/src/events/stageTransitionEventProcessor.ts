@@ -6,6 +6,7 @@ import {
     defaultStageTransitionProjectionStore,
     type StageTransitionProjectionStore,
 } from "./stageTransitionProjectionRepository.js";
+import { logCoreCaseMetric } from "../logging/coreCaseLogger.js";
 
 /**
  * Validates and projects one stage-transition CloudEvent.
@@ -18,6 +19,15 @@ export async function processStageTransitionEvent(
 ): Promise<ExpenseReportStageTransitionedCloudEventV1> {
     const event = ExpenseReportStageTransitionedCloudEventV1Schema.parse(input);
     await store.project(event);
+    logCoreCaseMetric({
+        environment: "sandbox",
+        eventType: "stage_transition_consumer",
+        metricName: "StageTransitionConsumerSuccessCount",
+        metricValue: 1,
+        outcome: "success",
+        service: "stage-transition-consumer-lambda",
+        tenantId: event.data.tenantId,
+    });
 
     return event;
 }

@@ -1,32 +1,44 @@
-import { randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { configDefaults, defineConfig } from "vitest/config";
 
-import { syntheticRsaPrivateKeyBase64 } from "./backend/core-case-service/src/testSupport/jwtTestKeys.js";
+function toConfigPath(url: URL): string {
+    return fileURLToPath(url).replace(/\\/g, "/");
+}
 
-const repositoryRoot = new URL(".", import.meta.url).pathname;
-const coreCaseVitestGlobalSetup = new URL(
-    "./backend/core-case-service/src/testSupport/vitestGlobalSetup.ts",
-    import.meta.url,
-).pathname;
-const coreCaseSourceRoot = new URL(
-    "./backend/core-case-service/src/",
-    import.meta.url,
-).pathname;
-const coreCaseTestsRoot = new URL(
-    "./backend/core-case-service/tests/",
-    import.meta.url,
-).pathname;
+const repositoryRoot = toConfigPath(new URL(".", import.meta.url));
+const coreCaseVitestGlobalSetup = toConfigPath(
+    new URL(
+        "./backend/core-case-service/src/testSupport/vitestGlobalSetup.ts",
+        import.meta.url,
+    ),
+);
+const coreCaseSourceRoot = toConfigPath(
+    new URL("./backend/core-case-service/src/", import.meta.url),
+);
+const coreCaseTestsRoot = toConfigPath(
+    new URL("./backend/core-case-service/tests/", import.meta.url),
+);
 const coreCaseIntegrationTestGlob = `${coreCaseSourceRoot}**/*.integration.test.ts`;
 const coreCaseUnitTestGlob = `${coreCaseSourceRoot}**/*.test.ts`;
 const coreCaseProductionTestGlob = `${coreCaseTestsRoot}production/**/*.test.ts`;
-const frontendSourceRoot = new URL("./frontend/app/src/", import.meta.url)
-    .pathname;
-const platformHttpApiSourceRoot = new URL(
-    "./platform/http-api/src/",
-    import.meta.url,
-).pathname;
+const frontendSourceRoot = toConfigPath(
+    new URL("./frontend/app/src/", import.meta.url),
+);
+const platformHttpApiSourceRoot = toConfigPath(
+    new URL("./platform/http-api/src/", import.meta.url),
+);
+const syntheticRsaKeyPair = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+});
+const syntheticRsaPrivateKeyBase64 = Buffer.from(
+    syntheticRsaKeyPair.privateKey.export({
+        type: "pkcs8",
+        format: "pem",
+    }),
+).toString("base64");
 const testEnvironment = {
     AUTH_JWT_PRIVATE_KEY_BASE64: syntheticRsaPrivateKeyBase64,
     AUTH_JWT_KEY_ID: "synthetic-vitest-key",

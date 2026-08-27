@@ -1,5 +1,24 @@
 locals {
-  namespace = "ExpenseFlow/${var.name_prefix}"
+  namespace                         = "ExpenseFlow/${var.name_prefix}"
+  core_case_service_name            = "core-case-service"
+  gl_coding_service_name            = "gl-coding-service"
+  stage_transition_consumer_name    = "stage-transition-consumer-lambda"
+  activity_feed_query               = <<-EOT
+    SOURCE '${var.core_case_log_group_name}' | SOURCE '${var.gl_coding_log_group_name}' | SOURCE '${var.stage_transition_lambda_log_group_name}'
+    | fields @timestamp, service, eventType, metricName, tenantId, route, outcome, toStage, statusCode, errorName
+    | filter ispresent(eventType)
+    | sort @timestamp desc
+    | limit 50
+  EOT
+  stage_transition_error_rate_query = <<-EOT
+    SOURCE '${var.core_case_log_group_name}'
+    | fields tenantId, metricName, eventType
+    | filter eventType = "stage_transition"
+    | stats count() as attempts, sum(if(metricName = "StageTransitionErrorCount", 1, 0)) as errors by tenantId
+    | display tenantId, attempts, errors, round(100 * errors / attempts, 2) as errorRate
+    | sort errorRate desc
+    | limit 20
+  EOT
 }
 
 resource "aws_cloudwatch_log_metric_filter" "core_case_http_request" {
@@ -48,7 +67,6 @@ resource "aws_cloudwatch_log_metric_filter" "core_case_stage_transition_success"
     dimensions = {
       Service  = "$.service"
       TenantId = "$.tenantId"
-      ToStage  = "$.toStage"
     }
   }
 }
@@ -101,6 +119,38 @@ resource "aws_cloudwatch_log_metric_filter" "gl_coding_error" {
   }
 }
 
+resource "aws_cloudwatch_log_metric_filter" "stage_transition_consumer_success" {
+  name           = "${var.name_prefix}-stage-transition-consumer-success"
+  log_group_name = var.stage_transition_lambda_log_group_name
+  pattern        = "{ $.metricName = \"StageTransitionConsumerSuccessCount\" }"
+
+  metric_transformation {
+    name      = "StageTransitionConsumerSuccessCount"
+    namespace = local.namespace
+    value     = "1"
+    dimensions = {
+      Service  = "$.service"
+      TenantId = "$.tenantId"
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "stage_transition_consumer_error" {
+  name           = "${var.name_prefix}-stage-transition-consumer-error"
+  log_group_name = var.stage_transition_lambda_log_group_name
+  pattern        = "{ $.metricName = \"StageTransitionConsumerErrorCount\" }"
+
+  metric_transformation {
+    name      = "StageTransitionConsumerErrorCount"
+    namespace = local.namespace
+    value     = "1"
+    dimensions = {
+      Service  = "$.service"
+      TenantId = "$.tenantId"
+    }
+  }
+}
+
 resource "aws_cloudwatch_dashboard" "this" {
   dashboard_name = "${var.name_prefix}-observability"
   dashboard_body = jsonencode({
@@ -114,12 +164,8 @@ resource "aws_cloudwatch_dashboard" "this" {
         properties = {
           region = var.aws_region
           title  = "Application Activity Feed"
-          query  = <<-EOT
-            fields @timestamp, service, eventType, metricName, tenantId, route, outcome, toStage, statusCode
-            | filter eventType in ["stage_transition", "http_request", "gl_coding_request", "service_startup"]
-            | sort @timestamp desc
-            | limit 50
-          EOT
+          view   = "table"
+          query  = local.activity_feed_query
         }
       },
       {
@@ -131,11 +177,17 @@ resource "aws_cloudwatch_dashboard" "this" {
         properties = {
           view   = "timeSeries"
           region = var.aws_region
-          title  = "Stage Transition Throughput"
-          stat   = "Sum"
+          title  = "Stage Transition Throughput by Tenant"
           period = 300
           metrics = [
-            [local.namespace, "StageTransitionSuccessCount", "Service", "core-case-service", "TenantId", "*", "ToStage", "*"],
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"StageTransitionSuccessCount\" AND Service=\"${local.core_case_service_name}\"', 'Sum')"
+                id         = "stage_transition_throughput"
+                label      = "Stage transition throughput by tenant"
+                visible    = true
+              },
+            ],
           ]
         }
       },
@@ -148,11 +200,17 @@ resource "aws_cloudwatch_dashboard" "this" {
         properties = {
           view   = "timeSeries"
           region = var.aws_region
-          title  = "Stage Transition Errors"
-          stat   = "Sum"
+          title  = "Stage Transition Errors by Tenant"
           period = 300
           metrics = [
-            [local.namespace, "StageTransitionErrorCount", "Service", "core-case-service", "TenantId", "*"],
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"StageTransitionErrorCount\" AND Service=\"${local.core_case_service_name}\"', 'Sum')"
+                id         = "stage_transition_errors"
+                label      = "Stage transition errors by tenant"
+                visible    = true
+              },
+            ],
           ]
         }
       },
@@ -165,16 +223,102 @@ resource "aws_cloudwatch_dashboard" "this" {
         properties = {
           region = var.aws_region
           title  = "Stage Transition Error Rate by Tenant"
-          query  = <<-EOT
-            fields tenantId, metricName, outcome
-            | filter eventType = "stage_transition"
-            | stats count() as attempts, sum(if(metricName = "StageTransitionErrorCount", 1, 0)) as errors by tenantId
-            | display tenantId, attempts, errors, round(100 * errors / max(attempts, 1), 2) as errorRate
-            | sort errorRate desc
-            | limit 20
-          EOT
+          view   = "table"
+          query  = local.stage_transition_error_rate_query
         }
-      }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          view   = "timeSeries"
+          region = var.aws_region
+          title  = "GL-coding Requests by Tenant"
+          period = 300
+          metrics = [
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"GlCodingRequestCount\" AND Service=\"${local.gl_coding_service_name}\"', 'Sum')"
+                id         = "gl_coding_requests"
+                label      = "GL-coding requests by tenant"
+                visible    = true
+              },
+            ],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          view   = "timeSeries"
+          region = var.aws_region
+          title  = "GL-coding Errors by Tenant"
+          period = 300
+          metrics = [
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"GlCodingErrorCount\" AND Service=\"${local.gl_coding_service_name}\"', 'Sum')"
+                id         = "gl_coding_errors"
+                label      = "GL-coding errors by tenant"
+                visible    = true
+              },
+            ],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 24
+        width  = 12
+        height = 6
+        properties = {
+          view   = "timeSeries"
+          region = var.aws_region
+          title  = "Stage-Transition Consumer Success by Tenant"
+          period = 300
+          metrics = [
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"StageTransitionConsumerSuccessCount\" AND Service=\"${local.stage_transition_consumer_name}\"', 'Sum')"
+                id         = "stage_transition_consumer_success"
+                label      = "Stage-transition consumer success by tenant"
+                visible    = true
+              },
+            ],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 24
+        width  = 12
+        height = 6
+        properties = {
+          view   = "timeSeries"
+          region = var.aws_region
+          title  = "Stage-Transition Consumer Errors by Tenant"
+          period = 300
+          metrics = [
+            [
+              {
+                expression = "SEARCH('{\"${local.namespace}\",TenantId,Service} MetricName=\"StageTransitionConsumerErrorCount\" AND Service=\"${local.stage_transition_consumer_name}\"', 'Sum')"
+                id         = "stage_transition_consumer_errors"
+                label      = "Stage-transition consumer errors by tenant"
+                visible    = true
+              },
+            ],
+          ]
+        }
+      },
     ]
   })
 }

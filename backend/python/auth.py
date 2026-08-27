@@ -528,9 +528,14 @@ async def require_authenticated_identity(
 
 
 async def require_request_context(
+    request: Request,
     identity: Annotated[AuthenticatedIdentity, Depends(require_authenticated_identity)],
 ) -> AuthenticatedRequestContext:
     """Require a valid JWT and expose tenant, primary role, and all roles."""
+    # Request middleware reads tenant context after the route finishes, so stash
+    # the authenticated tenant on the request as soon as it is known.
+    request.state.tenant_id = str(identity.tenant_id)
+    request.state.role = select_primary_role(identity.roles)
     return AuthenticatedRequestContext(
         tenant_id=identity.tenant_id,
         role=select_primary_role(identity.roles),
