@@ -105,7 +105,11 @@
                                 },
                                 "category": {
                                     "type": "string",
-                                    "enum": ["Travel", "Meals", "Lodging"]
+                                    "enum": [
+                                        "Travel",
+                                        "Meals",
+                                        "Lodging"
+                                    ]
                                 },
                                 "amount": {
                                     "type": "number",
@@ -114,7 +118,9 @@
                                 },
                                 "currency": {
                                     "type": "string",
-                                    "enum": ["USD"]
+                                    "enum": [
+                                        "USD"
+                                    ]
                                 }
                             },
                             "required": [
@@ -174,7 +180,10 @@
                         "maxItems": 50
                     }
                 },
-                "required": ["lineItems", "receipts"],
+                "required": [
+                    "lineItems",
+                    "receipts"
+                ],
                 "additionalProperties": false
             },
             "AddDraftExpenseContentResponse": {
@@ -199,7 +208,11 @@
                         }
                     }
                 },
-                "required": ["expenseReportId", "lineItemIds", "receiptIds"]
+                "required": [
+                    "expenseReportId",
+                    "lineItemIds",
+                    "receiptIds"
+                ]
             },
             "AllTransactionPage": {
                 "type": "object",
@@ -250,7 +263,10 @@
                                     ]
                                 },
                                 "deductible": {
-                                    "type": ["boolean", "null"]
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
                                 },
                                 "owner": {
                                     "type": "string",
@@ -258,7 +274,12 @@
                                 },
                                 "priority": {
                                     "type": "string",
-                                    "enum": ["Low", "Normal", "High", "Urgent"]
+                                    "enum": [
+                                        "Low",
+                                        "Normal",
+                                        "High",
+                                        "Urgent"
+                                    ]
                                 },
                                 "dueDate": {
                                     "type": "string",
@@ -271,14 +292,24 @@
                                     "type": "boolean"
                                 },
                                 "glCode": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "flaggedLineItem": {
                                     "type": "boolean"
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 }
                             },
                             "required": [
@@ -303,10 +334,16 @@
                         }
                     },
                     "nextCursor": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
-                "required": ["items", "nextCursor"]
+                "required": [
+                    "items",
+                    "nextCursor"
+                ]
             },
             "ApprovalQueueLineItemListResponse": {
                 "type": "array",
@@ -319,7 +356,10 @@
                         },
                         "sourceType": {
                             "type": "string",
-                            "enum": ["line_item", "mileage"]
+                            "enum": [
+                                "line_item",
+                                "mileage"
+                            ]
                         },
                         "expenseReportId": {
                             "type": "string",
@@ -334,7 +374,10 @@
                             "minLength": 1
                         },
                         "amount": {
-                            "type": ["number", "null"],
+                            "type": [
+                                "number",
+                                "null"
+                            ],
                             "minimum": 0
                         },
                         "glCode": {
@@ -370,15 +413,29 @@
                                     },
                                     "state": {
                                         "type": "string",
-                                        "enum": ["cleared", "uncleared"]
+                                        "enum": [
+                                            "cleared",
+                                            "uncleared"
+                                        ]
                                     }
                                 },
-                                "required": ["code", "message", "state"]
+                                "required": [
+                                    "code",
+                                    "message",
+                                    "state"
+                                ]
                             }
                         },
                         "reviewAction": {
-                            "type": ["string", "null"],
-                            "enum": ["approve", "reject", null]
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "enum": [
+                                "approve",
+                                "reject",
+                                null
+                            ]
                         },
                         "deductible": {
                             "type": "boolean"
@@ -387,7 +444,10 @@
                             "type": "boolean"
                         },
                         "reportTotalMileage": {
-                            "type": ["number", "null"],
+                            "type": [
+                                "number",
+                                "null"
+                            ],
                             "minimum": 0
                         },
                         "mileageEntries": {
@@ -416,7 +476,10 @@
                                         "format": "date"
                                     },
                                     "amount": {
-                                        "type": ["number", "null"],
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ],
                                         "minimum": 0
                                     },
                                     "glCode": {
@@ -455,8 +518,15 @@
                                         }
                                     },
                                     "reviewAction": {
-                                        "type": ["string", "null"],
-                                        "enum": ["approve", "reject", null]
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "approve",
+                                            "reject",
+                                            null
+                                        ]
                                     },
                                     "deductible": {
                                         "type": "boolean"
@@ -487,7 +557,10 @@
                                         "format": "uuid"
                                     },
                                     "lineItemId": {
-                                        "type": ["string", "null"],
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
                                         "format": "uuid"
                                     },
                                     "merchant": {
@@ -503,10 +576,16 @@
                                         "minimum": 0
                                     },
                                     "filename": {
-                                        "type": ["string", "null"]
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
                                     },
                                     "contentType": {
-                                        "type": ["string", "null"]
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
                                     }
                                 },
                                 "required": [
@@ -550,7 +629,10 @@
                     },
                     "sourceType": {
                         "type": "string",
-                        "enum": ["line_item", "mileage"]
+                        "enum": [
+                            "line_item",
+                            "mileage"
+                        ]
                     },
                     "expenseReportId": {
                         "type": "string",
@@ -565,7 +647,10 @@
                         "minLength": 1
                     },
                     "amount": {
-                        "type": ["number", "null"],
+                        "type": [
+                            "number",
+                            "null"
+                        ],
                         "minimum": 0
                     },
                     "glCode": {
@@ -601,15 +686,29 @@
                                 },
                                 "state": {
                                     "type": "string",
-                                    "enum": ["cleared", "uncleared"]
+                                    "enum": [
+                                        "cleared",
+                                        "uncleared"
+                                    ]
                                 }
                             },
-                            "required": ["code", "message", "state"]
+                            "required": [
+                                "code",
+                                "message",
+                                "state"
+                            ]
                         }
                     },
                     "reviewAction": {
-                        "type": ["string", "null"],
-                        "enum": ["approve", "reject", null]
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "approve",
+                            "reject",
+                            null
+                        ]
                     },
                     "deductible": {
                         "type": "boolean"
@@ -618,7 +717,10 @@
                         "type": "boolean"
                     },
                     "reportTotalMileage": {
-                        "type": ["number", "null"],
+                        "type": [
+                            "number",
+                            "null"
+                        ],
                         "minimum": 0
                     },
                     "mileageEntries": {
@@ -647,7 +749,10 @@
                                     "format": "date"
                                 },
                                 "amount": {
-                                    "type": ["number", "null"],
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
                                     "minimum": 0
                                 },
                                 "glCode": {
@@ -672,15 +777,29 @@
                                             },
                                             "state": {
                                                 "type": "string",
-                                                "enum": ["cleared", "uncleared"]
+                                                "enum": [
+                                                    "cleared",
+                                                    "uncleared"
+                                                ]
                                             }
                                         },
-                                        "required": ["code", "message", "state"]
+                                        "required": [
+                                            "code",
+                                            "message",
+                                            "state"
+                                        ]
                                     }
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 },
                                 "deductible": {
                                     "type": "boolean"
@@ -711,7 +830,10 @@
                                     "format": "uuid"
                                 },
                                 "lineItemId": {
-                                    "type": ["string", "null"],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
                                     "format": "uuid"
                                 },
                                 "merchant": {
@@ -727,10 +849,16 @@
                                     "minimum": 0
                                 },
                                 "filename": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "contentType": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 }
                             },
                             "required": [
@@ -784,11 +912,16 @@
                                 "format": "uuid"
                             }
                         },
-                        "required": ["expenseReportId"],
+                        "required": [
+                            "expenseReportId"
+                        ],
                         "additionalProperties": false
                     }
                 },
-                "required": ["question", "caseContext"],
+                "required": [
+                    "question",
+                    "caseContext"
+                ],
                 "additionalProperties": false
             },
             "AssistResponse": {
@@ -842,7 +975,10 @@
                         "type": "boolean"
                     },
                     "refusalCategory": {
-                        "type": ["string", "null"],
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "enum": [
                             "prompt_disclosure",
                             "cross_tenant",
@@ -858,15 +994,24 @@
                                 "format": "uuid"
                             },
                             "lineItemId": {
-                                "type": ["string", "null"],
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
                                 "format": "uuid"
                             }
                         },
-                        "required": ["expenseReportId", "lineItemId"],
+                        "required": [
+                            "expenseReportId",
+                            "lineItemId"
+                        ],
                         "additionalProperties": false
                     },
                     "flagAssessment": {
-                        "type": ["object", "null"],
+                        "type": [
+                            "object",
+                            "null"
+                        ],
                         "properties": {
                             "amount": {
                                 "type": "string",
@@ -874,14 +1019,18 @@
                             },
                             "threshold": {
                                 "type": "string",
-                                "enum": ["500.00"]
+                                "enum": [
+                                    "500.00"
+                                ]
                             },
                             "isFlagged": {
                                 "type": "boolean"
                             },
                             "rule": {
                                 "type": "string",
-                                "enum": ["line_item_amount_over_500"]
+                                "enum": [
+                                    "line_item_amount_over_500"
+                                ]
                             }
                         },
                         "required": [
@@ -953,10 +1102,16 @@
                             ]
                         },
                         "denialReason": {
-                            "type": ["string", "null"]
+                            "type": [
+                                "string",
+                                "null"
+                            ]
                         },
                         "outcomeReason": {
-                            "type": ["string", "null"]
+                            "type": [
+                                "string",
+                                "null"
+                            ]
                         },
                         "createdAt": {
                             "type": "string",
@@ -1079,7 +1234,11 @@
                             "minimum": 0
                         }
                     },
-                    "required": ["currentStage", "reportCount", "overdueCount"]
+                    "required": [
+                        "currentStage",
+                        "reportCount",
+                        "overdueCount"
+                    ]
                 }
             },
             "ClearExpenseReportFlagsRequest": {
@@ -1098,7 +1257,10 @@
                         "minLength": 1
                     }
                 },
-                "required": ["sourceIds", "reason"],
+                "required": [
+                    "sourceIds",
+                    "reason"
+                ],
                 "additionalProperties": false
             },
             "ClearExpenseReportFlagsResponse": {
@@ -1109,7 +1271,9 @@
                         "minimum": 0
                     }
                 },
-                "required": ["clearedFlagCount"]
+                "required": [
+                    "clearedFlagCount"
+                ]
             },
             "CreateCaseCommentRequest": {
                 "type": "object",
@@ -1120,7 +1284,9 @@
                         "maxLength": 5000
                     }
                 },
-                "required": ["body"],
+                "required": [
+                    "body"
+                ],
                 "additionalProperties": false
             },
             "CreateExpenseReportRequest": {
@@ -1136,11 +1302,19 @@
                     },
                     "priority": {
                         "type": "string",
-                        "enum": ["Low", "Normal", "High", "Urgent"],
+                        "enum": [
+                            "Low",
+                            "Normal",
+                            "High",
+                            "Urgent"
+                        ],
                         "default": "Normal"
                     }
                 },
-                "required": ["owner", "dueDate"],
+                "required": [
+                    "owner",
+                    "dueDate"
+                ],
                 "additionalProperties": false
             },
             "CreateMileageEntryRequest": {
@@ -1161,7 +1335,11 @@
                         "format": "date"
                     }
                 },
-                "required": ["route", "distance", "mileageDate"],
+                "required": [
+                    "route",
+                    "distance",
+                    "mileageDate"
+                ],
                 "additionalProperties": false
             },
             "DraftExpenseContentResponse": {
@@ -1189,7 +1367,11 @@
                                 },
                                 "category": {
                                     "type": "string",
-                                    "enum": ["Travel", "Meals", "Lodging"]
+                                    "enum": [
+                                        "Travel",
+                                        "Meals",
+                                        "Lodging"
+                                    ]
                                 },
                                 "amount": {
                                     "type": "number",
@@ -1197,7 +1379,9 @@
                                 },
                                 "currency": {
                                     "type": "string",
-                                    "enum": ["USD"]
+                                    "enum": [
+                                        "USD"
+                                    ]
                                 }
                             },
                             "required": [
@@ -1220,11 +1404,17 @@
                                     "format": "uuid"
                                 },
                                 "lineItemId": {
-                                    "type": ["string", "null"],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
                                     "format": "uuid"
                                 },
                                 "filename": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "merchant": {
                                     "type": "string"
@@ -1311,7 +1501,12 @@
                     },
                     "priority": {
                         "type": "string",
-                        "enum": ["Low", "Normal", "High", "Urgent"]
+                        "enum": [
+                            "Low",
+                            "Normal",
+                            "High",
+                            "Urgent"
+                        ]
                     },
                     "currentStage": {
                         "type": "string",
@@ -1328,33 +1523,58 @@
                         "type": "boolean"
                     },
                     "holdReason": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "employerEin": {
-                        "type": ["string", "null"],
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "pattern": "^\\d{9}$"
                     },
                     "employerLegalName": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "employerEinValidation": {
-                        "type": ["object", "null"],
+                        "type": [
+                            "object",
+                            "null"
+                        ],
                         "properties": {
                             "status": {
                                 "type": "string",
-                                "enum": ["valid", "invalid", "unreachable"]
+                                "enum": [
+                                    "valid",
+                                    "invalid",
+                                    "unreachable"
+                                ]
                             },
                             "isValid": {
                                 "type": "boolean"
                             },
                             "reason": {
-                                "type": ["string", "null"]
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "serviceReferenceId": {
-                                "type": ["string", "null"]
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "validatedAt": {
-                                "type": ["string", "null"],
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
                                 "format": "date-time"
                             }
                         },
@@ -1404,7 +1624,12 @@
                     },
                     "priority": {
                         "type": "string",
-                        "enum": ["Low", "Normal", "High", "Urgent"]
+                        "enum": [
+                            "Low",
+                            "Normal",
+                            "High",
+                            "Urgent"
+                        ]
                     },
                     "dueDate": {
                         "type": "string",
@@ -1450,17 +1675,30 @@
                                     "maxLength": 3
                                 },
                                 "glCode": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "flaggedLineItem": {
                                     "type": "boolean"
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 },
                                 "deductible": {
-                                    "type": ["boolean", "null"]
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
                                 },
                                 "merchant": {
                                     "type": "string",
@@ -1508,17 +1746,30 @@
                                     "maxLength": 3
                                 },
                                 "glCode": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "flaggedLineItem": {
                                     "type": "boolean"
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 },
                                 "deductible": {
-                                    "type": ["boolean", "null"]
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
                                 },
                                 "route": {
                                     "type": "string",
@@ -1553,7 +1804,10 @@
                                     "format": "uuid"
                                 },
                                 "lineItemId": {
-                                    "type": ["string", "null"],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
                                     "format": "uuid"
                                 },
                                 "merchant": {
@@ -1565,14 +1819,23 @@
                                     "format": "date"
                                 },
                                 "amount": {
-                                    "type": ["number", "null"],
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
                                     "minimum": 0
                                 },
                                 "filename": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "contentType": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 }
                             },
                             "required": [
@@ -1621,7 +1884,10 @@
                                     "format": "uuid"
                                 },
                                 "managerId": {
-                                    "type": ["string", "null"],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
                                     "format": "uuid"
                                 },
                                 "category": {
@@ -1670,10 +1936,16 @@
                         }
                     },
                     "nextCursor": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
-                "required": ["items", "nextCursor"]
+                "required": [
+                    "items",
+                    "nextCursor"
+                ]
             },
             "FinanceDashboardTrendPointList": {
                 "type": "array",
@@ -1703,7 +1975,10 @@
                                         "pattern": "^\\d{1,12}\\.\\d{2}$"
                                     }
                                 },
-                                "required": ["currency", "spendAmount"]
+                                "required": [
+                                    "currency",
+                                    "spendAmount"
+                                ]
                             }
                         }
                     },
@@ -1722,7 +1997,9 @@
                         "format": "uuid"
                     }
                 },
-                "required": ["id"]
+                "required": [
+                    "id"
+                ]
             },
             "GlMappingReferenceResponse": {
                 "type": "object",
@@ -1753,7 +2030,10 @@
                                     "minLength": 1
                                 },
                                 "description": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "updatedAt": {
                                     "type": "string",
@@ -1789,7 +2069,10 @@
                                     "minLength": 1
                                 },
                                 "description": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 }
                             },
                             "required": [
@@ -1801,7 +2084,10 @@
                         }
                     }
                 },
-                "required": ["mappings", "glCodes"]
+                "required": [
+                    "mappings",
+                    "glCodes"
+                ]
             },
             "GlMappingResponse": {
                 "type": "object",
@@ -1827,7 +2113,10 @@
                         "minLength": 1
                     },
                     "description": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "updatedAt": {
                         "type": "string",
@@ -1877,7 +2166,9 @@
                         "format": "uuid"
                     }
                 },
-                "required": ["id"],
+                "required": [
+                    "id"
+                ],
                 "additionalProperties": false
             },
             "InternalSettlePaymentStubRequest": {
@@ -1909,7 +2200,12 @@
                         "minLength": 1
                     }
                 },
-                "required": ["tenantId", "actorId", "roles", "reason"],
+                "required": [
+                    "tenantId",
+                    "actorId",
+                    "roles",
+                    "reason"
+                ],
                 "additionalProperties": false
             },
             "InviteTeamUserRequest": {
@@ -1934,7 +2230,11 @@
                         ]
                     }
                 },
-                "required": ["email", "displayName", "role"],
+                "required": [
+                    "email",
+                    "displayName",
+                    "role"
+                ],
                 "additionalProperties": false
             },
             "LoginErrorResponse": {
@@ -1953,7 +2253,10 @@
                         "minLength": 1
                     }
                 },
-                "required": ["code", "message"]
+                "required": [
+                    "code",
+                    "message"
+                ]
             },
             "LoginRequest": {
                 "type": "object",
@@ -1974,7 +2277,11 @@
                         "type": "string"
                     }
                 },
-                "required": ["tenantId", "email", "password"]
+                "required": [
+                    "tenantId",
+                    "email",
+                    "password"
+                ]
             },
             "MfaEnrollmentRequest": {
                 "type": "object",
@@ -1992,7 +2299,11 @@
                         "format": "email"
                     }
                 },
-                "required": ["tenantId", "userId", "email"]
+                "required": [
+                    "tenantId",
+                    "userId",
+                    "email"
+                ]
             },
             "MfaEnrollmentResponse": {
                 "type": "object",
@@ -2001,7 +2312,9 @@
                         "type": "string"
                     }
                 },
-                "required": ["provisioningUri"]
+                "required": [
+                    "provisioningUri"
+                ]
             },
             "MileageConfigResponse": {
                 "type": "object",
@@ -2012,10 +2325,15 @@
                     },
                     "currency": {
                         "type": "string",
-                        "enum": ["USD"]
+                        "enum": [
+                            "USD"
+                        ]
                     }
                 },
-                "required": ["ratePerMile", "currency"]
+                "required": [
+                    "ratePerMile",
+                    "currency"
+                ]
             },
             "MileageEntryResponse": {
                 "type": "object",
@@ -2052,10 +2370,16 @@
                             },
                             "currency": {
                                 "type": "string",
-                                "enum": ["USD"]
+                                "enum": [
+                                    "USD"
+                                ]
                             }
                         },
-                        "required": ["ratePerMile", "amount", "currency"]
+                        "required": [
+                            "ratePerMile",
+                            "amount",
+                            "currency"
+                        ]
                     },
                     "createdAt": {
                         "type": "string",
@@ -2096,33 +2420,58 @@
                         ]
                     },
                     "rejectionReason": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "employerEin": {
-                        "type": ["string", "null"],
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "pattern": "^\\d{9}$"
                     },
                     "employerLegalName": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "employerEinValidation": {
-                        "type": ["object", "null"],
+                        "type": [
+                            "object",
+                            "null"
+                        ],
                         "properties": {
                             "status": {
                                 "type": "string",
-                                "enum": ["valid", "invalid", "unreachable"]
+                                "enum": [
+                                    "valid",
+                                    "invalid",
+                                    "unreachable"
+                                ]
                             },
                             "isValid": {
                                 "type": "boolean"
                             },
                             "reason": {
-                                "type": ["string", "null"]
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "serviceReferenceId": {
-                                "type": ["string", "null"]
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "validatedAt": {
-                                "type": ["string", "null"],
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
                                 "format": "date-time"
                             }
                         },
@@ -2161,8 +2510,15 @@
                                     "type": "string"
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 }
                             },
                             "required": [
@@ -2202,11 +2558,20 @@
                                 },
                                 "currency": {
                                     "type": "string",
-                                    "enum": ["USD"]
+                                    "enum": [
+                                        "USD"
+                                    ]
                                 },
                                 "reviewAction": {
-                                    "type": ["string", "null"],
-                                    "enum": ["approve", "reject", null]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "enum": [
+                                        "approve",
+                                        "reject",
+                                        null
+                                    ]
                                 }
                             },
                             "required": [
@@ -2290,10 +2655,16 @@
                         }
                     },
                     "nextCursor": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
-                "required": ["items", "nextCursor"]
+                "required": [
+                    "items",
+                    "nextCursor"
+                ]
             },
             "PolicyReferenceResponse": {
                 "type": "object",
@@ -2306,7 +2677,10 @@
                         "format": "date-time"
                     }
                 },
-                "required": ["policyText", "updatedAt"]
+                "required": [
+                    "policyText",
+                    "updatedAt"
+                ]
             },
             "ProblemJson": {
                 "type": "object",
@@ -2327,7 +2701,13 @@
                         "type": "string"
                     }
                 },
-                "required": ["type", "title", "status", "detail", "instance"]
+                "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail",
+                    "instance"
+                ]
             },
             "ReadAllTransactionsRequest": {
                 "type": "object",
@@ -2376,7 +2756,9 @@
                         "format": "date"
                     }
                 },
-                "required": ["asOfDate"]
+                "required": [
+                    "asOfDate"
+                ]
             },
             "ReadExpenseReportSummariesRequest": {
                 "type": "object",
@@ -2442,7 +2824,10 @@
                         "format": "date"
                     }
                 },
-                "required": ["fromDate", "toDate"]
+                "required": [
+                    "fromDate",
+                    "toDate"
+                ]
             },
             "ReadMySubmissionsQuery": {
                 "type": "object",
@@ -2485,7 +2870,11 @@
                         "maximum": 10485760
                     }
                 },
-                "required": ["filename", "contentType", "sizeBytes"],
+                "required": [
+                    "filename",
+                    "contentType",
+                    "sizeBytes"
+                ],
                 "additionalProperties": false
             },
             "ReceiptUploadResponse": {
@@ -2512,7 +2901,12 @@
                         "exclusiveMinimum": 0
                     }
                 },
-                "required": ["uploadId", "filename", "contentType", "sizeBytes"]
+                "required": [
+                    "uploadId",
+                    "filename",
+                    "contentType",
+                    "sizeBytes"
+                ]
             },
             "RefreshTokenResponse": {
                 "type": "object",
@@ -2553,21 +2947,29 @@
                         "format": "uuid"
                     }
                 },
-                "required": ["id", "sourceId"]
+                "required": [
+                    "id",
+                    "sourceId"
+                ]
             },
             "ReviewExpenseReportLineItemRequest": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["approve", "reject"]
+                        "enum": [
+                            "approve",
+                            "reject"
+                        ]
                     },
                     "reason": {
                         "type": "string",
                         "minLength": 1
                     }
                 },
-                "required": ["action"],
+                "required": [
+                    "action"
+                ],
                 "additionalProperties": false
             },
             "ReviewExpenseReportSourceParams": {
@@ -2579,14 +2981,77 @@
                     },
                     "sourceType": {
                         "type": "string",
-                        "enum": ["line_item", "mileage"]
+                        "enum": [
+                            "line_item",
+                            "mileage"
+                        ]
                     },
                     "sourceId": {
                         "type": "string",
                         "format": "uuid"
                     }
                 },
-                "required": ["id", "sourceType", "sourceId"]
+                "required": [
+                    "id",
+                    "sourceType",
+                    "sourceId"
+                ]
+            },
+            "RolePermissionMatrixResponse": {
+                "type": "object",
+                "properties": {
+                    "screens": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "required": [
+                                "key",
+                                "label"
+                            ]
+                        }
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Finance Admin",
+                                        "Department Manager",
+                                        "Employee",
+                                        "Admin"
+                                    ]
+                                },
+                                "screens": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            },
+                            "required": [
+                                "role",
+                                "screens"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "screens",
+                    "roles"
+                ]
             },
             "SubmitExpenseReportRequest": {
                 "type": "object",
@@ -2611,7 +3076,9 @@
                         "format": "uuid"
                     }
                 },
-                "required": ["id"]
+                "required": [
+                    "id"
+                ]
             },
             "TeamUserResponse": {
                 "type": "object",
@@ -2625,11 +3092,18 @@
                         "minLength": 1
                     },
                     "displayName": {
-                        "type": ["string", "null"]
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string",
-                        "enum": ["invited", "active", "deactivated"]
+                        "enum": [
+                            "invited",
+                            "active",
+                            "deactivated"
+                        ]
                     },
                     "roles": {
                         "type": "array",
@@ -2674,11 +3148,18 @@
                                     "minLength": 1
                                 },
                                 "displayName": {
-                                    "type": ["string", "null"]
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
                                 },
                                 "status": {
                                     "type": "string",
-                                    "enum": ["invited", "active", "deactivated"]
+                                    "enum": [
+                                        "invited",
+                                        "active",
+                                        "deactivated"
+                                    ]
                                 },
                                 "roles": {
                                     "type": "array",
@@ -2708,7 +3189,52 @@
                         }
                     }
                 },
-                "required": ["users"]
+                "required": [
+                    "users"
+                ]
+            },
+            "TenantSummaryListResponse": {
+                "type": "object",
+                "properties": {
+                    "tenants": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tenantId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "userCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "activeUserCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "invitedUserCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "deactivatedUserCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            },
+                            "required": [
+                                "tenantId",
+                                "userCount",
+                                "activeUserCount",
+                                "invitedUserCount",
+                                "deactivatedUserCount"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "tenants"
+                ]
             },
             "TransitionExpenseReportWorkflowRequest": {
                 "type": "object",
@@ -2729,7 +3255,10 @@
                         "minLength": 1
                     }
                 },
-                "required": ["toStage", "reason"],
+                "required": [
+                    "toStage",
+                    "reason"
+                ],
                 "additionalProperties": false
             },
             "UpdateDraftLineItemRequest": {
@@ -2746,7 +3275,11 @@
                     },
                     "category": {
                         "type": "string",
-                        "enum": ["Travel", "Meals", "Lodging"]
+                        "enum": [
+                            "Travel",
+                            "Meals",
+                            "Lodging"
+                        ]
                     },
                     "amount": {
                         "type": "number",
@@ -2755,7 +3288,9 @@
                     },
                     "currency": {
                         "type": "string",
-                        "enum": ["USD"]
+                        "enum": [
+                            "USD"
+                        ]
                     }
                 },
                 "required": [
@@ -2774,7 +3309,9 @@
                         "type": "boolean"
                     }
                 },
-                "required": ["deductible"],
+                "required": [
+                    "deductible"
+                ],
                 "additionalProperties": false
             },
             "UpdateGlMappingRequest": {
@@ -2785,7 +3322,9 @@
                         "format": "uuid"
                     }
                 },
-                "required": ["glCodeId"],
+                "required": [
+                    "glCodeId"
+                ],
                 "additionalProperties": false
             },
             "UpdateTeamUserRoleRequest": {
@@ -2801,7 +3340,9 @@
                         ]
                     }
                 },
-                "required": ["role"],
+                "required": [
+                    "role"
+                ],
                 "additionalProperties": false
             },
             "UpdateTeamUserStatusRequest": {
@@ -2809,10 +3350,15 @@
                 "properties": {
                     "status": {
                         "type": "string",
-                        "enum": ["active", "deactivated"]
+                        "enum": [
+                            "active",
+                            "deactivated"
+                        ]
                     }
                 },
-                "required": ["status"],
+                "required": [
+                    "status"
+                ],
                 "additionalProperties": false
             }
         },
@@ -4873,6 +5419,118 @@
                 }
             }
         },
+        "/v1/platform-admin/roles-permissions": {
+            "get": {
+                "summary": "Read the Roles & Permissions matrix",
+                "description": "Loads the read-only role-to-screen-access matrix for the Platform Admin workspace. No control on this screen grants access to any tenant's case data.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Role-to-screen-access matrix found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RolePermissionMatrixResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Platform administration is limited to Platform Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/platform-admin/tenants": {
+            "get": {
+                "summary": "List All Tenants & Users summaries",
+                "description": "Loads every tenant's user-count summary for the Platform Admin workspace. Returns aggregate counts only, never a tenant's user detail or case data.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tenant user-count summaries found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TenantSummaryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Platform administration is limited to Platform Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/login": {
             "post": {
                 "summary": "Authenticate with email, password, and optional TOTP MFA",
@@ -6367,7 +7025,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "enum": ["line_item", "mileage"]
+                            "enum": [
+                                "line_item",
+                                "mileage"
+                            ]
                         },
                         "required": true,
                         "name": "sourceType",
@@ -6506,7 +7167,10 @@
                     {
                         "schema": {
                             "type": "string",
-                            "enum": ["line_item", "mileage"]
+                            "enum": [
+                                "line_item",
+                                "mileage"
+                            ]
                         },
                         "required": true,
                         "name": "sourceType",
