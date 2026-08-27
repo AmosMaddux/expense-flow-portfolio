@@ -169,6 +169,48 @@ describe("Team Users repository", () => {
         ).rejects.toBeInstanceOf(ConflictError);
     });
 
+    test("rejects the losing side of two concurrent invites for the same email with a Conflict, not a raw error", async () => {
+        // A single shared connection would just serialize these two calls,
+        // so each invite gets its own connection to genuinely race the
+        // duplicate-check SELECT against the sibling's INSERT, the way two
+        // independent Finance Admin requests would in production.
+        const secondClient = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+        await secondClient.connect();
+        const secondTestDb = drizzle(secondClient, { schema });
+
+        try {
+            const inviteInput = {
+                actorId: context.actorId,
+                displayName: "Race Hire",
+                email: "race-hire@example.invalid",
+                role: "Employee" as const,
+                tenantId: context.tenantA,
+            };
+
+            const results = await Promise.allSettled([
+                inviteTeamUser(inviteInput, testDb),
+                inviteTeamUser(inviteInput, secondTestDb),
+            ]);
+
+            const fulfilled = results.filter(
+                (result) => result.status === "fulfilled",
+            );
+            const rejected = results.filter(
+                (result) => result.status === "rejected",
+            );
+
+            expect(fulfilled).toHaveLength(1);
+            expect(rejected).toHaveLength(1);
+            expect(
+                (rejected[0] as PromiseRejectedResult).reason,
+            ).toBeInstanceOf(ConflictError);
+        } finally {
+            await secondClient.end().catch(() => undefined);
+        }
+    });
+
     test("replaces a tenant user's role and writes one audit entry", async () => {
         const updated = await updateTeamUserRole(
             {

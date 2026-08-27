@@ -2,10 +2,14 @@ import { roleValues, type RoleName } from "../db/schema/identityAuth.js";
 
 /**
  * One tenant-scoped screen an ExpenseFlow role may reach, keyed to the same
- * paths enforced by the SPA router and by each service's own role checks.
- * This is the single source of truth the read-only Roles & Permissions
- * matrix is built from — it is descriptive of enforced access, not a
- * separate authorization store.
+ * paths declared in the SPA's navigation config. This table only drives the
+ * read-only Roles & Permissions display matrix — it does not enforce
+ * anything itself. Real access is enforced independently by each route's own
+ * role check (e.g. `requireFinanceAdminTeamUserAccess`,
+ * `requirePlatformAdminAccess`). Editing `allowedRoles` here changes what the
+ * matrix displays, not what the API allows; keep it in sync by hand, and see
+ * `screenAccessPolicy.enforcement.test.ts` for the entries that are checked
+ * against their controller's actual role gate.
  */
 export type ScreenAccessEntry = {
     key: string;
