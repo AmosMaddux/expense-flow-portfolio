@@ -94,10 +94,25 @@ variable "core_case_image_uri" {
   default     = null
 }
 
+variable "core_case_repository_url" {
+  description = "Persistent ECR repository URL for Core Case images."
+  type        = string
+}
+
+variable "core_case_repository_arn" {
+  description = "Persistent ECR repository ARN for Core Case images."
+  type        = string
+}
+
 variable "gl_coding_image_uri" {
   description = "Optional immutable image URI for GL-coding."
   type        = string
   default     = null
+}
+
+variable "gl_coding_repository_url" {
+  description = "Persistent ECR repository URL for GL-coding images."
+  type        = string
 }
 
 variable "auth_jwt_key_id" {
@@ -269,6 +284,11 @@ variable "gl_coding_db_name" {
 
 variable "gl_coding_db_credentials_secret_arn" {
   description = "Secrets Manager ARN of GL-coding's scoped, least-privilege database credential (SELECT-only on its reference tables). Must not be the RDS master user secret."
+  type        = string
+}
+
+variable "gl_coding_db_credentials_kms_key_arn" {
+  description = "ARN of the customer-managed KMS key encrypting gl_coding_db_credentials_secret_arn (module.database's readonly_role_secrets_kms_key_arn output). The execution role needs kms:Decrypt on this key in addition to secretsmanager:GetSecretValue on the secret itself - Secrets Manager retrieving the record does not imply permission to decrypt it."
   type        = string
 }
 

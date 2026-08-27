@@ -37,3 +37,8 @@ output "readonly_role_secret_arns" {
   description = "Secrets Manager ARNs of each readonly_roles credential, keyed by role name."
   value       = { for name, secret in aws_secretsmanager_secret.readonly_role : name => secret.arn }
 }
+
+output "readonly_role_secrets_kms_key_arn" {
+  description = "ARN of the customer-managed KMS key encrypting readonly_roles credentials. Any consumer granted secretsmanager:GetSecretValue on a readonly_role_secret_arns entry also needs kms:Decrypt on this key - Secrets Manager retrieving the record is not enough on its own to decrypt it."
+  value       = aws_kms_key.readonly_role_secrets.arn
+}

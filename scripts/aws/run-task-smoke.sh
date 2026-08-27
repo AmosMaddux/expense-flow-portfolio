@@ -99,6 +99,12 @@ listener_arn_for_port() {
         --output text
 }
 
+listener_exists() {
+    local listener_arn="$1"
+
+    [[ -n "$listener_arn" && "$listener_arn" != "None" ]]
+}
+
 security_group_id() {
     aws_cli ec2 describe-security-groups \
         --filters Name=vpc-id,Values="$VPC_ID" Name=group-name,Values="$1" \
@@ -256,6 +262,28 @@ assert_listener_rule() {
     fi
 }
 
+assert_listener_rule_one_of() {
+    local listener_arn="$1"
+    local target_group_arn="$2"
+    local rule_label="$3"
+    shift 3
+    local priority rule_target_group_arn
+
+    for priority in "$@"; do
+        rule_target_group_arn="$(aws_cli elbv2 describe-rules \
+            --listener-arn "$listener_arn" \
+            --query "Rules[?Priority=='$priority'].Actions[0].TargetGroupArn | [0]" \
+            --output text)"
+
+        if [[ "$rule_target_group_arn" == "$target_group_arn" ]]; then
+            return 0
+        fi
+    done
+
+    echo "$rule_label listener rule does not forward to $target_group_arn at any accepted priority: $*" >&2
+    return 1
+}
+
 assert_listener_redirects_to_https() {
     local listener_arn="$1"
     local redirect_protocol redirect_port
@@ -273,6 +301,28 @@ assert_listener_redirects_to_https() {
         echo "HTTP listener $listener_arn does not redirect to HTTPS:443." >&2
         return 1
     fi
+}
+
+assert_listener_fixed_response_one_of() {
+    local listener_arn="$1"
+    local expected_status_code="$2"
+    local rule_label="$3"
+    shift 3
+    local priority status_code
+
+    for priority in "$@"; do
+        status_code="$(aws_cli elbv2 describe-rules \
+            --listener-arn "$listener_arn" \
+            --query "Rules[?Priority=='$priority'].Actions[0].FixedResponseConfig.StatusCode | [0]" \
+            --output text)"
+
+        if [[ "$status_code" == "$expected_status_code" ]]; then
+            return 0
+        fi
+    done
+
+    echo "$rule_label listener rule does not return fixed response $expected_status_code at any accepted priority: $*" >&2
+    return 1
 }
 
 assert_listener_rule_absent() {
@@ -305,6 +355,42 @@ assert_listener_default_forward() {
         echo "Listener $listener_arn does not default-forward to $target_group_arn." >&2
         return 1
     fi
+}
+
+assert_public_alb_listener_configuration() {
+    local http_listener_arn="$1"
+    local https_listener_arn="$2"
+    local core_tg_arn="$3"
+
+    if listener_exists "$https_listener_arn"; then
+        assert_listener_redirects_to_https "$http_listener_arn"
+        assert_listener_rule_absent "$http_listener_arn" 50
+        assert_listener_rule_absent "$http_listener_arn" 51
+        assert_listener_rule_absent "$http_listener_arn" 90
+        assert_listener_rule_absent "$http_listener_arn" 95
+        assert_listener_rule_absent "$http_listener_arn" 100
+        assert_listener_rule_absent "$http_listener_arn" 200
+        assert_listener_rule_one_of "$https_listener_arn" "$core_tg_arn" "Runtime smoke allow" 50 90
+        assert_listener_fixed_response_one_of "$https_listener_arn" 403 "Runtime smoke block" 51 95
+        assert_listener_rule "$https_listener_arn" 100 "$core_tg_arn"
+        assert_listener_rule_absent "$https_listener_arn" 200
+        return 0
+    fi
+
+    if [[ "$ALLOW_PLAIN_HTTP_SMOKE" != "true" ]]; then
+        echo "Public ALB has no HTTPS listener. Set ALLOW_PLAIN_HTTP_SMOKE=true to validate a certificate-free sandbox ALB over HTTP." >&2
+        return 1
+    fi
+
+    if ! listener_exists "$http_listener_arn"; then
+        echo "Public ALB has neither an HTTP listener nor an HTTPS listener." >&2
+        return 1
+    fi
+
+    assert_listener_rule_one_of "$http_listener_arn" "$core_tg_arn" "Runtime smoke allow" 50 90
+    assert_listener_fixed_response_one_of "$http_listener_arn" 403 "Runtime smoke block" 51 95
+    assert_listener_rule "$http_listener_arn" 100 "$core_tg_arn"
+    assert_listener_rule_absent "$http_listener_arn" 200
 }
 
 wait_for_healthy_targets() {
@@ -426,14 +512,7 @@ preflight_runtime_configuration() {
     http_listener_arn="$(listener_arn_for_port "$alb_arn" 80)"
     https_listener_arn="$(listener_arn_for_port "$alb_arn" 443)"
     core_tg_arn="$(target_group_arn "$CORE_CASE_TARGET_GROUP_NAME")"
-    assert_listener_redirects_to_https "$http_listener_arn"
-    assert_listener_rule_absent "$http_listener_arn" 90
-    assert_listener_rule_absent "$http_listener_arn" 95
-    assert_listener_rule_absent "$http_listener_arn" 100
-    assert_listener_rule_absent "$http_listener_arn" 200
-    assert_listener_rule "$https_listener_arn" 90 "$core_tg_arn"
-    assert_listener_rule "$https_listener_arn" 100 "$core_tg_arn"
-    assert_listener_rule_absent "$https_listener_arn" 200
+    assert_public_alb_listener_configuration "$http_listener_arn" "$https_listener_arn" "$core_tg_arn"
 
     echo "Checking internal GL-coding ALB, listener, and target group..."
     internal_alb_arn="$(load_balancer_arn "$INTERNAL_ALB_NAME")"

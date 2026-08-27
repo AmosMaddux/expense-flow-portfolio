@@ -746,12 +746,39 @@ function assertLocalOrExplicitlyAllowedReceiptStorageEndpoint(
     }
 }
 
+function formatLocalDemoSeedError(error: unknown): string {
+    if (!(error instanceof Error)) {
+        return "Unknown local demo seed error.";
+    }
+
+    const redactedMessage = error.message.replaceAll(
+        /postgres(?:ql)?:\/\/[^@\s]+@/gi,
+        "postgres://<redacted>@",
+    );
+
+    // AWS SDK v3 errors (S3, Secrets Manager, ...) can surface with an
+    // opaque name/message like "Unknown: UnknownError" when the client
+    // can't parse an error response body (e.g. a bare 403 with no body on
+    // HeadObject) - the httpStatusCode/requestId in $metadata are what
+    // actually let you tell that apart from a real network failure.
+    const metadata =
+        "$metadata" in error
+            ? (error as { $metadata?: unknown }).$metadata
+            : undefined;
+
+    return metadata === undefined
+        ? redactedMessage
+        : `${redactedMessage} (metadata: ${JSON.stringify(metadata)})`;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     void seedLocalDemoData().catch((error: unknown) => {
         process.stderr.write(
-            error instanceof Error
-                ? `${error.message}\n`
-                : "Unable to seed synthetic local demo data.\n",
+            [
+                "Unable to seed synthetic local demo data.",
+                formatLocalDemoSeedError(error),
+                "",
+            ].join("\n"),
         );
         process.exitCode = 1;
     });

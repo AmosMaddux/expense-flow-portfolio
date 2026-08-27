@@ -1,75 +1,81 @@
 # ExpenseFlow Sandbox Infrastructure
 
 This is the operational entry point for the Terraform-managed ExpenseFlow
-sandbox. Use it when you need to create the sandbox infrastructure, deploy the
-application images, publish the SPA, seed demo data, and sign in.
+sandbox. Use it to deploy the AWS demo environment, sign in to the seeded app,
+and tear the environment down when you are done.
 
 Run commands from the repository root unless a step explicitly says otherwise.
 The sandbox creates real AWS resources and may incur charges.
 
-## Overview
+## Terraform Module Structure
 
-The sandbox runs the ExpenseFlow demo environment in AWS:
-
-- CloudFront serves the React SPA from a private S3 bucket and proxies `/v1/*`
-  API traffic to the public ALB.
-- The public ALB routes Core Case API traffic to an ECS Fargate service.
-- Core Case talks to RDS PostgreSQL, Redis, and GL-coding.
-- GL-coding runs as a separate ECS Fargate service behind an internal ALB.
-- A permanent SSM-only bastion runs operational tasks such as migrations,
-  account seeding, demo-data seeding, and MFA code generation.
-- API Gateway and Lambda host the narrow HTTP API endpoints that do not run in
-  Core Case.
-- SNS, SQS, and a Lambda image consumer support stage-transition projection
-  flow.
-
-At a high level:
-
-```text
-Browser
-  |
-  v
-CloudFront
-  |-- S3 private bucket for SPA static files
-  |
-  `-- /v1/* to public ALB
-          |
-          v
-      Core Case ECS service
-          |-- RDS PostgreSQL
-          |-- Redis
-          |-- internal ALB to GL-coding ECS service
-          `-- SNS/SQS stage-transition flow
-```
-
-Terraform owns the sandbox runtime under
-`infra/terraform/environments/sandbox`. The bootstrap stack under
+The sandbox runtime lives under `infra/terraform/environments/sandbox`.
+Persistent demo ECR repositories live under
+`infra/terraform/environments/sandbox-ecr` so teardown can remove costly
+runtime resources without deleting reusable image storage.
 `infra/terraform/bootstrap` owns only the remote Terraform state bucket.
-
-## Terraform Modules
 
 | Module | Purpose |
 | --- | --- |
-| `network` | Discovers the existing sandbox VPC/subnets by default, or creates a managed VPC when `network_mode = "managed"`. |
+| `network` | Discovers the existing sandbox VPC/subnets by default, or creates a managed VPC when configured. |
 | `alb` | Creates the public ALB for Core Case and the internal ALB for GL-coding. |
-| `ecs` | Creates the ECS cluster, Core Case and GL-coding task definitions/services, ECR repositories, log groups, receipt bucket, DynamoDB read-projection table, and stage-transition SNS/SQS resources. |
-| `database` | Creates private RDS PostgreSQL with RDS-managed master credentials and the GL-coding readonly database role. |
+| `sandbox-ecr` root | Creates or adopts the persistent ECR repositories used by demo image builds. |
+| `ecs` | Creates the ECS cluster, Core Case and GL-coding services, task definitions, log groups, receipt bucket, DynamoDB table, and stage-transition SNS/SQS resources. |
+| `database` | Creates private RDS PostgreSQL with RDS-managed master credentials and database roles/extensions. |
 | `redis` | Creates the private Redis/ElastiCache runtime dependency for Core Case. |
-| `bastion` | Creates the SSM-only EC2 bastion used for operational commands. |
+| `bastion` | Creates the SSM-only EC2 bastion used for migrations, seeding, and MFA code generation. |
 | `lambda-stage-transition-consumer` | Creates the container-image Lambda that consumes stage-transition SQS events. |
-| `http-api` | Creates API Gateway and Lambda endpoints for HTTP API functionality such as claims probe and issue payment. |
+| `http-api` | Creates API Gateway and Lambda endpoints for claims probe and issue payment flows. |
 | `spa` | Creates the private SPA bucket and CloudFront distribution. |
 
-## Sign In And Validate
+The runtime root consumes ECR repository URLs and ARNs from the persistent ECR
+root. It does not own repository lifecycle.
 
-Get the SPA URL:
+## Prerequisites
+
+Install and configure these before deploying:
+
+- AWS CLI authenticated to the `expenseflow-smoke` profile.
+- Terraform `>= 1.7.0`.
+- Docker with Buildx support.
+- AWS SAM CLI.
+- Node.js `>= 24`.
+- `jq`.
+- OpenSSL.
+- AWS Session Manager plugin (`session-manager-plugin`).
+- `nc` (netcat).
+- Trivy, Syft, and Cosign for the secure image build path.
+
+The scripts default to `AWS_PROFILE=expenseflow-smoke` and
+`AWS_REGION=us-east-1`. They refuse other profiles unless
+`ALLOW_NON_SMOKE_PROFILE=true` is set.
+
+Terraform state uses the S3 backend created by `infra/terraform/bootstrap`.
+Before the first sandbox deploy on a machine, make sure
+`infra/terraform/environments/sandbox/backend.hcl` exists, points at the
+bootstrap state bucket, and the sandbox backend has been initialized.
+
+AI agent caveat: `deploy-demo.sh` and `tear-down-demo.sh` call
+`aws secretsmanager get-secret-value` internally and hold plaintext secrets in
+local shell variables. A human may run those scripts from their own shell, but
+an AI agent must not run them end-to-end under this repository's secret safety
+rules.
+
+## Sign In Instructions
+
+Use the CloudFront URL printed by `deploy-demo.sh` after a successful deploy,
+or resolve it again with Terraform when you need it.
+
+### Retrieve The CloudFront URL
+
+Command:
 
 ```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox output -raw spa_cloudfront_domain_name
+printf 'https://%s\n' "$(AWS_PROFILE=expenseflow-smoke \
+  terraform -chdir=infra/terraform/environments/sandbox output -raw spa_cloudfront_domain_name)"
 ```
 
-Open `https://<spa_cloudfront_domain_name>`.
+What it does: prints the CloudFront URL for the deployed SPA.
 
 All seeded accounts use this synthetic password:
 
@@ -77,17 +83,21 @@ All seeded accounts use this synthetic password:
 expenseflow-local-dev-only
 ```
 
-After entering email and password, generate the MFA code from the bastion:
+### Generate An MFA Code
+
+Command:
 
 ```bash
 AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh code finance-admin
 ```
 
-Replace `finance-admin` with the alias or account name you are signing in as,
-such as `employee`, `manager`, `platform-admin`, `employee-1`, or
-`finance-admin-2`. The script resolves the needed Terraform outputs, MFA secret
-ARN, and Core Case image tag automatically. Enter the printed 6-digit TOTP code
-immediately because codes rotate every 30 seconds.
+What it does: generates the 6-digit MFA code for the seeded `finance-admin`
+account through the SSM-only bastion. Enter the code immediately because TOTP
+codes rotate every 30 seconds.
+
+You can replace `finance-admin` with `employee`, `manager`, `platform-admin`,
+or a full account alias such as `employee-1`, `manager-1`,
+`finance-admin-2`, or `platform-admin-1`.
 
 Seeded accounts:
 
@@ -104,533 +114,167 @@ Seeded accounts:
 | `platform-admin-1` | `platform-admin@example1.invalid` | Admin | primary |
 | `platform-admin-2` | `platform-admin@example2.invalid` | Admin | secondary |
 
-The demo expense report seeded by `demo-seed` is in the primary tenant, so use
+The demo Expense Report seeded by `demo-seed` is in the primary tenant, so use
 a `-1` account to see it.
 
-For deeper runtime validation after a full apply, use the Terraform smoke test
-documented in `scripts/aws/README.md`:
+## Deploy Demo Instructions
+
+### Deploy The Demo Environment
+
+Command:
 
 ```bash
 AWS_PROFILE=expenseflow-smoke \
-  scripts/aws/run-terraform-e2e-smoke.sh
+AWS_REGION=us-east-1 \
+AUTO_APPROVE=true \
+scripts/aws/e2e/deploy-demo.sh
 ```
 
-That smoke test requires valid JWT inputs and other runtime values; read the
-script README before running it.
+What it does: runs the full scripted demo deploy. It generates sandbox secrets,
+deploys the JWT issuer, applies the persistent ECR root, imports existing ECR
+repositories into that root when needed, builds and pushes images, applies
+runtime Terraform, deploys the SPA, runs migrations and demo seeding through
+the bastion, and runs the ZAP API scan.
 
-## Prerequisites
+The script is idempotent and safe to rerun. It deploys real, billed AWS
+infrastructure and does not tear anything down afterward.
 
-Install and configure these before starting:
-
-- AWS CLI authenticated to the `expenseflow-smoke` profile.
-- Terraform `>= 1.6.0`.
-- Docker with Buildx support.
-- AWS SAM CLI, used by the JWT issuer packaging flow.
-- Node.js `>= 24`.
-- `jq`.
-- OpenSSL.
-- AWS Session Manager plugin, required for SSM port forwarding.
-- `asm-exec`, required when Terraform's PostgreSQL provider needs the RDS
-  master password resolved from Secrets Manager.
-- Trivy, Syft, and Cosign when using the secure image build script.
-
-Verify AWS access first:
-
-```bash
-AWS_PROFILE=expenseflow-smoke AWS_REGION=us-east-1 \
-  aws sts get-caller-identity
-```
-
-Most AWS helper scripts default to profile `expenseflow-smoke` and region
-`us-east-1`. They refuse other profiles unless
-`ALLOW_NON_SMOKE_PROFILE=true` is set.
-
-## Required Configuration
-
-### Remote State
-
-Terraform state is stored in the S3 bucket created by
-`infra/terraform/bootstrap`. The sandbox backend expects a local
-`infra/terraform/environments/sandbox/backend.hcl` file created from the
-example:
-
-```bash
-cp infra/terraform/environments/sandbox/backend.hcl.example \
-  infra/terraform/environments/sandbox/backend.hcl
-```
-
-Edit `backend.hcl` and set `bucket` to the `state_bucket_name` output from the
-bootstrap stack. `backend.hcl` is ignored by git and must not be committed.
-
-### Sandbox Variables
-
-Create `infra/terraform/environments/sandbox/terraform.tfvars` from the
-example:
-
-```bash
-cp infra/terraform/environments/sandbox/terraform.tfvars.example \
-  infra/terraform/environments/sandbox/terraform.tfvars
-```
-
-Paste these required runtime values into `terraform.tfvars`:
-
-```hcl
-core_case_auth_jwt_private_key_secret_arn           = "<from generate-sandbox-secrets.sh>"
-gl_coding_auth_jwt_public_keys_json_secret_arn      = "<from generate-sandbox-secrets.sh>"
-core_case_mfa_totp_secret_encryption_key_secret_arn = "<from generate-sandbox-secrets.sh>"
-core_case_internal_command_token_secret_arn         = "<from generate-sandbox-secrets.sh>"
-http_api_jwt_issuer                                 = "<IssuerUrl from deploy-jwt-issuer.sh>"
-```
-
-The secret variables must be Secrets Manager ARNs only. Do not paste secret
-values into Terraform files, terminal output, docs, or logs.
-
-For the `expenseflow-smoke` sandbox account, also set these values:
-
-```hcl
-aws_region  = "us-east-1"
-aws_profile = "expenseflow-smoke"
-
-allow_plain_http_public_api       = true
-enable_nat_gateway                = false
-db_enable_enhanced_monitoring     = false
-core_case_internal_routes_enabled = true
-
-role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/TraineeSandboxBoundary"
-http_api_lambda_vpc_id        = "vpc-xxxxxxxx"
-```
-
-After images are pushed, also set the image URIs:
-
-```hcl
-core_case_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-core-case-service:<tag>"
-gl_coding_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-gl-coding-service:<tag>"
-stage_transition_lambda_image_uri = "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/expenseflow-sandbox-stage-transition-consumer-lambda:<tag>"
-```
-
-To find the existing sandbox VPC ID when using the default discovered network:
-
-```bash
-AWS_PROFILE=expenseflow-smoke AWS_REGION=us-east-1 \
-  aws ec2 describe-vpcs \
-  --filters Name=tag:Name,Values=project-vpc \
-  --query 'Vpcs[0].VpcId' \
-  --output text
-```
-
-## Spin Up With Scripts
-
-This is the recommended path for a new developer.
-
-`scripts/aws/e2e/deploy-demo.sh` runs the main deployment flow in order:
-
-1. Generates or rotates the required sandbox secrets.
-2. Packages and deploys the JWT issuer stack.
-3. Creates the ECR repositories with a targeted Terraform apply.
-4. Builds and pushes Core Case, GL-coding, and stage-transition Lambda images.
-5. Runs the full Terraform apply.
-6. Builds and deploys the SPA to S3 and CloudFront.
-7. Runs migrations, account seeding, and demo-data seeding through the bastion.
-
-The script is idempotent and safe to re-run, but it deploys real, billed AWS
-infrastructure. It does not tear the environment down.
-
-### One-Time Bootstrap
-
-Run this once if the remote state bucket does not exist:
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/bootstrap init
-
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/bootstrap apply
-```
-
-Copy the printed `state_bucket_name`, then create and edit `backend.hcl`:
-
-```bash
-cp infra/terraform/environments/sandbox/backend.hcl.example \
-  infra/terraform/environments/sandbox/backend.hcl
-```
-
-Set `bucket` in `backend.hcl`, then initialize the sandbox backend:
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox init \
-  -backend-config=backend.hcl
-```
-
-### Run The Scripted Deploy
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  AUTO_APPROVE=true \
-  scripts/aws/e2e/deploy-demo.sh
-```
-
-Useful environment variables:
+Optional environment variables:
 
 | Variable | Default | Use |
 | --- | --- | --- |
 | `IMAGE_TAG` | `demo-<UTC timestamp>` | Tag for all pushed images. |
-| `AUTO_APPROVE` | `false` | Set `true` to pass `-auto-approve` to Terraform applies. |
-| `SKIP_SPA_DEPLOY` | `false` | Set `true` when only backend infrastructure/images need redeploying. |
-| `SKIP_BASTION_SEED` | `false` | Set `true` to skip migration and seed commands. |
+| `SKIP_SPA_DEPLOY` | `false` | Skip SPA build/deploy when only backend infrastructure or images need redeploying. |
+| `SKIP_BASTION_SEED` | `false` | Skip migrations and seed commands. |
+| `SKIP_ZAP_SCAN` | `false` | Skip the ZAP API scan. |
 | `VITE_TENANT_ID` | Primary synthetic tenant ID | Tenant baked into the SPA build. |
-| `ROLE_PERMISSIONS_BOUNDARY_ARN` | Sandbox boundary ARN | Override if the account boundary ARN changes. |
+| `HTTP_API_LAMBDA_VPC_ID` | Discovered from `EXISTING_VPC_NAME` | Override the VPC used by the Issue Payment Lambda. |
+| `EXISTING_VPC_NAME` | `project-vpc` | Existing sandbox VPC `Name` tag used when discovering `HTTP_API_LAMBDA_VPC_ID`. |
+| `RUN_READONLY_ROLE_STEP` | `false` | Also apply GL-coding's readonly database role and the `vector` extension through a bastion SSM tunnel. |
+| `READONLY_ROLE_STEP_LOCAL_PORT` | `15432` | Local port for the readonly-role SSM tunnel. |
+| `ZAP_IMAGE` | Pinned `ghcr.io/zaproxy/zaproxy` digest | Override the ZAP scan container image. |
 
-The script passes required secrets, issuer URL, image URIs, and sandbox account
-overrides to Terraform as `-var` arguments. You do not need to paste those into
-`terraform.tfvars` for the scripted path, although keeping a complete tfvars is
-useful for later manual plans.
+## Tear Down Instructions
 
-### Finish The GL-Coding Readonly Role
+### Tear Down The Demo Environment
 
-One step is intentionally not automated. The GL-coding readonly database role
-is managed through Terraform's `postgresql` provider, which must reach the
-private RDS endpoint. From a laptop, that requires an SSM tunnel through the
-bastion after the first apply has created it.
-
-Use the command printed at the end of `deploy-demo.sh` to open the tunnel.
-Then run Terraform from an environment where `PGUSER` and `PGPASSWORD` are
-provided through the approved `asm-exec` dynamic-reference pattern described in
-`infra/terraform/modules/database/README.md`. Do not print or paste the RDS
-master password into terminal output.
-
-## Spin Up Manually
-
-Use this path for troubleshooting or when you want to run each command by hand.
-
-### 1. Create Remote State
-
-Skip this if bootstrap already exists.
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/bootstrap init
-
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/bootstrap apply
-```
-
-### 2. Configure The Backend
-
-```bash
-cp infra/terraform/environments/sandbox/backend.hcl.example \
-  infra/terraform/environments/sandbox/backend.hcl
-```
-
-Edit `infra/terraform/environments/sandbox/backend.hcl` and set `bucket` to
-the bootstrap `state_bucket_name` output.
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox init \
-  -backend-config=backend.hcl
-```
-
-### 3. Generate Required Secrets
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  scripts/aws/generate-sandbox-secrets.sh
-```
-
-Paste the four printed secret ARNs into `terraform.tfvars`:
-
-- `core_case_auth_jwt_private_key_secret_arn`
-- `gl_coding_auth_jwt_public_keys_json_secret_arn`
-- `core_case_mfa_totp_secret_encryption_key_secret_arn`
-- `core_case_internal_command_token_secret_arn`
-
-If you override `auth_jwt_key_id` in Terraform, run the secret generation
-script with the same `AUTH_JWT_KEY_ID`.
-
-### 4. Deploy The JWT Issuer
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  scripts/aws/package-jwt-issuer.sh
-
-AWS_PROFILE=expenseflow-smoke \
-  scripts/aws/deploy-jwt-issuer.sh
-```
-
-Paste the printed `IssuerUrl` into `terraform.tfvars` as
-`http_api_jwt_issuer`.
-
-`package-jwt-issuer.sh` also runs `npm --workspace platform/http-api run
-build:lambda`, which produces the default HTTP API Lambda build outputs used by
-Terraform.
-
-### 5. Complete Sandbox Account Values
-
-Set the sandbox account overrides in `terraform.tfvars`:
-
-```hcl
-allow_plain_http_public_api       = true
-enable_nat_gateway                = false
-db_enable_enhanced_monitoring     = false
-core_case_internal_routes_enabled = true
-role_permissions_boundary_arn     = "arn:aws:iam::ACCOUNT_ID:policy/TraineeSandboxBoundary"
-http_api_lambda_vpc_id            = "vpc-xxxxxxxx"
-```
-
-Do not set image URI variables yet if this is a cold account and the ECR
-repositories are not created.
-
-### 6. Create ECR Repositories
-
-Terraform needs the ECR repositories before images can be pushed. Run the
-targeted apply after `terraform.tfvars` contains the required secret and issuer
-values:
-
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox apply \
-  -target=module.ecs.aws_ecr_repository.core_case \
-  -target=module.ecs.aws_ecr_repository.gl_coding \
-  -target=module.lambda_stage_transition_consumer.aws_ecr_repository.this
-```
-
-### 7. Build And Push Images
-
-Choose one image tag and reuse it for every image:
-
-```bash
-export IMAGE_TAG="demo-$(date -u +%Y%m%dt%H%M%Sz)"
-```
-
-Build and push Core Case and GL-coding with the secure image script:
+Command:
 
 ```bash
 AWS_PROFILE=expenseflow-smoke \
 AWS_REGION=us-east-1 \
-CORE_CASE_REPOSITORY=expenseflow-sandbox-core-case-service \
-GL_CODING_REPOSITORY=expenseflow-sandbox-gl-coding-service \
-IMAGE_TAG="$IMAGE_TAG" \
-scripts/aws/build-push-images.sh
+AUTO_APPROVE=true \
+scripts/aws/e2e/tear-down-demo.sh
 ```
 
-This requires Trivy, Syft, Cosign, and a configured Cosign signing method. Do
-not paste signing secrets into shell history or documentation.
+What it does: tears down the costly runtime resources from the demo
+environment. It empties the SPA and receipt S3 buckets, preserves the three
+demo ECR repositories and their images, runs Terraform destroy through the
+bastion tunnel when needed, force-deletes ephemeral runtime secrets so their
+names can be reused, and deletes the JWT issuer CloudFormation stack.
 
-Build and push the stage-transition consumer Lambda image:
+The teardown does not remove:
 
-```bash
-AWS_PROFILE=expenseflow-smoke \
-AWS_REGION=us-east-1 \
-LAMBDA_REPOSITORY=expenseflow-sandbox-stage-transition-consumer-lambda \
-IMAGE_TAG="$IMAGE_TAG" \
-scripts/aws/SCRUM-149/package-stage-transition-lambda.sh
-```
+- The Terraform bootstrap state bucket.
+- The three demo ECR repositories or their images.
+- The SAM deployment artifact bucket used by the JWT issuer.
+- Older CloudFormation stacks that predate this deploy flow.
 
-Resolve the account ID and paste the resulting image URIs into
-`terraform.tfvars`:
+This runs a real Terraform destroy against real AWS infrastructure. Nothing
+it destroys is reversible.
 
-```bash
-AWS_PROFILE=expenseflow-smoke AWS_REGION=us-east-1 \
-  aws sts get-caller-identity \
-  --query Account \
-  --output text
-```
+## Troubleshooting
 
-### 8. Apply The Full Sandbox
+### `Invalid count argument` During ALB Planning
 
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox plan \
-  -var-file=terraform.tfvars
+Cause: an older version of the sandbox Terraform tried to decide an ALB
+security group rule count from a Lambda security group ID that was unknown
+until apply.
 
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox apply \
-  -var-file=terraform.tfvars
-```
+Fix: rerun `deploy-demo.sh` from a branch that includes the plan-stable ALB
+security group rule fix.
 
-If the apply reaches the GL-coding readonly-role resources and cannot connect
-to PostgreSQL, let the rest of the infrastructure finish, then complete the
-readonly-role step through the bastion as described in
-`Finish The GL-Coding Readonly Role`.
+### ECR Repository Is Not Empty During Teardown
 
-### 9. Run Migrations And Seed Data
+Cause: a plain Terraform destroy tried to delete ECR repositories that still
+contained images.
 
-The bastion helper resolves the needed Terraform outputs, MFA secret ARN, Core
-Case repository URL, running image tag, and receipt bucket automatically:
+Fix: use `scripts/aws/e2e/tear-down-demo.sh`. The teardown script preserves
+ECR repositories and images because their storage cost is tiny and the images
+are useful for later deploys.
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh migrate
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh seed
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh demo-seed
-```
+### ECR Repository Already Exists During Deploy
 
-### 10. Build And Deploy The SPA
+Cause: a persistent demo ECR repository exists in AWS but has not yet been
+adopted into the separate `sandbox-ecr` Terraform state.
 
-The SPA must be built with the tenant ID. Leave `VITE_API_BASE_URL` empty so
-the browser uses relative `/v1/*` calls through CloudFront.
+Fix: rerun `deploy-demo.sh`. The script imports existing ECR repositories into
+the persistent ECR root before applying that root.
 
-```bash
-VITE_API_BASE_URL="" \
-VITE_TENANT_ID="8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb" \
-  npm --workspace frontend/app run build
-```
+### Terraform Provider Schema Loading Fails
 
-Deploy the build and invalidate CloudFront:
+Cause: the local `.terraform` provider cache is stale, incomplete, or contains
+provider binaries that cannot start on this machine.
 
-```bash
-export SPA_BUCKET="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw spa_bucket_name)"
-export SPA_DOMAIN="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw spa_cloudfront_domain_name)"
-export SPA_DISTRIBUTION_ID="$(AWS_PROFILE=expenseflow-smoke aws cloudfront list-distributions --query "DistributionList.Items[?DomainName=='$SPA_DOMAIN'].Id | [0]" --output text)"
+Fix: refresh the sandbox providers with Terraform init, then rerun the script.
 
-AWS_PROFILE=expenseflow-smoke aws s3 sync frontend/app/dist "s3://$SPA_BUCKET" \
-  --delete --cache-control 'public,max-age=3600'
+### Secrets Manager Says A Secret Is Scheduled For Deletion
 
-AWS_PROFILE=expenseflow-smoke aws s3 cp frontend/app/dist/index.html \
-  "s3://$SPA_BUCKET/index.html" \
-  --cache-control 'no-cache,no-store,must-revalidate' \
-  --content-type 'text/html'
+Cause: a previous teardown scheduled an ephemeral runtime secret for deletion,
+and AWS still reserves the name during the recovery window.
 
-AWS_PROFILE=expenseflow-smoke aws cloudfront create-invalidation \
-  --distribution-id "$SPA_DISTRIBUTION_ID" \
-  --paths '/*'
-```
+Fix: rerun `tear-down-demo.sh`. The script force-deletes the fixed runtime
+secret names without a recovery window and waits briefly for those names to
+become reusable.
 
-### 11. Final Outputs
+### `backend.hcl` Is Missing
 
-```bash
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox output public_alb_dns_name
+Cause: the local sandbox backend config has not been created for this machine.
 
-AWS_PROFILE=expenseflow-smoke \
-  terraform -chdir=infra/terraform/environments/sandbox output spa_cloudfront_domain_name
-```
+Fix: create `infra/terraform/environments/sandbox/backend.hcl` from the
+example, set the bucket to the bootstrap state bucket, initialize the sandbox
+backend, then rerun `deploy-demo.sh`.
 
-## Bastion Operations
+### AWS Profile Is Rejected
 
-All commands in this section use `scripts/aws/bastion-run.sh` over SSM Session
-Manager. They do not require SSH.
+Cause: the scripts default to the `expenseflow-smoke` sandbox profile and
+refuse other profiles by default.
 
-By default, the script resolves common sandbox values from Terraform outputs,
-the fixed MFA Secrets Manager secret name, and the running Core Case ECS task
-definition. Run it from the repository root after the sandbox has been applied:
+Fix: use `AWS_PROFILE=expenseflow-smoke`, or set
+`ALLOW_NON_SMOKE_PROFILE=true` only when you intentionally target a different
+AWS account.
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh code employee
-```
+### Issue Payment Lambda Cannot Reach Core Case
 
-Override the auto-resolved values only when troubleshooting or targeting a
-non-default sandbox:
+Cause: the Lambda must run in the sandbox VPC to call Core Case through the
+internal ALB.
 
-```bash
-export BASTION_INSTANCE_ID="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw bastion_instance_id)"
-export CORE_CASE_DB_MASTER_USER_SECRET_ARN="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_db_master_user_secret_arn)"
-export CORE_CASE_DB_HOST="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_db_endpoint | cut -d: -f1)"
-export CORE_CASE_DB_NAME="core_case"
-export MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN="<same ARN used for core_case_mfa_totp_secret_encryption_key_secret_arn>"
-export CORE_CASE_IMAGE_URI="$(AWS_PROFILE=expenseflow-smoke terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_repository_url)"
-export CORE_CASE_IMAGE_TAG="<the image tag currently deployed>"
-```
+Fix: rerun `deploy-demo.sh`. The script discovers the default sandbox VPC by
+`Name=project-vpc` and `env=sandbox`. If discovery is wrong for your account,
+set `HTTP_API_LAMBDA_VPC_ID` and rerun the script.
 
-Run pending migrations:
+### GL-Coding Tasks Stay Unhealthy
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh migrate
-```
+Cause: GL-coding's readonly database role and the `vector` extension require
+Terraform's PostgreSQL provider to reach private RDS through the bastion. The
+main deploy skips that step unless `RUN_READONLY_ROLE_STEP=true`.
 
-Seed the fixed synthetic sign-in accounts:
+Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`. Add
+`SKIP_SPA_DEPLOY=true`, `SKIP_BASTION_SEED=true`, and `SKIP_ZAP_SCAN=true` if
+you only want to complete the database role/extension step.
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh seed
-```
+### ZAP Scan Fails After Deploy
 
-Seed demo expense data and synthetic receipts:
+Cause: `deploy-demo.sh` runs a ZAP API scan against the deployed Core Case
+OpenAPI document and exits non-zero on High-severity findings.
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh demo-seed
-```
+Fix: inspect `evidence/secure-release-gate/core-case-service-zap-report.json`.
+The environment is already deployed when this happens; teardown is a separate
+explicit step.
 
-Generate a TOTP code for sign-in:
+### MFA Code Does Not Work
 
-```bash
-AWS_PROFILE=expenseflow-smoke scripts/aws/bastion-run.sh code employee
-```
+Cause: TOTP codes rotate every 30 seconds, or the wrong account alias was used.
 
-Valid aliases are `employee`, `manager`, `finance-admin`, and
-`platform-admin`. Full account names such as `employee-1` and
-`finance-admin-2` also work. TOTP codes rotate every 30 seconds.
-
-## Known Constraints And Troubleshooting
-
-### No ACM Certificate In The Sandbox Account
-
-The public ALB has no HTTPS listener unless `public_alb_certificate_arn` is
-configured. In the current sandbox, set:
-
-```hcl
-allow_plain_http_public_api = true
-```
-
-The browser still talks HTTPS to CloudFront. CloudFront proxies `/v1/*` to the
-ALB as a server-to-server HTTP origin.
-
-### NAT Gateway Creation Is Denied
-
-The sandbox account denies `ec2:CreateNatGateway`, so set:
-
-```hcl
-enable_nat_gateway = false
-```
-
-Private AWS API access is handled by VPC endpoints in
-`infra/terraform/environments/sandbox/endpoints.tf`.
-
-### IAM Permissions Boundary Is Required
-
-The sandbox account requires the Trainee sandbox permissions boundary on IAM
-roles. Set:
-
-```hcl
-role_permissions_boundary_arn = "arn:aws:iam::ACCOUNT_ID:policy/TraineeSandboxBoundary"
-```
-
-### RDS Enhanced Monitoring Is Denied
-
-The sandbox account does not allow passing a role to
-`monitoring.rds.amazonaws.com`. Set:
-
-```hcl
-db_enable_enhanced_monitoring = false
-```
-
-### GL-Coding Readonly Role Requires Private RDS Access
-
-The `database` module provisions a least-privilege Postgres role for
-GL-coding. Terraform uses the `cyrilgdn/postgresql` provider for that role, so
-the apply shell needs both:
-
-- Network access to the private RDS endpoint, usually through the bastion SSM
-  tunnel.
-- `PGUSER` and `PGPASSWORD` supplied out of band using the approved
-  `asm-exec` dynamic-reference pattern.
-
-Do not read, print, or paste the RDS master password. See
-`infra/terraform/modules/database/README.md` for the secret-safety rule and
-the dynamic reference format.
-
-### `latest` Images Are Not Used
-
-The deployment flow uses timestamped image tags. If bastion commands pull
-`latest`, they will fail because `latest` is not pushed by this workflow. The
-bastion helper resolves the running Core Case image tag from ECS by default.
-Set `CORE_CASE_IMAGE_TAG` manually only if that lookup fails.
-
-To inspect the current Core Case task image:
-
-```bash
-AWS_PROFILE=expenseflow-smoke AWS_REGION=us-east-1 \
-  aws ecs describe-task-definition \
-  --task-definition expenseflow-sandbox-core-case-service \
-  --query 'taskDefinition.containerDefinitions[0].image' \
-  --output text
-```
+Fix: rerun `scripts/aws/bastion-run.sh code <account>` and enter the newest
+code immediately. Use a `-1` account for the primary tenant demo data.

@@ -157,7 +157,10 @@ run_event_flow_smoke() {
 let input = "";
 process.stdin.on("data", (chunk) => { input += chunk; });
 process.stdin.on("end", () => {
-  process.stdout.write(JSON.parse(input).database_url);
+  const url = new URL(JSON.parse(input).database_url);
+  url.searchParams.set("uselibpqcompat", "true");
+  url.searchParams.set("sslmode", "require");
+  process.stdout.write(url.toString());
 });
 ')"
     fi

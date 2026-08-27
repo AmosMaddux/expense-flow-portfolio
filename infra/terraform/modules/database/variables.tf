@@ -143,3 +143,20 @@ variable "extensions" {
   type        = set(string)
   default     = []
 }
+
+variable "readonly_roles_and_extensions_enabled" {
+  description = <<-EOT
+    Whether to actually apply readonly_roles and extensions. Both use the
+    postgresql provider, which connects to the database directly and only
+    works when Terraform runs with network access to the private RDS
+    instance (e.g. tunneled through a bastion) - see
+    infra/terraform/README.md's "Manual step" section. Defaults to false so
+    a routine apply from outside the VPC (as scripts/aws/e2e/deploy-demo.sh
+    runs it) does not fail on a connection timeout trying to reach RDS for
+    resources it was never going to be able to create anyway. Set to true
+    only when running from a bastion tunnel with PGUSER/PGPASSWORD
+    supplied out of band.
+  EOT
+  type        = bool
+  default     = false
+}
