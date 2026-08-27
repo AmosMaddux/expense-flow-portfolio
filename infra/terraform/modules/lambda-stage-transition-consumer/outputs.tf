@@ -15,7 +15,7 @@ output "security_group_id" {
 
 output "repository_url" {
   description = "ECR repository URL for the stage-transition consumer Lambda image."
-  value       = aws_ecr_repository.this.repository_url
+  value       = var.repository_url
 }
 
 output "database_url_secret_arn" {

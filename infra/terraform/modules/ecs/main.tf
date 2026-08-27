@@ -12,10 +12,10 @@ data "aws_iam_policy_document" "ecs_tasks_assume_role" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  core_case_log_group_name = "/ecs/${var.name_prefix}/core-case-service"
-  gl_coding_log_group_name = "/ecs/${var.name_prefix}/gl-coding-service"
+  core_case_log_group_name      = "/ecs/${var.name_prefix}/core-case-service"
+  gl_coding_log_group_name      = "/ecs/${var.name_prefix}/gl-coding-service"
   otel_collector_log_group_name = "/ecs/${var.name_prefix}/otel-collector"
-  otel_collector_config = <<-EOT
+  otel_collector_config         = <<-EOT
     receivers:
       otlp:
         protocols:
@@ -116,36 +116,6 @@ locals {
         awslogs-stream-prefix = "aws-otel-collector"
       }
     }
-  }
-}
-
-resource "aws_ecr_repository" "core_case" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
-  name                 = "${var.name_prefix}-core-case-service"
-  image_tag_mutability = "IMMUTABLE"
-  tags                 = var.tags
-
-  encryption_configuration {
-    encryption_type = "AES256"
-  }
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
-resource "aws_ecr_repository" "gl_coding" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
-  name                 = "${var.name_prefix}-gl-coding-service"
-  image_tag_mutability = "IMMUTABLE"
-  tags                 = var.tags
-
-  encryption_configuration {
-    encryption_type = "AES256"
-  }
-
-  image_scanning_configuration {
-    scan_on_push = true
   }
 }
 
@@ -413,6 +383,16 @@ data "aws_iam_policy_document" "execution_secrets" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = local.all_secret_arns
   }
+
+  # gl_coding_db_credentials_secret_arn is encrypted with a customer-managed
+  # KMS key, not the AWS-managed default - secretsmanager:GetSecretValue
+  # alone is not enough to decrypt it. Without this, ECS fails to place
+  # tasks with "AccessDeniedException: Access to KMS is not allowed" even
+  # though the secret-retrieval permission above is correct.
+  statement {
+    actions   = ["kms:Decrypt"]
+    resources = [var.gl_coding_db_credentials_kms_key_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
@@ -642,7 +622,7 @@ resource "aws_ecs_task_definition" "core_case" {
     local.otel_collector_container_definition,
     {
       name      = "core-case-service"
-      image     = coalesce(var.core_case_image_uri, "${aws_ecr_repository.core_case.repository_url}:latest")
+      image     = coalesce(var.core_case_image_uri, "${var.core_case_repository_url}:latest")
       essential = true
       dependsOn = [{
         containerName = "aws-otel-collector"
@@ -739,7 +719,7 @@ resource "aws_ecs_task_definition" "gl_coding" {
     local.otel_collector_container_definition,
     {
       name      = "gl-coding-service"
-      image     = coalesce(var.gl_coding_image_uri, "${aws_ecr_repository.gl_coding.repository_url}:latest")
+      image     = coalesce(var.gl_coding_image_uri, "${var.gl_coding_repository_url}:latest")
       essential = true
       dependsOn = [{
         containerName = "aws-otel-collector"

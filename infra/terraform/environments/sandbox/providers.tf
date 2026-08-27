@@ -14,8 +14,14 @@ provider "aws" {
 # also requires network reachability to the private Core Case RDS instance -
 # run apply from somewhere with VPC access (e.g. a bastion or VPN).
 provider "postgresql" {
-  host             = module.database_core_case.db_address
-  port             = module.database_core_case.db_port
+  # postgresql_provider_host/port default to the real RDS endpoint, but can
+  # be overridden to localhost:<tunnel-port> when applying through an SSM
+  # port-forward to the bastion (see infra/terraform/README.md's "GL-Coding
+  # Readonly Role Requires Private RDS Access" section, and
+  # scripts/aws/e2e/deploy-demo.sh's RUN_READONLY_ROLE_STEP path) - this
+  # keeps that override a -var flag instead of an edit to this file.
+  host             = coalesce(var.postgresql_provider_host, module.database_core_case.db_address)
+  port             = coalesce(var.postgresql_provider_port, module.database_core_case.db_port)
   database         = module.database_core_case.db_name
   sslmode          = "require"
   superuser        = false

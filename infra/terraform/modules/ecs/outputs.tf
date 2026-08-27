@@ -25,12 +25,12 @@ output "gl_coding_security_group_id" {
 
 output "core_case_repository_url" {
   description = "Core Case ECR repository URL."
-  value       = aws_ecr_repository.core_case.repository_url
+  value       = var.core_case_repository_url
 }
 
 output "core_case_repository_arn" {
   description = "Core Case ECR repository ARN."
-  value       = aws_ecr_repository.core_case.arn
+  value       = var.core_case_repository_arn
 }
 
 output "receipt_storage_bucket_arn" {
@@ -40,7 +40,7 @@ output "receipt_storage_bucket_arn" {
 
 output "gl_coding_repository_url" {
   description = "GL-coding ECR repository URL."
-  value       = aws_ecr_repository.gl_coding.repository_url
+  value       = var.gl_coding_repository_url
 }
 
 output "stage_transition_sns_topic_arn" {

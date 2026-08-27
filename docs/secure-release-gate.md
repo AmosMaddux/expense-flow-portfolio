@@ -5,6 +5,9 @@ Syft SBOM, and signs the image and attests the SBOM to it with Cosign before
 the image is allowed to reach a runtime environment. It complements the
 [Secure PR Gate](secure-pr-gate-suppressions.md), which scans source and
 dependencies on every pull request; the release gate scans the built artifact.
+A fourth leg, ZAP, runs a DAST baseline scan against the Core Case Service's
+deployed sandbox ALB as the last step of a manual sandbox redeploy and fails
+that redeploy script on any High-severity finding.
 
 Both service images are covered: `backend/core-case-service/Dockerfile`
 (Core Case Service) and `backend/python/Dockerfile` (GL-coding service).
@@ -33,6 +36,17 @@ enters the registry. `scripts/aws/register-task-definitions.sh` runs
 `scripts/aws/verify-image-signatures.sh` before it renders task definitions,
 so a task definition cannot reference an image whose signature or SBOM
 attestation does not verify.
+
+ZAP runs separately from all of the above, and not in `secure-release-gate.yml`'s
+`release-scan` job. There is no automated "code merges → service is deployed
+and reachable" pipeline in this repo today:
+`scripts/aws/e2e/deploy-demo.sh` is a manual, by-hand redeploy of the
+Terraform-managed sandbox (`infra/terraform/environments/sandbox`), so ZAP
+runs as the last step of that script instead, scanning the public ALB that
+redeploy just applied. `secure-release-gate.yml` still validates the ZAP
+gate scripts against fixtures on every pull request that touches them (see
+`gate-contract-tests`), the same way it validates the Trivy/Syft/Cosign
+scripts, but it does not run a scan against a live target.
 
 ## Trivy
 
@@ -79,6 +93,36 @@ Blob-signing wrappers (`scripts/ci/run-cosign-sign-blob.sh` /
 a report that is not tied to a specific image, but the release gate itself
 signs images, not blobs.
 
+## ZAP
+
+ZAP runs a DAST scan against the Core Case Service's deployed public ALB
+(`scripts/ci/run-zap-baseline-gate.sh`, wrapping OWASP ZAP's
+`zap-api-scan.py`) and blocks on any High-severity alert
+(`scripts/ci/check-zap-baseline-severity.sh`, which parses the JSON report's
+`riskcode` field rather than trusting `zap-api-scan.py`'s own exit code,
+since that code conflates warnings and failures the same way Trivy's default
+exit code would without an explicit `--severity`/`--exit-code` pair). The
+scan targets the service's live OpenAPI document
+(`http://<alb-dns>/v1/openapi.json`, served at `GET /v1/openapi.json` by
+Core Case itself) rather than the bare ALB URL: `zap-baseline.py`'s GET-only
+link spider cannot discover a JSON REST API's `POST`/`PUT`/`DELETE` routes,
+since there is nothing on an unauthenticated root page for it to crawl to,
+so it only ever finds the ALB's generic 404 page. `zap-api-scan.py` imports
+the OpenAPI document instead and actively calls every route it documents,
+which is what actually exercises `/v1/*`.
+
+Both scripts are invoked from `scripts/aws/e2e/deploy-demo.sh` as its final
+step, against the OpenAPI document URL built from the same deploy's ALB DNS
+name (`terraform output public_alb_dns_name`), and can be skipped with
+`SKIP_ZAP_SCAN=true`. The scan runs after the deploy has fully applied, so a
+High finding fails the script but does not undo the deploy - see the
+"Evidence packet" section below for where the report lands, and the
+script's own final-step ordering (summary first, then the severity check)
+so the operator still sees the ALB/CloudFront URLs even when the scan fails.
+
+The ZAP container image is pinned by digest via `ZAP_IMAGE`, matching how
+`TRIVY_IMAGE` and `SYFT_IMAGE` are pinned in `secure-release-gate.yml`.
+
 ## Suppressions
 
 Suppress a specific Trivy CVE only after the Security team confirms it is a
@@ -105,3 +149,12 @@ writes the same Trivy reports and SBOMs to `evidence/secure-release-gate/`
 be attached to the release's evidence packet; each image's Cosign signature
 and SBOM attestation live in the registry alongside the image itself and can
 be fetched with `cosign verify` and `cosign verify-attestation`.
+
+`scripts/aws/e2e/deploy-demo.sh` writes its ZAP baseline report to
+`evidence/secure-release-gate/core-case-service-zap-report.json` on every
+run where `SKIP_ZAP_SCAN` is not set, whether or not a High-severity finding
+fails the run - the report is written before the severity check runs, so it
+is available in the evidence directory either way. Unlike the Trivy/SBOM
+evidence, this is written directly to the local filesystem by the manual
+script (there is no `secure-release-gate.yml` workflow artifact for it,
+since the scan does not run in CI - see the "ZAP" section above).

@@ -74,9 +74,14 @@ data "aws_iam_policy_document" "bastion_permissions" {
 
     content {
       sid = "SeedDemoReceipts"
+      # There is no such IAM action as s3:HeadObject - HeadObject is
+      # authorized by s3:GetObject (verified: granting only PutObject +
+      # the literal string "s3:HeadObject" produces a bare 403 with no body
+      # on every HeadObject call, which the AWS SDK then reports as an
+      # opaque "UnknownError" instead of AccessDenied).
       actions = [
         "s3:PutObject",
-        "s3:HeadObject",
+        "s3:GetObject",
       ]
       resources = ["${statement.value}/*"]
     }

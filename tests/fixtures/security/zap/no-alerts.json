@@ -1,0 +1,13 @@
+{
+  "@programName": "ZAP",
+  "@version": "test-fixture",
+  "site": [
+    {
+      "@name": "http://example.test",
+      "@host": "example.test",
+      "@port": "80",
+      "@ssl": "false",
+      "alerts": []
+    }
+  ]
+}

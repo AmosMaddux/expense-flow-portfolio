@@ -27,7 +27,7 @@ data "aws_secretsmanager_secret_version" "core_case_db_master_user" {
 locals {
   core_case_db_master_user_credentials = jsondecode(data.aws_secretsmanager_secret_version.core_case_db_master_user.secret_string)
   core_case_database_url = format(
-    "postgres://%s:%s@%s:%s/%s",
+    "postgres://%s:%s@%s:%s/%s?uselibpqcompat=true&sslmode=require",
     urlencode(local.core_case_db_master_user_credentials.username),
     urlencode(local.core_case_db_master_user_credentials.password),
     var.core_case_db_host,
@@ -48,21 +48,6 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   secret_string = jsonencode({
     database_url = local.core_case_database_url
   })
-}
-
-resource "aws_ecr_repository" "this" {
-  #checkov:skip=CKV_AWS_136: Sandbox ECR uses AES256 while customer-managed KMS is reviewed separately, owner platform-security, review by 2026-12-31
-  name                 = "${var.name_prefix}-stage-transition-consumer-lambda"
-  image_tag_mutability = "IMMUTABLE"
-  tags                 = var.tags
-
-  encryption_configuration {
-    encryption_type = "AES256"
-  }
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
 }
 
 resource "aws_cloudwatch_log_group" "this" {
@@ -163,7 +148,7 @@ resource "aws_lambda_function" "this" {
   function_name = local.function_name
   role          = aws_iam_role.this.arn
   package_type  = "Image"
-  image_uri     = coalesce(var.image_uri, "${aws_ecr_repository.this.repository_url}:latest")
+  image_uri     = coalesce(var.image_uri, "${var.repository_url}:latest")
   architectures = ["x86_64"]
   timeout       = var.timeout_seconds
   memory_size   = var.memory_size

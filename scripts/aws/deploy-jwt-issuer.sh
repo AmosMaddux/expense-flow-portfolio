@@ -83,7 +83,7 @@ main() {
     # file:// form parses a real JSON array instead of a delimited string, so
     # it round-trips the JWKS correctly.
     parameters_file="$(mktemp --suffix=.json)"
-    trap 'rm -f "$parameters_file"' RETURN
+    trap 'rm -f "$parameters_file"; trap - RETURN EXIT' RETURN EXIT
     ENVIRONMENT_TAG="sandbox" USER_TAG="muhilramesh" JWKS_JSON_VALUE="$resolved_jwks_json" node -e '
 const fs = require("fs");
 fs.writeFileSync(process.argv[1], JSON.stringify([

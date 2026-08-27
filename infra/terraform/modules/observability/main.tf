@@ -19,7 +19,7 @@ locals {
     | sort errorRate desc
     | limit 20
   EOT
-  alert_disposition_query = <<-EOT
+  alert_disposition_query           = <<-EOT
     SOURCE '${var.core_case_log_group_name}'
     | fields @timestamp, tenantId, alertId, alertName, severity, status, resolution, correlationId, traceId, investigatedBy
     | filter eventType = "alert_disposition"
@@ -168,8 +168,8 @@ resource "aws_cloudwatch_log_metric_filter" "core_case_alert_disposition" {
     namespace = local.namespace
     value     = "1"
     dimensions = {
-      Service = "$.service"
-      Status  = "$.status"
+      Service  = "$.service"
+      Status   = "$.status"
       TenantId = "$.tenantId"
     }
   }

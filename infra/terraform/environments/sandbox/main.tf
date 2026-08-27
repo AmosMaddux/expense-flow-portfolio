@@ -53,16 +53,24 @@ module "network" {
 module "alb" {
   source = "../../modules/alb"
 
-  allow_plain_http_public_api            = var.allow_plain_http_public_api
-  gl_coding_internal_auth_secret_arn     = var.gl_coding_internal_auth_secret_arn
-  internal_subnet_ids                    = local.private_subnet_ids
-  issue_payment_lambda_security_group_id = module.http_api.issue_payment_lambda_security_group_id
-  name_prefix                            = var.name_prefix
-  public_alb_certificate_arn             = var.public_alb_certificate_arn
-  public_subnet_ids                      = local.public_subnet_ids
-  runtime_smoke_source_cidrs             = var.runtime_smoke_source_cidrs
-  tags                                   = local.tags
-  vpc_id                                 = local.vpc_id
+  allow_plain_http_public_api        = var.allow_plain_http_public_api
+  gl_coding_internal_auth_secret_arn = var.gl_coding_internal_auth_secret_arn
+  internal_subnet_ids                = local.private_subnet_ids
+  name_prefix                        = var.name_prefix
+  public_alb_certificate_arn         = var.public_alb_certificate_arn
+  public_subnet_ids                  = local.public_subnet_ids
+  runtime_smoke_source_cidrs         = var.runtime_smoke_source_cidrs
+  tags                               = local.tags
+  vpc_id                             = local.vpc_id
+}
+
+resource "terraform_data" "public_alb_routing_configuration" {
+  lifecycle {
+    precondition {
+      condition     = var.public_alb_certificate_arn != null || var.allow_plain_http_public_api
+      error_message = "Sandbox public ALB must use HTTPS with public_alb_certificate_arn or temporary plaintext HTTP with allow_plain_http_public_api = true."
+    }
+  }
 }
 
 module "ecs" {
@@ -78,6 +86,8 @@ module "ecs" {
   core_case_db_name                                   = module.database_core_case.db_name
   core_case_db_port                                   = module.database_core_case.db_port
   core_case_image_uri                                 = var.core_case_image_uri
+  core_case_repository_arn                            = var.core_case_repository_arn
+  core_case_repository_url                            = var.core_case_repository_url
   core_case_internal_command_token_secret_arn         = var.core_case_internal_command_token_secret_arn
   core_case_internal_target_group_arn                 = module.alb.core_case_internal_target_group_arn
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
@@ -91,12 +101,14 @@ module "ecs" {
   dynamodb_expense_report_table_name                  = local.dynamodb_expense_report_table_name
   dynamodb_expense_report_tenant_index_name           = "${var.name_prefix}-expense-report-tenant-index"
   gl_coding_auth_jwt_public_keys_json_secret_arn      = var.gl_coding_auth_jwt_public_keys_json_secret_arn
+  gl_coding_db_credentials_kms_key_arn                = module.database_core_case.readonly_role_secrets_kms_key_arn
   gl_coding_db_credentials_secret_arn                 = module.database_core_case.readonly_role_secret_arns["gl_coding_app"]
   gl_coding_db_host                                   = module.database_core_case.db_address
   gl_coding_db_name                                   = module.database_core_case.db_name
   gl_coding_db_port                                   = module.database_core_case.db_port
   gl_coding_image_uri                                 = var.gl_coding_image_uri
   gl_coding_internal_auth_secret_arn                  = var.gl_coding_internal_auth_secret_arn
+  gl_coding_repository_url                            = var.gl_coding_repository_url
   gl_coding_target_group_arn                          = module.alb.gl_coding_target_group_arn
   internal_alb_dns_name                               = module.alb.internal_alb_dns_name
   internal_alb_security_group_id                      = module.alb.internal_alb_security_group_id
@@ -149,7 +161,8 @@ module "database_core_case" {
 
   # Policy retrieval stores tenant policy chunk embeddings in a pgvector
   # column, and the service user running migrations cannot create extensions.
-  extensions = ["vector"]
+  extensions                            = ["vector"]
+  readonly_roles_and_extensions_enabled = var.db_readonly_roles_and_extensions_enabled
 
   readonly_roles = {
     gl_coding_app = {
@@ -197,6 +210,7 @@ module "lambda_stage_transition_consumer" {
   image_uri                           = var.stage_transition_lambda_image_uri
   name_prefix                         = var.name_prefix
   private_subnet_ids                  = local.private_subnet_ids
+  repository_url                      = var.stage_transition_lambda_repository_url
   role_permissions_boundary_arn       = var.role_permissions_boundary_arn
   stage_transition_sqs_dlq_arn        = module.ecs.stage_transition_sqs_dlq_arn
   stage_transition_sqs_queue_arn      = module.ecs.stage_transition_sqs_queue_arn
@@ -230,6 +244,21 @@ module "observability" {
   name_prefix                            = var.name_prefix
   stage_transition_lambda_log_group_name = module.lambda_stage_transition_consumer.log_group_name
   tags                                   = local.tags
+}
+
+# Declared here rather than inside either module to avoid a module cycle:
+# the HTTP API Lambda needs the internal ALB DNS name, and this rule needs
+# both the internal ALB and Lambda security group IDs.
+resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_issue_payment_lambda" {
+  #checkov:skip=CKV_AWS_260: Internal ALB port 80 ingress is scoped to the Issue Payment Lambda security group, not public CIDR, owner platform-security, review by 2026-12-31
+  count = var.http_api_lambda_vpc_id == null ? 0 : 1
+
+  security_group_id            = module.alb.internal_alb_security_group_id
+  description                  = "Allow the VPC-attached Issue Payment Lambda to reach the Core Case internal settlement route."
+  referenced_security_group_id = module.http_api.issue_payment_lambda_security_group_id
+  from_port                    = 80
+  ip_protocol                  = "tcp"
+  to_port                      = 80
 }
 
 module "spa" {
