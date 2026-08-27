@@ -1,3 +1,12 @@
+export {
+    AuditTrail,
+    useExpenseReportAuditEntries,
+} from "./AuditTrail";
+export type {
+    AuditEntry,
+    AuditTrailActionFormat,
+    AuditTrailProps,
+} from "./AuditTrail";
 export { Badge, OverdueBadge, StatusBadge } from "./Badge";
 export type {
     BadgeProps,

@@ -904,7 +904,7 @@ describe("CaseQueueScreen", () => {
             within(dialog).getByRole("tab", { name: "Audit Trail" }),
         );
         expect(
-            await within(dialog).findByText("Transition Approved"),
+            await within(dialog).findByText("Workflow Transition Applied"),
         ).toBeTruthy();
         expect(
             within(dialog).getByText("Synthetic review started."),

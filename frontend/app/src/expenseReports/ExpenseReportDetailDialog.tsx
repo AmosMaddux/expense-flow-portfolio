@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { useSession } from "../auth";
 import {
+    AuditTrail,
     Badge,
     Button,
     EmptyState,
@@ -22,6 +23,8 @@ import {
     LoadingSkeleton,
     OverdueBadge,
     StageStepper,
+    useExpenseReportAuditEntries,
+    type AuditTrailActionFormat,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
 import { AssistPanel } from "./AssistPanel";
@@ -70,21 +73,6 @@ const expenseReportReviewDetailSchema = z.object({
     receipts: z.array(expenseReportReviewDetailReceiptSchema).default([]),
 });
 
-const auditEntrySchema = z.object({
-    id: z.string().uuid(),
-    tenantId: z.string().uuid(),
-    expenseReportId: z.string().uuid(),
-    actorId: z.string().uuid(),
-    action: z.string().min(1),
-    stageBeforeAction: z.enum(EXPENSE_REPORT_STAGES),
-    stageAfterProposedAction: z.enum(EXPENSE_REPORT_STAGES),
-    denialReason: z.string().nullable(),
-    outcomeReason: z.string().nullable(),
-    createdAt: z.string().datetime({ offset: true }),
-});
-
-const auditEntryListSchema = z.array(auditEntrySchema);
-
 const caseCommentSchema = z.object({
     id: z.string().uuid(),
     tenantId: z.string().uuid(),
@@ -105,7 +93,6 @@ const createCaseCommentRequestSchema = z
 export type ExpenseReportReviewDetail = z.infer<
     typeof expenseReportReviewDetailSchema
 >;
-type AuditEntry = z.infer<typeof auditEntrySchema>;
 type CaseComment = z.infer<typeof caseCommentSchema>;
 type CaseDetailTab = "line-items" | "audit-trail" | "comments";
 
@@ -122,26 +109,6 @@ export function useExpenseReportReviewDetail(expenseReportId: string | null) {
         keyParts: ["expense-report-review-detail", expenseReportId],
         parseResponse: async (response) =>
             expenseReportReviewDetailSchema.parse(await response.json()),
-        staleTime: 30_000,
-    });
-}
-
-/**
- * Fetches append-only Audit Trail entries for the selected Expense Report.
- */
-export function useExpenseReportAuditEntries(
-    expenseReportId: string | null,
-    enabled = true,
-) {
-    return useExpenseFlowQuery<AuditEntry[]>({
-        enabled: enabled && expenseReportId !== null,
-        input:
-            expenseReportId === null
-                ? "/v1/expense-reports/00000000-0000-4000-8000-000000000000/audit-entries"
-                : `/v1/expense-reports/${expenseReportId}/audit-entries`,
-        keyParts: ["expense-report-audit-entries", expenseReportId],
-        parseResponse: async (response) =>
-            auditEntryListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -175,7 +142,7 @@ export function ExpenseReportDetailDialog({
     onClose,
     reportId,
 }: {
-    auditActionFormat?: "raw" | "title";
+    auditActionFormat?: AuditTrailActionFormat;
     mileageUnitLabel?: "mi" | "miles";
     onClose: () => void;
     reportId: string;
@@ -362,7 +329,7 @@ export function ExpenseReportDetailDialog({
                                 report={report}
                             />
                         ) : activeTab === "audit-trail" ? (
-                            <AuditTrailTab
+                            <AuditTrail
                                 actionFormat={auditActionFormat}
                                 query={auditQuery}
                             />
@@ -721,72 +688,6 @@ function ReceiptPreview({
     );
 }
 
-function AuditTrailTab({
-    actionFormat,
-    query,
-}: {
-    actionFormat: "raw" | "title";
-    query: UseQueryResult<AuditEntry[], Error>;
-}): JSX.Element {
-    if (query.isPending) {
-        return <LoadingSkeleton label="Loading Audit Trail" rows={3} />;
-    }
-
-    if (query.isError) {
-        return (
-            <ErrorState
-                isRetrying={query.isFetching}
-                message={getReportDetailErrorMessage(query.error)}
-                onRetry={() => {
-                    void query.refetch();
-                }}
-                title="Unable to load Audit Trail"
-            />
-        );
-    }
-
-    const entries = query.data ?? [];
-
-    if (entries.length === 0) {
-        return (
-            <EmptyState
-                body="This Expense Report does not have audit events yet."
-                title="No audit events"
-            />
-        );
-    }
-
-    return (
-        <ol
-            aria-label="Expense Report Audit Trail"
-            className="case-detail-audit"
-            role="tabpanel"
-        >
-            {entries.map((entry) => (
-                <li className="case-detail-audit__entry" key={entry.id}>
-                    <time dateTime={entry.createdAt}>
-                        {formatDateTime(entry.createdAt)}
-                    </time>
-                    <strong>
-                        {formatAuditAction(entry.action, actionFormat)}
-                    </strong>
-                    <span>
-                        {entry.stageBeforeAction} to{" "}
-                        {entry.stageAfterProposedAction}
-                    </span>
-                    <small>Actor {formatReportOwner(entry.actorId)}</small>
-                    {entry.denialReason === null ? null : (
-                        <p>{entry.denialReason}</p>
-                    )}
-                    {entry.outcomeReason === null ? null : (
-                        <p>{entry.outcomeReason}</p>
-                    )}
-                </li>
-            ))}
-        </ol>
-    );
-}
-
 function CommentsTab({
     body,
     error,
@@ -1013,17 +914,6 @@ function canLoadReceiptObjectPreview(): boolean {
 
 function buildReceiptFileUrl(expenseReportId: string, receiptId: string): string {
     return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
-}
-
-function formatAuditAction(action: string, format: "raw" | "title"): string {
-    if (format === "raw") {
-        return action;
-    }
-
-    return action
-        .split("_")
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
 }
 
 async function createReportDetailActionError(

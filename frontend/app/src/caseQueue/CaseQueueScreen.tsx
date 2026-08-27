@@ -28,6 +28,7 @@ import { z } from "zod";
 
 import { useSession } from "../auth";
 import {
+    AuditTrail,
     Badge,
     Button,
     EmptyState,
@@ -35,6 +36,7 @@ import {
     EXPENSE_REPORT_STAGES,
     LoadingSkeleton,
     StatusBadge,
+    useExpenseReportAuditEntries,
     type ExpenseReportStage,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
@@ -255,18 +257,6 @@ const expenseReportTransitionResponseSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
 });
-const auditEntrySchema = z.object({
-    id: z.string().uuid(),
-    tenantId: z.string().uuid(),
-    expenseReportId: z.string().uuid(),
-    actorId: z.string().uuid(),
-    action: z.string().min(1),
-    stageBeforeAction: z.enum(EXPENSE_REPORT_STAGES),
-    stageAfterProposedAction: z.enum(EXPENSE_REPORT_STAGES),
-    denialReason: z.string().nullable(),
-    outcomeReason: z.string().nullable(),
-    createdAt: z.string().datetime({ offset: true }),
-});
 const caseCommentSchema = z.object({
     id: z.string().uuid(),
     tenantId: z.string().uuid(),
@@ -275,7 +265,6 @@ const caseCommentSchema = z.object({
     body: z.string().min(1),
     createdAt: z.string().datetime({ offset: true }),
 });
-const auditEntryListSchema = z.array(auditEntrySchema);
 const caseCommentListSchema = z.array(caseCommentSchema);
 const createCaseCommentRequestSchema = z
     .object({
@@ -284,7 +273,6 @@ const createCaseCommentRequestSchema = z
     .strict();
 
 const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
-type ApprovalQueueAuditEntry = z.infer<typeof auditEntrySchema>;
 type ApprovalQueueCaseComment = z.infer<typeof caseCommentSchema>;
 
 /**
@@ -296,23 +284,6 @@ export function useApprovalQueueLineItems() {
         keyParts: approvalQueueLineItemKeyParts,
         parseResponse: async (response) =>
             approvalQueueLineItemListSchema.parse(await response.json()),
-        staleTime: 30_000,
-    });
-}
-
-/**
- * Fetches tenant-scoped Audit Trail entries for a report review dialog.
- */
-export function useExpenseReportAuditEntries(
-    expenseReportId: string,
-    enabled = true,
-) {
-    return useExpenseFlowQuery<ApprovalQueueAuditEntry[]>({
-        enabled,
-        input: `/v1/expense-reports/${expenseReportId}/audit-entries`,
-        keyParts: ["expense-report-audit-entries", expenseReportId],
-        parseResponse: async (response) =>
-            auditEntryListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -1366,9 +1337,7 @@ export function ApprovalQueueReviewDialog({
                         Policy Checks
                     </button>
                     <button
-                        aria-controls="report-audit-trail-panel"
                         aria-selected={activeTab === "audit-trail"}
-                        id="report-audit-trail-tab"
                         role="tab"
                         type="button"
                         onClick={() => setActiveTab("audit-trail")}
@@ -1608,14 +1577,7 @@ export function ApprovalQueueReviewDialog({
                         )}
                     </div>
                 ) : activeTab === "audit-trail" ? (
-                    <div
-                        aria-labelledby="report-audit-trail-tab"
-                        className="case-queue-dialog__table-wrap"
-                        id="report-audit-trail-panel"
-                        role="tabpanel"
-                    >
-                        <AuditTrailPanel query={auditQuery} />
-                    </div>
+                    <AuditTrail query={auditQuery} />
                 ) : (
                     <div
                         aria-labelledby="report-comments-tab"
@@ -1662,63 +1624,6 @@ export function ApprovalQueueReviewDialog({
                 </footer>
             </section>
         </div>
-    );
-}
-
-function AuditTrailPanel({
-    query,
-}: {
-    query: UseQueryResult<ApprovalQueueAuditEntry[], Error>;
-}): JSX.Element {
-    if (query.isPending) {
-        return <LoadingSkeleton label="Loading Audit Trail" rows={3} />;
-    }
-
-    if (query.isError) {
-        return (
-            <ErrorState
-                isRetrying={query.isFetching}
-                message={getQueueActionErrorMessage(query.error)}
-                onRetry={() => {
-                    void query.refetch();
-                }}
-                title="Unable to load Audit Trail"
-            />
-        );
-    }
-
-    const entries = query.data ?? [];
-
-    if (entries.length === 0) {
-        return (
-            <div className="case-queue-dialog__empty-tab" role="status">
-                No audit entries recorded for this report.
-            </div>
-        );
-    }
-
-    return (
-        <ol className="case-detail-audit">
-            {entries.map((entry) => (
-                <li className="case-detail-audit__entry" key={entry.id}>
-                    <strong>{getAuditActionLabel(entry.action)}</strong>
-                    <span>
-                        {entry.stageBeforeAction} to{" "}
-                        {entry.stageAfterProposedAction}
-                    </span>
-                    <small>Actor {getReportDisplayId(entry.actorId)}</small>
-                    {entry.outcomeReason !== null ? (
-                        <p>{entry.outcomeReason}</p>
-                    ) : null}
-                    {entry.denialReason !== null ? (
-                        <p>{entry.denialReason}</p>
-                    ) : null}
-                    <time dateTime={entry.createdAt}>
-                        {formatDateTime(entry.createdAt)}
-                    </time>
-                </li>
-            ))}
-        </ol>
     );
 }
 
@@ -2230,12 +2135,6 @@ function formatDateTime(dateTime: string): string {
         timeZone: "UTC",
         year: "numeric",
     }).format(new Date(dateTime));
-}
-
-function getAuditActionLabel(action: string): string {
-    return action === "workflow_transition_applied"
-        ? "Transition Approved"
-        : action;
 }
 
 function formatMileageDistance(mileageDistance: number): string {
