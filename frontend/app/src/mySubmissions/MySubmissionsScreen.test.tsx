@@ -153,6 +153,9 @@ describe("MySubmissionsScreen", () => {
                       id: reportId,
                       currentStage: "Submitted",
                       rejectionReason: null,
+                      employerEin: null,
+                      employerLegalName: null,
+                      employerEinValidation: null,
                       lineItems: [
                           {
                               id: "40000000-0000-4000-8000-000000000011",
@@ -241,6 +244,15 @@ describe("MySubmissionsScreen", () => {
                       currentStage: "Drafted",
                       rejectionReason:
                           "Receipt does not match the submitted amount.",
+                      employerEin: "123456789",
+                      employerLegalName: "Synthetic Holdings LLC",
+                      employerEinValidation: {
+                          status: "valid",
+                          isValid: true,
+                          reason: null,
+                          serviceReferenceId: "ref-001",
+                          validatedAt: "2026-07-19T12:00:00.000Z",
+                      },
                       lineItems: [
                           {
                               id: "40000000-0000-4000-8000-000000000012",
