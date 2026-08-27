@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ForbiddenError } from "../errors/problem-json.js";
+import { ConflictError, ForbiddenError } from "../errors/problem-json.js";
 import {
     getTeamUsers,
     patchTeamUserRole,
@@ -189,6 +189,44 @@ describe("Team Users controller", () => {
 
         expect(updateTeamUserStatusMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
+    });
+
+    test("rejects a Finance Admin changing their own role", async () => {
+        const req = {
+            auth: {
+                tenantId,
+                userId: financeAdminUserId,
+                roles: ["Finance Admin"],
+            },
+            params: { id: financeAdminUserId },
+            body: { role: "Employee" },
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await patchTeamUserRole(req as never, res as never, next);
+
+        expect(updateTeamUserRoleMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ConflictError));
+    });
+
+    test("rejects a Finance Admin deactivating their own account", async () => {
+        const req = {
+            auth: {
+                tenantId,
+                userId: financeAdminUserId,
+                roles: ["Finance Admin"],
+            },
+            params: { id: financeAdminUserId },
+            body: { status: "deactivated" },
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await patchTeamUserStatus(req as never, res as never, next);
+
+        expect(updateTeamUserStatusMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ConflictError));
     });
 });
 

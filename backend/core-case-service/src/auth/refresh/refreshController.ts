@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
+import { UnauthorizedError } from "../../errors/problem-json.js";
 import type { RefreshTokenCookieConfig } from "../shared/refreshTokenCookie.js";
 import {
     buildClearedRefreshTokenCookie,
@@ -39,10 +40,16 @@ export function createPostRefresh(
             );
             res.status(200).json(TokenOutboundResponseSchema.parse(result));
         } catch (error) {
-            res.append(
-                "Set-Cookie",
-                buildClearedRefreshTokenCookie(cookieConfig),
-            );
+            // Only a genuine auth rejection (invalid, expired, revoked, or a
+            // now-inactive user) should end the session. A transient
+            // infrastructure failure (DB blip, connection pool exhaustion)
+            // must not clear a still-valid cookie out from under the user.
+            if (error instanceof UnauthorizedError) {
+                res.append(
+                    "Set-Cookie",
+                    buildClearedRefreshTokenCookie(cookieConfig),
+                );
+            }
             next(error);
         }
     };

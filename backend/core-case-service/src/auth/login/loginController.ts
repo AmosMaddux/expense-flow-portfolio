@@ -8,6 +8,7 @@ import {
 } from "../shared/authenticationErrors.js";
 import type { RefreshTokenCookieConfig } from "../shared/refreshTokenCookie.js";
 import { buildRefreshTokenCookie } from "../shared/refreshTokenCookie.js";
+import { TokenOutboundResponseSchema } from "../refresh/refreshService.js";
 import {
     loginRequestSchema,
     loginResponseSchema,
@@ -55,17 +56,22 @@ export function createPostLogin(
         try {
             const requestBody = loginRequestSchema.parse(req.body);
             const result = await loginService.login(requestBody);
-            const responseBody = loginResponseSchema.parse(result);
+            // The refresh token never leaves this handler as JSON: it is only
+            // ever transported as the HttpOnly cookie set below, so page
+            // JavaScript (and an XSS payload) cannot read it from the
+            // response body, devtools network logs, or request/response
+            // logging middleware.
+            const serviceResult = loginResponseSchema.parse(result);
 
             res.append(
                 "Set-Cookie",
                 buildRefreshTokenCookie(
-                    responseBody.refreshToken,
-                    new Date(responseBody.refreshTokenExpiresAt),
+                    serviceResult.refreshToken,
+                    new Date(serviceResult.refreshTokenExpiresAt),
                     cookieConfig,
                 ),
             );
-            res.status(200).json(responseBody);
+            res.status(200).json(TokenOutboundResponseSchema.parse(serviceResult));
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
                 res.status(401).json(invalidCredentialsResponse);

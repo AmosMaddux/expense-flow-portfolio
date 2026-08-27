@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
@@ -11,6 +12,8 @@ import {
     verifyRefreshToken,
     type RefreshTokenVerifierConfig,
 } from "../shared/refreshTokenVerifier.js";
+
+extendZodWithOpenApi(z);
 
 export const TokenOutboundResponseSchema = z.object({
     tenantId: z.uuid(),
@@ -85,14 +88,21 @@ export function createRefreshService(
                 throw new UnauthorizedError();
             }
 
+            const currentTime = now();
             const claims = verifyRefreshToken(
                 rawRefreshToken,
                 verifierConfig,
-                now(),
+                currentTime,
             );
             const tokenHash = hashToken(rawRefreshToken);
-            const stored = await repository.findRefreshTokenByHash(tokenHash);
-            const currentTime = now();
+            // Both lookups depend only on values already available from the
+            // verified claims, so they run concurrently rather than paying
+            // an extra DB round-trip on every silent token refresh across
+            // every active session tenant-wide.
+            const [stored, activeUser] = await Promise.all([
+                repository.findRefreshTokenByHash(tokenHash),
+                repository.findActiveUserRoles(claims.tenantId, claims.userId),
+            ]);
 
             if (
                 stored === undefined ||
@@ -103,11 +113,6 @@ export function createRefreshService(
             ) {
                 throw new UnauthorizedError();
             }
-
-            const activeUser = await repository.findActiveUserRoles(
-                claims.tenantId,
-                claims.userId,
-            );
 
             if (activeUser === undefined || activeUser.status !== "active") {
                 await repository.revokeRefreshToken(stored.id);

@@ -1976,43 +1976,6 @@
                 },
                 "required": ["tenantId", "email", "password"]
             },
-            "LoginResponse": {
-                "type": "object",
-                "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "userId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "accessToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "accessTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                },
-                "required": [
-                    "tenantId",
-                    "userId",
-                    "accessToken",
-                    "accessTokenExpiresAt",
-                    "refreshToken",
-                    "refreshTokenExpiresAt"
-                ]
-            },
             "MfaEnrollmentRequest": {
                 "type": "object",
                 "properties": {
@@ -4777,6 +4740,16 @@
                             }
                         }
                     },
+                    "409": {
+                        "description": "Finance Admins cannot change their own role or status here.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
                     "429": {
                         "$ref": "#/components/responses/RateLimitExceeded"
                     },
@@ -4874,6 +4847,16 @@
                             }
                         }
                     },
+                    "409": {
+                        "description": "Finance Admins cannot change their own role or status here.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
                     "429": {
                         "$ref": "#/components/responses/RateLimitExceeded"
                     },
@@ -4893,7 +4876,7 @@
         "/v1/auth/login": {
             "post": {
                 "summary": "Authenticate with email, password, and optional TOTP MFA",
-                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+                "description": "Issues a short-lived access JWT and sets a rotating refresh token as an HttpOnly cookie after successful tenant-scoped authentication. The refresh token is never included in the JSON response body.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -4906,11 +4889,11 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Login succeeded and tokens were issued.",
+                        "description": "Login succeeded. An access token was issued in the response body and a refresh token cookie was set.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/LoginResponse"
+                                    "$ref": "#/components/schemas/RefreshTokenResponse"
                                 }
                             }
                         }

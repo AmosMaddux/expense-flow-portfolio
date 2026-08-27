@@ -1,6 +1,10 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
+import {
+    ConflictError,
+    ForbiddenError,
+    UnauthorizedError,
+} from "../errors/problem-json.js";
 import {
     InviteTeamUserInboundRequestSchema,
     TeamUserPathParamsSchema,
@@ -71,6 +75,7 @@ export async function patchTeamUserRole(
         const auth = requireAuthContext(req);
         requireFinanceAdminTeamUserAccess(auth);
         const params = TeamUserPathParamsSchema.parse({ id: req.params.id });
+        requireNotSelfTargeting(auth, params.id);
         const body = UpdateTeamUserRoleInboundRequestSchema.parse(req.body);
         const updated = await updateTeamUserRole({
             actorId: auth.userId,
@@ -97,6 +102,7 @@ export async function patchTeamUserStatus(
         const auth = requireAuthContext(req);
         requireFinanceAdminTeamUserAccess(auth);
         const params = TeamUserPathParamsSchema.parse({ id: req.params.id });
+        requireNotSelfTargeting(auth, params.id);
         const body = UpdateTeamUserStatusInboundRequestSchema.parse(req.body);
         const updated = await updateTeamUserStatus({
             actorId: auth.userId,
@@ -128,5 +134,23 @@ function requireFinanceAdminTeamUserAccess(
 
     throw new ForbiddenError(
         "Team & Users access is limited to Finance Admins.",
+    );
+}
+
+/**
+ * Blocks a Finance Admin from changing their own role or status through this
+ * screen, so a misclick cannot lock a tenant out of its own user management
+ * (there is no other user who can reach this screen to undo it).
+ */
+function requireNotSelfTargeting(
+    auth: NonNullable<Request["auth"]>,
+    targetId: string,
+): void {
+    if (auth.userId !== targetId) {
+        return;
+    }
+
+    throw new ConflictError(
+        "Finance Admins cannot change their own role or status here.",
     );
 }

@@ -113,7 +113,7 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 void describe("login controller", () => {
-    void test("returns refresh token after primary credentials and MFA pass", async () => {
+    void test("sets the refresh token cookie and returns only access token fields in the body", async () => {
         const loginMock = vi.fn(() =>
             Promise.resolve({
                 tenantId: "00000000-0000-4000-8000-000000000601",
@@ -142,15 +142,22 @@ void describe("login controller", () => {
         await handler(request, response, next);
 
         expect(loginMock).toHaveBeenCalledWith(request.body);
+        expect(response.appendMock).toHaveBeenCalledWith(
+            "Set-Cookie",
+            expect.stringContaining("synthetic-refresh-token"),
+        );
         expect(response.statusMock).toHaveBeenCalledWith(200);
         expect(response.jsonMock).toHaveBeenCalledWith({
             tenantId: "00000000-0000-4000-8000-000000000601",
             userId: "10000000-0000-4000-8000-000000000601",
             accessToken: "synthetic-access-token",
             accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
-            refreshToken: "synthetic-refresh-token",
-            refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
         });
+        const jsonBody = response.jsonMock.mock.calls[0]?.[0] as
+            | Record<string, unknown>
+            | undefined;
+        expect(jsonBody).not.toHaveProperty("refreshToken");
+        expect(jsonBody).not.toHaveProperty("refreshTokenExpiresAt");
         expect(next).not.toHaveBeenCalled();
     });
 

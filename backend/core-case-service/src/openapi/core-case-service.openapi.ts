@@ -62,10 +62,7 @@ import {
     UpdateTeamUserRoleInboundRequestSchema,
     UpdateTeamUserStatusInboundRequestSchema,
 } from "../teamUsers/teamUsersDto.js";
-import {
-    loginRequestSchema,
-    loginResponseSchema,
-} from "../auth/login/loginService.js";
+import { loginRequestSchema } from "../auth/login/loginService.js";
 import { TokenOutboundResponseSchema } from "../auth/refresh/refreshService.js";
 import { loginErrorResponseSchema } from "../auth/login/loginController.js";
 import {
@@ -378,10 +375,6 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         TokenOutboundResponseSchema,
     );
     const loginRequest = registry.register("LoginRequest", loginRequestSchema);
-    const loginResponse = registry.register(
-        "LoginResponse",
-        loginResponseSchema,
-    );
     const loginErrorResponse = registry.register(
         "LoginErrorResponse",
         loginErrorResponseSchema,
@@ -955,6 +948,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Team & Users changes are limited to Finance Admins.",
             ),
             404: problemJsonResponse("Team member was not found."),
+            409: problemJsonResponse(
+                "Finance Admins cannot change their own role or status here.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -993,6 +989,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 "Team & Users changes are limited to Finance Admins.",
             ),
             404: problemJsonResponse("Team member was not found."),
+            409: problemJsonResponse(
+                "Finance Admins cannot change their own role or status here.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -1003,7 +1002,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/auth/login",
         summary: "Authenticate with email, password, and optional TOTP MFA",
         description:
-            "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+            "Issues a short-lived access JWT and sets a rotating refresh token as an HttpOnly cookie after successful tenant-scoped authentication. The refresh token is never included in the JSON response body.",
         request: {
             body: {
                 required: true,
@@ -1016,10 +1015,11 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         },
         responses: {
             200: {
-                description: "Login succeeded and tokens were issued.",
+                description:
+                    "Login succeeded. An access token was issued in the response body and a refresh token cookie was set.",
                 content: {
                     "application/json": {
-                        schema: loginResponse,
+                        schema: refreshTokenResponse,
                     },
                 },
             },
