@@ -3222,6 +3222,75 @@ button:disabled {
     }
 }
 
+.roles-permissions,
+.all-tenants {
+    display: grid;
+    max-width: 1180px;
+    margin: 0 auto;
+    gap: 20px;
+}
+
+.roles-permissions__header h2,
+.all-tenants__header h2 {
+    margin: 4px 0 0;
+    color: #102a43;
+    font-size: 1.25rem;
+}
+
+.roles-permissions__subtitle,
+.all-tenants__subtitle {
+    margin: 4px 0 0;
+    color: #52606d;
+    font-size: 0.85rem;
+}
+
+.roles-permissions-table,
+.all-tenants-table {
+    overflow-x: auto;
+    border: 1px solid #bcccdc;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.roles-permissions-table table,
+.all-tenants-table table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.roles-permissions-table th,
+.roles-permissions-table td,
+.all-tenants-table th,
+.all-tenants-table td {
+    border-bottom: 1px solid #d9e2ec;
+    padding: 16px 18px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.roles-permissions-table thead th,
+.all-tenants-table thead th {
+    background: #f0f4f8;
+    color: #52606d;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.roles-permissions-table tbody th,
+.all-tenants-table tbody th {
+    color: #102a43;
+}
+
+.roles-permissions-table tbody tr:last-child th,
+.roles-permissions-table tbody tr:last-child td,
+.all-tenants-table tbody tr:last-child th,
+.all-tenants-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
 .assist-panel {
     border: 1px solid var(--border-color, #d6dce4);
     border-radius: 0.5rem;

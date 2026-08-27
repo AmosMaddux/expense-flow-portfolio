@@ -31,6 +31,8 @@ import { GlMappingScreen } from "./glMapping/GlMappingScreen";
 import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
 import { PolicyReferenceScreen } from "./policyReference/PolicyReferenceScreen";
+import { AllTenantsScreen } from "./platformAdmin/AllTenantsScreen";
+import { RolesPermissionsScreen } from "./platformAdmin/RolesPermissionsScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import { TeamAndUsersScreen } from "./teamUsers/TeamAndUsersScreen";
 import { AllTransactionsScreen } from "./transactions/AllTransactionsScreen";
@@ -98,6 +100,10 @@ const protectedRoutes = navigationItems.map((item) =>
                 <PolicyReferenceScreen />
             ) : item.path === "/submit-expense" ? (
                 <SubmitExpenseScreen />
+            ) : item.path === "/roles-permissions" ? (
+                <RolesPermissionsScreen />
+            ) : item.path === "/tenants-users" ? (
+                <AllTenantsScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),

@@ -16,6 +16,15 @@ import type { TeamUserResponse } from "./teamUsersDto.js";
 type Database = NodePgDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+type PostgresError = {
+    cause?: unknown;
+    code?: string;
+    constraint?: string;
+};
+
+const uniqueViolationCode = "23505";
+const userTenantEmailConstraint = "user_tenant_email_unique_idx";
+
 /**
  * Reads every tenant-scoped team member for the Finance Admin workspace.
  */
@@ -85,15 +94,30 @@ export async function inviteTeamUser(
             );
         }
 
-        const [inserted] = await transaction
-            .insert(user)
-            .values({
-                tenantId: input.tenantId,
-                email: input.email.trim(),
-                displayName: input.displayName,
-                status: "invited",
-            })
-            .returning({ id: user.id });
+        let inserted: { id: string } | undefined;
+        try {
+            [inserted] = await transaction
+                .insert(user)
+                .values({
+                    tenantId: input.tenantId,
+                    email: input.email.trim(),
+                    displayName: input.displayName,
+                    status: "invited",
+                })
+                .returning({ id: user.id });
+        } catch (error) {
+            if (isDuplicateUserEmailError(error)) {
+                // The pre-insert duplicate check above cannot see a sibling
+                // invite that committed concurrently under READ COMMITTED;
+                // the unique index is the real backstop, so translate its
+                // violation into the same conflict the sequential path returns.
+                throw new ConflictError(
+                    "A user with this email already exists in the tenant.",
+                );
+            }
+
+            throw error;
+        }
 
         if (inserted === undefined) {
             throw new ConflictError("The invited user could not be created.");
@@ -320,4 +344,30 @@ function parseUserStatus(value: string): TeamUserResponse["status"] {
     }
 
     throw new Error(`Unexpected user status value: ${value}`);
+}
+
+function isDuplicateUserEmailError(error: unknown): boolean {
+    const visitedErrors = new Set<object>();
+    let currentError = error;
+
+    while (
+        currentError !== null &&
+        typeof currentError === "object" &&
+        !visitedErrors.has(currentError)
+    ) {
+        visitedErrors.add(currentError);
+        const postgresError = currentError as PostgresError;
+
+        if (
+            postgresError.code === uniqueViolationCode &&
+            postgresError.constraint === userTenantEmailConstraint
+        ) {
+            return true;
+        }
+
+        // Drizzle wraps driver errors; follow the cause chain without exposing database details.
+        currentError = postgresError.cause;
+    }
+
+    return false;
 }

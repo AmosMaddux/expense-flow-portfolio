@@ -36,6 +36,7 @@ import {
 } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
+import { platformAdminRouter } from "./platformAdmin/platformAdminRoutes.js";
 import { teamUsersRouter } from "./teamUsers/teamUsersRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
@@ -66,6 +67,7 @@ const protectedRoutePrefixes = [
     "/transactions",
     "/gl-mappings",
     "/users",
+    "/platform-admin",
 ];
 
 /**
@@ -151,6 +153,7 @@ v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());
 v1Router.use("/users", express.json());
+v1Router.use("/platform-admin", express.json());
 v1Router.use("/internal", requireInternalRoutesEnabled);
 v1Router.use("/internal", express.json());
 if (isGlCodingRuntimeSmokeEnabled()) {
@@ -159,6 +162,7 @@ if (isGlCodingRuntimeSmokeEnabled()) {
 v1Router.use("/", expenseReportRouter);
 v1Router.use("/", glMappingRouter);
 v1Router.use("/", teamUsersRouter);
+v1Router.use("/", platformAdminRouter);
 
 /**
  * Returns process health information for local and deployment smoke checks.

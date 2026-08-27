@@ -62,6 +62,10 @@ import {
     UpdateTeamUserRoleInboundRequestSchema,
     UpdateTeamUserStatusInboundRequestSchema,
 } from "../teamUsers/teamUsersDto.js";
+import {
+    RolePermissionMatrixOutboundResponseSchema,
+    TenantSummaryListOutboundResponseSchema,
+} from "../platformAdmin/platformAdminDto.js";
 import { loginRequestSchema } from "../auth/login/loginService.js";
 import { TokenOutboundResponseSchema } from "../auth/refresh/refreshService.js";
 import { loginErrorResponseSchema } from "../auth/login/loginController.js";
@@ -313,6 +317,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const teamUserPathParams = registry.register(
         "TeamUserPathParams",
         TeamUserPathParamsSchema,
+    );
+    const rolePermissionMatrixResponse = registry.register(
+        "RolePermissionMatrixResponse",
+        RolePermissionMatrixOutboundResponseSchema,
+    );
+    const tenantSummaryListResponse = registry.register(
+        "TenantSummaryListResponse",
+        TenantSummaryListOutboundResponseSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -991,6 +1003,56 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             404: problemJsonResponse("Team member was not found."),
             409: problemJsonResponse(
                 "Finance Admins cannot change their own role or status here.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/platform-admin/roles-permissions",
+        summary: "Read the Roles & Permissions matrix",
+        description:
+            "Loads the read-only role-to-screen-access matrix for the Platform Admin workspace. No control on this screen grants access to any tenant's case data.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Role-to-screen-access matrix found.",
+                content: {
+                    "application/json": {
+                        schema: rolePermissionMatrixResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Platform administration is limited to Platform Admins.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/platform-admin/tenants",
+        summary: "List All Tenants & Users summaries",
+        description:
+            "Loads every tenant's user-count summary for the Platform Admin workspace. Returns aggregate counts only, never a tenant's user detail or case data.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Tenant user-count summaries found.",
+                content: {
+                    "application/json": {
+                        schema: tenantSummaryListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Platform administration is limited to Platform Admins.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
