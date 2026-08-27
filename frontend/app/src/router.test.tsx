@@ -234,7 +234,7 @@ describe("ExpenseFlowRouter", () => {
 
     test.each([
         ["Finance Admin", "/finance-dashboard", "Finance Dashboard"],
-        ["Department Manager", "/approval-queue", "Case Queue"],
+        ["Department Manager", "/approval-queue", "Approval Queue"],
         ["Employee", "/my-submissions", "My Submissions"],
         ["Admin", "/roles-permissions", "Roles & Permissions"],
     ] as const)(
@@ -302,10 +302,10 @@ describe("ExpenseFlowRouter", () => {
         ).toBeNull();
     });
 
-    test("mounts the current queue under Expense Reports for managers", async () => {
-        const authClient = createAuthClientMock("Department Manager");
+    test("mounts the expense reports browser for finance admins", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
         vi.mocked(authClient.refresh).mockResolvedValue(
-            createSession("Department Manager"),
+            createSession("Finance Admin"),
         );
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
@@ -330,7 +330,7 @@ describe("ExpenseFlowRouter", () => {
             screen.queryByText(/This protected workspace route is available/),
         ).toBeNull();
         expect(fetchImplementation).toHaveBeenCalledWith(
-            "/v1/case-queue/line-items",
+            "/v1/expense-reports",
             expect.anything(),
         );
         expect(
@@ -378,11 +378,98 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
-        await screen.findByRole("heading", { name: "Case Queue" });
+        await screen.findByRole("heading", { name: "Approval Queue" });
         await waitFor(() =>
             expect(window.location.pathname).toBe("/approval-queue"),
         );
     });
+    test("scopes the Finance Admin approval queue to Manager Approval and AP Review stages", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Finance Admin"),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                new Response(
+                    JSON.stringify([
+                        {
+                            id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            employee: "50000000-0000-4000-8000-000000000191",
+                            merchant: "Northstar Hotels",
+                            amount: 742.18,
+                            glCode: "6240",
+                            currentStage: "Manager Approval",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                        {
+                            id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db002",
+                            employee: "50000000-0000-4000-8000-000000000192",
+                            merchant: "Metro Meals",
+                            amount: 86.42,
+                            glCode: "6210",
+                            currentStage: "Submitted",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                        {
+                            id: "e6f4d30b-20fc-4a72-9e44-190eb7d30c72",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db003",
+                            employee: "50000000-0000-4000-8000-000000000193",
+                            merchant: "Zenith Air",
+                            amount: 512,
+                            glCode: "6220",
+                            currentStage: "AP Review",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                    ]),
+                    {
+                        headers: { "Content-Type": "application/json" },
+                        status: 200,
+                    },
+                ),
+            ),
+        );
+        window.history.pushState(null, "", "/approval-queue");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        await screen.findByText("Employee 0191");
+        expect(screen.getByText("Employee 0193")).toBeTruthy();
+        expect(screen.queryByText("Employee 0192")).toBeNull();
+    });
+
     test("redirects Employee users away from the internal Case Queue route", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(
@@ -396,7 +483,7 @@ describe("ExpenseFlowRouter", () => {
             expect(window.location.pathname).toBe("/my-submissions"),
         );
         expect(
-            screen.queryByRole("heading", { name: "Case Queue" }),
+            screen.queryByRole("heading", { name: "Approval Queue" }),
         ).toBeNull();
     });
 

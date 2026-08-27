@@ -24,7 +24,11 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
-import { CaseQueueScreen, managerApprovalQueueStages } from "./caseQueue/CaseQueueScreen";
+import {
+    CaseQueueScreen,
+    financeAdminApprovalQueueStages,
+    managerApprovalQueueStages,
+} from "./caseQueue/CaseQueueScreen";
 import { ExpenseReportsScreen } from "./expenseReports/ExpenseReportsScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { GlMappingScreen } from "./glMapping/GlMappingScreen";
@@ -79,10 +83,7 @@ const protectedRoutes = navigationItems.map((item) =>
             ) : item.path === "/expense-reports" ? (
                 <ExpenseReportsScreen />
             ) : item.path === "/approval-queue" ? (
-                <CaseQueueScreen
-                    heading="Approval Queue"
-                    visibleStages={managerApprovalQueueStages}
-                />
+                <ApprovalQueueRoute />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
             ) : item.path === "/gl-mapping" ? (
@@ -288,6 +289,16 @@ function RouteRedirect({
     }, [location.pathname, navigate, redirect, to]);
 
     return null;
+}
+
+function ApprovalQueueRoute(): JSX.Element {
+    const session = useSession();
+    const roles = session.user?.roles ?? [];
+    const visibleStages = roles.includes("Finance Admin")
+        ? financeAdminApprovalQueueStages
+        : managerApprovalQueueStages;
+
+    return <CaseQueueScreen heading="Approval Queue" visibleStages={visibleStages} />;
 }
 
 function WorkspaceScreen({ item }: { item: NavigationItem }): JSX.Element {

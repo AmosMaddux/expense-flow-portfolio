@@ -214,6 +214,11 @@ export const managerApprovalQueueStages = [
     "Manager Approval",
 ] as const satisfies readonly ExpenseReportStage[];
 
+export const financeAdminApprovalQueueStages = [
+    "Manager Approval",
+    "AP Review",
+] as const satisfies readonly ExpenseReportStage[];
+
 const reviewLineItemRequestSchema = z
     .object({
         action: z.enum(["approve", "reject"]),

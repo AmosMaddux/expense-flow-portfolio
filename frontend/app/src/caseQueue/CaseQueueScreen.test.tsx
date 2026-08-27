@@ -576,6 +576,31 @@ describe("CaseQueueScreen", () => {
         expect(screen.getByText("Showing 2 of 2 reports")).toBeTruthy();
     });
 
+    test("locks the finance admin approval queue to Manager Approval and AP Review reports", async () => {
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(createJsonResponse(lineItems)),
+        );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Finance Admin"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Manager Approval", "AP Review"],
+            },
+        );
+
+        await screen.findByText("Employee 0191");
+        expect(
+            screen.getByRole("heading", { name: "Approval Queue" }),
+        ).toBeTruthy();
+        expect(screen.getByText("Employee 0193")).toBeTruthy();
+        expect(screen.queryByText("Employee 0192")).toBeNull();
+        expect(screen.queryByLabelText("Filter by stage")).toBeNull();
+        expect(screen.getByText("Showing 2 of 2 reports")).toBeTruthy();
+    });
+
     test("filters report rows by the amount-over-threshold checkbox", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(lineItems)),
