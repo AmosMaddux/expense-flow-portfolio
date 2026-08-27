@@ -1912,6 +1912,31 @@
                 "required": ["tenantId", "actorId", "roles", "reason"],
                 "additionalProperties": false
             },
+            "InviteTeamUserRequest": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "displayName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "Finance Admin",
+                            "Department Manager",
+                            "Employee",
+                            "Admin"
+                        ]
+                    }
+                },
+                "required": ["email", "displayName", "role"],
+                "additionalProperties": false
+            },
             "LoginErrorResponse": {
                 "type": "object",
                 "properties": {
@@ -1950,43 +1975,6 @@
                     }
                 },
                 "required": ["tenantId", "email", "password"]
-            },
-            "LoginResponse": {
-                "type": "object",
-                "properties": {
-                    "tenantId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "userId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "accessToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "accessTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshToken": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "refreshTokenExpiresAt": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                },
-                "required": [
-                    "tenantId",
-                    "userId",
-                    "accessToken",
-                    "accessTokenExpiresAt",
-                    "refreshToken",
-                    "refreshTokenExpiresAt"
-                ]
             },
             "MfaEnrollmentRequest": {
                 "type": "object",
@@ -2526,6 +2514,33 @@
                 },
                 "required": ["uploadId", "filename", "contentType", "sizeBytes"]
             },
+            "RefreshTokenResponse": {
+                "type": "object",
+                "properties": {
+                    "tenantId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "userId": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "accessToken": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "accessTokenExpiresAt": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "tenantId",
+                    "userId",
+                    "accessToken",
+                    "accessTokenExpiresAt"
+                ]
+            },
             "ReviewExpenseReportLineItemParams": {
                 "type": "object",
                 "properties": {
@@ -2587,6 +2602,113 @@
                     }
                 },
                 "additionalProperties": false
+            },
+            "TeamUserPathParams": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": ["id"]
+            },
+            "TeamUserResponse": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "email": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "displayName": {
+                        "type": ["string", "null"]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["invited", "active", "deactivated"]
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "Finance Admin",
+                                "Department Manager",
+                                "Employee",
+                                "Admin"
+                            ]
+                        }
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "displayName",
+                    "status",
+                    "roles",
+                    "createdAt"
+                ]
+            },
+            "TeamUsersListResponse": {
+                "type": "object",
+                "properties": {
+                    "users": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "email": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "displayName": {
+                                    "type": ["string", "null"]
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["invited", "active", "deactivated"]
+                                },
+                                "roles": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Finance Admin",
+                                            "Department Manager",
+                                            "Employee",
+                                            "Admin"
+                                        ]
+                                    }
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "email",
+                                "displayName",
+                                "status",
+                                "roles",
+                                "createdAt"
+                            ]
+                        }
+                    }
+                },
+                "required": ["users"]
             },
             "TransitionExpenseReportWorkflowRequest": {
                 "type": "object",
@@ -2664,6 +2786,33 @@
                     }
                 },
                 "required": ["glCodeId"],
+                "additionalProperties": false
+            },
+            "UpdateTeamUserRoleRequest": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "Finance Admin",
+                            "Department Manager",
+                            "Employee",
+                            "Admin"
+                        ]
+                    }
+                },
+                "required": ["role"],
+                "additionalProperties": false
+            },
+            "UpdateTeamUserStatusRequest": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "deactivated"]
+                    }
+                },
+                "required": ["status"],
                 "additionalProperties": false
             }
         },
@@ -4368,10 +4517,366 @@
                 }
             }
         },
+        "/v1/users": {
+            "get": {
+                "summary": "List Team & Users members",
+                "description": "Loads every tenant-scoped user with their role and status for the Finance Admin workspace.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team & Users members found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamUsersListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Team & Users access is limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/invite": {
+            "post": {
+                "summary": "Invite a Team & Users member",
+                "description": "Allows Finance Admins to invite a new tenant user with an assigned role and records a reference-data audit entry in the same transaction.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InviteTeamUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Team member invited.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed invite request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Team & Users changes are limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A user with this email already exists in the tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{id}/role": {
+            "patch": {
+                "summary": "Change a Team & Users member's role",
+                "description": "Allows Finance Admins to replace one tenant user's assigned role and records a reference-data audit entry in the same transaction.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateTeamUserRoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Team member role updated.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed role update request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Team & Users changes are limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team member was not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Finance Admins cannot change their own role or status here.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/{id}/status": {
+            "patch": {
+                "summary": "Change a Team & Users member's status",
+                "description": "Allows Finance Admins to activate or deactivate one tenant user and records a reference-data audit entry in the same transaction.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "path"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateTeamUserStatusRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Team member status updated.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TeamUserResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed status update request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Team & Users changes are limited to Finance Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team member was not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Finance Admins cannot change their own role or status here.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/login": {
             "post": {
                 "summary": "Authenticate with email, password, and optional TOTP MFA",
-                "description": "Issues a short-lived access JWT and a signed refresh JWT after successful tenant-scoped authentication.",
+                "description": "Issues a short-lived access JWT and sets a rotating refresh token as an HttpOnly cookie after successful tenant-scoped authentication. The refresh token is never included in the JSON response body.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -4384,11 +4889,11 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Login succeeded and tokens were issued.",
+                        "description": "Login succeeded. An access token was issued in the response body and a refresh token cookie was set.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/LoginResponse"
+                                    "$ref": "#/components/schemas/RefreshTokenResponse"
                                 }
                             }
                         }
@@ -4412,6 +4917,65 @@
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/refresh": {
+            "post": {
+                "summary": "Rotate a refresh token cookie into a fresh access token",
+                "description": "Reads the HttpOnly refresh token cookie set by login, re-checks the user's status and roles from the database, and issues a new short-lived access JWT alongside a rotated refresh token cookie.",
+                "responses": {
+                    "200": {
+                        "description": "A fresh access token was issued.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RefreshTokenResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "The refresh token cookie is missing, invalid, expired, revoked, or belongs to a user who is no longer active.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/logout": {
+            "post": {
+                "summary": "Revoke the current refresh token",
+                "description": "Revokes the refresh token named by the HttpOnly cookie, if any, and clears the cookie. Always succeeds so the client can finish signing out.",
+                "responses": {
+                    "204": {
+                        "description": "The session was signed out."
                     },
                     "500": {
                         "description": "Unexpected server error.",

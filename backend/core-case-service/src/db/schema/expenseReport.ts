@@ -747,11 +747,11 @@ export const referenceDataAuditEntry = pgTable(
     (table) => [
         check(
             "reference_data_audit_entry_entity_type_check",
-            sql`${table.entityType} in ('gl_mapping')`,
+            sql`${table.entityType} in ('gl_mapping', 'user')`,
         ),
         check(
             "reference_data_audit_entry_action_check",
-            sql`${table.action} in ('gl_mapping_updated')`,
+            sql`${table.action} in ('gl_mapping_updated', 'user_invited', 'user_role_changed', 'user_status_changed')`,
         ),
         index("reference_data_audit_entry_tenant_entity_idx").on(
             table.tenantId,

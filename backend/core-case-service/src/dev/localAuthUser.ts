@@ -68,7 +68,12 @@ async function seedLocalAuthAccount(
 
     await database.transaction(async (transaction) => {
         const existingUsers = await transaction
-            .select({ id: user.id, email: user.email })
+            .select({
+                id: user.id,
+                email: user.email,
+                displayName: user.displayName,
+                status: user.status,
+            })
             .from(user)
             .where(
                 and(
@@ -88,11 +93,22 @@ async function seedLocalAuthAccount(
                 id: userId,
                 tenantId,
                 email: account.email,
+                displayName: account.displayName,
+                status: "active",
             });
-        } else if (existingUser.email !== account.email) {
+        } else if (
+            existingUser.email !== account.email ||
+            existingUser.displayName !== account.displayName ||
+            existingUser.status !== "active"
+        ) {
             await transaction
                 .update(user)
-                .set({ email: account.email, updatedAt: new Date() })
+                .set({
+                    email: account.email,
+                    displayName: account.displayName,
+                    status: "active",
+                    updatedAt: new Date(),
+                })
                 .where(and(eq(user.tenantId, tenantId), eq(user.id, userId)));
         }
 

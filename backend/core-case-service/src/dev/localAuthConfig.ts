@@ -39,6 +39,7 @@ export type LocalAuthAccount = {
     tenant: "primary" | "secondary";
     userId: string;
     email: string;
+    displayName: string;
     role: RoleName;
 };
 
@@ -55,6 +56,7 @@ const localAuthAccounts = [
         tenant: "primary",
         userId: "cf8ea46a-778d-4634-9363-f4864a3d4424",
         email: "employee@example1.invalid",
+        displayName: "Alex Employee",
         role: "Employee",
     },
     {
@@ -62,6 +64,7 @@ const localAuthAccounts = [
         tenant: "primary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000009",
         email: "employee2@example1.invalid",
+        displayName: "Bailey Employee",
         role: "Employee",
     },
     {
@@ -69,6 +72,7 @@ const localAuthAccounts = [
         tenant: "secondary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000005",
         email: "employee@example2.invalid",
+        displayName: "Casey Employee",
         role: "Employee",
     },
     {
@@ -76,6 +80,7 @@ const localAuthAccounts = [
         tenant: "secondary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000010",
         email: "employee2@example2.invalid",
+        displayName: "Drew Employee",
         role: "Employee",
     },
     {
@@ -83,6 +88,7 @@ const localAuthAccounts = [
         tenant: "primary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000002",
         email: "manager@example1.invalid",
+        displayName: "Morgan Manager",
         role: "Department Manager",
     },
     {
@@ -90,6 +96,7 @@ const localAuthAccounts = [
         tenant: "secondary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000006",
         email: "manager@example2.invalid",
+        displayName: "Riley Manager",
         role: "Department Manager",
     },
     {
@@ -97,6 +104,7 @@ const localAuthAccounts = [
         tenant: "primary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000003",
         email: "finance-admin@example1.invalid",
+        displayName: "Jordan Finance",
         role: "Finance Admin",
     },
     {
@@ -104,6 +112,7 @@ const localAuthAccounts = [
         tenant: "secondary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000007",
         email: "finance-admin@example2.invalid",
+        displayName: "Taylor Finance",
         role: "Finance Admin",
     },
     {
@@ -111,6 +120,7 @@ const localAuthAccounts = [
         tenant: "primary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000004",
         email: "platform-admin@example1.invalid",
+        displayName: "Sam Platform",
         role: "Admin",
     },
     {
@@ -118,6 +128,7 @@ const localAuthAccounts = [
         tenant: "secondary",
         userId: "9f1b3f5c-1dc8-4f37-8a23-000000000008",
         email: "platform-admin@example2.invalid",
+        displayName: "Quinn Platform",
         role: "Admin",
     },
 ] as const satisfies readonly LocalAuthAccount[];

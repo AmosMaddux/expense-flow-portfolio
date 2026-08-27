@@ -9,9 +9,11 @@ import {
     role,
     roleValues,
     user,
+    userStatusValues,
     type NewAuthenticationAuditEntry,
     type NewRefreshToken,
     type RoleName,
+    type UserStatus,
 } from "../../db/schema/index.js";
 import type {
     FailedLoginAuditEntry,
@@ -20,16 +22,22 @@ import type {
     StoredMfaLoginEnrollment,
     StoredLoginCredential,
 } from "./loginService.js";
+import type {
+    ActiveUserRoles,
+    RefreshTokenRepository,
+    StoredRefreshToken,
+} from "../refresh/refreshService.js";
 import * as schema from "../../db/schema/index.js";
 
 export type IdentityAuthDatabase = NodePgDatabase<typeof schema>;
 
 /**
- * Creates a Drizzle-backed repository for login credential checks and audit writes.
+ * Creates a Drizzle-backed repository for login credential checks, refresh
+ * token rotation, and audit writes.
  */
 export function createDrizzleLoginCredentialRepository(
     db: IdentityAuthDatabase,
-): LoginCredentialRepository {
+): LoginCredentialRepository & RefreshTokenRepository {
     return {
         async findByTenantAndEmail(
             tenantId: string,
@@ -40,6 +48,7 @@ export function createDrizzleLoginCredentialRepository(
                     tenantId: user.tenantId,
                     userId: user.id,
                     email: user.email,
+                    status: user.status,
                     passwordHash: credential.passwordHash,
                     passwordHashAlgorithm: credential.passwordHashAlgorithm,
                     role: role.name,
@@ -77,6 +86,7 @@ export function createDrizzleLoginCredentialRepository(
                 tenantId: row.tenantId,
                 userId: row.userId,
                 email: row.email,
+                status: parseUserStatus(row.status),
                 passwordHash: row.passwordHash,
                 passwordHashAlgorithm: row.passwordHashAlgorithm,
                 roles: roles.sort(compareRoles),
@@ -193,6 +203,81 @@ export function createDrizzleLoginCredentialRepository(
 
             await db.insert(authenticationAuditEntry).values(auditRow);
         },
+        async findRefreshTokenByHash(
+            tokenHash: string,
+        ): Promise<StoredRefreshToken | undefined> {
+            const rows = await db
+                .select({
+                    id: refreshToken.id,
+                    tenantId: refreshToken.tenantId,
+                    userId: refreshToken.userId,
+                    expiresAt: refreshToken.expiresAt,
+                    revokedAt: refreshToken.revokedAt,
+                })
+                .from(refreshToken)
+                .where(eq(refreshToken.tokenHash, tokenHash))
+                .limit(1);
+
+            return rows[0];
+        },
+        async findActiveUserRoles(
+            tenantId: string,
+            userId: string,
+        ): Promise<ActiveUserRoles | undefined> {
+            const rows = await db
+                .select({ status: user.status, role: role.name })
+                .from(user)
+                .leftJoin(
+                    role,
+                    and(
+                        eq(role.tenantId, user.tenantId),
+                        eq(role.userId, user.id),
+                    ),
+                )
+                .where(and(eq(user.tenantId, tenantId), eq(user.id, userId)));
+            const row = rows[0];
+
+            if (row === undefined) {
+                return undefined;
+            }
+
+            const roles = rows.map((result) => result.role).filter(isRoleName);
+
+            return {
+                status: parseUserStatus(row.status),
+                roles: roles.sort(compareRoles),
+            };
+        },
+        async revokeRefreshToken(id: string): Promise<void> {
+            await db
+                .update(refreshToken)
+                .set({ revokedAt: new Date() })
+                .where(and(eq(refreshToken.id, id), isNull(refreshToken.revokedAt)));
+        },
+        async rotateRefreshToken(input): Promise<boolean> {
+            return db.transaction(async (tx) => {
+                const rows = await tx
+                    .update(refreshToken)
+                    .set({ revokedAt: new Date() })
+                    .where(
+                        and(
+                            eq(refreshToken.id, input.previousTokenId),
+                            isNull(refreshToken.revokedAt),
+                        ),
+                    )
+                    .returning({ id: refreshToken.id });
+
+                if (rows.length !== 1) {
+                    return false;
+                }
+
+                await tx
+                    .insert(refreshToken)
+                    .values(toRefreshTokenRow(input.token));
+
+                return true;
+            });
+        },
     };
 }
 
@@ -205,8 +290,16 @@ function toRefreshTokenRow(token: RefreshTokenToCreate): NewRefreshToken {
     };
 }
 
-function isRoleName(value: string): value is RoleName {
-    return (roleValues as readonly string[]).includes(value);
+function isRoleName(value: string | null): value is RoleName {
+    return value !== null && (roleValues as readonly string[]).includes(value);
+}
+
+function parseUserStatus(value: string): UserStatus {
+    if ((userStatusValues as readonly string[]).includes(value)) {
+        return value as UserStatus;
+    }
+
+    throw new Error(`Unexpected user status value: ${value}`);
 }
 
 function compareRoles(firstRole: RoleName, secondRole: RoleName): number {

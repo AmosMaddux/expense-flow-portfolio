@@ -10,6 +10,8 @@ import { createLoginService } from "./auth/login/loginService.js";
 import { createDrizzleLoginCredentialRepository } from "./auth/login/loginRepository.js";
 import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
 import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
+import { createRefreshService } from "./auth/refresh/refreshService.js";
+import { createLogoutService } from "./auth/refresh/logoutService.js";
 import {
     buildAuthJwks,
     buildAuthOpenIdConfiguration,
@@ -18,6 +20,7 @@ import {
 import { loadDefaultGlCodingConfig } from "./config/glCodingConfig.js";
 import { loadCorsConfig } from "./config/corsConfig.js";
 import { loadInternalRoutesConfig } from "./config/internalRoutesConfig.js";
+import { loadRefreshCookieConfig } from "./config/refreshCookieConfig.js";
 import { createPasswordHasher } from "./auth/shared/passwordHasher.js";
 import { createTotpSecretProtector } from "./auth/shared/totpSecretProtector.js";
 import {
@@ -33,6 +36,7 @@ import {
 } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
+import { teamUsersRouter } from "./teamUsers/teamUsersRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
 import { createTenantRateLimitMiddleware } from "./rateLimit/tenantRateLimitMiddleware.js";
 import { createPostgresTenantRateLimitStore } from "./rateLimit/postgresTenantRateLimitStore.js";
@@ -61,6 +65,7 @@ const protectedRoutePrefixes = [
     "/policy-reference",
     "/transactions",
     "/gl-mappings",
+    "/users",
 ];
 
 /**
@@ -103,11 +108,12 @@ v1Router.get(
         res.status(200).json(buildAuthOpenIdConfiguration(authJwtConfig));
     },
 );
+const identityRepository = createDrizzleLoginCredentialRepository(db);
 v1Router.use(
     "/",
     createAuthRouter(
         createLoginService(
-            createDrizzleLoginCredentialRepository(db),
+            identityRepository,
             createPasswordHasher(loadPasswordHashConfig()),
             createTotpSecretProtector(),
             authJwtConfig,
@@ -116,6 +122,13 @@ v1Router.use(
             createDrizzleMfaEnrollmentRepository(db),
             createTotpSecretProtector(),
         ),
+        createRefreshService(
+            identityRepository,
+            accessTokenVerifierConfig,
+            authJwtConfig,
+        ),
+        createLogoutService(identityRepository),
+        loadRefreshCookieConfig(),
     ),
 );
 
@@ -137,6 +150,7 @@ v1Router.use("/assist", express.json());
 v1Router.use("/policy-reference", express.json());
 v1Router.use("/transactions", express.json());
 v1Router.use("/gl-mappings", express.json());
+v1Router.use("/users", express.json());
 v1Router.use("/internal", requireInternalRoutesEnabled);
 v1Router.use("/internal", express.json());
 if (isGlCodingRuntimeSmokeEnabled()) {
@@ -144,6 +158,7 @@ if (isGlCodingRuntimeSmokeEnabled()) {
 }
 v1Router.use("/", expenseReportRouter);
 v1Router.use("/", glMappingRouter);
+v1Router.use("/", teamUsersRouter);
 
 /**
  * Returns process health information for local and deployment smoke checks.
