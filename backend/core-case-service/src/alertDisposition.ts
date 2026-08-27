@@ -46,12 +46,10 @@ export async function createAlertDisposition(
         source: request.source,
         severity: request.severity,
         status: request.status,
-        resolution: request.resolution,
         correlationId: request.correlationId ?? null,
         traceId: request.traceId ?? null,
         investigatedBy: request.investigatedBy,
-        notes: request.notes ?? null,
-        resolvedAt: response.resolvedAt.toISOString(),
+        resolvedAt: response.resolvedAt?.toISOString() ?? null,
         createdAt: response.createdAt.toISOString(),
         outcome: "success",
         service: "core-case-service",
@@ -110,7 +108,7 @@ function toNewAlertDisposition(
         traceId: request.traceId ?? null,
         investigatedBy: request.investigatedBy,
         notes: request.notes ?? null,
-        resolvedAt: new Date(),
+        resolvedAt: request.status === "resolved" ? new Date() : null,
     };
 }
 

@@ -105,6 +105,7 @@ export const problemJsonErrorHandler: ErrorRequestHandler = (
     if (problem.status >= 500) {
         logCoreCaseError({
             eventType: "unhandled_error",
+            ...toSafeErrorLogContext(error),
             instance: req.originalUrl,
             outcome: "error",
             route: req.originalUrl,
@@ -262,4 +263,31 @@ function formatZodErrorDetail(error: ZodError): string {
             return `${field}: ${issue.message}`;
         })
         .join("; ");
+}
+
+function toSafeErrorLogContext(error: unknown): Record<string, unknown> {
+    if (error instanceof Error) {
+        const context: Record<string, unknown> = {
+            errorName: error.name,
+        };
+        const errorCode = extractSafeErrorCode(error);
+        if (errorCode !== undefined) {
+            context.errorCode = errorCode;
+        }
+
+        return context;
+    }
+
+    return {
+        errorName: typeof error,
+    };
+}
+
+function extractSafeErrorCode(error: Error): string | undefined {
+    const candidate = (error as { code?: unknown }).code;
+    if (typeof candidate !== "string") {
+        return undefined;
+    }
+
+    return /^[A-Za-z0-9._:-]{1,64}$/.test(candidate) ? candidate : undefined;
 }

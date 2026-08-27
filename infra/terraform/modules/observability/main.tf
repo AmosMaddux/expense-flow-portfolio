@@ -21,7 +21,7 @@ locals {
   EOT
   alert_disposition_query           = <<-EOT
     SOURCE '${var.core_case_log_group_name}'
-    | fields @timestamp, tenantId, alertId, alertName, severity, status, resolution, correlationId, traceId, investigatedBy
+    | fields @timestamp, tenantId, alertId, alertName, severity, status, correlationId, traceId, investigatedBy
     | filter eventType = "alert_disposition"
     | sort @timestamp desc
     | limit 25

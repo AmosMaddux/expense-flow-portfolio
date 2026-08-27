@@ -47,7 +47,7 @@ export const AlertDispositionResponseSchema = z.object({
     traceId: z.string().nullable(),
     investigatedBy: z.uuid(),
     notes: z.string().nullable(),
-    resolvedAt: z.date(),
+    resolvedAt: z.date().nullable(),
     createdAt: z.date(),
 });
 

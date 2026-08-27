@@ -782,9 +782,7 @@ export const alertDisposition = pgTable(
         traceId: text("trace_id"),
         investigatedBy: uuid("investigated_by").notNull(),
         notes: text("notes"),
-        resolvedAt: timestamp("resolved_at", { withTimezone: true })
-            .notNull()
-            .defaultNow(),
+        resolvedAt: timestamp("resolved_at", { withTimezone: true }),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -813,6 +811,10 @@ export const alertDisposition = pgTable(
         check(
             "alert_disposition_resolution_not_blank_check",
             sql`nullif(btrim(${table.resolution}), '') is not null`,
+        ),
+        check(
+            "alert_disposition_resolved_at_status_check",
+            sql`(${table.status} = 'resolved' and ${table.resolvedAt} is not null) or (${table.status} <> 'resolved' and ${table.resolvedAt} is null)`,
         ),
         check(
             "alert_disposition_trace_id_check",
