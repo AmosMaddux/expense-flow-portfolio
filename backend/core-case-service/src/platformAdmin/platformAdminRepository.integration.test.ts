@@ -14,9 +14,12 @@ import {
 } from "vitest";
 
 import * as schema from "../db/schema/index.js";
-import { user } from "../db/schema/index.js";
+import { referenceDataAuditEntry, user } from "../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
-import { readTenantSummaries } from "./platformAdminRepository.js";
+import {
+    readAuditLogEvents,
+    readTenantSummaries,
+} from "./platformAdminRepository.js";
 
 type PlatformAdminTestContext = {
     tenantA: string;
@@ -27,17 +30,17 @@ let client: Client;
 let testDb: NodePgDatabase<typeof schema>;
 let context: PlatformAdminTestContext;
 
+beforeAll(async () => {
+    client = new Client({ connectionString: getCoreCaseTestDatabaseUrl() });
+    await client.connect();
+    testDb = drizzle(client, { schema });
+});
+
+afterAll(async () => {
+    await client.end().catch(() => undefined);
+});
+
 describe("Platform Admin repository", () => {
-    beforeAll(async () => {
-        client = new Client({ connectionString: getCoreCaseTestDatabaseUrl() });
-        await client.connect();
-        testDb = drizzle(client, { schema });
-    });
-
-    afterAll(async () => {
-        await client.end().catch(() => undefined);
-    });
-
     beforeEach(async () => {
         context = { tenantA: randomUUID(), tenantB: randomUUID() };
         await testDb.insert(user).values([
@@ -102,5 +105,66 @@ describe("Platform Admin repository", () => {
 
         expect(tenantIds).toContain(context.tenantA);
         expect(tenantIds).toContain(context.tenantB);
+    });
+});
+
+describe("readAuditLogEvents", () => {
+    let auditTenantId: string;
+    let actorId: string;
+    let entryIds: string[];
+
+    beforeEach(async () => {
+        auditTenantId = randomUUID();
+        const insertedUsers = await testDb
+            .insert(user)
+            .values({
+                tenantId: auditTenantId,
+                email: "audit-actor@example.invalid",
+                displayName: "Audit Actor",
+                status: "active",
+            })
+            .returning({ id: user.id });
+        const actor = insertedUsers[0];
+        if (actor === undefined) {
+            throw new Error("Audit actor user was not created.");
+        }
+        actorId = actor.id;
+
+        const inserted = await testDb
+            .insert(referenceDataAuditEntry)
+            .values({
+                tenantId: auditTenantId,
+                actorId,
+                entityType: "user",
+                entityId: randomUUID(),
+                action: "user_invited",
+                before: {},
+                after: { email: "invitee@example.invalid" },
+            })
+            .returning({ id: referenceDataAuditEntry.id });
+        entryIds = inserted.map((row) => row.id);
+    });
+
+    afterEach(async () => {
+        // reference_data_audit_entry rows are append-only; only the seeded
+        // user row is cleaned up.
+        await testDb.delete(user).where(inArray(user.tenantId, [auditTenantId]));
+    });
+
+    test("reads audit events with actor metadata, not scoped to a single tenant", async () => {
+        const events = await readAuditLogEvents(testDb);
+        const event = events.find((candidate) =>
+            entryIds.includes(candidate.id),
+        );
+
+        expect(event).toBeDefined();
+        expect(event?.tenantId).toBe(auditTenantId);
+        expect(event?.entityType).toBe("user");
+        expect(event?.action).toBe("user_invited");
+        expect(event?.actor).toStrictEqual({
+            id: actorId,
+            email: "audit-actor@example.invalid",
+            displayName: "Audit Actor",
+        });
     });
 });

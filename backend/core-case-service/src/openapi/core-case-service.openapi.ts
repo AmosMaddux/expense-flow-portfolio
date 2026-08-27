@@ -63,6 +63,7 @@ import {
     UpdateTeamUserStatusInboundRequestSchema,
 } from "../teamUsers/teamUsersDto.js";
 import {
+    AuditLogEntryListOutboundResponseSchema,
     RolePermissionMatrixOutboundResponseSchema,
     TenantSummaryListOutboundResponseSchema,
 } from "../platformAdmin/platformAdminDto.js";
@@ -325,6 +326,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const tenantSummaryListResponse = registry.register(
         "TenantSummaryListResponse",
         TenantSummaryListOutboundResponseSchema,
+    );
+    const auditLogEntryListResponse = registry.register(
+        "AuditLogEntryListResponse",
+        AuditLogEntryListOutboundResponseSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -1047,6 +1052,31 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                 content: {
                     "application/json": {
                         schema: tenantSummaryListResponse,
+                    },
+                },
+            },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Platform administration is limited to Platform Admins.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/platform-admin/audit-log",
+        summary: "List recent cross-tenant administrative audit events",
+        description:
+            "Loads the most recent administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+            200: {
+                description: "Audit log events found.",
+                content: {
+                    "application/json": {
+                        schema: auditLogEntryListResponse,
                     },
                 },
             },

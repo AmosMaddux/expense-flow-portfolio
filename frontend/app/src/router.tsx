@@ -32,6 +32,7 @@ import { LogMileageScreen } from "./mileage/LogMileageScreen";
 import { MySubmissionsScreen } from "./mySubmissions/MySubmissionsScreen";
 import { PolicyReferenceScreen } from "./policyReference/PolicyReferenceScreen";
 import { AllTenantsScreen } from "./platformAdmin/AllTenantsScreen";
+import { AuditLogScreen } from "./platformAdmin/AuditLogScreen";
 import { RolesPermissionsScreen } from "./platformAdmin/RolesPermissionsScreen";
 import { SubmitExpenseScreen } from "./submitExpense/SubmitExpenseScreen";
 import { TeamAndUsersScreen } from "./teamUsers/TeamAndUsersScreen";
@@ -104,6 +105,8 @@ const protectedRoutes = navigationItems.map((item) =>
                 <RolesPermissionsScreen />
             ) : item.path === "/tenants-users" ? (
                 <AllTenantsScreen />
+            ) : item.path === "/audit-log" ? (
+                <AuditLogScreen />
             ) : (
                 <WorkspaceScreen item={item} />
             ),
