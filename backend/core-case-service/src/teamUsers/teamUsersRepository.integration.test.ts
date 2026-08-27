@@ -200,6 +200,57 @@ describe("Team Users repository", () => {
         expect(auditRows[0]?.after).toStrictEqual({ roles: ["Finance Admin"] });
     });
 
+    test("serializes concurrent role changes instead of both auditing the same stale before value", async () => {
+        const secondClient = new Client({
+            connectionString: getCoreCaseTestDatabaseUrl(),
+        });
+        await secondClient.connect();
+        const secondDb = drizzle(secondClient, { schema });
+
+        try {
+            const [firstOutcome, secondOutcome] = await Promise.allSettled([
+                updateTeamUserRole(
+                    {
+                        actorId: context.actorId,
+                        id: context.employeeA,
+                        role: "Finance Admin",
+                        tenantId: context.tenantA,
+                    },
+                    testDb,
+                ),
+                updateTeamUserRole(
+                    {
+                        actorId: context.actorId,
+                        id: context.employeeA,
+                        role: "Department Manager",
+                        tenantId: context.tenantA,
+                    },
+                    secondDb,
+                ),
+            ]);
+
+            expect(firstOutcome.status).toBe("fulfilled");
+            expect(secondOutcome.status).toBe("fulfilled");
+
+            const auditRows = await readAuditRows(
+                context.tenantA,
+                context.employeeA,
+            );
+            expect(auditRows).toHaveLength(2);
+            // The row lock on the user row serializes the two transactions, so
+            // whichever ran second must have read the first's committed role as
+            // its own "before" value. If both instead recorded the original
+            // ["Employee"] as "before", the lock did not serialize them and the
+            // audit trail is corrupted.
+            const beforeValues = auditRows.map((row) =>
+                JSON.stringify(row.before),
+            );
+            expect(new Set(beforeValues).size).toBe(2);
+        } finally {
+            await secondClient.end().catch(() => undefined);
+        }
+    });
+
     test("rejects role changes for a user outside the tenant", async () => {
         await expect(
             updateTeamUserRole(

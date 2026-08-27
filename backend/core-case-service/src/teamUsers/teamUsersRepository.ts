@@ -132,6 +132,21 @@ export async function updateTeamUserRole(
     database: Database = db,
 ): Promise<TeamUserResponse> {
     return database.transaction(async (transaction) => {
+        // Locking the user row (same lock updateTeamUserStatus takes) serializes
+        // concurrent role- and status-change requests for this user, so two
+        // concurrent role changes cannot both read the same "before" role set
+        // and both write an audit entry with a stale before value.
+        const [existingUser] = await transaction
+            .select({ id: user.id })
+            .from(user)
+            .where(and(eq(user.tenantId, input.tenantId), eq(user.id, input.id)))
+            .limit(1)
+            .for("update");
+
+        if (existingUser === undefined) {
+            throw new NotFoundError("Team member was not found.");
+        }
+
         const existingRoles = await transaction
             .select({ name: role.name })
             .from(role)
