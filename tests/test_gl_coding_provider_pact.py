@@ -4,6 +4,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -197,6 +198,7 @@ def test_gl_coding_provider_verifies_core_case_service_pact() -> None:
     provider_port = free_port()
     state_port = free_port()
 
+    app.state.mileage_reimbursement_rate = Decimal("0.70")
     app.dependency_overrides[require_request_context] = finance_admin_context
     app.dependency_overrides[get_gl_account_mapping_repository] = lambda: repository
     try:
