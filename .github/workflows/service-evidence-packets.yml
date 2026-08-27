@@ -1,0 +1,335 @@
+name: Service Evidence Packets
+
+on:
+    push:
+
+permissions:
+    contents: read
+    packages: write
+    id-token: write
+
+concurrency:
+    group: service-evidence-packets-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    evidence-packet:
+        name: ${{ matrix.service }} CI-built evidence packet
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 45
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - service: core-case-service
+                      dockerfile: backend/core-case-service/Dockerfile
+                    - service: gl-coding-service
+                      dockerfile: backend/python/Dockerfile
+        env:
+            EVIDENCE_INPUT_ROOT: .evidence-packet-input/${{ matrix.service }}
+            EVIDENCE_OUTPUT_ROOT: .evidence-packet/${{ matrix.service }}
+            SEMGREP_IMAGE: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+            SYFT_IMAGE: anchore/syft@sha256:b8c170b8e51bfc4779ec3ef4399942c57290f5ce76a9c3af564c9d00d4946a6b
+            TRIVY_IMAGE: aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: npm
+
+            - name: Set up Python
+              uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+              with:
+                  python-version: "3.13"
+                  cache: pip
+
+            - name: Set up uv
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+
+            - name: Install Cosign
+              uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+            - name: Install dependencies
+              run: |
+                  npm ci
+                  uv sync --frozen
+                  python -m pip install --disable-pip-version-check bandit==1.9.4
+
+            - name: Validate evidence packet assembler
+              run: scripts/ci/test-service-evidence-packet.sh
+
+            - name: Configure Core Case evidence metadata
+              if: matrix.service == 'core-case-service'
+              run: |
+                  {
+                    echo 'EVIDENCE_PACKET_REQUIRED_ARTIFACTS_JSON<<JSON'
+                    cat <<'JSON'
+                  [
+                    {"path":"test-output/typescript-vitest.txt","gate":"typescript-vitest-tests","description":"Vitest test and coverage command output"},
+                    {"path":"test-output/python-pytest.txt","gate":"python-pytest-tests","description":"Pytest test and coverage command output"},
+                    {"path":"coverage/typescript","gate":"typescript-vitest-tests","description":"V8 coverage report for Core Case TypeScript sources"},
+                    {"path":"coverage/python","gate":"python-pytest-tests","description":"Coverage report for Python tests run with pytest-cov"},
+                    {"path":"security/semgrep-report.json","gate":"semgrep-source-sast","description":"Semgrep high-severity TypeScript SAST report"},
+                    {"path":"security/bandit-report.json","gate":"bandit-python-sast","description":"Bandit high-severity Python SAST report"},
+                    {"path":"security/trivy-report.json","gate":"trivy-image-vulnerability-scan","description":"Trivy critical vulnerability report for the built image"},
+                    {"path":"security/sbom.cdx.json","gate":"syft-sbom","description":"Syft CycloneDX SBOM for the built image"},
+                    {"path":"signing/cosign-sign-image.txt","gate":"cosign-image-signature","description":"Cosign image signing command output"},
+                    {"path":"signing/cosign-attest-sbom.txt","gate":"cosign-sbom-attestation","description":"Cosign SBOM attestation command output"},
+                    {"path":"signing/cosign-verify-image.txt","gate":"cosign-image-verification","description":"Cosign image signature verification output"},
+                    {"path":"signing/cosign-verify-attestation.txt","gate":"cosign-attestation-verification","description":"Cosign SBOM attestation verification output"}
+                  ]
+                  JSON
+                    echo 'JSON'
+                    echo 'EVIDENCE_PACKET_REPRODUCTION_COMMANDS_JSON<<JSON'
+                    cat <<'JSON'
+                  [
+                    "Install Node dependencies from the lockfile: `npm ci`.",
+                    "Install Python dependencies from the lockfile: `uv sync --frozen`.",
+                    "Run TypeScript tests and coverage: `npm run build && npx vitest run --coverage --coverage.thresholds.branches=0 --coverage.thresholds.functions=0 --coverage.thresholds.lines=0 --coverage.thresholds.statements=0 --project unit --project integration --project production --exclude backend/core-case-service/src/glCoding/glCodingClient.pact.test.ts --passWithNoTests`.",
+                    "Run Python tests and coverage: `UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest --cov=backend --cov=evaluation --cov-report=term --cov-report=xml:coverage/python/coverage.xml --cov-report=html:coverage/python/html`.",
+                    "Build the Core Case Service image: `docker build --file backend/core-case-service/Dockerfile --tag core-case-service:<tag> .`.",
+                    "Scan the image with Trivy, generate the Syft SBOM, sign the pushed image with Cosign, attest the SBOM, and verify both using the same commands recorded in this packet manifest."
+                  ]
+                  JSON
+                    echo 'JSON'
+                  } >> "$GITHUB_ENV"
+
+            - name: Configure GL-coding evidence metadata
+              if: matrix.service == 'gl-coding-service'
+              run: |
+                  {
+                    echo 'EVIDENCE_PACKET_REQUIRED_ARTIFACTS_JSON<<JSON'
+                    cat <<'JSON'
+                  [
+                    {"path":"test-output/python-pytest.txt","gate":"python-pytest-tests","description":"Pytest test and coverage command output"},
+                    {"path":"test-output/provider-pact.txt","gate":"gl-coding-provider-pact","description":"Provider Pact verification output"},
+                    {"path":"coverage/python","gate":"python-pytest-tests","description":"Coverage report for GL-coding Python sources"},
+                    {"path":"security/bandit-report.json","gate":"bandit-python-sast","description":"Bandit high-severity Python SAST report"},
+                    {"path":"security/trivy-report.json","gate":"trivy-image-vulnerability-scan","description":"Trivy critical vulnerability report for the built image"},
+                    {"path":"security/sbom.cdx.json","gate":"syft-sbom","description":"Syft CycloneDX SBOM for the built image"},
+                    {"path":"signing/cosign-sign-image.txt","gate":"cosign-image-signature","description":"Cosign image signing command output"},
+                    {"path":"signing/cosign-attest-sbom.txt","gate":"cosign-sbom-attestation","description":"Cosign SBOM attestation command output"},
+                    {"path":"signing/cosign-verify-image.txt","gate":"cosign-image-verification","description":"Cosign image signature verification output"},
+                    {"path":"signing/cosign-verify-attestation.txt","gate":"cosign-attestation-verification","description":"Cosign SBOM attestation verification output"}
+                  ]
+                  JSON
+                    echo 'JSON'
+                    echo 'EVIDENCE_PACKET_REPRODUCTION_COMMANDS_JSON<<JSON'
+                    cat <<'JSON'
+                  [
+                    "Install Node dependencies from the lockfile: `npm ci`.",
+                    "Install Python dependencies from the lockfile: `uv sync --frozen`.",
+                    "Run GL-coding tests and coverage: `UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest tests/test_auth_jwt.py tests/test_expense_line_item.py tests/test_gl_coding.py tests/test_gl_coding_contract.py tests/test_gl_mapping_repository.py tests/test_service_health.py --cov=backend/python --cov-report=term --cov-report=xml:coverage/gl-coding-service/python/coverage.xml --cov-report=html:coverage/gl-coding-service/python/html`.",
+                    "Run provider Pact verification: `UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest tests/test_gl_coding_provider_pact.py`.",
+                    "Build the GL-coding service image: `docker build --file backend/python/Dockerfile --tag gl-coding-service:<tag> .`.",
+                    "Scan the image with Trivy, generate the Syft SBOM, sign the pushed image with Cosign, attest the SBOM, and verify both using the same commands recorded in this packet manifest."
+                  ]
+                  JSON
+                    echo 'JSON'
+                  } >> "$GITHUB_ENV"
+
+            - name: Prepare evidence workspace
+              run: |
+                  rm -rf "$EVIDENCE_INPUT_ROOT" "$EVIDENCE_OUTPUT_ROOT" .secure-release-gate
+                  mkdir -p \
+                    "$EVIDENCE_INPUT_ROOT/test-output" \
+                    "$EVIDENCE_INPUT_ROOT/coverage" \
+                    "$EVIDENCE_INPUT_ROOT/security" \
+                    "$EVIDENCE_INPUT_ROOT/signing" \
+                    .secure-release-gate
+
+            - name: Run Core Case TypeScript tests with coverage
+              if: matrix.service == 'core-case-service'
+              run: |
+                  set -o pipefail
+                  npm run build
+                  npx vitest run \
+                    --coverage \
+                    --coverage.thresholds.branches=0 \
+                    --coverage.thresholds.functions=0 \
+                    --coverage.thresholds.lines=0 \
+                    --coverage.thresholds.statements=0 \
+                    --project unit \
+                    --project integration \
+                    --project production \
+                    --exclude backend/core-case-service/src/glCoding/glCodingClient.pact.test.ts \
+                    --passWithNoTests \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/typescript-vitest.txt"
+                  cp -R coverage/typescript "$EVIDENCE_INPUT_ROOT/coverage/typescript"
+
+            - name: Run Core Case Python tests with coverage
+              if: matrix.service == 'core-case-service'
+              run: |
+                  set -o pipefail
+                  mkdir -p coverage/python
+                  UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest \
+                    --cov=backend \
+                    --cov=evaluation \
+                    --cov-report=term \
+                    --cov-report=xml:coverage/python/coverage.xml \
+                    --cov-report=html:coverage/python/html \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/python-pytest.txt"
+                  cp -R coverage/python "$EVIDENCE_INPUT_ROOT/coverage/python"
+
+            - name: Run GL-coding Python tests with coverage
+              if: matrix.service == 'gl-coding-service'
+              run: |
+                  set -o pipefail
+                  mkdir -p coverage/gl-coding-service/python
+                  UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest \
+                    tests/test_auth_jwt.py \
+                    tests/test_expense_line_item.py \
+                    tests/test_gl_coding.py \
+                    tests/test_gl_coding_contract.py \
+                    tests/test_gl_mapping_repository.py \
+                    tests/test_service_health.py \
+                    --cov=backend/python \
+                    --cov-report=term \
+                    --cov-report=xml:coverage/gl-coding-service/python/coverage.xml \
+                    --cov-report=html:coverage/gl-coding-service/python/html \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/python-pytest.txt"
+                  cp -R coverage/gl-coding-service/python "$EVIDENCE_INPUT_ROOT/coverage/python"
+
+            - name: Run GL-coding provider Pact
+              if: matrix.service == 'gl-coding-service'
+              run: |
+                  set -o pipefail
+                  UV_CACHE_DIR=/tmp/expense-flow-uv-cache uv run pytest \
+                    tests/test_gl_coding_provider_pact.py \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/test-output/provider-pact.txt"
+
+            - name: Run Core Case Semgrep source gate
+              if: matrix.service == 'core-case-service'
+              run: |
+                  docker run --rm \
+                    --volume "$GITHUB_WORKSPACE:/src" \
+                    --workdir /src \
+                    --entrypoint bash \
+                    "$SEMGREP_IMAGE" \
+                    /src/scripts/ci/run-semgrep-gate.sh \
+                    backend/core-case-service/src \
+                    "$EVIDENCE_INPUT_ROOT/security/semgrep-report.json"
+
+            - name: Run Core Case Bandit source gate
+              if: matrix.service == 'core-case-service'
+              run: >
+                  scripts/ci/run-bandit-gate.sh
+                  --output "$EVIDENCE_INPUT_ROOT/security/bandit-report.json"
+                  backend
+                  tests
+
+            - name: Run GL-coding Bandit source gate
+              if: matrix.service == 'gl-coding-service'
+              run: >
+                  scripts/ci/run-bandit-gate.sh
+                  --output "$EVIDENCE_INPUT_ROOT/security/bandit-report.json"
+                  backend/python
+                  tests/test_auth_jwt.py
+                  tests/test_expense_line_item.py
+                  tests/test_gl_coding.py
+                  tests/test_gl_coding_contract.py
+                  tests/test_gl_mapping_repository.py
+                  tests/test_service_health.py
+
+            - name: Compute evidence image reference
+              run: |
+                  repo_lc=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+                  echo "IMAGE_REF=ghcr.io/$repo_lc/evidence/${{ matrix.service }}:${{ github.sha }}" >> "$GITHUB_ENV"
+
+            - name: Build ${{ matrix.service }} image
+              run: |
+                  docker build \
+                    --file "${{ matrix.dockerfile }}" \
+                    --tag "$IMAGE_REF" \
+                    .
+                  docker save "$IMAGE_REF" -o ".secure-release-gate/${{ matrix.service }}-image.tar"
+
+            - name: Run Trivy image gate
+              run: |
+                  scripts/ci/run-trivy-gate.sh \
+                    --input ".secure-release-gate/${{ matrix.service }}-image.tar" \
+                    --severity CRITICAL \
+                    --exit-code 1 \
+                    --ignorefile .trivyignore \
+                    --format json \
+                    --output "$EVIDENCE_INPUT_ROOT/security/trivy-report.json"
+
+            - name: Generate Syft SBOM
+              run: |
+                  scripts/ci/run-syft-sbom.sh \
+                    "docker-archive:/repo/.secure-release-gate/${{ matrix.service }}-image.tar" \
+                    -o "cyclonedx-json=/repo/$EVIDENCE_INPUT_ROOT/security/sbom.cdx.json"
+
+            - name: Log in to GHCR
+              run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            - name: Push evidence image
+              run: docker push "$IMAGE_REF"
+
+            - name: Resolve evidence image digest
+              run: |
+                  image_digest="$(docker buildx imagetools inspect "$IMAGE_REF" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+                  echo "IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
+
+            - name: Sign evidence image
+              run: |
+                  set -o pipefail
+                  scripts/ci/run-cosign-sign-image.sh "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-sign-image.txt"
+
+            - name: Attest SBOM to evidence image
+              run: |
+                  set -o pipefail
+                  scripts/ci/run-cosign-attest-sbom.sh \
+                    "$IMAGE_REF" \
+                    "$EVIDENCE_INPUT_ROOT/security/sbom.cdx.json" \
+                    cyclonedx \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-attest-sbom.txt"
+
+            - name: Verify evidence image signature
+              env:
+                  COSIGN_CERTIFICATE_IDENTITY_REGEXP: ^https://github\.com/${{ github.repository }}/\.github/workflows/service-evidence-packets\.yml@refs/(heads|tags)/.+$
+                  COSIGN_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+              run: |
+                  set -o pipefail
+                  cosign verify \
+                    --certificate-identity-regexp "$COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
+                    --certificate-oidc-issuer "$COSIGN_CERTIFICATE_OIDC_ISSUER" \
+                    "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-verify-image.txt"
+
+            - name: Verify SBOM attestation
+              env:
+                  COSIGN_CERTIFICATE_IDENTITY_REGEXP: ^https://github\.com/${{ github.repository }}/\.github/workflows/service-evidence-packets\.yml@refs/(heads|tags)/.+$
+                  COSIGN_CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+              run: |
+                  set -o pipefail
+                  cosign verify-attestation \
+                    --type cyclonedx \
+                    --certificate-identity-regexp "$COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
+                    --certificate-oidc-issuer "$COSIGN_CERTIFICATE_OIDC_ISSUER" \
+                    "$IMAGE_REF" \
+                    2>&1 | tee "$EVIDENCE_INPUT_ROOT/signing/cosign-verify-attestation.txt"
+
+            - name: Assemble evidence packet
+              env:
+                  EVIDENCE_PACKET_SERVICE_NAME: ${{ matrix.service }}
+                  EVIDENCE_PACKET_DOCKERFILE: ${{ matrix.dockerfile }}
+                  EVIDENCE_PACKET_INPUT_ROOT: ${{ env.EVIDENCE_INPUT_ROOT }}
+                  EVIDENCE_PACKET_OUTPUT_ROOT: ${{ env.EVIDENCE_OUTPUT_ROOT }}
+              run: node scripts/ci/assemble-service-evidence-packet.mjs
+
+            - name: Upload evidence packet
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: ${{ matrix.service }}-evidence-packet-${{ github.sha }}
+                  path: .evidence-packet/${{ matrix.service }}/
+                  if-no-files-found: error
+                  retention-days: 90

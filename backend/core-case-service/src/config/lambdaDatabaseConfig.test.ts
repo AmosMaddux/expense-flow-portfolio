@@ -19,12 +19,11 @@ void describe("Lambda database configuration", () => {
             }),
         });
 
-        vi.mocked(SecretsManager).mockImplementation(
-            () =>
-                ({
-                    getSecretValue: mockGetSecretValue,
-                }) as unknown as SecretsManager,
-        );
+        vi.mocked(SecretsManager).mockImplementation(function () {
+            return {
+                getSecretValue: mockGetSecretValue,
+            } as unknown as SecretsManager;
+        });
 
         const config = await loadLambdaDatabaseConfig({
             DATABASE_SECRET_ARN: syntheticSecretArn,
@@ -51,12 +50,11 @@ void describe("Lambda database configuration", () => {
             }),
         });
 
-        vi.mocked(SecretsManager).mockImplementation(
-            () =>
-                ({
-                    getSecretValue: mockGetSecretValue,
-                }) as unknown as SecretsManager,
-        );
+        vi.mocked(SecretsManager).mockImplementation(function () {
+            return {
+                getSecretValue: mockGetSecretValue,
+            } as unknown as SecretsManager;
+        });
 
         await expect(
             loadLambdaDatabaseConfig({
