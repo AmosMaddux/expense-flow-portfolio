@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-export const expenseCategories = ["Travel", "Meals", "Lodging"] as const;
+export const expenseCategories = [
+    "Travel",
+    "Meals",
+    "Lodging",
+    "Office Supplies",
+    "Software",
+    "Other",
+] as const;
 export const receiptContentTypes = [
     "application/pdf",
     "image/png",

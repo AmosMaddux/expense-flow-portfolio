@@ -44,6 +44,7 @@ export AWS_PAGER=""
 EXPENSEFLOW_DEV_PASSWORD="${EXPENSEFLOW_DEV_PASSWORD:-expenseflow-local-dev-only}"
 TERRAFORM_DIR="${TERRAFORM_DIR:-infra/terraform/environments/sandbox}"
 NAME_PREFIX="${NAME_PREFIX:-expenseflow-sandbox}"
+CORE_CASE_CONTAINER_NAME="${CORE_CASE_CONTAINER_NAME:-core-case-service}"
 AUTO_RESOLVE_SANDBOX_ENV="${AUTO_RESOLVE_SANDBOX_ENV:-true}"
 MFA_TOTP_SECRET_ID="${MFA_TOTP_SECRET_ID:-expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key}"
 CORE_CASE_IMAGE_TAG="${CORE_CASE_IMAGE_TAG:-}"
@@ -98,7 +99,7 @@ describe_secret_arn() {
 running_core_case_image() {
     aws_cli ecs describe-task-definition \
         --task-definition "${NAME_PREFIX}-core-case-service" \
-        --query 'taskDefinition.containerDefinitions[0].image' \
+        --query "taskDefinition.containerDefinitions[?name=='${CORE_CASE_CONTAINER_NAME}'].image | [0]" \
         --output text 2>/dev/null || true
 }
 
@@ -135,7 +136,7 @@ resolve_sandbox_env
 : "${CORE_CASE_DB_NAME:?CORE_CASE_DB_NAME is required (the database name, e.g. core_case).}"
 : "${MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN:?MFA_TOTP_SECRET_ENCRYPTION_KEY_SECRET_ARN is required (same ARN passed as core_case_mfa_totp_secret_encryption_key_secret_arn on terraform apply).}"
 : "${CORE_CASE_IMAGE_URI:?CORE_CASE_IMAGE_URI is required. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_repository_url}"
-: "${CORE_CASE_IMAGE_TAG:?CORE_CASE_IMAGE_TAG is required. Run: aws ecs describe-task-definition --task-definition ${NAME_PREFIX}-core-case-service --query 'taskDefinition.containerDefinitions[0].image' --output text}"
+: "${CORE_CASE_IMAGE_TAG:?CORE_CASE_IMAGE_TAG is required. Run: aws ecs describe-task-definition --task-definition ${NAME_PREFIX}-core-case-service --query \"taskDefinition.containerDefinitions[?name=='${CORE_CASE_CONTAINER_NAME}'].image | [0]\" --output text}"
 
 if [[ "$command" == "demo-seed" ]]; then
     : "${RECEIPT_STORAGE_BUCKET:?RECEIPT_STORAGE_BUCKET is required for demo-seed. Run: terraform -chdir=infra/terraform/environments/sandbox output -raw receipt_storage_bucket_name}"
