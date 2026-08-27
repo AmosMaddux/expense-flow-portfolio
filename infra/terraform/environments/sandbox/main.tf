@@ -216,6 +216,7 @@ module "http_api" {
   claims_probe_build_output                   = var.http_api_claims_probe_build_output
   core_case_internal_base_url                 = local.core_case_internal_base_url
   core_case_internal_command_token_secret_arn = var.core_case_internal_command_token_secret_arn
+  core_case_public_base_url                   = "http://${module.alb.public_alb_dns_name}"
   issue_payment_build_output                  = var.http_api_issue_payment_build_output
   jwt_audience                                = var.http_api_jwt_audience
   jwt_issuer                                  = var.http_api_jwt_issuer

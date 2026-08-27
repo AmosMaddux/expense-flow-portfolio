@@ -163,6 +163,11 @@ output "http_api_endpoint" {
   value       = module.http_api.api_endpoint
 }
 
+output "core_case_api_gateway_base_url" {
+  description = "HTTPS API Gateway base URL for the SPA to call Core Case /v1 routes without mixed-content blocking."
+  value       = module.http_api.core_case_proxy_base_url
+}
+
 output "http_api_claims_probe_url" {
   description = "Protected claims-probe URL used by the JWT gateway smoke test."
   value       = module.http_api.claims_probe_url
@@ -172,4 +177,3 @@ output "http_api_issue_payment_url_prefix" {
   description = "Protected Issue Payment (API Gateway payment path) URL prefix. Append an Expense Report ID before /settlement."
   value       = module.http_api.issue_payment_url_prefix
 }
-

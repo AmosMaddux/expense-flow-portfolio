@@ -19,11 +19,9 @@ set -euo pipefail
 #   5. Runs the full terraform apply with everything wired together. This
 #      also creates the bastion (module.bastion). GL-coding's least-privilege
 #      database role and the "vector" extension
-#      (module.database_core_case's readonly_roles/extensions) are
-#      deliberately left out of this apply - see "What this script does NOT
-#      do" below - so db_readonly_roles_and_extensions_enabled is not passed
-#      here and defaults to false, which this apply relies on to skip those
-#      resources rather than fail on a connection timeout.
+#      (module.database_core_case's readonly_roles/extensions) are applied in
+#      step 5b through a bastion SSM tunnel, because Terraform's postgresql
+#      provider must reach private RDS directly.
 #   6. Builds the SPA with VITE_TENANT_ID baked in and deploys it to the SPA
 #      bucket + CloudFront.
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
@@ -36,17 +34,12 @@ set -euo pipefail
 #      docs/secure-release-gate.md's "ZAP" section. SKIP_ZAP_SCAN=true
 #      skips this step.
 #
-# What this script does NOT do: GL-coding's least-privilege database role
-# and the "vector" extension (module.database_core_case's
-# readonly_roles/extensions) need Terraform's postgresql provider to reach
-# RDS directly, which only works from inside the VPC. Step 5's apply passes
-# db_readonly_roles_and_extensions_enabled=false (the default) so those
-# resources are skipped instead of failing the whole apply on a connection
-# timeout - this is left as one manual step, and this script prints the
-# exact commands (including the required
-# db_readonly_roles_and_extensions_enabled=true) at the end. On a genuinely
-# fresh environment, GL-coding's ECS tasks and Core Case's pgvector-backed
-# policy retrieval will not work correctly until that manual step runs.
+# GL-coding's least-privilege database role and the "vector" extension
+# (module.database_core_case's readonly_roles/extensions) are intentionally
+# split into step 5b because they need Terraform's postgresql provider to
+# reach private RDS through the bastion. Set RUN_READONLY_ROLE_STEP=false only
+# for a partial deploy where GL-coding and pgvector-backed policy retrieval are
+# explicitly not being verified.
 #
 # This does not run the Trivy/Syft/Cosign secure release gate that
 # build-push-images.sh normally runs after each push - see that script's
@@ -84,15 +77,12 @@ SKIP_BASTION_SEED="${SKIP_BASTION_SEED:-false}"
 SKIP_ZAP_SCAN="${SKIP_ZAP_SCAN:-false}"
 
 # Applies GL-coding's readonly database role and the "vector" extension
-# (module.database_core_case's readonly_roles/extensions), which step 5's
-# main apply always skips (db_readonly_roles_and_extensions_enabled=false)
-# because they need the postgresql provider to reach RDS directly - only
-# possible from inside the VPC. Set to true only when this script itself
-# can reach the bastion via SSM (i.e. you have AWS credentials with
-# ssm:StartSession on it) - it opens its own tunnel, fetches the RDS master
-# password itself (never via asm-exec; see run_readonly_role_step below),
-# and tears the tunnel down when done, on success or failure.
-RUN_READONLY_ROLE_STEP="${RUN_READONLY_ROLE_STEP:-false}"
+# (module.database_core_case's readonly_roles/extensions). This is on by
+# default because GL-coding tasks cannot start without the generated readonly
+# role secret. It opens its own SSM tunnel through the bastion, fetches the RDS
+# master password itself (never via asm-exec; see run_readonly_role_step
+# below), and tears the tunnel down when done, on success or failure.
+RUN_READONLY_ROLE_STEP="${RUN_READONLY_ROLE_STEP:-true}"
 READONLY_ROLE_STEP_LOCAL_PORT="${READONLY_ROLE_STEP_LOCAL_PORT:-15432}"
 
 # Pinned by digest, matching TRIVY_IMAGE/SYFT_IMAGE in
@@ -415,6 +405,7 @@ if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
         echo "Readonly role/extension step failed - GL-coding's ECS tasks and" >&2
         echo "pgvector-backed policy retrieval will not work correctly. See" >&2
         echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+        exit 1
     fi
 else
     echo "=== 5b/7: Skipping readonly role + vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
@@ -422,10 +413,10 @@ fi
 
 if [[ "$SKIP_SPA_DEPLOY" != "true" ]]; then
     echo "=== 6/7: Building and deploying the SPA ==="
-    # CloudFront serves only the SPA. For this HTTP-only sandbox split, the
-    # built SPA points directly at the public ALB so API 4xx responses are not
-    # rewritten by the SPA distribution's fallback rules.
-    api_base_url="http://$(tf_output public_alb_dns_name)"
+    # CloudFront serves only the SPA. The built SPA points at API Gateway's
+    # HTTPS execute-api origin, which proxies Core Case /v1 requests to the
+    # public ALB without sending them through the SPA distribution fallback.
+    api_base_url="$(tf_output core_case_api_gateway_base_url)"
     VITE_API_BASE_URL="$api_base_url" VITE_TENANT_ID="$VITE_TENANT_ID" \
         npm --workspace frontend/app run build
 
@@ -464,11 +455,11 @@ fi
 
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
     echo "=== 8/8: Running ZAP baseline DAST scan ==="
-    # Points at the live OpenAPI document, not the bare ALB URL - ZAP
+    # Points at the live OpenAPI document, not the bare API URL - ZAP
     # imports it and actively calls every documented /v1/* route, which is
-    # the only way this exercises Core Case's real API surface rather than
-    # just the ALB's generic 404 page. See scripts/ci/run-zap-baseline-gate.sh.
-    zap_target="http://$(tf_output public_alb_dns_name)/v1/openapi.json"
+    # the only way this exercises Core Case's real API surface through the
+    # same API Gateway origin used by the SPA. See scripts/ci/run-zap-baseline-gate.sh.
+    zap_target="$(tf_output core_case_api_gateway_base_url)/v1/openapi.json"
     zap_report_path="evidence/secure-release-gate/core-case-service-zap-report.json"
     mkdir -p "$(dirname "$zap_report_path")"
 
@@ -493,12 +484,13 @@ core_case_db_master_user_secret_arn="$(tf_output core_case_db_master_user_secret
 
 echo
 echo "Demo deploy complete."
-echo "Core Case API:  http://$(tf_output public_alb_dns_name)"
-echo "CloudFront SPA: https://$(tf_output spa_cloudfront_domain_name)"
-echo "Image tag:      $IMAGE_TAG"
-echo "Browser note:   HTTP API is for sandbox smoke/debug; HTTPS SPA browser calls require a future HTTPS API endpoint."
+echo "CloudFront SPA:        https://$(tf_output spa_cloudfront_domain_name)"
+echo "Core Case API Gateway: $(tf_output core_case_api_gateway_base_url)"
+echo "Core Case ALB:         http://$(tf_output public_alb_dns_name)"
+echo "Image tag:             $IMAGE_TAG"
+echo "Browser note:          The SPA uses API Gateway HTTPS; the public HTTP ALB remains a directly reachable sandbox origin."
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
-    echo "ZAP report:     evidence/secure-release-gate/core-case-service-zap-report.json"
+    echo "ZAP report:            evidence/secure-release-gate/core-case-service-zap-report.json"
 fi
 echo
 echo "Nothing was torn down. This environment is running real, billed AWS resources."
@@ -508,7 +500,7 @@ if [[ "$RUN_READONLY_ROLE_STEP" != "true" ]]; then
     echo "database role and the \"vector\" extension (needed for policy"
     echo "retrieval embeddings) need Terraform's postgresql provider to reach"
     echo "RDS directly, which only works from inside the VPC - this run had"
-    echo "RUN_READONLY_ROLE_STEP=false (the default), so those resources were"
+    echo "RUN_READONLY_ROLE_STEP=false, so those resources were"
     echo "skipped. GL-coding's ECS tasks and pgvector-backed policy retrieval"
     echo "will not work correctly until this step runs."
     echo

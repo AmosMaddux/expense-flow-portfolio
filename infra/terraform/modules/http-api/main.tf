@@ -85,6 +85,38 @@ resource "aws_apigatewayv2_stage" "this" {
   }
 }
 
+# Core Case proxy: unauthenticated HTTPS front door for the SPA.
+# Core Case still owns login, MFA, refresh, and bearer-token authorization.
+resource "aws_apigatewayv2_integration" "core_case_proxy" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_method     = "ANY"
+  integration_type       = "HTTP_PROXY"
+  integration_uri        = "${var.core_case_public_base_url}/v1/{proxy}"
+  payload_format_version = "1.0"
+}
+
+resource "aws_apigatewayv2_integration" "core_case_v1_root" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_method     = "ANY"
+  integration_type       = "HTTP_PROXY"
+  integration_uri        = "${var.core_case_public_base_url}/v1"
+  payload_format_version = "1.0"
+}
+
+resource "aws_apigatewayv2_route" "core_case_proxy" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "ANY /{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.core_case_proxy.id}"
+  authorization_type = "NONE"
+}
+
+resource "aws_apigatewayv2_route" "core_case_v1_root" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "ANY /"
+  target             = "integrations/${aws_apigatewayv2_integration.core_case_v1_root.id}"
+  authorization_type = "NONE"
+}
+
 # Claims-probe Lambda: GET /auth-context (protected).
 # Confirms the shared JWT authorizer forwards verified tenant/role claims.
 

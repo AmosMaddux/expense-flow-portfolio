@@ -8,6 +8,11 @@ output "api_endpoint" {
   value       = "${aws_apigatewayv2_api.this.api_endpoint}/${aws_apigatewayv2_stage.this.name}"
 }
 
+output "core_case_proxy_base_url" {
+  description = "HTTPS base URL the SPA uses for proxied Core Case /v1 routes. This intentionally omits the stage path so frontend /v1 requests are not duplicated."
+  value       = aws_apigatewayv2_api.this.api_endpoint
+}
+
 output "authorizer_id" {
   description = "Shared JWT authorizer identifier."
   value       = aws_apigatewayv2_authorizer.shared_jwt.id
