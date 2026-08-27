@@ -63,8 +63,9 @@ rules.
 
 ## Sign In Instructions
 
-Use the CloudFront URL printed by `deploy-demo.sh` after a successful deploy,
-or resolve it again with Terraform when you need it.
+Use the CloudFront SPA URL printed by `deploy-demo.sh` after a successful deploy,
+or resolve it again with Terraform when you need it. The demo script also prints
+the public Core Case API ALB URL used for sandbox smoke/debug.
 
 ### Retrieve The CloudFront URL
 
@@ -76,6 +77,20 @@ printf 'https://%s\n' "$(AWS_PROFILE=expenseflow-smoke \
 ```
 
 What it does: prints the CloudFront URL for the deployed SPA.
+
+### Retrieve The HTTP API URL
+
+Command:
+
+```bash
+printf 'http://%s\n' "$(AWS_PROFILE=expenseflow-smoke \
+  terraform -chdir=infra/terraform/environments/sandbox output -raw public_alb_dns_name)"
+```
+
+What it does: prints the public ALB origin for direct `/v1/*` API requests. This
+HTTP URL preserves real API status codes because it bypasses the SPA CloudFront
+distribution, but the HTTPS CloudFront SPA cannot call it from a browser until a
+future HTTPS API endpoint is added.
 
 All seeded accounts use this synthetic password:
 

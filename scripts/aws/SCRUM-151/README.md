@@ -37,12 +37,12 @@ scripts/aws/SCRUM-151/create-spa-cdn-resources.sh
 Build, sync, set cache metadata, and invalidate CloudFront:
 
 ```bash
-VITE_API_BASE_URL="https://<sandbox-bff-hostname>" \
+VITE_API_BASE_URL="http://<public-alb-dns-name>" \
 AWS_PROFILE=expenseflow-smoke \
 scripts/aws/SCRUM-151/deploy-spa.sh
 ```
 
-`VITE_API_BASE_URL` is optional and defaults to an empty value so browser API calls remain same-origin. Supply the public BFF base URL when the BFF is hosted separately. The deployment gives hashed Vite assets a one-year immutable cache lifetime, gives other files a one-hour lifetime, and prevents caching `index.html` so new asset references are discovered immediately.
+`VITE_API_BASE_URL` is optional and defaults to an empty value for local same-origin proxy workflows. In the Terraform-managed HTTP sandbox split, supply the public ALB origin so `/v1/*` calls bypass CloudFront and keep real API `403` and `404` responses. An HTTP ALB URL is for sandbox smoke/debug only; the HTTPS CloudFront SPA cannot make browser calls to it without mixed-content blocking. The deployment gives hashed Vite assets a one-year immutable cache lifetime, gives other files a one-hour lifetime, and prevents caching `index.html` so new asset references are discovered immediately.
 
 Verify bucket privacy, OAC, both fallback mappings, the deployed root page, and a synthetic deep link:
 

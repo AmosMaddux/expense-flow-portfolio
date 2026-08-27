@@ -244,8 +244,7 @@ resource "aws_vpc_security_group_ingress_rule" "internal_alb_from_issue_payment_
 module "spa" {
   source = "../../modules/spa"
 
-  api_origin_domain_name = module.alb.public_alb_dns_name
-  bucket_name            = local.spa_bucket_name
-  name_prefix            = var.name_prefix
-  tags                   = local.tags
+  bucket_name = local.spa_bucket_name
+  name_prefix = var.name_prefix
+  tags        = local.tags
 }

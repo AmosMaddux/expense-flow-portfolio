@@ -422,14 +422,11 @@ fi
 
 if [[ "$SKIP_SPA_DEPLOY" != "true" ]]; then
     echo "=== 6/7: Building and deploying the SPA ==="
-    # VITE_API_BASE_URL is deliberately left unset/empty so the SPA calls the
-    # API with a relative path, which CloudFront proxies to the ALB
-    # (module.spa's ordered_cache_behavior for /v1/*) - this keeps the
-    # browser talking HTTPS-only to CloudFront even though the ALB itself
-    # has no certificate. The repo-root .env sets VITE_API_BASE_URL for
-    # local docker-compose dev and Vite loads it by default; the explicit
-    # empty assignment here overrides that for this build.
-    VITE_API_BASE_URL="" VITE_TENANT_ID="$VITE_TENANT_ID" \
+    # CloudFront serves only the SPA. For this HTTP-only sandbox split, the
+    # built SPA points directly at the public ALB so API 4xx responses are not
+    # rewritten by the SPA distribution's fallback rules.
+    api_base_url="http://$(tf_output public_alb_dns_name)"
+    VITE_API_BASE_URL="$api_base_url" VITE_TENANT_ID="$VITE_TENANT_ID" \
         npm --workspace frontend/app run build
 
     spa_bucket="$(tf_output spa_bucket_name)"
@@ -496,11 +493,12 @@ core_case_db_master_user_secret_arn="$(tf_output core_case_db_master_user_secret
 
 echo
 echo "Demo deploy complete."
-echo "Public ALB:    http://$(tf_output public_alb_dns_name)"
-echo "CloudFront:    https://$(tf_output spa_cloudfront_domain_name)"
-echo "Image tag:     $IMAGE_TAG"
+echo "Core Case API:  http://$(tf_output public_alb_dns_name)"
+echo "CloudFront SPA: https://$(tf_output spa_cloudfront_domain_name)"
+echo "Image tag:      $IMAGE_TAG"
+echo "Browser note:   HTTP API is for sandbox smoke/debug; HTTPS SPA browser calls require a future HTTPS API endpoint."
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
-    echo "ZAP report:    evidence/secure-release-gate/core-case-service-zap-report.json"
+    echo "ZAP report:     evidence/secure-release-gate/core-case-service-zap-report.json"
 fi
 echo
 echo "Nothing was torn down. This environment is running real, billed AWS resources."
