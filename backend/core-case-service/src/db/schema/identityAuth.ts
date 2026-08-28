@@ -20,6 +20,9 @@ export const roleValues = [
 ] as const;
 export type RoleName = (typeof roleValues)[number];
 
+export const userStatusValues = ["invited", "active", "deactivated"] as const;
+export type UserStatus = (typeof userStatusValues)[number];
+
 function buildStaticStringInListSql(values: readonly string[]) {
     if (values.length === 0) {
         throw new Error(
@@ -35,6 +38,7 @@ function buildStaticStringInListSql(values: readonly string[]) {
 }
 
 const roleValueCheckSql = buildStaticStringInListSql(roleValues);
+const userStatusValueCheckSql = buildStaticStringInListSql(userStatusValues);
 
 export const user = pgTable(
     "user",
@@ -42,6 +46,8 @@ export const user = pgTable(
         id: uuid("id").defaultRandom().primaryKey(),
         tenantId: uuid("tenant_id").notNull(),
         email: text("email").notNull(),
+        displayName: text("display_name"),
+        status: text("status").notNull().default("active"),
         createdAt: timestamp("created_at", { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -53,6 +59,10 @@ export const user = pgTable(
         check(
             "user_email_not_blank_check",
             sql`nullif(btrim(${table.email}), '') is not null`,
+        ),
+        check(
+            "user_status_check",
+            sql`${table.status} in (${userStatusValueCheckSql})`,
         ),
         uniqueIndex("user_tenant_email_unique_idx").on(
             table.tenantId,
