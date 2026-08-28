@@ -2,22 +2,19 @@ import type { NextFunction, Request, Response } from "express";
 
 import type { RoleName } from "../db/schema/index.js";
 import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
-import {
-    GlMappingPathParamsSchema,
-    UpdateGlMappingInboundRequestSchema,
-} from "./glMappingDto.js";
-import {
-    readGlMappingReference,
-    updateGlMapping,
-} from "./glMappingRepository.js";
+import { SaveGlMappingsInboundRequestSchema } from "./glMappingDto.js";
+import { readGlMappingReference, saveGlMappings } from "./glMappingRepository.js";
 
-const internalGlMappingRoles = new Set<RoleName>([
+const glMappingReadRoles = new Set<RoleName>([
     "Finance Admin",
     "Department Manager",
+    "Employee",
 ]);
 
 /**
- * Handles internal reads of tenant-scoped GL Mapping reference data.
+ * Handles reads of tenant-scoped GL Mapping reference data. Internal roles
+ * use this for the GL Mapping admin screen; Employees use it to populate
+ * the expense category options when submitting an expense report.
  */
 export async function getGlMappings(
     req: Request,
@@ -26,7 +23,7 @@ export async function getGlMappings(
 ): Promise<void> {
     try {
         const auth = requireAuthContext(req);
-        requireInternalGlMappingAccess(auth);
+        requireGlMappingReadAccess(auth);
         const reference = await readGlMappingReference(auth.tenantId);
 
         res.status(200).json(reference);
@@ -36,9 +33,11 @@ export async function getGlMappings(
 }
 
 /**
- * Handles Finance Admin updates to tenant-scoped GL Mapping reference data.
+ * Handles Finance Admin batch saves (create, edit, delete) of tenant-scoped
+ * GL Mapping reference data. The save is applied atomically: either every
+ * requested change is persisted, or none are.
  */
-export async function patchGlMapping(
+export async function putGlMappings(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -46,16 +45,14 @@ export async function patchGlMapping(
     try {
         const auth = requireAuthContext(req);
         requireFinanceAdminGlMappingEditAccess(auth);
-        const params = GlMappingPathParamsSchema.parse({ id: req.params.id });
-        const body = UpdateGlMappingInboundRequestSchema.parse(req.body);
-        const mapping = await updateGlMapping({
+        const body = SaveGlMappingsInboundRequestSchema.parse(req.body);
+        const reference = await saveGlMappings({
             actorId: auth.userId,
-            glCodeId: body.glCodeId,
-            id: params.id,
             tenantId: auth.tenantId,
+            ...body,
         });
 
-        res.status(200).json(mapping);
+        res.status(200).json(reference);
     } catch (error: unknown) {
         next(error);
     }
@@ -69,10 +66,8 @@ function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     return req.auth;
 }
 
-function requireInternalGlMappingAccess(
-    auth: NonNullable<Request["auth"]>,
-): void {
-    if (auth.roles.some((role) => internalGlMappingRoles.has(role))) {
+function requireGlMappingReadAccess(auth: NonNullable<Request["auth"]>): void {
+    if (auth.roles.some((role) => glMappingReadRoles.has(role))) {
         return;
     }
 

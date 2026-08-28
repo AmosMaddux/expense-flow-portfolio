@@ -5,6 +5,7 @@ import {
     render,
     screen,
     waitFor,
+    within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -24,8 +25,17 @@ const mappingResponse = {
             category: "Travel",
             glCodeId: "00000000-0000-4000-8000-000000000901",
             accountCode: "6100",
-            accountName: "Travel Expense",
+            accountName: "Travel",
             description: "Synthetic travel account",
+            updatedAt: "2026-08-03T12:00:00.000Z",
+        },
+        {
+            id: "00000000-0000-4000-8000-000000000802",
+            category: "Meals",
+            glCodeId: "00000000-0000-4000-8000-000000000902",
+            accountCode: "6200",
+            accountName: "Meals",
+            description: null,
             updatedAt: "2026-08-03T12:00:00.000Z",
         },
     ],
@@ -33,14 +43,14 @@ const mappingResponse = {
         {
             id: "00000000-0000-4000-8000-000000000901",
             accountCode: "6100",
-            accountName: "Travel Expense",
+            accountName: "Travel",
             description: "Synthetic travel account",
         },
         {
             id: "00000000-0000-4000-8000-000000000902",
             accountCode: "6200",
-            accountName: "Meals Expense",
-            description: "Synthetic meals account",
+            accountName: "Meals",
+            description: null,
         },
     ],
 };
@@ -57,40 +67,236 @@ describe("GlMappingScreen", () => {
 
         expect(await screen.findByText("Read-only")).toBeTruthy();
         expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-        expect(screen.queryByLabelText("Travel GL account")).toBeNull();
-        expect(await screen.findByText(/Travel Expense/)).toBeTruthy();
+        expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Add mapping" })).toBeNull();
+        expect(await screen.findByText("6100")).toBeTruthy();
     });
 
-    test("allows Finance Admins to save a GL Mapping edit", async () => {
+    test("shows only the GL number, not the account name, in the GL number column", async () => {
         const fetchImplementation = createFetchMock();
 
         renderGlMappingScreen("Finance Admin", fetchImplementation);
 
-        const select = await screen.findByLabelText("Travel GL account");
-        fireEvent.change(select, {
-            target: { value: "00000000-0000-4000-8000-000000000902" },
+        expect(await screen.findByText("6100")).toBeTruthy();
+        expect(screen.queryByText("6100 - Travel")).toBeNull();
+    });
+
+    test("edits stay page-local until Save is clicked", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        const row = (await screen.findByText("Travel")).closest("tr");
+        expect(row).not.toBeNull();
+        fireEvent.click(
+            within(row as HTMLElement).getByRole("button", { name: "Edit" }),
+        );
+
+        fireEvent.change(screen.getByLabelText("GL number"), {
+            target: { value: "6150" },
         });
+        fireEvent.click(
+            screen.getByRole("button", { name: "Save Travel edits" }),
+        );
+
+        expect(await screen.findByText("6150")).toBeTruthy();
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([, init]) => init?.method === "PUT",
+            ),
+        ).toBe(false);
+
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
         await waitFor(() => {
-            expect(fetchImplementation).toHaveBeenCalledWith(
-                "/v1/gl-mappings/00000000-0000-4000-8000-000000000801",
-                expect.objectContaining({ method: "PATCH" }),
-            );
+            expect(
+                fetchImplementation.mock.calls.some(
+                    ([input, init]) =>
+                        input === "/v1/gl-mappings" && init?.method === "PUT",
+                ),
+            ).toBe(true);
         });
-        const patchCall = fetchImplementation.mock.calls.find(
-            ([input]) =>
-                input ===
-                "/v1/gl-mappings/00000000-0000-4000-8000-000000000801",
-        );
-        const patchInit = patchCall?.[1];
+        const [, saveInit] =
+            fetchImplementation.mock.calls.find(
+                ([input, init]) =>
+                    input === "/v1/gl-mappings" && init?.method === "PUT",
+            ) ?? [];
+        const savedBody = JSON.parse(String(saveInit?.body)) as {
+            updates: Array<{ id: string; accountCode: string }>;
+        };
+        expect(savedBody.updates).toEqual([
+            {
+                id: "00000000-0000-4000-8000-000000000801",
+                category: "Travel",
+                accountCode: "6150",
+                description: "Synthetic travel account",
+            },
+        ]);
+    });
 
-        expect(patchInit?.body).toBe(
-            JSON.stringify({
-                glCodeId: "00000000-0000-4000-8000-000000000902",
+    test("rejects a non-numeric GL number before staging the edit", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        const row = (await screen.findByText("Travel")).closest("tr");
+        fireEvent.click(
+            within(row as HTMLElement).getByRole("button", { name: "Edit" }),
+        );
+        fireEvent.change(screen.getByLabelText("GL number"), {
+            target: { value: "abc" },
+        });
+        fireEvent.click(
+            screen.getByRole("button", { name: "Save Travel edits" }),
+        );
+
+        expect(
+            await screen.findByText("GL number must contain only digits."),
+        ).toBeTruthy();
+        expect(screen.getByLabelText("GL number")).toBeTruthy();
+    });
+
+    test("adds a new mapping locally and includes it in the batch save", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        await screen.findByText("Travel");
+        fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
+
+        fireEvent.change(screen.getByLabelText("Title"), {
+            target: { value: "Parking" },
+        });
+        fireEvent.change(screen.getByLabelText("GL number"), {
+            target: { value: "6700" },
+        });
+        fireEvent.click(
+            screen.getByRole("button", { name: "Save Parking" }),
+        );
+
+        expect(await screen.findByText("Parking")).toBeTruthy();
+
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        await waitFor(() => {
+            expect(
+                fetchImplementation.mock.calls.some(
+                    ([input, init]) =>
+                        input === "/v1/gl-mappings" && init?.method === "PUT",
+                ),
+            ).toBe(true);
+        });
+        const [, saveInit] =
+            fetchImplementation.mock.calls.find(
+                ([input, init]) =>
+                    input === "/v1/gl-mappings" && init?.method === "PUT",
+            ) ?? [];
+        const savedBody = JSON.parse(String(saveInit?.body)) as {
+            creates: Array<{ category: string; accountCode: string }>;
+        };
+        expect(savedBody.creates).toEqual([
+            expect.objectContaining({
+                category: "Parking",
+                accountCode: "6700",
+            }),
+        ]);
+    });
+
+    test("stages a delete of an existing mapping, including a default mapping, until Save", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        const row = (await screen.findByText("Travel")).closest("tr");
+        fireEvent.click(
+            within(row as HTMLElement).getByRole("button", {
+                name: "Delete Travel",
             }),
         );
-        expect(await screen.findByText("Travel")).toBeTruthy();
+
+        expect(screen.queryByText("Travel")).toBeNull();
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([, init]) => init?.method === "PUT",
+            ),
+        ).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        await waitFor(() => {
+            expect(
+                fetchImplementation.mock.calls.some(
+                    ([input, init]) =>
+                        input === "/v1/gl-mappings" && init?.method === "PUT",
+                ),
+            ).toBe(true);
+        });
+        const [, saveInit] =
+            fetchImplementation.mock.calls.find(
+                ([input, init]) =>
+                    input === "/v1/gl-mappings" && init?.method === "PUT",
+            ) ?? [];
+        const savedBody = JSON.parse(String(saveInit?.body)) as {
+            deletes: string[];
+        };
+        expect(savedBody.deletes).toEqual([
+            "00000000-0000-4000-8000-000000000801",
+        ]);
+    });
+
+    test("removing a newly-added row before Save does not include it in the batch", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        await screen.findByText("Travel");
+        fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
+        fireEvent.change(screen.getByLabelText("Title"), {
+            target: { value: "Parking" },
+        });
+        fireEvent.change(screen.getByLabelText("GL number"), {
+            target: { value: "6700" },
+        });
+        fireEvent.click(
+            screen.getByRole("button", { name: "Save Parking" }),
+        );
+
+        const newRow = (await screen.findByText("Parking")).closest("tr");
+        fireEvent.click(
+            within(newRow as HTMLElement).getByRole("button", {
+                name: "Remove Parking",
+            }),
+        );
+
+        expect(screen.queryByText("Parking")).toBeNull();
+        expect(
+            screen
+                .getByRole("button", { name: "Save" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+    });
+
+    test("cancel discards an in-progress edit without staging a change", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderGlMappingScreen("Finance Admin", fetchImplementation);
+
+        const row = (await screen.findByText("Travel")).closest("tr");
+        fireEvent.click(
+            within(row as HTMLElement).getByRole("button", { name: "Edit" }),
+        );
+        fireEvent.change(screen.getByLabelText("GL number"), {
+            target: { value: "9999" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+        expect(await screen.findByText("6100")).toBeTruthy();
+        expect(screen.queryByText("9999")).toBeNull();
+        expect(
+            screen
+                .getByRole("button", { name: "Save" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
     });
 });
 
@@ -139,19 +345,8 @@ function createFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
             return Promise.resolve(jsonResponse(mappingResponse));
         }
 
-        if (
-            input === "/v1/gl-mappings/00000000-0000-4000-8000-000000000801" &&
-            init?.method === "PATCH"
-        ) {
-            return Promise.resolve(
-                jsonResponse({
-                    ...mappingResponse.mappings[0],
-                    glCodeId: "00000000-0000-4000-8000-000000000902",
-                    accountCode: "6200",
-                    accountName: "Meals Expense",
-                    description: "Synthetic meals account",
-                }),
-            );
+        if (input === "/v1/gl-mappings" && init?.method === "PUT") {
+            return Promise.resolve(jsonResponse(mappingResponse));
         }
 
         return Promise.resolve(

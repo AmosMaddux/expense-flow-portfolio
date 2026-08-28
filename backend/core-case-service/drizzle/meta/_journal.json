@@ -267,6 +267,13 @@
       "when": 1787323433431,
       "tag": "0037_policy_chunk_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787874207057,
+      "tag": "0038_right_corsair",
+      "breakpoints": true
     }
   ]
 }

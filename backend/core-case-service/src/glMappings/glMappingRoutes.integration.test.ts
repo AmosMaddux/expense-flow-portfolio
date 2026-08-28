@@ -14,22 +14,22 @@ import {
 
 import { signAccessToken } from "../auth/shared/accessTokenSigner.js";
 import { loadAuthJwtConfig } from "../config/authJwtConfig.js";
-import { NotFoundError } from "../errors/problem-json.js";
+import { ConflictError, NotFoundError } from "../errors/problem-json.js";
 import type { RoleName } from "../db/schema/index.js";
 import { syntheticRsaPrivateKeyBase64 } from "../testSupport/jwtTestKeys.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
 import {
     readGlMappingReference,
-    updateGlMapping,
+    saveGlMappings,
 } from "./glMappingRepository.js";
 
 vi.mock("./glMappingRepository.js", () => ({
     readGlMappingReference: vi.fn(),
-    updateGlMapping: vi.fn(),
+    saveGlMappings: vi.fn(),
 }));
 
 const readGlMappingReferenceMock = vi.mocked(readGlMappingReference);
-const updateGlMappingMock = vi.mocked(updateGlMapping);
+const saveGlMappingsMock = vi.mocked(saveGlMappings);
 const tenantId = "00000000-0000-4000-8000-00000000a701";
 const userId = "00000000-0000-4000-8000-00000000a702";
 const mappingId = "00000000-0000-4000-8000-00000000a703";
@@ -102,7 +102,7 @@ void describe("GL Mapping routes", () => {
 
     beforeEach(() => {
         readGlMappingReferenceMock.mockReset();
-        updateGlMappingMock.mockReset();
+        saveGlMappingsMock.mockReset();
         readGlMappingReferenceMock.mockResolvedValue({
             mappings: [
                 {
@@ -124,14 +124,26 @@ void describe("GL Mapping routes", () => {
                 },
             ],
         });
-        updateGlMappingMock.mockResolvedValue({
-            id: mappingId,
-            category: "Travel",
-            glCodeId,
-            accountCode: "6100",
-            accountName: "Travel Expense",
-            description: "Synthetic travel account",
-            updatedAt: "2026-08-03T12:00:00.000Z",
+        saveGlMappingsMock.mockResolvedValue({
+            mappings: [
+                {
+                    id: mappingId,
+                    category: "Travel",
+                    glCodeId,
+                    accountCode: "6100",
+                    accountName: "Travel Expense",
+                    description: "Synthetic travel account",
+                    updatedAt: "2026-08-03T12:00:00.000Z",
+                },
+            ],
+            glCodes: [
+                {
+                    id: glCodeId,
+                    accountCode: "6100",
+                    accountName: "Travel Expense",
+                    description: "Synthetic travel account",
+                },
+            ],
         });
     });
 
@@ -146,7 +158,7 @@ void describe("GL Mapping routes", () => {
         expect(readGlMappingReferenceMock).not.toHaveBeenCalled();
     });
 
-    test.each<RoleName>(["Employee", "Admin"])(
+    test.each<RoleName>(["Admin"])(
         "rejects %s access to GL Mapping reference data",
         async (role) => {
             const response = await requestApp("/v1/gl-mappings", {
@@ -157,6 +169,17 @@ void describe("GL Mapping routes", () => {
             expect(readGlMappingReferenceMock).not.toHaveBeenCalled();
         },
     );
+
+    test("allows Employees to read GL Mapping reference data for expense category selection", async () => {
+        const response = await requestApp("/v1/gl-mappings", {
+            headers: { authorization: authorizationHeader(["Employee"]) },
+        });
+        const body = (await response.json()) as { mappings: unknown[] };
+
+        expect(response.status).toBe(200);
+        expect(body.mappings).toHaveLength(1);
+        expect(readGlMappingReferenceMock).toHaveBeenCalledWith(tenantId);
+    });
 
     test("allows Department Managers to read GL Mapping reference data", async () => {
         const response = await requestApp("/v1/gl-mappings", {
@@ -172,75 +195,171 @@ void describe("GL Mapping routes", () => {
         expect(readGlMappingReferenceMock).toHaveBeenCalledWith(tenantId);
     });
 
-    test("rejects Department Manager GL Mapping edits", async () => {
-        const response = await requestApp(`/v1/gl-mappings/${mappingId}`, {
-            method: "PATCH",
+    test("rejects Department Manager GL Mapping saves", async () => {
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
             headers: {
                 authorization: authorizationHeader(["Department Manager"]),
                 "content-type": "application/json",
             },
-            body: JSON.stringify({ glCodeId }),
+            body: JSON.stringify({ creates: [], updates: [], deletes: [] }),
         });
 
         expect(response.status).toBe(403);
-        expect(updateGlMappingMock).not.toHaveBeenCalled();
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
     });
 
-    test("allows Finance Admin GL Mapping edits", async () => {
-        const response = await requestApp(`/v1/gl-mappings/${mappingId}`, {
-            method: "PATCH",
+    test("allows Finance Admins to save GL Mapping changes", async () => {
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
             headers: {
                 authorization: authorizationHeader(["Finance Admin"]),
                 "content-type": "application/json",
             },
-            body: JSON.stringify({ glCodeId }),
+            body: JSON.stringify({
+                creates: [],
+                updates: [
+                    {
+                        id: mappingId,
+                        category: "Travel",
+                        accountCode: "6100",
+                        description: "Synthetic travel account",
+                    },
+                ],
+                deletes: [],
+            }),
         });
-        const body = (await response.json()) as { id: string };
+        const body = (await response.json()) as { mappings: unknown[] };
 
         expect(response.status).toBe(200);
-        expect(body.id).toBe(mappingId);
-        expect(updateGlMappingMock).toHaveBeenCalledWith({
+        expect(body.mappings).toHaveLength(1);
+        expect(saveGlMappingsMock).toHaveBeenCalledWith({
             actorId: userId,
-            glCodeId,
-            id: mappingId,
             tenantId,
+            creates: [],
+            updates: [
+                {
+                    id: mappingId,
+                    category: "Travel",
+                    accountCode: "6100",
+                    description: "Synthetic travel account",
+                },
+            ],
+            deletes: [],
         });
     });
 
-    test("rejects malformed GL Mapping update bodies", async () => {
-        const response = await requestApp(`/v1/gl-mappings/${mappingId}`, {
-            method: "PATCH",
+    test("rejects malformed GL Mapping save bodies", async () => {
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
             headers: {
                 authorization: authorizationHeader(["Finance Admin"]),
                 "content-type": "application/json",
             },
-            body: JSON.stringify({ glCodeId, tenantId: randomUUID() }),
+            body: JSON.stringify({
+                creates: [],
+                updates: [],
+                deletes: [],
+                tenantId: randomUUID(),
+            }),
         });
 
         expect(response.status).toBe(400);
-        expect(updateGlMappingMock).not.toHaveBeenCalled();
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
     });
 
-    test("returns 404 when a Finance Admin update targets another tenant's reference IDs", async () => {
-        updateGlMappingMock.mockRejectedValueOnce(
-            new NotFoundError("GL Mapping was not found."),
-        );
-
-        const response = await requestApp(`/v1/gl-mappings/${mappingId}`, {
-            method: "PATCH",
+    test("rejects non-numeric GL account codes in a save", async () => {
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
             headers: {
                 authorization: authorizationHeader(["Finance Admin"]),
                 "content-type": "application/json",
             },
-            body: JSON.stringify({ glCodeId }),
+            body: JSON.stringify({
+                creates: [
+                    {
+                        clientId: "draft-1",
+                        category: "Parking",
+                        accountCode: "not-a-number",
+                        description: null,
+                    },
+                ],
+                updates: [],
+                deletes: [],
+            }),
+        });
+
+        expect(response.status).toBe(400);
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
+    });
+
+    test("returns 404 when a Finance Admin save targets another tenant's reference IDs", async () => {
+        saveGlMappingsMock.mockRejectedValueOnce(
+            new NotFoundError("GL Mapping was not found."),
+        );
+
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
+            headers: {
+                authorization: authorizationHeader(["Finance Admin"]),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                creates: [],
+                updates: [
+                    {
+                        id: mappingId,
+                        category: "Travel",
+                        accountCode: "6100",
+                        description: null,
+                    },
+                ],
+                deletes: [],
+            }),
         });
 
         expect(response.status).toBe(404);
-        expect(updateGlMappingMock).toHaveBeenCalledWith({
+        expect(saveGlMappingsMock).toHaveBeenCalledWith({
             actorId: userId,
-            glCodeId,
-            id: mappingId,
             tenantId,
+            creates: [],
+            updates: [
+                {
+                    id: mappingId,
+                    category: "Travel",
+                    accountCode: "6100",
+                    description: null,
+                },
+            ],
+            deletes: [],
         });
+    });
+
+    test("returns 409 when a Finance Admin save would duplicate a category", async () => {
+        saveGlMappingsMock.mockRejectedValueOnce(
+            new ConflictError('GL Mapping category "Travel" is used more than once.'),
+        );
+
+        const response = await requestApp("/v1/gl-mappings", {
+            method: "PUT",
+            headers: {
+                authorization: authorizationHeader(["Finance Admin"]),
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                creates: [
+                    {
+                        clientId: "draft-1",
+                        category: "Travel",
+                        accountCode: "6999",
+                        description: null,
+                    },
+                ],
+                updates: [],
+                deletes: [],
+            }),
+        });
+
+        expect(response.status).toBe(409);
     });
 });

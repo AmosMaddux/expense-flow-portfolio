@@ -1,19 +1,21 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { ForbiddenError } from "../errors/problem-json.js";
-import { getGlMappings, patchGlMapping } from "./glMappingController.js";
+import { getGlMappings, putGlMappings } from "./glMappingController.js";
 import {
     readGlMappingReference,
-    updateGlMapping,
+    saveGlMappings,
 } from "./glMappingRepository.js";
 
 vi.mock("./glMappingRepository.js", () => ({
     readGlMappingReference: vi.fn(),
-    updateGlMapping: vi.fn(),
+    saveGlMappings: vi.fn(),
 }));
 
 const readGlMappingReferenceMock = vi.mocked(readGlMappingReference);
-const updateGlMappingMock = vi.mocked(updateGlMapping);
+const saveGlMappingsMock = vi.mocked(saveGlMappings);
+
+const emptySaveBody = { creates: [], updates: [], deletes: [] };
 
 describe("GL Mapping controller", () => {
     test("allows Department Managers to read tenant-scoped mappings", async () => {
@@ -43,75 +45,152 @@ describe("GL Mapping controller", () => {
         expect(next).not.toHaveBeenCalled();
     });
 
-    test("rejects Department Managers before updating GL mappings", async () => {
+    test("allows Employees to read tenant-scoped mappings for expense category selection", async () => {
+        readGlMappingReferenceMock.mockResolvedValueOnce({
+            mappings: [],
+            glCodes: [],
+        });
+        const req = {
+            auth: {
+                tenantId: "00000000-0000-4000-8000-000000000701",
+                userId: "00000000-0000-4000-8000-000000000702",
+                roles: ["Employee"],
+            },
+            params: {},
+            body: {},
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await getGlMappings(req as never, res as never, next);
+
+        expect(readGlMappingReferenceMock).toHaveBeenCalledWith(
+            "00000000-0000-4000-8000-000000000701",
+        );
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test("rejects Department Managers before saving GL mapping changes", async () => {
         const req = {
             auth: {
                 tenantId: "00000000-0000-4000-8000-000000000701",
                 userId: "00000000-0000-4000-8000-000000000702",
                 roles: ["Department Manager"],
             },
-            params: { id: "00000000-0000-4000-8000-000000000703" },
-            body: { glCodeId: "00000000-0000-4000-8000-000000000704" },
+            params: {},
+            body: emptySaveBody,
         };
         const res = createResponse();
         const next = vi.fn();
 
-        await patchGlMapping(req as never, res as never, next);
+        await putGlMappings(req as never, res as never, next);
 
-        expect(updateGlMappingMock).not.toHaveBeenCalled();
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
     });
 
-    test("rejects unknown Finance Admin update fields before repository writes", async () => {
+    test("rejects unknown Finance Admin save fields before repository writes", async () => {
         const req = {
             auth: {
                 tenantId: "00000000-0000-4000-8000-000000000701",
                 userId: "00000000-0000-4000-8000-000000000702",
                 roles: ["Finance Admin"],
             },
-            params: { id: "00000000-0000-4000-8000-000000000703" },
-            body: {
-                glCodeId: "00000000-0000-4000-8000-000000000704",
-                tenantId: "00000000-0000-4000-8000-000000000999",
-            },
+            params: {},
+            body: { ...emptySaveBody, tenantId: "00000000-0000-4000-8000-000000000999" },
         };
         const res = createResponse();
         const next = vi.fn();
 
-        await patchGlMapping(req as never, res as never, next);
+        await putGlMappings(req as never, res as never, next);
 
-        expect(updateGlMappingMock).not.toHaveBeenCalled();
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
-    test("allows Finance Admins to update GL mappings", async () => {
-        updateGlMappingMock.mockResolvedValueOnce({
-            id: "00000000-0000-4000-8000-000000000703",
-            category: "Travel",
-            glCodeId: "00000000-0000-4000-8000-000000000704",
-            accountCode: "6100",
-            accountName: "Travel Expense",
-            description: "Synthetic travel account",
-            updatedAt: "2026-08-03T12:00:00.000Z",
-        });
+
+    test("rejects non-numeric account codes before repository writes", async () => {
         const req = {
             auth: {
                 tenantId: "00000000-0000-4000-8000-000000000701",
                 userId: "00000000-0000-4000-8000-000000000702",
                 roles: ["Finance Admin"],
             },
-            params: { id: "00000000-0000-4000-8000-000000000703" },
-            body: { glCodeId: "00000000-0000-4000-8000-000000000704" },
+            params: {},
+            body: {
+                creates: [
+                    {
+                        clientId: "draft-1",
+                        category: "Parking",
+                        accountCode: "abc",
+                        description: null,
+                    },
+                ],
+                updates: [],
+                deletes: [],
+            },
         };
         const res = createResponse();
         const next = vi.fn();
 
-        await patchGlMapping(req as never, res as never, next);
+        await putGlMappings(req as never, res as never, next);
 
-        expect(updateGlMappingMock).toHaveBeenCalledWith({
+        expect(saveGlMappingsMock).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    test("allows Finance Admins to save GL mapping creates, updates, and deletes", async () => {
+        saveGlMappingsMock.mockResolvedValueOnce({
+            mappings: [
+                {
+                    id: "00000000-0000-4000-8000-000000000703",
+                    category: "Travel",
+                    glCodeId: "00000000-0000-4000-8000-000000000704",
+                    accountCode: "6100",
+                    accountName: "Travel",
+                    description: "Synthetic travel account",
+                    updatedAt: "2026-08-03T12:00:00.000Z",
+                },
+            ],
+            glCodes: [],
+        });
+        const body = {
+            creates: [
+                {
+                    clientId: "draft-1",
+                    category: "Parking",
+                    accountCode: "6700",
+                    description: null,
+                },
+            ],
+            updates: [
+                {
+                    id: "00000000-0000-4000-8000-000000000703",
+                    category: "Travel",
+                    accountCode: "6100",
+                    description: "Synthetic travel account",
+                },
+            ],
+            deletes: ["00000000-0000-4000-8000-000000000710"],
+        };
+        const req = {
+            auth: {
+                tenantId: "00000000-0000-4000-8000-000000000701",
+                userId: "00000000-0000-4000-8000-000000000702",
+                roles: ["Finance Admin"],
+            },
+            params: {},
+            body,
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await putGlMappings(req as never, res as never, next);
+
+        expect(saveGlMappingsMock).toHaveBeenCalledWith({
             actorId: "00000000-0000-4000-8000-000000000702",
-            glCodeId: "00000000-0000-4000-8000-000000000704",
-            id: "00000000-0000-4000-8000-000000000703",
             tenantId: "00000000-0000-4000-8000-000000000701",
+            ...body,
         });
         expect(res.status).toHaveBeenCalledWith(200);
         expect(next).not.toHaveBeenCalled();

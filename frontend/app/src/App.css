@@ -3060,6 +3060,22 @@ button:disabled {
     gap: 8px;
 }
 
+.gl-mapping-table__input {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid #bcccdc;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #243b53;
+    padding: 0 10px;
+}
+
+.gl-mapping__footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .gl-mapping__error {
     margin: 0;
     border: 1px solid #f29b9b;

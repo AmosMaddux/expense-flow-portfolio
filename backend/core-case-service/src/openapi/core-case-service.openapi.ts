@@ -49,10 +49,8 @@ import {
     UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
-    GlMappingPathParamsSchema,
     GlMappingReferenceOutboundResponseSchema,
-    GlMappingOutboundResponseSchema,
-    UpdateGlMappingInboundRequestSchema,
+    SaveGlMappingsInboundRequestSchema,
 } from "../glMappings/glMappingDto.js";
 import {
     loginRequestSchema,
@@ -269,17 +267,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "GlMappingReferenceResponse",
         GlMappingReferenceOutboundResponseSchema,
     );
-    const glMappingResponse = registry.register(
-        "GlMappingResponse",
-        GlMappingOutboundResponseSchema,
-    );
-    const updateGlMappingRequest = registry.register(
-        "UpdateGlMappingRequest",
-        UpdateGlMappingInboundRequestSchema,
-    );
-    const glMappingPathParams = registry.register(
-        "GlMappingPathParams",
-        GlMappingPathParamsSchema,
+    const saveGlMappingsRequest = registry.register(
+        "SaveGlMappingsRequest",
+        SaveGlMappingsInboundRequestSchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -761,7 +751,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/gl-mappings",
         summary: "List GL Mapping reference data",
         description:
-            "Loads tenant-scoped category account mappings from gl_mapping for internal Finance Admin and Department Manager workspaces.",
+            "Loads tenant-scoped category account mappings from gl_mapping. Finance Admin and Department Manager use this for the GL Mapping admin screen; Employees use it to populate expense category options when submitting an expense report.",
         security: [{ bearerAuth: [] }],
         responses: {
             200: {
@@ -782,38 +772,42 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     });
 
     registry.registerPath({
-        method: "patch",
-        path: "/v1/gl-mappings/{id}",
-        summary: "Update a GL Mapping",
+        method: "put",
+        path: "/v1/gl-mappings",
+        summary: "Save GL Mapping changes",
         description:
-            "Allows Finance Admins to update one tenant-owned gl_mapping row and records a reference-data audit entry in the same transaction.",
+            "Allows Finance Admins to atomically create, edit, and delete tenant-owned gl_mapping rows in a single all-or-nothing save, recording a reference-data audit entry per change in the same transaction.",
         security: [{ bearerAuth: [] }],
         request: {
-            params: glMappingPathParams,
             body: {
                 required: true,
                 content: {
                     "application/json": {
-                        schema: updateGlMappingRequest,
+                        schema: saveGlMappingsRequest,
                     },
                 },
             },
         },
         responses: {
             200: {
-                description: "GL Mapping updated.",
+                description: "GL Mapping changes saved.",
                 content: {
                     "application/json": {
-                        schema: glMappingResponse,
+                        schema: glMappingReferenceResponse,
                     },
                 },
             },
-            400: problemJsonResponse("Malformed GL Mapping update request."),
+            400: problemJsonResponse("Malformed GL Mapping save request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse(
                 "GL Mapping edits are limited to Finance Admins.",
             ),
-            404: problemJsonResponse("GL Mapping or GL Code was not found."),
+            404: problemJsonResponse(
+                "A GL Mapping referenced by the save was not found.",
+            ),
+            409: problemJsonResponse(
+                "The save would create a duplicate GL Mapping category.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
