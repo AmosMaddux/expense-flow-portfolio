@@ -65,8 +65,9 @@ export async function readAlertDispositions(
     request: AlertDispositionQuery & {
         tenantId: string;
     },
+    database: Pick<typeof db, "select"> = db,
 ): Promise<AlertDispositionResponse[]> {
-    const rows = await db
+    const rows = await database
         .select()
         .from(alertDisposition)
         .where(eq(alertDisposition.tenantId, request.tenantId))
@@ -86,7 +87,9 @@ export function requireDispositionAccess(req: Request): void {
             (role) => role === "Finance Admin" || role === "Department Manager",
         )
     ) {
-        throw new ForbiddenError("Alert disposition access is limited to internal roles.");
+        throw new ForbiddenError(
+            "Alert disposition access is limited to internal roles.",
+        );
     }
 }
 

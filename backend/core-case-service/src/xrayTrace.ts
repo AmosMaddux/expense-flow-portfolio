@@ -7,7 +7,7 @@ import {
     type SpanContext,
 } from "@opentelemetry/api";
 
-const xrayRootPattern = /^Root=1-([0-9a-f]{8})-([0-9a-f]{24})$/i;
+const xrayRootPattern = /^1-([0-9a-f]{8})-([0-9a-f]{24})$/i;
 const xrayFieldPattern = /(?:^|;)\s*([^=;]+)=([^;]+)/g;
 const xraySpanIdPattern = /^[0-9a-f]{16}$/i;
 
@@ -107,4 +107,3 @@ export function parentContextFromXRayHeader(
 export function generateSpanId(): string {
     return randomBytes(8).toString("hex");
 }
-

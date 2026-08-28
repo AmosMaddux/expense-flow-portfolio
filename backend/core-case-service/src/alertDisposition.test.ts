@@ -24,6 +24,8 @@ vi.mock("./logging/coreCaseLogger.js", () => ({
 }));
 
 import { createAlertDisposition } from "./alertDisposition.js";
+import { ForbiddenError } from "./errors/problem-json.js";
+import { requireDispositionAccess } from "./alertDisposition.js";
 
 const syntheticTenantId = "10000000-0000-4000-8000-000000000101";
 const syntheticInvestigatorId = "20000000-0000-4000-8000-000000000101";
@@ -150,6 +152,48 @@ void describe("alertDisposition service", () => {
                 resolvedAt: resolvedAt.toISOString(),
                 status: "resolved",
             }),
+        );
+    });
+
+    void test.each(["Finance Admin", "Department Manager"] as const)(
+        "allows %s to access alert dispositions",
+        (role) => {
+            expect(() =>
+                requireDispositionAccess({
+                    auth: {
+                        roles: [role],
+                    },
+                } as never),
+            ).not.toThrow();
+        },
+    );
+
+    void test.each(["Employee", "Admin"] as const)(
+        "rejects %s access to alert dispositions",
+        (role) => {
+            expect(() =>
+                requireDispositionAccess({
+                    auth: {
+                        roles: [role],
+                    },
+                } as never),
+            ).toThrow(ForbiddenError);
+        },
+    );
+
+    void test("rejects empty role lists when accessing alert dispositions", () => {
+        expect(() =>
+            requireDispositionAccess({
+                auth: {
+                    roles: [],
+                },
+            } as never),
+        ).toThrow(ForbiddenError);
+    });
+
+    void test("rejects missing auth when accessing alert dispositions", () => {
+        expect(() => requireDispositionAccess({} as never)).toThrow(
+            ForbiddenError,
         );
     });
 });

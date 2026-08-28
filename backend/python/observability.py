@@ -23,7 +23,7 @@ from opentelemetry.trace import (
 
 LOGGER_NAME = "expenseflow.python"
 
-_xray_root_pattern = re.compile(r"^Root=1-([0-9a-f]{8})-([0-9a-f]{24})$", re.IGNORECASE)
+_xray_root_pattern = re.compile(r"^1-([0-9a-f]{8})-([0-9a-f]{24})$", re.IGNORECASE)
 _xray_field_pattern = re.compile(r"(?:^|;)\s*([^=;]+)=([^;]+)")
 _xray_span_id_pattern = re.compile(r"^[0-9a-f]{16}$", re.IGNORECASE)
 

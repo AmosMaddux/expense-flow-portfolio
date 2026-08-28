@@ -16,6 +16,7 @@ SMOKE_DB_TUNNEL_LOCAL_PORT="${SMOKE_DB_TUNNEL_LOCAL_PORT:-15433}"
 RUN_ALB_SMOKE="${RUN_ALB_SMOKE:-true}"
 RUN_PAYMENT_SMOKE="${RUN_PAYMENT_SMOKE:-true}"
 RUN_EVENT_FLOW_SMOKE="${RUN_EVENT_FLOW_SMOKE:-true}"
+RUN_XRAY_SMOKE="${RUN_XRAY_SMOKE:-true}"
 ALLOW_PLAIN_HTTP_SMOKE="${ALLOW_PLAIN_HTTP_SMOKE:-false}"
 VERIFY_TIMEOUT_SECONDS="${VERIFY_TIMEOUT_SECONDS:-600}"
 VERIFY_POLL_SECONDS="${VERIFY_POLL_SECONDS:-5}"
@@ -403,3 +404,18 @@ echo "Using synthetic Expense Report: $SMOKE_EXPENSE_REPORT_ID"
 echo "Running deployed sandbox smoke..."
 
 scripts/aws/run-terraform-e2e-smoke.sh
+
+if [[ "$RUN_XRAY_SMOKE" == "true" ]]; then
+    echo "Running deployed X-Ray trace continuity smoke..."
+    PUBLIC_ALB_SMOKE_BASE_URL="$PUBLIC_ALB_SMOKE_BASE_URL" \
+        ALLOW_PLAIN_HTTP_SMOKE="$ALLOW_PLAIN_HTTP_SMOKE" \
+        VERIFY_TIMEOUT_SECONDS="$VERIFY_TIMEOUT_SECONDS" \
+        VERIFY_POLL_SECONDS="$VERIFY_POLL_SECONDS" \
+        TERRAFORM_DIR="$TERRAFORM_DIR" \
+        AWS_PROFILE="$AWS_PROFILE" \
+        AWS_REGION="$AWS_REGION" \
+        ALLOW_NON_SMOKE_PROFILE="$ALLOW_NON_SMOKE_PROFILE" \
+        scripts/aws/e2e/verify-xray-trace.sh
+else
+    echo "Skipping X-Ray trace continuity smoke (RUN_XRAY_SMOKE=$RUN_XRAY_SMOKE)."
+fi

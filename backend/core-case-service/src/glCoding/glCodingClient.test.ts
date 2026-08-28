@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Span } from "@opentelemetry/api";
 
 import {
     codeExpenseLineItems,
@@ -6,6 +7,7 @@ import {
     GlCodingResponseSchema,
     type GlCodingRequest,
 } from "./glCodingClient.js";
+import { formatXRayTraceHeader } from "../xrayTrace.js";
 
 const emptyRequest: GlCodingRequest = { line_items: [], mileage: [] };
 const successResponse = {
@@ -45,12 +47,15 @@ describe("GL-coding client", () => {
                 },
                 isRemote: false,
             }),
-        } as never;
+        } as unknown as Span;
 
         tracingModule.isTracingEnabled.mockReturnValue(true);
         tracingModule.startChildSpan.mockReturnValue(fakeSpan);
+        const expectedTraceHeader = formatXRayTraceHeader(
+            fakeSpan.spanContext(),
+        );
         tracingModule.buildDownstreamTraceHeader.mockReturnValue(
-            "Root=1-11111111-111111111111111111111111;Parent=2222222222222222;Sampled=1",
+            expectedTraceHeader,
         );
         const fetchImplementation = vi.fn<FetchProcedure>(() =>
             Promise.resolve(Response.json(successResponse)),
@@ -69,8 +74,7 @@ describe("GL-coding client", () => {
 
         const call = fetchImplementation.mock.calls[0];
         expect(call?.[1]?.headers).toMatchObject({
-            "X-Amzn-Trace-Id":
-                "Root=1-11111111-111111111111111111111111;Parent=2222222222222222;Sampled=1",
+            "X-Amzn-Trace-Id": expectedTraceHeader,
             "x-correlation-id": "70000000-0000-4000-8000-000000000123",
         });
     });
