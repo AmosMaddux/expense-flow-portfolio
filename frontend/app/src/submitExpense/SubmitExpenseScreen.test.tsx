@@ -69,6 +69,30 @@ function createFetchMock(
     },
 ): ReturnType<typeof vi.fn<typeof fetch>> {
     return vi.fn<typeof fetch>((input, init) => {
+        if (input === "/v1/gl-mappings") {
+            return Promise.resolve(
+                createJsonResponse({
+                    mappings: [
+                        "Travel",
+                        "Meals",
+                        "Lodging",
+                        "Mileage",
+                        "Office Supplies",
+                        "Software",
+                        "Other",
+                    ].map((category, index) => ({
+                        id: `70000000-0000-4000-8000-00000000030${index}`,
+                        category,
+                        glCodeId: `70000000-0000-4000-8000-00000000031${index}`,
+                        accountCode: `600${index}`,
+                        accountName: category,
+                        description: null,
+                        updatedAt: "2026-07-24T12:00:00.000Z",
+                    })),
+                    glCodes: [],
+                }),
+            );
+        }
         if (input === "/v1/expense-reports/drafts/current") {
             return Promise.resolve(
                 createJsonResponse({

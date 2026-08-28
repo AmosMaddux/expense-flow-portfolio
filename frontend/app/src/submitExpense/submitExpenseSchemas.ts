@@ -1,13 +1,33 @@
 import { z } from "zod";
 
-export const expenseCategories = [
-    "Travel",
-    "Meals",
-    "Lodging",
-    "Office Supplies",
-    "Software",
-    "Other",
-] as const;
+import { useExpenseFlowQuery } from "../query/queryClient";
+
+const expenseCategoryReferenceSchema = z.object({
+    mappings: z.array(z.object({ category: z.string().min(1) })),
+});
+
+/**
+ * Fetches the tenant's live expense categories from gl_mapping, so the
+ * category options an Employee sees always match what Finance Admin has
+ * configured on the GL Mapping screen.
+ */
+export function useExpenseCategories() {
+    return useExpenseFlowQuery<string[]>({
+        input: "/v1/gl-mappings",
+        keyParts: ["gl-mappings"],
+        parseResponse: async (response) => {
+            const reference = expenseCategoryReferenceSchema.parse(
+                await response.json(),
+            );
+
+            return reference.mappings
+                .map((mapping) => mapping.category)
+                .sort((a, b) => a.localeCompare(b));
+        },
+        staleTime: 30_000,
+    });
+}
+
 export const receiptContentTypes = [
     "application/pdf",
     "image/png",
@@ -50,9 +70,11 @@ export const submitExpenseFormSchema = z.object({
                         (value) => z.iso.date().safeParse(value).success,
                         "Enter a valid expense date.",
                     ),
-                category: z.enum(expenseCategories, {
-                    error: "Choose a category.",
-                }),
+                category: z
+                    .string()
+                    .trim()
+                    .min(1, "Choose a category.")
+                    .max(100, "Category must be 100 characters or fewer."),
                 amount: z.coerce
                     .number({ error: "Enter an amount." })
                     .positive("Amount must be greater than zero.")
@@ -89,7 +111,7 @@ export const draftExpenseContentSchema = z.object({
             id: z.uuid(),
             merchant: z.string(),
             expenseDate: z.iso.date(),
-            category: z.enum(expenseCategories),
+            category: z.string(),
             amount: z.number().nonnegative(),
             currency: z.literal("USD"),
         }),

@@ -105,7 +105,8 @@
                                 },
                                 "category": {
                                     "type": "string",
-                                    "enum": ["Travel", "Meals", "Lodging"]
+                                    "minLength": 1,
+                                    "maxLength": 100
                                 },
                                 "amount": {
                                     "type": "number",
@@ -1188,8 +1189,7 @@
                                     "format": "date"
                                 },
                                 "category": {
-                                    "type": "string",
-                                    "enum": ["Travel", "Meals", "Lodging"]
+                                    "type": "string"
                                 },
                                 "amount": {
                                     "type": "number",
@@ -1714,16 +1714,6 @@
                     ]
                 }
             },
-            "GlMappingPathParams": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "format": "uuid"
-                    }
-                },
-                "required": ["id"]
-            },
             "GlMappingReferenceResponse": {
                 "type": "object",
                 "properties": {
@@ -1802,47 +1792,6 @@
                     }
                 },
                 "required": ["mappings", "glCodes"]
-            },
-            "GlMappingResponse": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "category": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "glCodeId": {
-                        "type": "string",
-                        "format": "uuid"
-                    },
-                    "accountCode": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "accountName": {
-                        "type": "string",
-                        "minLength": 1
-                    },
-                    "description": {
-                        "type": ["string", "null"]
-                    },
-                    "updatedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                },
-                "required": [
-                    "id",
-                    "category",
-                    "glCodeId",
-                    "accountCode",
-                    "accountName",
-                    "description",
-                    "updatedAt"
-                ]
             },
             "InternalSettlePaymentStubHeaders": {
                 "type": "object",
@@ -2573,6 +2522,83 @@
                 },
                 "required": ["id", "sourceType", "sourceId"]
             },
+            "SaveGlMappingsRequest": {
+                "type": "object",
+                "properties": {
+                    "creates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "clientId": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                },
+                                "accountCode": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 20,
+                                    "pattern": "^\\d+$"
+                                },
+                                "description": {
+                                    "type": ["string", "null"],
+                                    "maxLength": 500,
+                                    "default": null
+                                }
+                            },
+                            "required": ["clientId", "category", "accountCode"],
+                            "additionalProperties": false
+                        },
+                        "maxItems": 200
+                    },
+                    "updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "category": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                },
+                                "accountCode": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 20,
+                                    "pattern": "^\\d+$"
+                                },
+                                "description": {
+                                    "type": ["string", "null"],
+                                    "maxLength": 500,
+                                    "default": null
+                                }
+                            },
+                            "required": ["id", "category", "accountCode"],
+                            "additionalProperties": false
+                        },
+                        "maxItems": 200
+                    },
+                    "deletes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "maxItems": 200
+                    }
+                },
+                "required": ["creates", "updates", "deletes"],
+                "additionalProperties": false
+            },
             "SubmitExpenseReportRequest": {
                 "type": "object",
                 "properties": {
@@ -2624,7 +2650,8 @@
                     },
                     "category": {
                         "type": "string",
-                        "enum": ["Travel", "Meals", "Lodging"]
+                        "minLength": 1,
+                        "maxLength": 100
                     },
                     "amount": {
                         "type": "number",
@@ -2653,17 +2680,6 @@
                     }
                 },
                 "required": ["deductible"],
-                "additionalProperties": false
-            },
-            "UpdateGlMappingRequest": {
-                "type": "object",
-                "properties": {
-                    "glCodeId": {
-                        "type": "string",
-                        "format": "uuid"
-                    }
-                },
-                "required": ["glCodeId"],
                 "additionalProperties": false
             }
         },
@@ -4218,7 +4234,7 @@
         "/v1/gl-mappings": {
             "get": {
                 "summary": "List GL Mapping reference data",
-                "description": "Loads tenant-scoped category account mappings from gl_mapping for internal Finance Admin and Department Manager workspaces.",
+                "description": "Loads tenant-scoped category account mappings from gl_mapping. Finance Admin and Department Manager use this for the GL Mapping admin screen; Employees use it to populate expense category options when submitting an expense report.",
                 "security": [
                     {
                         "bearerAuth": []
@@ -4269,26 +4285,13 @@
                         }
                     }
                 }
-            }
-        },
-        "/v1/gl-mappings/{id}": {
-            "patch": {
-                "summary": "Update a GL Mapping",
-                "description": "Allows Finance Admins to update one tenant-owned gl_mapping row and records a reference-data audit entry in the same transaction.",
+            },
+            "put": {
+                "summary": "Save GL Mapping changes",
+                "description": "Allows Finance Admins to atomically create, edit, and delete tenant-owned gl_mapping rows in a single all-or-nothing save, recording a reference-data audit entry per change in the same transaction.",
                 "security": [
                     {
                         "bearerAuth": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "format": "uuid"
-                        },
-                        "required": true,
-                        "name": "id",
-                        "in": "path"
                     }
                 ],
                 "requestBody": {
@@ -4296,24 +4299,24 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/UpdateGlMappingRequest"
+                                "$ref": "#/components/schemas/SaveGlMappingsRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "GL Mapping updated.",
+                        "description": "GL Mapping changes saved.",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/GlMappingResponse"
+                                    "$ref": "#/components/schemas/GlMappingReferenceResponse"
                                 }
                             }
                         }
                     },
                     "400": {
-                        "description": "Malformed GL Mapping update request.",
+                        "description": "Malformed GL Mapping save request.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
@@ -4343,7 +4346,17 @@
                         }
                     },
                     "404": {
-                        "description": "GL Mapping or GL Code was not found.",
+                        "description": "A GL Mapping referenced by the save was not found.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The save would create a duplicate GL Mapping category.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
