@@ -119,7 +119,7 @@ describe("Platform Admin controller", () => {
         expect(next).toHaveBeenCalledWith(expect.any(ForbiddenError));
     });
 
-    test("lets a Platform Admin read audit log events across every tenant", async () => {
+    test("lets a Platform Admin read a page of audit log events across every tenant", async () => {
         const event = {
             id: "00000000-0000-4000-8000-000000000804",
             tenantId,
@@ -133,21 +133,71 @@ describe("Platform Admin controller", () => {
             action: "user_invited" as const,
             occurredAt: "2026-08-03T12:00:00.000Z",
         };
-        readAuditLogEventsMock.mockResolvedValueOnce([event]);
+        readAuditLogEventsMock.mockResolvedValueOnce({
+            events: [event],
+            nextCursor: "next-page-cursor",
+        });
         const req = {
             auth: { tenantId, userId: platformAdminUserId, roles: ["Admin"] },
             params: {},
             body: {},
+            query: {},
         };
         const res = createResponse();
         const next = vi.fn();
 
         await getAuditLogEvents(req as never, res as never, next);
 
-        expect(readAuditLogEventsMock).toHaveBeenCalledWith();
+        expect(readAuditLogEventsMock).toHaveBeenCalledWith({
+            cursor: undefined,
+            pageSize: 50,
+        });
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.json).toHaveBeenCalledWith({ events: [event] });
+        expect(res.json).toHaveBeenCalledWith({
+            events: [event],
+            nextCursor: "next-page-cursor",
+        });
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test("threads cursor and pageSize query params to the repository", async () => {
+        readAuditLogEventsMock.mockResolvedValueOnce({
+            events: [],
+            nextCursor: null,
+        });
+        const req = {
+            auth: { tenantId, userId: platformAdminUserId, roles: ["Admin"] },
+            params: {},
+            body: {},
+            query: { cursor: "some-opaque-cursor", pageSize: "10" },
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await getAuditLogEvents(req as never, res as never, next);
+
+        expect(readAuditLogEventsMock).toHaveBeenCalledWith({
+            cursor: "some-opaque-cursor",
+            pageSize: 10,
+        });
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test("rejects an out-of-range pageSize before touching the repository", async () => {
+        const req = {
+            auth: { tenantId, userId: platformAdminUserId, roles: ["Admin"] },
+            params: {},
+            body: {},
+            query: { pageSize: "1000" },
+        };
+        const res = createResponse();
+        const next = vi.fn();
+
+        await getAuditLogEvents(req as never, res as never, next);
+
+        expect(readAuditLogEventsMock).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalled();
     });
 
     test("rejects a Finance Admin reading audit log events before touching the repository", async () => {
@@ -159,6 +209,7 @@ describe("Platform Admin controller", () => {
             },
             params: {},
             body: {},
+            query: {},
         };
         const res = createResponse();
         const next = vi.fn();

@@ -3302,6 +3302,18 @@ button:disabled {
     border-bottom: 0;
 }
 
+.audit-log__load-more {
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+}
+
+.audit-log__load-error {
+    margin: 0;
+    color: #8a1c1c;
+    text-align: center;
+}
+
 .assist-panel {
     border: 1px solid var(--border-color, #d6dce4);
     border-radius: 0.5rem;

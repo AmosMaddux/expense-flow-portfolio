@@ -1,7 +1,20 @@
+import { useState } from "react";
 import { z } from "zod";
 
-import { Badge, EmptyState, ErrorState, LoadingSkeleton } from "../components";
-import { useExpenseFlowQuery } from "../query/queryClient";
+import { useSession } from "../auth";
+import {
+    Badge,
+    Button,
+    EmptyState,
+    ErrorState,
+    LoadingSkeleton,
+} from "../components";
+import {
+    QueryRequestError,
+    useExpenseFlowQuery,
+} from "../query/queryClient";
+
+const auditLogPageSize = 50;
 
 const auditLogActorSchema = z.object({
     id: z.uuid(),
@@ -28,12 +41,14 @@ const auditLogEventSchema = z.object({
     occurredAt: z.iso.datetime({ offset: true }),
 });
 
-const auditLogEventListSchema = z.object({
+const auditLogPageSchema = z.object({
     events: z.array(auditLogEventSchema),
+    nextCursor: z.string().nullable(),
 });
 
 export type AuditLogAction = z.infer<typeof auditLogActionSchema>;
 export type AuditLogEvent = z.infer<typeof auditLogEventSchema>;
+type AuditLogPage = z.infer<typeof auditLogPageSchema>;
 
 const actionLabels: Record<AuditLogAction, string> = {
     gl_mapping_updated: "GL mapping updated",
@@ -43,16 +58,16 @@ const actionLabels: Record<AuditLogAction, string> = {
 };
 
 /**
- * Fetches the most recent cross-tenant administrative audit events for the
- * Platform Admin workspace. Returns actor, action, and entity metadata only
- * — never a tenant's case content.
+ * Fetches one page of the most recent cross-tenant administrative audit
+ * events for the Platform Admin workspace. Returns actor, action, and entity
+ * metadata only — never a tenant's case content.
  */
 export function useAuditLogEvents() {
-    return useExpenseFlowQuery<AuditLogEvent[]>({
-        input: "/v1/platform-admin/audit-log",
+    return useExpenseFlowQuery<AuditLogPage>({
+        input: `/v1/platform-admin/audit-log?pageSize=${auditLogPageSize}`,
         keyParts: ["platform-admin", "audit-log"],
         parseResponse: async (response) =>
-            auditLogEventListSchema.parse(await response.json()).events,
+            auditLogPageSchema.parse(await response.json()),
         staleTime: 15_000,
     });
 }
@@ -63,8 +78,54 @@ export function useAuditLogEvents() {
  * edit, replay, or open a tenant's underlying case data.
  */
 export function AuditLogScreen(): JSX.Element {
+    const session = useSession();
     const query = useAuditLogEvents();
-    const events = query.data ?? [];
+    const [additionalPages, setAdditionalPages] = useState<AuditLogPage[]>(
+        [],
+    );
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+    const events = [
+        ...(query.data?.events ?? []),
+        ...additionalPages.flatMap((page) => page.events),
+    ];
+    const nextCursor =
+        additionalPages.length === 0
+            ? (query.data?.nextCursor ?? null)
+            : (additionalPages.at(-1)?.nextCursor ?? null);
+
+    async function loadMore(): Promise<void> {
+        if (nextCursor === null || isLoadingMore) {
+            return;
+        }
+
+        setIsLoadingMore(true);
+        setLoadMoreError(null);
+        try {
+            const queryString = new URLSearchParams({
+                cursor: nextCursor,
+                pageSize: String(auditLogPageSize),
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/platform-admin/audit-log?${queryString.toString()}`,
+            );
+            if (!response.ok) {
+                throw new QueryRequestError(
+                    response.status,
+                    "Unable to load more audit events.",
+                );
+            }
+
+            const page = auditLogPageSchema.parse(await response.json());
+            setAdditionalPages((pages) => [...pages, page]);
+        } catch {
+            setLoadMoreError(
+                "More audit events could not be loaded. Please try again.",
+            );
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }
 
     return (
         <section className="audit-log" aria-labelledby="audit-log-heading">
@@ -96,7 +157,27 @@ export function AuditLogScreen(): JSX.Element {
                     title="No audit events found"
                 />
             ) : (
-                <AuditLogTable events={events} />
+                <>
+                    <AuditLogTable events={events} />
+                    {loadMoreError === null ? null : (
+                        <p className="audit-log__load-error" role="alert">
+                            {loadMoreError}
+                        </p>
+                    )}
+                    {nextCursor === null ? null : (
+                        <div className="audit-log__load-more">
+                            <Button
+                                disabled={isLoadingMore}
+                                onClick={() => {
+                                    void loadMore();
+                                }}
+                                variant="secondary"
+                            >
+                                {isLoadingMore ? "Loading more..." : "Load more"}
+                            </Button>
+                        </div>
+                    )}
+                </>
             )}
         </section>
     );
@@ -154,8 +235,9 @@ function formatOccurredAt(occurredAt: string): string {
 }
 
 function getAuditLogErrorMessage(error: Error | null): string {
-    return (
-        error?.message ??
-        "Audit Log data could not be loaded. Retry the request or sign in again if the problem continues."
-    );
+    if (error instanceof QueryRequestError) {
+        return error.message;
+    }
+
+    return "Audit Log data could not be loaded. Retry the request or sign in again if the problem continues.";
 }

@@ -56,9 +56,32 @@ export const AuditLogEntryOutboundResponseSchema = z.object({
     occurredAt: z.iso.datetime({ offset: true }),
 });
 
-export const AuditLogEntryListOutboundResponseSchema = z.object({
+export const AuditLogEntryPageOutboundResponseSchema = z.object({
     events: z.array(AuditLogEntryOutboundResponseSchema),
+    nextCursor: z.string().nullable(),
 });
+
+// The opaque cursor decodes to this shape: the last returned event's
+// (createdAt, id) tuple, matching the repository's keyset ORDER BY.
+export const AuditLogCursorSchema = z
+    .object({
+        createdAt: z.iso.datetime({ offset: true }),
+        id: z.uuid(),
+    })
+    .strict();
+
+export const ReadAuditLogEventsQuerySchema = z
+    .object({
+        cursor: z
+            .string()
+            .trim()
+            .min(1)
+            .max(512)
+            .regex(/^[A-Za-z0-9_-]+$/)
+            .optional(),
+        pageSize: z.coerce.number().int().min(1).max(100).default(50),
+    })
+    .strict();
 
 export type RolePermissionMatrixResponse = z.infer<
     typeof RolePermissionMatrixOutboundResponseSchema
@@ -68,6 +91,9 @@ export type TenantSummaryListResponse = z.infer<
     typeof TenantSummaryListOutboundResponseSchema
 >;
 export type AuditLogEntry = z.infer<typeof AuditLogEntryOutboundResponseSchema>;
-export type AuditLogEntryListResponse = z.infer<
-    typeof AuditLogEntryListOutboundResponseSchema
+export type AuditLogEntryPageResponse = z.infer<
+    typeof AuditLogEntryPageOutboundResponseSchema
+>;
+export type ReadAuditLogEventsQuery = z.infer<
+    typeof ReadAuditLogEventsQuerySchema
 >;

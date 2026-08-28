@@ -34,7 +34,12 @@ const userId = "00000000-0000-4000-8000-000000000902";
 /**
  * Maps a screenAccessPolicy entry's key to the real controller enforcing it,
  * so a drift between the declared matrix and actual enforcement fails here
- * instead of shipping silently.
+ * instead of shipping silently. Screens without an entry here (currently
+ * finance-dashboard, expense-reports, transactions, approval-queue,
+ * policy-reference, gl-mapping, my-submissions, submit-expense, and
+ * log-mileage) all have real wired backend controllers but no drift
+ * detection: changing their allowedRoles in screenAccessPolicy without
+ * updating the controller's own role gate won't fail a test.
  */
 type ScreenController = (
     req: Request,
@@ -74,7 +79,10 @@ describe("screenAccessPolicy stays in sync with real enforcement", () => {
             }
             readTeamUsersMock.mockResolvedValue([]);
             readTenantSummariesMock.mockResolvedValue([]);
-            readAuditLogEventsMock.mockResolvedValue([]);
+            readAuditLogEventsMock.mockResolvedValue({
+                events: [],
+                nextCursor: null,
+            });
 
             for (const role of roleValues) {
                 const next = vi.fn();
@@ -83,6 +91,7 @@ describe("screenAccessPolicy stays in sync with real enforcement", () => {
                     auth: { tenantId, userId, roles: [role] as RoleName[] },
                     params: {},
                     body: {},
+                    query: {},
                 };
 
                 await controller(req as never, res as never, next);

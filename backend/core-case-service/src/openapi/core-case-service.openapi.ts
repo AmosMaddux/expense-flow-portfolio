@@ -63,7 +63,8 @@ import {
     UpdateTeamUserStatusInboundRequestSchema,
 } from "../teamUsers/teamUsersDto.js";
 import {
-    AuditLogEntryListOutboundResponseSchema,
+    AuditLogEntryPageOutboundResponseSchema,
+    ReadAuditLogEventsQuerySchema,
     RolePermissionMatrixOutboundResponseSchema,
     TenantSummaryListOutboundResponseSchema,
 } from "../platformAdmin/platformAdminDto.js";
@@ -327,9 +328,13 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "TenantSummaryListResponse",
         TenantSummaryListOutboundResponseSchema,
     );
-    const auditLogEntryListResponse = registry.register(
-        "AuditLogEntryListResponse",
-        AuditLogEntryListOutboundResponseSchema,
+    const auditLogEntryPageResponse = registry.register(
+        "AuditLogEntryPageResponse",
+        AuditLogEntryPageOutboundResponseSchema,
+    );
+    const readAuditLogEventsRequest = registry.register(
+        "ReadAuditLogEventsRequest",
+        ReadAuditLogEventsQuerySchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -1069,17 +1074,21 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/platform-admin/audit-log",
         summary: "List recent cross-tenant administrative audit events",
         description:
-            "Loads the most recent administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
+            "Loads one keyset-paginated page of administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
         security: [{ bearerAuth: [] }],
+        request: {
+            query: readAuditLogEventsRequest,
+        },
         responses: {
             200: {
                 description: "Audit log events found.",
                 content: {
                     "application/json": {
-                        schema: auditLogEntryListResponse,
+                        schema: auditLogEntryPageResponse,
                     },
                 },
             },
+            400: problemJsonResponse("Malformed audit log request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse(
                 "Platform administration is limited to Platform Admins.",

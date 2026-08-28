@@ -1132,7 +1132,7 @@
                     ]
                 }
             },
-            "AuditLogEntryListResponse": {
+            "AuditLogEntryPageResponse": {
                 "type": "object",
                 "properties": {
                     "events": {
@@ -1209,10 +1209,17 @@
                                 "occurredAt"
                             ]
                         }
+                    },
+                    "nextCursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
-                    "events"
+                    "events",
+                    "nextCursor"
                 ]
             },
             "CaseCommentListResponse": {
@@ -2827,6 +2834,24 @@
                     "cursor": {
                         "type": "string",
                         "minLength": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ReadAuditLogEventsRequest": {
+                "type": "object",
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "pageSize": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50
                     }
                 },
                 "additionalProperties": false
@@ -5617,10 +5642,34 @@
         "/v1/platform-admin/audit-log": {
             "get": {
                 "summary": "List recent cross-tenant administrative audit events",
-                "description": "Loads the most recent administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
+                "description": "Loads one keyset-paginated page of administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
                 "security": [
                     {
                         "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        },
+                        "required": false,
+                        "name": "pageSize",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5629,7 +5678,17 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AuditLogEntryListResponse"
+                                    "$ref": "#/components/schemas/AuditLogEntryPageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed audit log request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
                                 }
                             }
                         }

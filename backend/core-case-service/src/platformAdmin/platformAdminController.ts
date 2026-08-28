@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 
 import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
 import { buildRolePermissionMatrix } from "./screenAccessPolicy.js";
+import { ReadAuditLogEventsQuerySchema } from "./platformAdminDto.js";
 import {
     readAuditLogEvents,
     readTenantSummaries,
@@ -56,9 +57,13 @@ export async function getAuditLogEvents(
     try {
         const auth = requireAuthContext(req);
         requirePlatformAdminAccess(auth);
-        const events = await readAuditLogEvents();
+        const parsedQuery = ReadAuditLogEventsQuerySchema.parse({
+            cursor: req.query.cursor,
+            pageSize: req.query.pageSize,
+        });
+        const page = await readAuditLogEvents(parsedQuery);
 
-        res.status(200).json({ events });
+        res.status(200).json(page);
     } catch (error: unknown) {
         next(error);
     }

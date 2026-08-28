@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -12,7 +12,7 @@ import {
 import { createExpenseFlowQueryClient } from "../query/queryClient";
 import { AuditLogScreen } from "./AuditLogScreen";
 
-const auditLogResponse = {
+const firstPageResponse = {
     events: [
         {
             id: "00000000-0000-4000-8000-000000000701",
@@ -41,6 +41,26 @@ const auditLogResponse = {
             occurredAt: "2026-08-21T14:05:00.000Z",
         },
     ],
+    nextCursor: "opaque-cursor-1",
+};
+
+const secondPageResponse = {
+    events: [
+        {
+            id: "00000000-0000-4000-8000-000000000703",
+            tenantId: "00000000-0000-4000-8000-000000000603",
+            actor: {
+                id: "00000000-0000-4000-8000-000000000503",
+                email: "sam@example.invalid",
+                displayName: "Sam Manager",
+            },
+            entityType: "user",
+            entityId: "00000000-0000-4000-8000-000000000403",
+            action: "user_status_changed",
+            occurredAt: "2026-08-19T08:00:00.000Z",
+        },
+    ],
+    nextCursor: null,
 };
 
 afterEach(() => {
@@ -59,7 +79,11 @@ describe("AuditLogScreen", () => {
         expect(
             screen.getByText("00000000-0000-4000-8000-000000000502"),
         ).toBeTruthy();
-        expect(screen.queryAllByRole("button").length).toBe(0);
+        expect(
+            screen.queryAllByRole("button").filter(
+                (button) => button.textContent !== "Load more",
+            ).length,
+        ).toBe(0);
         expect(screen.queryAllByRole("link").length).toBe(0);
         expect(
             screen.queryByText(/receipt|expense report|amount/i),
@@ -76,6 +100,27 @@ describe("AuditLogScreen", () => {
         expect(
             await screen.findByText("Unable to load Audit Log"),
         ).toBeTruthy();
+    });
+
+    test("loads the next page with the returned cursor and stops offering more once exhausted", async () => {
+        const fetchImplementation = createFetchMock();
+
+        renderAuditLogScreen(fetchImplementation);
+
+        await screen.findByText("Priya Admin");
+        expect(screen.queryByText("Sam Manager")).toBeNull();
+
+        fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+        expect(await screen.findByText("Sam Manager")).toBeTruthy();
+        expect(
+            screen.queryByRole("button", { name: "Load more" }),
+        ).toBeNull();
+        expect(
+            fetchImplementation.mock.calls.some(([input]) =>
+                resolveRequestUrl(input).includes("cursor=opaque-cursor-1"),
+            ),
+        ).toBe(true);
     });
 
     test("has no axe violations once events are loaded", async () => {
@@ -132,15 +177,19 @@ function createSession(role: Role): AuthSession {
 
 function createFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
     return vi.fn<typeof fetch>((input) => {
-        if (
-            resolveRequestUrl(input).endsWith("/v1/platform-admin/audit-log")
-        ) {
-            return Promise.resolve(jsonResponse(auditLogResponse));
+        const url = resolveRequestUrl(input);
+
+        if (!url.includes("/v1/platform-admin/audit-log")) {
+            return Promise.resolve(
+                jsonResponse({ detail: "Unexpected request." }, 404),
+            );
         }
 
-        return Promise.resolve(
-            jsonResponse({ detail: "Unexpected request." }, 404),
-        );
+        if (url.includes("cursor=opaque-cursor-1")) {
+            return Promise.resolve(jsonResponse(secondPageResponse));
+        }
+
+        return Promise.resolve(jsonResponse(firstPageResponse));
     });
 }
 
