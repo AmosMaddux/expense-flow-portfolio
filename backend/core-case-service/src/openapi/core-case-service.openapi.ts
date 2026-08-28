@@ -57,7 +57,10 @@ import {
     loginResponseSchema,
 } from "../auth/login/loginService.js";
 import { loginErrorResponseSchema } from "../auth/login/loginController.js";
-import { AssistInboundRequestSchema, AssistOutboundResponseSchema } from "../policyReference/assistService.js";
+import {
+    AssistInboundRequestSchema,
+    AssistOutboundResponseSchema,
+} from "../policyReference/assistService.js";
 import {
     mfaEnrollmentRequestSchema,
     mfaEnrollmentResponseSchema,
@@ -682,12 +685,22 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/assist",
         summary: "Answer a cited tenant policy question",
         security: [{ bearerAuth: [] }],
-        request: { body: { content: { "application/json": { schema: assistRequest } } } },
+        request: {
+            body: {
+                content: { "application/json": { schema: assistRequest } },
+            },
+        },
         responses: {
-            200: { description: "Grounded policy answer.", headers: rateLimitHeaders, content: { "application/json": { schema: assistResponse } } },
+            200: {
+                description: "Grounded policy answer.",
+                headers: rateLimitHeaders,
+                content: { "application/json": { schema: assistResponse } },
+            },
             400: problemJsonResponse("Malformed assist request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
-            403: problemJsonResponse("AI Assist access is limited to internal roles."),
+            403: problemJsonResponse(
+                "AI Assist access is limited to internal roles.",
+            ),
             404: problemJsonResponse("Expense Report or line item not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),

@@ -3,7 +3,10 @@ import type { NextFunction, Request, Response } from "express";
 import type { RoleName } from "../db/schema/index.js";
 import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
 import { SaveGlMappingsInboundRequestSchema } from "./glMappingDto.js";
-import { readGlMappingReference, saveGlMappings } from "./glMappingRepository.js";
+import {
+    readGlMappingReference,
+    saveGlMappings,
+} from "./glMappingRepository.js";
 
 const glMappingReadRoles = new Set<RoleName>([
     "Finance Admin",

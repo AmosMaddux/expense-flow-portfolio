@@ -46,8 +46,6 @@ let testDb: NodePgDatabase<typeof schema>;
 let secondTestDb: NodePgDatabase<typeof schema>;
 let context: GlMappingTestContext;
 
-const emptySave = { creates: [], updates: [], deletes: [] };
-
 describe("GL Mapping repository", () => {
     beforeAll(async () => {
         client = new Client({
@@ -262,7 +260,9 @@ describe("GL Mapping repository", () => {
             testDb,
         );
 
-        const categories = saved.mappings.map((mapping) => mapping.category).sort();
+        const categories = saved.mappings
+            .map((mapping) => mapping.category)
+            .sort();
         expect(categories).toStrictEqual(["Meals", "Parking", "Travel"]);
     });
 
@@ -368,7 +368,9 @@ describe("GL Mapping repository", () => {
         const reference = await readGlMappingReference(context.tenantA, testDb);
         expect(reference.mappings).toHaveLength(3);
         expect(
-            reference.mappings.some((mapping) => mapping.category === "Parking"),
+            reference.mappings.some(
+                (mapping) => mapping.category === "Parking",
+            ),
         ).toBe(false);
     });
 

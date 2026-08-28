@@ -298,7 +298,12 @@ function ApprovalQueueRoute(): JSX.Element {
         ? financeAdminApprovalQueueStages
         : managerApprovalQueueStages;
 
-    return <CaseQueueScreen heading="Approval Queue" visibleStages={visibleStages} />;
+    return (
+        <CaseQueueScreen
+            heading="Approval Queue"
+            visibleStages={visibleStages}
+        />
+    );
 }
 
 function WorkspaceScreen({ item }: { item: NavigationItem }): JSX.Element {

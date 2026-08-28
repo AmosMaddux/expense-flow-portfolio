@@ -736,9 +736,7 @@ describe("CaseQueueScreen", () => {
         expect(
             screen.getByRole("table", { name: "Report review line items" }),
         ).toBeTruthy();
-        expect(
-            screen.getByRole("heading", { name: "AI Assist" }),
-        ).toBeTruthy();
+        expect(screen.getByRole("heading", { name: "AI Assist" })).toBeTruthy();
         const reviewTable = screen.getByRole("table", {
             name: "Report review line items",
         });

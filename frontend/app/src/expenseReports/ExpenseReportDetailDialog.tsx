@@ -1,9 +1,4 @@
-import {
-    useEffect,
-    useState,
-    type FormEvent,
-    type MouseEvent,
-} from "react";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
     useMutation,
@@ -912,7 +907,10 @@ function canLoadReceiptObjectPreview(): boolean {
     );
 }
 
-function buildReceiptFileUrl(expenseReportId: string, receiptId: string): string {
+function buildReceiptFileUrl(
+    expenseReportId: string,
+    receiptId: string,
+): string {
     return `/v1/expense-reports/${expenseReportId}/receipts/${receiptId}/file`;
 }
 

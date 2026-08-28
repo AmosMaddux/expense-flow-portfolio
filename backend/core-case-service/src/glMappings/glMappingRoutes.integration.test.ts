@@ -337,7 +337,9 @@ void describe("GL Mapping routes", () => {
 
     test("returns 409 when a Finance Admin save would duplicate a category", async () => {
         saveGlMappingsMock.mockRejectedValueOnce(
-            new ConflictError('GL Mapping category "Travel" is used more than once.'),
+            new ConflictError(
+                'GL Mapping category "Travel" is used more than once.',
+            ),
         );
 
         const response = await requestApp("/v1/gl-mappings", {

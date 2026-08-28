@@ -51,6 +51,7 @@ set -euo pipefail
 
 EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
+export AWS_PROFILE
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 export AWS_PAGER=""
@@ -130,11 +131,14 @@ if [[ "$AUTO_APPROVE" == "true" ]]; then
 fi
 
 terraform_apply() {
-    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" "$@"
+    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
+        "$@"
 }
 
 terraform_ecr_apply() {
     terraform -chdir="$ECR_TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$@"
@@ -188,6 +192,7 @@ import_existing_ecr_repository() {
 
     echo "  Importing existing $repository_name into persistent ECR Terraform state."
     terraform -chdir="$ECR_TERRAFORM_DIR" import -input=false \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$resource_address" "$repository_name"

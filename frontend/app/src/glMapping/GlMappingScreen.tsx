@@ -136,9 +136,7 @@ export function GlMappingScreen(): JSX.Element {
     const [rowEdits, setRowEdits] = useState<Record<string, RowDraft>>({});
     const [newRows, setNewRows] = useState<NewRow[]>([]);
     const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
-    const [validationError, setValidationError] = useState<string | null>(
-        null,
-    );
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     const hasPendingChanges =
         Object.keys(rowEdits).length > 0 ||
@@ -162,7 +160,7 @@ export function GlMappingScreen(): JSX.Element {
 
             return glMappingReferenceSchema.parse(await response.json());
         },
-        onSuccess: async (reference) => {
+        onSuccess: (reference) => {
             setRowEdits({});
             setNewRows([]);
             setDeletedIds(new Set());
@@ -226,9 +224,7 @@ export function GlMappingScreen(): JSX.Element {
         }
         setNewRows((current) =>
             current.map((row) =>
-                row.clientId === clientId
-                    ? { ...editingDraft, clientId }
-                    : row,
+                row.clientId === clientId ? { ...editingDraft, clientId } : row,
             ),
         );
         setEditingId(null);
@@ -347,9 +343,7 @@ export function GlMappingScreen(): JSX.Element {
                 />
             )}
 
-            {canEdit &&
-            !query.isPending &&
-            !query.isError ? (
+            {canEdit && !query.isPending && !query.isError ? (
                 <div className="gl-mapping__footer">
                     <Button
                         disabled={mutation.isPending || editingId !== null}
@@ -463,9 +457,7 @@ function GlMappingTable({
                                 {isEditingRow ? null : (
                                     <td>
                                         <time dateTime={mapping.updatedAt}>
-                                            {formatDateTime(
-                                                mapping.updatedAt,
-                                            )}
+                                            {formatDateTime(mapping.updatedAt)}
                                         </time>
                                     </td>
                                 )}
@@ -601,9 +593,7 @@ function GlMappingTable({
                                                             editingId !== null
                                                         }
                                                         onClick={() =>
-                                                            onStartEditNew(
-                                                                row,
-                                                            )
+                                                            onStartEditNew(row)
                                                         }
                                                         size="sm"
                                                         type="button"

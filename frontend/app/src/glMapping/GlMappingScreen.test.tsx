@@ -68,7 +68,9 @@ describe("GlMappingScreen", () => {
         expect(await screen.findByText("Read-only")).toBeTruthy();
         expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
         expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-        expect(screen.queryByRole("button", { name: "Add mapping" })).toBeNull();
+        expect(
+            screen.queryByRole("button", { name: "Add mapping" }),
+        ).toBeNull();
         expect(await screen.findByText("6100")).toBeTruthy();
     });
 
@@ -121,7 +123,7 @@ describe("GlMappingScreen", () => {
                 ([input, init]) =>
                     input === "/v1/gl-mappings" && init?.method === "PUT",
             ) ?? [];
-        const savedBody = JSON.parse(String(saveInit?.body)) as {
+        const savedBody = JSON.parse(saveInit?.body as string) as {
             updates: Array<{ id: string; accountCode: string }>;
         };
         expect(savedBody.updates).toEqual([
@@ -170,9 +172,7 @@ describe("GlMappingScreen", () => {
         fireEvent.change(screen.getByLabelText("GL number"), {
             target: { value: "6700" },
         });
-        fireEvent.click(
-            screen.getByRole("button", { name: "Save Parking" }),
-        );
+        fireEvent.click(screen.getByRole("button", { name: "Save Parking" }));
 
         expect(await screen.findByText("Parking")).toBeTruthy();
 
@@ -191,7 +191,7 @@ describe("GlMappingScreen", () => {
                 ([input, init]) =>
                     input === "/v1/gl-mappings" && init?.method === "PUT",
             ) ?? [];
-        const savedBody = JSON.parse(String(saveInit?.body)) as {
+        const savedBody = JSON.parse(saveInit?.body as string) as {
             creates: Array<{ category: string; accountCode: string }>;
         };
         expect(savedBody.creates).toEqual([
@@ -236,7 +236,7 @@ describe("GlMappingScreen", () => {
                 ([input, init]) =>
                     input === "/v1/gl-mappings" && init?.method === "PUT",
             ) ?? [];
-        const savedBody = JSON.parse(String(saveInit?.body)) as {
+        const savedBody = JSON.parse(saveInit?.body as string) as {
             deletes: string[];
         };
         expect(savedBody.deletes).toEqual([
@@ -257,9 +257,7 @@ describe("GlMappingScreen", () => {
         fireEvent.change(screen.getByLabelText("GL number"), {
             target: { value: "6700" },
         });
-        fireEvent.click(
-            screen.getByRole("button", { name: "Save Parking" }),
-        );
+        fireEvent.click(screen.getByRole("button", { name: "Save Parking" }));
 
         const newRow = (await screen.findByText("Parking")).closest("tr");
         fireEvent.click(

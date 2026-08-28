@@ -1248,9 +1248,9 @@ void describe("gl reference schema", () => {
     void test("allows create and delete actions on the reference data audit log", async () => {
         const tableConfig = getTableConfig(referenceDataAuditEntry);
 
-        expect(
-            tableConfig.checks.map((check) => check.name),
-        ).toContain("reference_data_audit_entry_action_check");
+        expect(tableConfig.checks.map((check) => check.name)).toContain(
+            "reference_data_audit_entry_action_check",
+        );
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const previousSnapshot = generateDrizzleJson({});

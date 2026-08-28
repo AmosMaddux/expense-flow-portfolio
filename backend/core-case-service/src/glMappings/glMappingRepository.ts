@@ -280,4 +280,3 @@ async function readTenantGlCodes(
         .where(eq(glCode.tenantId, tenantId))
         .orderBy(asc(glCode.accountCode));
 }
-

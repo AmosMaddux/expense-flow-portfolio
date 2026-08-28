@@ -98,7 +98,10 @@ describe("GL Mapping controller", () => {
                 roles: ["Finance Admin"],
             },
             params: {},
-            body: { ...emptySaveBody, tenantId: "00000000-0000-4000-8000-000000000999" },
+            body: {
+                ...emptySaveBody,
+                tenantId: "00000000-0000-4000-8000-000000000999",
+            },
         };
         const res = createResponse();
         const next = vi.fn();

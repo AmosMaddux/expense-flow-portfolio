@@ -1,7 +1,4 @@
-export {
-    AuditTrail,
-    useExpenseReportAuditEntries,
-} from "./AuditTrail";
+export { AuditTrail, useExpenseReportAuditEntries } from "./AuditTrail";
 export type {
     AuditEntry,
     AuditTrailActionFormat,
