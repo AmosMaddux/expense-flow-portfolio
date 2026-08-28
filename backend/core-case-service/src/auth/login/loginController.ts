@@ -6,11 +6,16 @@ import {
     InvalidMfaCodeError,
     MfaRequiredError,
 } from "../shared/authenticationErrors.js";
+import { UnauthorizedError } from "../../errors/problem-json.js";
 import {
     loginRequestSchema,
     loginResponseSchema,
     type LoginService,
 } from "./loginService.js";
+import {
+    refreshSessionResponseSchema,
+    type SessionService,
+} from "./sessionService.js";
 
 export const loginErrorResponseSchema = z.object({
     code: z.enum(["INVALID_CREDENTIALS", "MFA_REQUIRED", "INVALID_MFA_CODE"]),
@@ -29,6 +34,7 @@ const invalidMfaCodeResponse = loginErrorResponseSchema.parse({
     code: "INVALID_MFA_CODE",
     message: "Invalid or expired MFA code.",
 });
+const refreshCookieName = "__Host-expenseflow_refresh";
 
 export const unsupportedAuthProblemResponseSchema = z.object({
     type: z.literal("about:blank"),
@@ -52,6 +58,11 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
             const result = await loginService.login(requestBody);
             const responseBody = loginResponseSchema.parse(result);
 
+            setRefreshTokenCookie(
+                res,
+                responseBody.refreshToken,
+                new Date(responseBody.refreshTokenExpiresAt),
+            );
             res.status(200).json(responseBody);
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
@@ -69,6 +80,47 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
                 return;
             }
 
+            next(error);
+        }
+    };
+}
+
+/**
+ * Creates the HTTP handler that restores an access-token session from the refresh cookie.
+ */
+export function createPostRefresh(sessionService: SessionService): RequestHandler {
+    return async (
+        req: Request,
+        res: Response,
+        next: NextFunction,
+    ): Promise<void> => {
+        try {
+            const refreshToken = readRefreshTokenCookie(req);
+            const responseBody = refreshSessionResponseSchema.parse(
+                await sessionService.refresh(refreshToken),
+            );
+
+            res.status(200).json(responseBody);
+        } catch (error) {
+            next(error);
+        }
+    };
+}
+
+/**
+ * Creates the HTTP handler that revokes the current refresh-token session.
+ */
+export function createPostLogout(sessionService: SessionService): RequestHandler {
+    return async (
+        req: Request,
+        res: Response,
+        next: NextFunction,
+    ): Promise<void> => {
+        try {
+            await sessionService.logout(readOptionalRefreshTokenCookie(req));
+            clearRefreshTokenCookie(res);
+            res.status(204).send();
+        } catch (error) {
             next(error);
         }
     };
@@ -93,4 +145,50 @@ export function createPostUnsupportedAuthLogin(): RequestHandler {
             next(error);
         }
     };
+}
+
+function setRefreshTokenCookie(
+    res: Response,
+    refreshToken: string,
+    expires: Date,
+): void {
+    res.cookie(refreshCookieName, refreshToken, {
+        expires,
+        httpOnly: true,
+        path: "/v1/auth",
+        sameSite: "none",
+        secure: true,
+    });
+}
+
+function clearRefreshTokenCookie(res: Response): void {
+    res.clearCookie(refreshCookieName, {
+        httpOnly: true,
+        path: "/v1/auth",
+        sameSite: "none",
+        secure: true,
+    });
+}
+
+function readRefreshTokenCookie(req: Request): string {
+    const token = readOptionalRefreshTokenCookie(req);
+
+    if (token === undefined) {
+        throw new UnauthorizedError("A valid refresh token is required.");
+    }
+
+    return token;
+}
+
+function readOptionalRefreshTokenCookie(req: Request): string | undefined {
+    const cookies = req.headers.cookie?.split(";") ?? [];
+
+    for (const cookie of cookies) {
+        const [name, ...valueParts] = cookie.trim().split("=");
+        if (name === refreshCookieName) {
+            return decodeURIComponent(valueParts.join("="));
+        }
+    }
+
+    return undefined;
 }

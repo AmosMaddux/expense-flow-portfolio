@@ -279,6 +279,15 @@ Fix: rerun `deploy-demo.sh`. The script discovers the default sandbox VPC by
 `Name=project-vpc` and `env=sandbox`. If discovery is wrong for your account,
 set `HTTP_API_LAMBDA_VPC_ID` and rerun the script.
 
+### VPC Discovery Fails With RequestExpired
+
+Cause: AWS rejected the signed `DescribeVpcs` request before the script could
+inspect VPC tags. This usually means the local clock is skewed or the
+`expenseflow-smoke` profile credentials have expired.
+
+Fix: refresh the AWS profile credentials, verify the local UTC clock is
+synchronized, and rerun `deploy-demo.sh`.
+
 ### GL-Coding Tasks Stay Unhealthy
 
 Cause: GL-coding's readonly database role and the `vector` extension require
@@ -290,6 +299,21 @@ Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`, or omit the
 variable because it is the default. Add `SKIP_SPA_DEPLOY=true`,
 `SKIP_BASTION_SEED=true`, and `SKIP_ZAP_SCAN=true` if you only want to complete
 the database role/extension step.
+
+### Terraform Plans To Destroy PostgreSQL Role Or Extension
+
+Cause: once `module.database_core_case.postgresql_role.*` or
+`module.database_core_case.postgresql_extension.*` exists in Terraform state,
+Terraform must refresh it through the PostgreSQL provider before any later
+apply can finish. A plan that says it will destroy the readonly role or
+`vector` extension, followed by a private RDS timeout, means the apply is
+running without the bastion tunnel while those database-managed resources are
+still in state.
+
+Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`, or omit the
+variable because it is the default. The script detects PostgreSQL resources in
+state and routes the full apply through the bastion tunnel before Terraform can
+plan a premature destroy.
 
 ### ZAP Scan Fails After Deploy
 

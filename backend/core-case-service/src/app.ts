@@ -8,6 +8,7 @@ import { apiReference } from "@scalar/express-api-reference";
 import { createAuthRouter } from "./auth/login/loginRoutes.js";
 import { createLoginService } from "./auth/login/loginService.js";
 import { createDrizzleLoginCredentialRepository } from "./auth/login/loginRepository.js";
+import { createSessionService } from "./auth/login/sessionService.js";
 import { createMfaEnrollmentService } from "./auth/mfa/mfaEnrollmentService.js";
 import { createDrizzleMfaEnrollmentRepository } from "./auth/mfa/mfaEnrollmentRepository.js";
 import {
@@ -53,6 +54,7 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
 loadDefaultGlCodingConfig();
 app.use(createCorsMiddleware(loadCorsConfig()));
 const v1Router = express.Router();
+const loginCredentialRepository = createDrizzleLoginCredentialRepository(db);
 const protectedRoutePrefixes = [
     "/expense-reports",
     "/case-queue",
@@ -107,11 +109,12 @@ v1Router.use(
     "/",
     createAuthRouter(
         createLoginService(
-            createDrizzleLoginCredentialRepository(db),
+            loginCredentialRepository,
             createPasswordHasher(loadPasswordHashConfig()),
             createTotpSecretProtector(),
             authJwtConfig,
         ),
+        createSessionService(loginCredentialRepository, authJwtConfig),
         createMfaEnrollmentService(
             createDrizzleMfaEnrollmentRepository(db),
             createTotpSecretProtector(),

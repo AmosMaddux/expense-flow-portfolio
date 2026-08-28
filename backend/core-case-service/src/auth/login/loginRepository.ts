@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import {
@@ -20,6 +20,7 @@ import type {
     StoredMfaLoginEnrollment,
     StoredLoginCredential,
 } from "./loginService.js";
+import type { SessionRepository } from "./sessionService.js";
 import * as schema from "../../db/schema/index.js";
 
 export type IdentityAuthDatabase = NodePgDatabase<typeof schema>;
@@ -29,7 +30,7 @@ export type IdentityAuthDatabase = NodePgDatabase<typeof schema>;
  */
 export function createDrizzleLoginCredentialRepository(
     db: IdentityAuthDatabase,
-): LoginCredentialRepository {
+): LoginCredentialRepository & SessionRepository {
     return {
         async findByTenantAndEmail(
             tenantId: string,
@@ -192,6 +193,52 @@ export function createDrizzleLoginCredentialRepository(
             };
 
             await db.insert(authenticationAuditEntry).values(auditRow);
+        },
+        async findActiveRefreshToken(tokenHash, now) {
+            const rows = await db
+                .select({
+                    tenantId: refreshToken.tenantId,
+                    userId: refreshToken.userId,
+                    role: role.name,
+                })
+                .from(refreshToken)
+                .innerJoin(
+                    role,
+                    and(
+                        eq(role.tenantId, refreshToken.tenantId),
+                        eq(role.userId, refreshToken.userId),
+                    ),
+                )
+                .where(
+                    and(
+                        eq(refreshToken.tokenHash, tokenHash),
+                        isNull(refreshToken.revokedAt),
+                        gt(refreshToken.expiresAt, now),
+                    ),
+                );
+            const row = rows[0];
+            const roles = rows.map((result) => result.role).filter(isRoleName);
+
+            if (row === undefined || roles.length === 0) {
+                return undefined;
+            }
+
+            return {
+                tenantId: row.tenantId,
+                userId: row.userId,
+                roles: roles.sort(compareRoles),
+            };
+        },
+        async revokeRefreshToken(tokenHash, now): Promise<void> {
+            await db
+                .update(refreshToken)
+                .set({ revokedAt: now })
+                .where(
+                    and(
+                        eq(refreshToken.tokenHash, tokenHash),
+                        isNull(refreshToken.revokedAt),
+                    ),
+                );
         },
     };
 }

@@ -16,12 +16,12 @@ set -euo pipefail
 #      consumer Lambda images, tagged with the current UTC timestamp so
 #      re-runs never collide with the ECR repositories' IMMUTABLE tag
 #      setting.
-#   5. Runs the full terraform apply with everything wired together. This
-#      also creates the bastion (module.bastion). GL-coding's least-privilege
-#      database role and the "vector" extension
-#      (module.database_core_case's readonly_roles/extensions) are applied in
-#      step 5b through a bastion SSM tunnel, because Terraform's postgresql
-#      provider must reach private RDS directly.
+#   5. Runs the full terraform apply with everything wired together. On a
+#      fresh deploy, this creates the bastion (module.bastion) before the
+#      PostgreSQL-managed resources are applied in step 5b. On a redeploy
+#      where those PostgreSQL resources already exist in state, this apply
+#      runs through the bastion SSM tunnel too, because Terraform must refresh
+#      those state entries before it can plan anything else.
 #   6. Builds the SPA with VITE_TENANT_ID baked in and deploys it to the SPA
 #      bucket + CloudFront.
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
@@ -154,11 +154,21 @@ resolve_http_api_lambda_vpc_id() {
         return
     fi
 
-    local discovered_vpc_id
-    discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
+    local discovered_vpc_id describe_vpcs_error
+    describe_vpcs_error="$(mktemp)"
+    if ! discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
         --filters "Name=tag:Name,Values=$EXISTING_VPC_NAME" "Name=tag:env,Values=sandbox" \
         --query "Vpcs[0].VpcId" \
-        --output text)"
+        --output text 2>"$describe_vpcs_error")"; then
+        echo "Could not query sandbox VPCs with AWS_PROFILE=$AWS_PROFILE in $AWS_REGION:" >&2
+        cat "$describe_vpcs_error" >&2
+        rm -f "$describe_vpcs_error"
+        echo >&2
+        echo "If the AWS error is RequestExpired, refresh the AWS profile credentials" >&2
+        echo "and check that the local clock is synchronized before rerunning." >&2
+        exit 1
+    fi
+    rm -f "$describe_vpcs_error"
 
     if [[ -z "$discovered_vpc_id" || "$discovered_vpc_id" == "None" ]]; then
         echo "Could not discover sandbox VPC by tags Name=$EXISTING_VPC_NAME and env=sandbox." >&2
@@ -284,31 +294,36 @@ core_case_image_uri="$core_case_repository_url:$IMAGE_TAG"
 gl_coding_image_uri="$gl_coding_repository_url:$IMAGE_TAG"
 stage_transition_lambda_image_uri="$stage_transition_lambda_repository_url:$IMAGE_TAG"
 
-echo "=== 5/7: Full terraform apply ==="
-terraform_apply \
-    -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-    -var="enable_nat_gateway=false" \
-    -var="db_enable_enhanced_monitoring=false" \
-    -var="allow_plain_http_public_api=true" \
-    -var="core_case_internal_routes_enabled=true" \
-    -var="core_case_repository_url=$core_case_repository_url" \
-    -var="core_case_repository_arn=$core_case_repository_arn" \
-    -var="gl_coding_repository_url=$gl_coding_repository_url" \
-    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-    -var="core_case_image_uri=$core_case_image_uri" \
-    -var="gl_coding_image_uri=$gl_coding_image_uri" \
+terraform_runtime_vars=(
+    -var="http_api_jwt_issuer=$http_api_jwt_issuer"
+    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn"
+    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn"
+    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn"
+    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn"
+    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN"
+    -var="enable_nat_gateway=false"
+    -var="db_enable_enhanced_monitoring=false"
+    -var="allow_plain_http_public_api=true"
+    -var="core_case_internal_routes_enabled=true"
+    -var="core_case_repository_url=$core_case_repository_url"
+    -var="core_case_repository_arn=$core_case_repository_arn"
+    -var="gl_coding_repository_url=$gl_coding_repository_url"
+    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url"
+    -var="core_case_image_uri=$core_case_image_uri"
+    -var="gl_coding_image_uri=$gl_coding_image_uri"
     -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri"
+)
 
 tf_output() {
     terraform -chdir="$TERRAFORM_DIR" output -raw "$1"
 }
 
-run_readonly_role_step() {
+state_has_postgresql_resources() {
+    terraform -chdir="$TERRAFORM_DIR" state list 2>/dev/null \
+        | grep -Eq 'module\.database_core_case\.postgresql_(role|grant|extension)\.'
+}
+
+run_terraform_apply_through_db_tunnel() {
     local bastion_instance_id core_case_db_host db_secret_arn tunnel_pid
     local tunnel_log apply_status tunnel_cleaned
 
@@ -379,38 +394,44 @@ run_readonly_role_step() {
         -var="postgresql_provider_host=localhost" \
         -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
         -var="db_readonly_roles_and_extensions_enabled=true" \
-        -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-        -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-        -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-        -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-        -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-        -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-        -var="enable_nat_gateway=false" \
-        -var="db_enable_enhanced_monitoring=false" \
-        -var="allow_plain_http_public_api=true" \
-        -var="core_case_internal_routes_enabled=true" \
-        -var="core_case_repository_url=$core_case_repository_url" \
-        -var="core_case_repository_arn=$core_case_repository_arn" \
-        -var="gl_coding_repository_url=$gl_coding_repository_url" \
-        -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-        -var="core_case_image_uri=$core_case_image_uri" \
-        -var="gl_coding_image_uri=$gl_coding_image_uri" \
-        -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri" \
+        "${terraform_runtime_vars[@]}" \
         || apply_status=$?
     unset db_password
 
     return "$apply_status"
 }
 
-if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
-    echo "=== 5b/7: Applying GL-coding readonly role + vector extension (bastion tunnel) ==="
-    if run_readonly_role_step; then
-        echo "Readonly role and extension applied."
-    else
-        echo "Readonly role/extension step failed - GL-coding's ECS tasks and" >&2
-        echo "pgvector-backed policy retrieval will not work correctly. See" >&2
-        echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+echo "=== 5/7: Full terraform apply ==="
+readonly_role_step_already_applied=false
+if state_has_postgresql_resources; then
+    if [[ "$RUN_READONLY_ROLE_STEP" != "true" ]]; then
+        echo "Terraform state already contains PostgreSQL role/extension resources," >&2
+        echo "so the full apply must refresh them through the bastion tunnel." >&2
+        echo "Rerun with RUN_READONLY_ROLE_STEP=true, or omit the variable." >&2
         exit 1
+    fi
+    echo "PostgreSQL resources already exist in state; running full apply through the bastion tunnel."
+    run_terraform_apply_through_db_tunnel
+    readonly_role_step_already_applied=true
+else
+    terraform_apply \
+        -var="db_readonly_roles_and_extensions_enabled=false" \
+        "${terraform_runtime_vars[@]}"
+fi
+
+if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
+    if [[ "$readonly_role_step_already_applied" == "true" ]]; then
+        echo "=== 5b/7: GL-coding readonly role + vector extension already refreshed in step 5 ==="
+    else
+        echo "=== 5b/7: Applying GL-coding readonly role + vector extension (bastion tunnel) ==="
+        if run_terraform_apply_through_db_tunnel; then
+            echo "Readonly role and extension applied."
+        else
+            echo "Readonly role/extension step failed - GL-coding's ECS tasks and" >&2
+            echo "pgvector-backed policy retrieval will not work correctly. See" >&2
+            echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+            exit 1
+        fi
     fi
 else
     echo "=== 5b/7: Skipping readonly role + vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
