@@ -1,5 +1,10 @@
 BEGIN;
 
+DELETE FROM gl_coding_result
+WHERE tenant_id = '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb'
+  AND expense_report_id >= '70000000-0000-4000-8000-000000000001'
+  AND expense_report_id <= '70000000-0000-4000-8000-000000000020';
+
 DELETE FROM line_item
 WHERE tenant_id = '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb'
   AND expense_report_id >= '70000000-0000-4000-8000-000000000001'
@@ -77,5 +82,42 @@ VALUES
     ('72000000-0000-4000-8000-000000000018', 'Union Taxi', '2026-07-18', 31.22, 'USD', 'Office Supplies', '70000000-0000-4000-8000-000000000018', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-18T10:00:00Z', '2026-07-18T10:00:00Z'),
     ('72000000-0000-4000-8000-000000000019', 'Lakeview Lodge', '2026-07-19', 402.10, 'USD', 'Software', '70000000-0000-4000-8000-000000000019', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-19T10:00:00Z', '2026-07-19T10:00:00Z'),
     ('72000000-0000-4000-8000-000000000020', 'Workflow Tools', '2026-07-20', 59.00, 'USD', 'Software', '70000000-0000-4000-8000-000000000020', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-20T10:00:00Z', '2026-07-20T10:00:00Z');
+
+-- The Approval Queue only surfaces line items that have already been through
+-- GL coding, so every report seeded above in Submitted, Manager Approval, or
+-- AP Review needs a matching gl_coding_result row or it will never appear
+-- in the queue regardless of its stage.
+INSERT INTO gl_coding_result (
+    id,
+    submission_id,
+    tenant_id,
+    expense_report_id,
+    source_type,
+    source_id,
+    category,
+    mapping_status,
+    gl_account_code,
+    gl_account_name,
+    amount,
+    currency,
+    flagged_line_item,
+    flag_code,
+    flag_message,
+    deductible,
+    coded_at
+)
+VALUES
+    ('74000000-0000-4000-8000-000000000002', '75000000-0000-4000-8000-000000000002', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000002', 'line_item', '72000000-0000-4000-8000-000000000002', 'Office Supplies', 'mapped', '6400', 'Office Supplies Expense', 92.41, 'USD', false, null, null, false, '2026-07-02T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000003', '75000000-0000-4000-8000-000000000003', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000003', 'line_item', '72000000-0000-4000-8000-000000000003', 'Travel', 'mapped', '6000', 'Travel Expense', 18.75, 'USD', false, null, null, false, '2026-07-03T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000004', '75000000-0000-4000-8000-000000000004', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000004', 'line_item', '72000000-0000-4000-8000-000000000004', 'Lodging', 'mapped', '6200', 'Lodging Expense', 284.99, 'USD', false, null, null, false, '2026-07-04T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000007', '75000000-0000-4000-8000-000000000007', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000007', 'line_item', '72000000-0000-4000-8000-000000000007', 'Meals', 'mapped', '6100', 'Meals Expense', 37.89, 'USD', false, null, null, false, '2026-07-07T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000008', '75000000-0000-4000-8000-000000000008', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000008', 'line_item', '72000000-0000-4000-8000-000000000008', 'Software', 'mapped', '6500', 'Software Expense', 46.18, 'USD', false, null, null, false, '2026-07-08T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000009', '75000000-0000-4000-8000-000000000009', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000009', 'line_item', '72000000-0000-4000-8000-000000000009', 'Meals', 'mapped', '6100', 'Meals Expense', 331.44, 'USD', false, null, null, false, '2026-07-09T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000012', '75000000-0000-4000-8000-000000000012', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000012', 'line_item', '72000000-0000-4000-8000-000000000012', 'Lodging', 'mapped', '6200', 'Lodging Expense', 118.25, 'USD', false, null, null, false, '2026-07-12T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000013', '75000000-0000-4000-8000-000000000013', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000013', 'line_item', '72000000-0000-4000-8000-000000000013', 'Lodging', 'mapped', '6200', 'Lodging Expense', 428.76, 'USD', false, null, null, false, '2026-07-13T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000014', '75000000-0000-4000-8000-000000000014', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000014', 'line_item', '72000000-0000-4000-8000-000000000014', 'Office Supplies', 'mapped', '6400', 'Office Supplies Expense', 219.15, 'USD', false, null, null, false, '2026-07-14T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000017', '75000000-0000-4000-8000-000000000017', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000017', 'line_item', '72000000-0000-4000-8000-000000000017', 'Travel', 'mapped', '6000', 'Travel Expense', 245.80, 'USD', false, null, null, false, '2026-07-17T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000018', '75000000-0000-4000-8000-000000000018', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000018', 'line_item', '72000000-0000-4000-8000-000000000018', 'Office Supplies', 'mapped', '6400', 'Office Supplies Expense', 31.22, 'USD', false, null, null, false, '2026-07-18T11:00:00Z'),
+    ('74000000-0000-4000-8000-000000000019', '75000000-0000-4000-8000-000000000019', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000019', 'line_item', '72000000-0000-4000-8000-000000000019', 'Software', 'mapped', '6500', 'Software Expense', 402.10, 'USD', false, null, null, false, '2026-07-19T11:00:00Z');
 
 COMMIT;
