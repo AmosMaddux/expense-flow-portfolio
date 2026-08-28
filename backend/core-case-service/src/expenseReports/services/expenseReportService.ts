@@ -949,7 +949,7 @@ export async function reviewExpenseReportSource(
 
     if (result.kind === "invalid_stage") {
         throw new ConflictError(
-            `Expense Report sources can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
+            `Expense Report sources can only be reviewed during Manager Approval or AP Review; Expense Report is in ${result.currentStage}.`,
         );
     }
 

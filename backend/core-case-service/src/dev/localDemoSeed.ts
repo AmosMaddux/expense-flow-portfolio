@@ -72,42 +72,36 @@ Line items over $500 may require additional review before payment.`;
 
 const demoGlCodes = [
     {
-        id: "73000000-0000-4000-8000-000000000101",
         category: "Travel",
         accountCode: "6000",
         accountName: "Travel Expense",
         description: "Synthetic local travel expense account.",
     },
     {
-        id: "73000000-0000-4000-8000-000000000102",
         category: "Meals",
         accountCode: "6100",
         accountName: "Meals Expense",
         description: "Synthetic local meals expense account.",
     },
     {
-        id: "73000000-0000-4000-8000-000000000103",
         category: "Lodging",
         accountCode: "6200",
         accountName: "Lodging Expense",
         description: "Synthetic local lodging expense account.",
     },
     {
-        id: "73000000-0000-4000-8000-000000000104",
         category: "Mileage",
         accountCode: "6300",
         accountName: "Mileage Expense",
         description: "Synthetic local mileage expense account.",
     },
     {
-        id: "73000000-0000-4000-8000-000000000105",
         category: "Office Supplies",
         accountCode: "6400",
         accountName: "Office Supplies Expense",
         description: "Synthetic local office supplies expense account.",
     },
     {
-        id: "73000000-0000-4000-8000-000000000106",
         category: "Software",
         accountCode: "6500",
         accountName: "Software Expense",
@@ -245,7 +239,6 @@ async function seedGlReferenceData(
         const [persistedCode] = await transaction
             .insert(glCode)
             .values({
-                id: code.id,
                 tenantId,
                 accountCode: code.accountCode,
                 accountName: code.accountName,
@@ -346,7 +339,6 @@ async function seedReceiptGalleryReport(
         .onConflictDoUpdate({
             target: expenseReport.id,
             set: {
-                tenantId,
                 owner: ownerId,
                 currentStage: "AP Review",
                 priority: "High",

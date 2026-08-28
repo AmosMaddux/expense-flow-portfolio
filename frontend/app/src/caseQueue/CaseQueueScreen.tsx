@@ -115,14 +115,15 @@ export function getReviewDialogPermissions(
 ): ReviewDialogPermissions {
     const canEditManagerApproval =
         canManageReviewWorkflow && currentStage === "Manager Approval";
+    const canEditApReview =
+        canManageReviewWorkflow && currentStage === "AP Review";
 
     return {
-        canAdvanceReport: canEditManagerApproval,
+        canAdvanceReport: canEditManagerApproval || canEditApReview,
         canClearPolicyChecks: canEditManagerApproval,
-        canEditDeductibility:
-            canManageReviewWorkflow && currentStage === "AP Review",
-        canReviewLineItems: canEditManagerApproval,
-        canSendBackReport: canEditManagerApproval,
+        canEditDeductibility: canEditApReview,
+        canReviewLineItems: canEditManagerApproval || canEditApReview,
+        canSendBackReport: canEditManagerApproval || canEditApReview,
     };
 }
 
@@ -253,6 +254,11 @@ const transitionExpenseReportRequestSchema = z
         reason: z.string().trim().min(1),
     })
     .strict();
+const settleExpenseReportRequestSchema = z
+    .object({
+        reason: z.string().trim().min(1),
+    })
+    .strict();
 const expenseReportTransitionResponseSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
@@ -368,28 +374,30 @@ export function CaseQueueScreen({
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
             setApprovalQueueData(queryClient, (current = []) =>
-                current.map((lineItem) =>
-                    lineItem.id === variables.lineItem.id &&
-                    variables.sourceId === lineItem.id
-                        ? {
-                              ...lineItem,
-                              reviewAction: variables.action,
-                          }
-                        : lineItem.id === variables.lineItem.id
-                          ? {
-                                ...lineItem,
-                                mileageEntries: lineItem.mileageEntries.map(
-                                    (entry) =>
-                                        entry.id === variables.sourceId
-                                            ? {
-                                                  ...entry,
-                                                  reviewAction:
-                                                      variables.action,
-                                              }
-                                            : entry,
-                                ),
-                            }
-                          : lineItem,
+                recalculateAdvanceEligibility(
+                    current.map((lineItem) =>
+                        lineItem.id === variables.lineItem.id &&
+                        variables.sourceId === lineItem.id
+                            ? {
+                                  ...lineItem,
+                                  reviewAction: variables.action,
+                              }
+                            : lineItem.id === variables.lineItem.id
+                              ? {
+                                    ...lineItem,
+                                    mileageEntries: lineItem.mileageEntries.map(
+                                        (entry) =>
+                                            entry.id === variables.sourceId
+                                                ? {
+                                                      ...entry,
+                                                      reviewAction:
+                                                          variables.action,
+                                                  }
+                                                : entry,
+                                    ),
+                                }
+                              : lineItem,
+                    ),
                 ),
             );
 
@@ -597,11 +605,65 @@ export function CaseQueueScreen({
             updateQueueReportStage(queryClient, report);
         },
     });
+    const settlementMutation = useMutation({
+        mutationFn: async ({
+            expenseReportId,
+            reason,
+        }: Pick<TransitionMutationVariables, "expenseReportId" | "reason">) => {
+            const requestBody = settleExpenseReportRequestSchema.parse({
+                reason,
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${expenseReportId}/payment-stub-settlement`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": crypto.randomUUID(),
+                    },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return expenseReportTransitionResponseSchema.parse(
+                await response.json(),
+            );
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(queryClient, (current = []) =>
+                updateQueueReportStageInLineItems(
+                    current,
+                    variables.expenseReportId,
+                    "Reconciled",
+                ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (report) => {
+            updateQueueReportStage(queryClient, report);
+        },
+    });
     const isActionPending =
         reviewMutation.isPending ||
         clearFlagMutation.isPending ||
         deductibilityMutation.isPending ||
-        transitionMutation.isPending;
+        transitionMutation.isPending ||
+        settlementMutation.isPending;
     const canManageReviewWorkflow =
         session.user?.roles.some(
             (role) => role === "Department Manager" || role === "Finance Admin",
@@ -675,13 +737,22 @@ export function CaseQueueScreen({
                             canManageReviewWorkflow={canManageReviewWorkflow}
                             isActionPending={isActionPending}
                             lineItems={selectedReportLineItems}
-                            onAdvanceReport={(lineItem) =>
+                            onAdvanceReport={(lineItem) => {
+                                if (lineItem.currentStage === "AP Review") {
+                                    settlementMutation.mutate({
+                                        expenseReportId:
+                                            lineItem.expenseReportId,
+                                        reason: "payment stub settlement completed",
+                                    });
+                                    return;
+                                }
+
                                 transitionMutation.mutate({
                                     expenseReportId: lineItem.expenseReportId,
                                     toStage: "AP Review",
                                     reason: "manager approved after flag review",
-                                })
-                            }
+                                });
+                            }}
                             onClearFlag={(lineItem, sourceId) => {
                                 const reason = window.prompt(
                                     "Reason for clearing this flag",
@@ -2508,9 +2579,13 @@ function recalculateAdvanceEligibility(
     return lineItems.map((lineItem) => ({
         ...lineItem,
         canAdvance:
-            lineItem.currentStage === "Manager Approval" &&
-            (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
-            (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) === 0,
+            (lineItem.currentStage === "Manager Approval" &&
+                (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
+                (unreviewedLineItemCounts.get(lineItem.expenseReportId) ??
+                    0) === 0) ||
+            (lineItem.currentStage === "AP Review" &&
+                (unreviewedLineItemCounts.get(lineItem.expenseReportId) ??
+                    0) === 0),
     }));
 }
 

@@ -90,6 +90,80 @@ tf_output() {
     terraform -chdir="$TERRAFORM_DIR" output -raw "$1" 2>/dev/null || true
 }
 
+aws_text_or_empty() {
+    local value
+
+    value="$(aws_cli "$@" --output text 2>/dev/null || true)"
+    if [[ "$value" == "None" || "$value" == "null" ]]; then
+        return 0
+    fi
+    echo "$value"
+}
+
+discover_bastion_instance_id() {
+    local instance_id
+
+    instance_id="$(tf_output bastion_instance_id)"
+    if [[ -n "$instance_id" ]]; then
+        echo "$instance_id"
+        return 0
+    fi
+
+    aws_text_or_empty ec2 describe-instances \
+        --filters \
+            "Name=tag:Name,Values=${NAME_PREFIX}-bastion" \
+            "Name=instance-state-name,Values=pending,running" \
+        --query 'Reservations[].Instances[].InstanceId | [0]'
+}
+
+discover_core_case_db_host() {
+    local endpoint
+
+    endpoint="$(tf_output core_case_db_endpoint)"
+    if [[ -n "$endpoint" ]]; then
+        echo "$endpoint" | cut -d: -f1
+        return 0
+    fi
+
+    aws_text_or_empty rds describe-db-instances \
+        --db-instance-identifier "${NAME_PREFIX}-core-case-db" \
+        --query 'DBInstances[0].Endpoint.Address'
+}
+
+discover_core_case_db_secret_arn() {
+    local secret_arn
+
+    secret_arn="$(tf_output core_case_db_master_user_secret_arn)"
+    if [[ -n "$secret_arn" ]]; then
+        echo "$secret_arn"
+        return 0
+    fi
+
+    aws_text_or_empty rds describe-db-instances \
+        --db-instance-identifier "${NAME_PREFIX}-core-case-db" \
+        --query 'DBInstances[0].MasterUserSecret.SecretArn'
+}
+
+postgresql_provider_state_addresses() {
+    terraform -chdir="$TERRAFORM_DIR" state list 2>/dev/null \
+        | grep -E 'module\.database_core_case\.postgresql_(role|grant|extension)\.' \
+        || true
+}
+
+forget_postgresql_provider_resources_for_teardown() {
+    local addresses
+
+    mapfile -t addresses < <(postgresql_provider_state_addresses)
+    if (( ${#addresses[@]} == 0 )); then
+        return 0
+    fi
+
+    echo "  No bastion tunnel is available, so Terraform cannot refresh private PostgreSQL provider resources." >&2
+    echo "  Removing in-database PostgreSQL role/grant/extension resources from Terraform state before destroying RDS:" >&2
+    printf '    %s\n' "${addresses[@]}" >&2
+    terraform -chdir="$TERRAFORM_DIR" state rm "${addresses[@]}"
+}
+
 empty_versioned_bucket() {
     local bucket_name="$1"
 
@@ -122,15 +196,15 @@ run_destroy_through_tunnel() {
     local bastion_instance_id core_case_db_host db_secret_arn tunnel_pid
     local tunnel_log destroy_status tunnel_cleaned
 
-    bastion_instance_id="$(tf_output bastion_instance_id)"
-    core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
-    db_secret_arn="$(tf_output core_case_db_master_user_secret_arn)"
+    bastion_instance_id="$(discover_bastion_instance_id)"
+    core_case_db_host="$(discover_core_case_db_host)"
+    db_secret_arn="$(discover_core_case_db_secret_arn)"
 
     if [[ -z "$bastion_instance_id" || -z "$core_case_db_host" || -z "$db_secret_arn" ]]; then
         echo "  Could not resolve bastion/RDS outputs - infrastructure may" >&2
-        echo "  already be partially or fully destroyed. Falling back to a" >&2
-        echo "  direct destroy attempt (will fail if postgresql_role/extension" >&2
-        echo "  resources still need the tunnel)." >&2
+        echo "  already be partially or fully destroyed." >&2
+        forget_postgresql_provider_resources_for_teardown
+        echo "  Continuing with a direct destroy attempt." >&2
         run_destroy_direct
         return $?
     fi

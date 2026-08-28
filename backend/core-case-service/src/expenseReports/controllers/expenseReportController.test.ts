@@ -36,6 +36,7 @@ import {
 const readCachedCaseQueueStageRollupsMock = vi.hoisted(() => vi.fn());
 const readMySubmissionDetailMock = vi.hoisted(() => vi.fn());
 const readMySubmissionsMock = vi.hoisted(() => vi.fn());
+const settleExpenseReportWorkflowMock = vi.hoisted(() => vi.fn());
 const transitionExpenseReportWorkflowMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/caseQueueService.js", () => ({
@@ -51,6 +52,7 @@ vi.mock("../services/expenseReportService.js", async (importOriginal) => ({
     ...(await importOriginal<
         typeof import("../services/expenseReportService.js")
     >()),
+    settleExpenseReportWorkflow: settleExpenseReportWorkflowMock,
     transitionExpenseReportWorkflow: transitionExpenseReportWorkflowMock,
 }));
 
@@ -61,6 +63,7 @@ import {
     getMySubmissions,
     postExpenseReport,
     getExpenseReportAuditEntries,
+    postExpenseReportPaymentStubSettlement,
     postExpenseReportTransition,
 } from "./expenseReportController.js";
 
@@ -69,6 +72,7 @@ void describe("Expense Report controller authorization", () => {
         readCachedCaseQueueStageRollupsMock.mockReset();
         readMySubmissionDetailMock.mockReset();
         readMySubmissionsMock.mockReset();
+        settleExpenseReportWorkflowMock.mockReset();
         transitionExpenseReportWorkflowMock.mockReset();
         idempotencyRecords.clear();
         idempotencyStoreMock.acquireLock.mockClear();
@@ -419,6 +423,79 @@ void describe("Expense Report controller authorization", () => {
         });
         expect(JSON.stringify(payload)).not.toContain(
             "synthetic-payment-reference",
+        );
+        expect(set).toHaveBeenCalledWith("X-Correlation-Id", correlationId);
+        expect(status).toHaveBeenCalledWith(200);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    void test("settles AP Review reports through the authenticated payment stub route", async () => {
+        const tenantId = "40000000-0000-4000-8000-000000000705";
+        const actorId = "50000000-0000-4000-8000-000000000705";
+        const expenseReportId = "60000000-0000-4000-8000-000000000705";
+        const correlationId = "70000000-0000-4000-8000-000000000705";
+        const idempotencyKey = "settlement-705";
+        settleExpenseReportWorkflowMock.mockResolvedValue({
+            id: expenseReportId,
+            tenantId,
+            owner: actorId,
+            dueDate: "2026-08-01",
+            priority: "Normal",
+            currentStage: "Reconciled",
+            onHold: false,
+            holdReason: null,
+            createdAt: new Date("2026-08-01T12:00:00.000Z"),
+            updatedAt: new Date("2026-08-01T12:00:00.000Z"),
+        });
+        const set = vi.fn();
+        const json = vi.fn();
+        const status = vi.fn(() => ({ json }));
+        const response = { set, status } as unknown as Response;
+        const request = {
+            auth: {
+                tenantId,
+                userId: actorId,
+                roles: ["Finance Admin"],
+            },
+            body: {
+                reason: "payment stub settlement completed",
+            },
+            get: vi.fn((headerName: string) => {
+                if (headerName.toLowerCase() === "x-correlation-id") {
+                    return correlationId;
+                }
+                if (headerName.toLowerCase() === "idempotency-key") {
+                    return idempotencyKey;
+                }
+
+                return undefined;
+            }),
+            originalUrl:
+                "/v1/expense-reports/60000000-0000-4000-8000-000000000705/payment-stub-settlement",
+            params: { id: expenseReportId },
+        } as unknown as Request;
+        const next = vi.fn() as NextFunction;
+
+        await postExpenseReportPaymentStubSettlement(request, response, next);
+
+        expect(settleExpenseReportWorkflowMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actorId,
+                correlationId,
+                id: expenseReportId,
+                idempotencyKey,
+                reason: "payment stub settlement completed",
+                roles: ["Finance Admin"],
+                tenantId,
+            }),
+        );
+        expect(logExpenseReportAuditSuccessMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                action: "payment_stub_settlement_applied",
+                currentStage: "Reconciled",
+                route: "POST /v1/expense-reports/:id/payment-stub-settlement",
+                toStage: "Reconciled",
+            }),
         );
         expect(set).toHaveBeenCalledWith("X-Correlation-Id", correlationId);
         expect(status).toHaveBeenCalledWith(200);

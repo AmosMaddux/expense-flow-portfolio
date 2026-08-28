@@ -153,7 +153,7 @@ describe("GL Mapping repository", () => {
         });
     });
 
-    test("updates a tenant-owned mapping's own GL code without touching other mappings", async () => {
+    test("updates a tenant-owned mapping's current GL code without touching other mappings", async () => {
         const saved = await saveGlMappings(
             {
                 actorId: context.actorId,
@@ -178,11 +178,16 @@ describe("GL Mapping repository", () => {
         expect(updated).toMatchObject({
             id: context.mappingA,
             category: "Travel",
-            glCodeId: context.travelCodeA,
             accountCode: "6150",
             accountName: "Travel",
             description: "Updated travel account",
         });
+        expect(updated?.glCodeId).not.toBe(context.travelCodeA);
+
+        const originalCode = saved.glCodes.find(
+            (code) => code.id === context.travelCodeA,
+        );
+        expect(originalCode).toMatchObject({ accountCode: "6100" });
 
         const otherCode = saved.glCodes.find(
             (code) => code.id === context.mealsCodeA,
@@ -200,6 +205,45 @@ describe("GL Mapping repository", () => {
         expect(auditRows[0]?.after).toStrictEqual({
             category: "Travel",
             accountCode: "6150",
+        });
+    });
+
+    test("repoints an updated mapping to an existing tenant GL code", async () => {
+        const saved = await saveGlMappings(
+            {
+                actorId: context.actorId,
+                tenantId: context.tenantA,
+                creates: [],
+                updates: [
+                    {
+                        id: context.mappingA,
+                        category: "Travel",
+                        accountCode: "6200",
+                        description: "Use the existing meals account.",
+                    },
+                ],
+                deletes: [],
+            },
+            testDb,
+        );
+
+        const updated = saved.mappings.find(
+            (mapping) => mapping.id === context.mappingA,
+        );
+        expect(updated).toMatchObject({
+            id: context.mappingA,
+            category: "Travel",
+            glCodeId: context.mealsCodeA,
+            accountCode: "6200",
+            accountName: "Meals",
+        });
+
+        const originalTravelCode = saved.glCodes.find(
+            (code) => code.id === context.travelCodeA,
+        );
+        expect(originalTravelCode).toMatchObject({
+            accountCode: "6100",
+            accountName: "Travel",
         });
     });
 
@@ -417,8 +461,15 @@ describe("GL Mapping repository", () => {
 
         const [persisted] = await testDb
             .select({ accountCode: glCode.accountCode })
-            .from(glCode)
-            .where(eq(glCode.id, context.travelCodeA));
+            .from(glMapping)
+            .innerJoin(
+                glCode,
+                and(
+                    eq(glCode.tenantId, glMapping.tenantId),
+                    eq(glCode.id, glMapping.glCodeId),
+                ),
+            )
+            .where(eq(glMapping.id, context.mappingA));
         expect(["6151", "6152"]).toContain(persisted?.accountCode);
     });
 });

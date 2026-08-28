@@ -1,20 +1,5 @@
 BEGIN;
 
-DELETE FROM gl_coding_result
-WHERE tenant_id = '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb'
-  AND expense_report_id >= '70000000-0000-4000-8000-000000000001'
-  AND expense_report_id <= '70000000-0000-4000-8000-000000000020';
-
-DELETE FROM line_item
-WHERE tenant_id = '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb'
-  AND expense_report_id >= '70000000-0000-4000-8000-000000000001'
-  AND expense_report_id <= '70000000-0000-4000-8000-000000000020';
-
-DELETE FROM expense_report
-WHERE tenant_id = '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb'
-  AND id >= '70000000-0000-4000-8000-000000000001'
-  AND id <= '70000000-0000-4000-8000-000000000020';
-
 INSERT INTO expense_report (
     id,
     current_stage,
@@ -47,7 +32,16 @@ VALUES
     ('70000000-0000-4000-8000-000000000017', 'Submitted', false, null, '71000000-0000-4000-8000-000000000017', 'Normal', '2026-07-24', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-17T09:00:00Z', '2026-07-17T09:00:00Z'),
     ('70000000-0000-4000-8000-000000000018', 'Manager Approval', false, null, '71000000-0000-4000-8000-000000000018', 'High', '2026-07-25', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-18T09:00:00Z', '2026-07-18T09:00:00Z'),
     ('70000000-0000-4000-8000-000000000019', 'AP Review', false, null, '71000000-0000-4000-8000-000000000019', 'Normal', '2026-07-26', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-19T09:00:00Z', '2026-07-19T09:00:00Z'),
-    ('70000000-0000-4000-8000-000000000020', 'Drafted', false, null, '71000000-0000-4000-8000-000000000020', 'Low', '2026-07-27', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-20T09:00:00Z', '2026-07-20T09:00:00Z');
+    ('70000000-0000-4000-8000-000000000020', 'Drafted', false, null, '71000000-0000-4000-8000-000000000020', 'Low', '2026-07-27', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-20T09:00:00Z', '2026-07-20T09:00:00Z')
+ON CONFLICT (id) DO UPDATE SET
+    current_stage = EXCLUDED.current_stage,
+    on_hold = EXCLUDED.on_hold,
+    hold_reason = EXCLUDED.hold_reason,
+    owner = EXCLUDED.owner,
+    priority = EXCLUDED.priority,
+    due_date = EXCLUDED.due_date,
+    created_at = EXCLUDED.created_at,
+    updated_at = EXCLUDED.updated_at;
 
 INSERT INTO line_item (
     id,
@@ -81,7 +75,16 @@ VALUES
     ('72000000-0000-4000-8000-000000000017', 'Desk Depot', '2026-07-17', 245.80, 'USD', 'Travel', '70000000-0000-4000-8000-000000000017', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-17T10:00:00Z', '2026-07-17T10:00:00Z'),
     ('72000000-0000-4000-8000-000000000018', 'Union Taxi', '2026-07-18', 31.22, 'USD', 'Office Supplies', '70000000-0000-4000-8000-000000000018', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-18T10:00:00Z', '2026-07-18T10:00:00Z'),
     ('72000000-0000-4000-8000-000000000019', 'Lakeview Lodge', '2026-07-19', 402.10, 'USD', 'Software', '70000000-0000-4000-8000-000000000019', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-19T10:00:00Z', '2026-07-19T10:00:00Z'),
-    ('72000000-0000-4000-8000-000000000020', 'Workflow Tools', '2026-07-20', 59.00, 'USD', 'Software', '70000000-0000-4000-8000-000000000020', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-20T10:00:00Z', '2026-07-20T10:00:00Z');
+    ('72000000-0000-4000-8000-000000000020', 'Workflow Tools', '2026-07-20', 59.00, 'USD', 'Software', '70000000-0000-4000-8000-000000000020', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '2026-07-20T10:00:00Z', '2026-07-20T10:00:00Z')
+ON CONFLICT (id) DO UPDATE SET
+    merchant = EXCLUDED.merchant,
+    expense_date = EXCLUDED.expense_date,
+    amount = EXCLUDED.amount,
+    currency = EXCLUDED.currency,
+    category = EXCLUDED.category,
+    expense_report_id = EXCLUDED.expense_report_id,
+    created_at = EXCLUDED.created_at,
+    updated_at = EXCLUDED.updated_at;
 
 -- The Approval Queue only surfaces line items that have already been through
 -- GL coding, so every report seeded above in Submitted, Manager Approval, or
@@ -118,6 +121,22 @@ VALUES
     ('74000000-0000-4000-8000-000000000014', '75000000-0000-4000-8000-000000000014', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000014', 'line_item', '72000000-0000-4000-8000-000000000014', 'Office Supplies', 'mapped', '6400', 'Office Supplies Expense', 219.15, 'USD', false, null, null, false, '2026-07-14T11:00:00Z'),
     ('74000000-0000-4000-8000-000000000017', '75000000-0000-4000-8000-000000000017', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000017', 'line_item', '72000000-0000-4000-8000-000000000017', 'Travel', 'mapped', '6000', 'Travel Expense', 245.80, 'USD', false, null, null, false, '2026-07-17T11:00:00Z'),
     ('74000000-0000-4000-8000-000000000018', '75000000-0000-4000-8000-000000000018', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000018', 'line_item', '72000000-0000-4000-8000-000000000018', 'Office Supplies', 'mapped', '6400', 'Office Supplies Expense', 31.22, 'USD', false, null, null, false, '2026-07-18T11:00:00Z'),
-    ('74000000-0000-4000-8000-000000000019', '75000000-0000-4000-8000-000000000019', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000019', 'line_item', '72000000-0000-4000-8000-000000000019', 'Software', 'mapped', '6500', 'Software Expense', 402.10, 'USD', false, null, null, false, '2026-07-19T11:00:00Z');
+    ('74000000-0000-4000-8000-000000000019', '75000000-0000-4000-8000-000000000019', '8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb', '70000000-0000-4000-8000-000000000019', 'line_item', '72000000-0000-4000-8000-000000000019', 'Software', 'mapped', '6500', 'Software Expense', 402.10, 'USD', false, null, null, false, '2026-07-19T11:00:00Z')
+ON CONFLICT (id) DO UPDATE SET
+    submission_id = EXCLUDED.submission_id,
+    expense_report_id = EXCLUDED.expense_report_id,
+    source_type = EXCLUDED.source_type,
+    source_id = EXCLUDED.source_id,
+    category = EXCLUDED.category,
+    mapping_status = EXCLUDED.mapping_status,
+    gl_account_code = EXCLUDED.gl_account_code,
+    gl_account_name = EXCLUDED.gl_account_name,
+    amount = EXCLUDED.amount,
+    currency = EXCLUDED.currency,
+    flagged_line_item = EXCLUDED.flagged_line_item,
+    flag_code = EXCLUDED.flag_code,
+    flag_message = EXCLUDED.flag_message,
+    deductible = EXCLUDED.deductible,
+    coded_at = EXCLUDED.coded_at;
 
 COMMIT;

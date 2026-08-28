@@ -36,8 +36,8 @@ export async function readGlMappingReference(
 
 /**
  * Applies a page-full of GL Mapping creates, edits, and deletes atomically.
- * Each mapping owns a private GL account row, so edits never affect any
- * other mapping even if two mappings once shared the same account code.
+ * GL codes are tenant-level reference data keyed by account code, so saves
+ * resolve mappings to an existing tenant account before creating a new one.
  */
 export async function saveGlMappings(
     input: {
@@ -142,23 +142,24 @@ export async function saveGlMappings(
                 continue;
             }
             const updatedAt = new Date();
-            await transaction
-                .update(glCode)
-                .set({
+            const targetGlCodeId = await resolveTenantGlCodeForMapping(
+                transaction,
+                {
                     accountCode: update.accountCode,
                     accountName: update.category,
+                    currentGlCodeId: existing.glCodeId,
                     description: update.description,
+                    tenantId: input.tenantId,
                     updatedAt,
-                })
-                .where(
-                    and(
-                        eq(glCode.tenantId, input.tenantId),
-                        eq(glCode.id, existing.glCodeId),
-                    ),
-                );
+                },
+            );
             await transaction
                 .update(glMapping)
-                .set({ category: update.category, updatedAt })
+                .set({
+                    category: update.category,
+                    glCodeId: targetGlCodeId,
+                    updatedAt,
+                })
                 .where(
                     and(
                         eq(glMapping.tenantId, input.tenantId),
@@ -180,28 +181,23 @@ export async function saveGlMappings(
         }
 
         for (const create of input.creates) {
-            const [createdCode] = await transaction
-                .insert(glCode)
-                .values({
-                    tenantId: input.tenantId,
+            const createdGlCodeId = await resolveTenantGlCodeForMapping(
+                transaction,
+                {
                     accountCode: create.accountCode,
                     accountName: create.category,
                     description: create.description,
-                })
-                .returning({ id: glCode.id });
-
-            if (createdCode === undefined) {
-                throw new ConflictError(
-                    `GL Mapping "${create.category}" could not be created.`,
-                );
-            }
+                    tenantId: input.tenantId,
+                    updatedAt: new Date(),
+                },
+            );
 
             const [createdMapping] = await transaction
                 .insert(glMapping)
                 .values({
                     tenantId: input.tenantId,
                     category: create.category,
-                    glCodeId: createdCode.id,
+                    glCodeId: createdGlCodeId,
                 })
                 .returning({ id: glMapping.id });
 
@@ -232,6 +228,67 @@ export async function saveGlMappings(
 
         return { mappings, glCodes };
     });
+}
+
+async function resolveTenantGlCodeForMapping(
+    transaction: Transaction,
+    input: {
+        tenantId: string;
+        accountCode: string;
+        accountName: string;
+        description: string | null;
+        updatedAt: Date;
+        currentGlCodeId?: string;
+    },
+): Promise<string> {
+    const [existingCode] = await transaction
+        .select({ id: glCode.id })
+        .from(glCode)
+        .where(
+            and(
+                eq(glCode.tenantId, input.tenantId),
+                eq(glCode.accountCode, input.accountCode),
+            ),
+        )
+        .for("update");
+
+    if (existingCode !== undefined) {
+        if (existingCode.id === input.currentGlCodeId) {
+            await transaction
+                .update(glCode)
+                .set({
+                    accountName: input.accountName,
+                    description: input.description,
+                    updatedAt: input.updatedAt,
+                })
+                .where(
+                    and(
+                        eq(glCode.tenantId, input.tenantId),
+                        eq(glCode.id, existingCode.id),
+                    ),
+                );
+        }
+
+        return existingCode.id;
+    }
+
+    const [createdCode] = await transaction
+        .insert(glCode)
+        .values({
+            tenantId: input.tenantId,
+            accountCode: input.accountCode,
+            accountName: input.accountName,
+            description: input.description,
+        })
+        .returning({ id: glCode.id });
+
+    if (createdCode === undefined) {
+        throw new ConflictError(
+            `GL account code "${input.accountCode}" could not be created.`,
+        );
+    }
+
+    return createdCode.id;
 }
 
 async function readTenantGlMappings(

@@ -307,6 +307,7 @@ function renderGlMappingScreen(
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
+                apiBaseUrl=""
                 authClient={createAuthClient(role)}
                 fetchImplementation={fetchImplementation}
                 now={() => Date.parse("2026-08-03T12:00:00.000Z")}

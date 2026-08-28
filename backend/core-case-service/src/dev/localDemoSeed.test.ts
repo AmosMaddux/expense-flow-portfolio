@@ -12,6 +12,8 @@ const demoTransactionsSeedSqlUrl = new URL(
     import.meta.url,
 );
 
+const localDemoSeedSourceUrl = new URL("./localDemoSeed.ts", import.meta.url);
+
 const receiptFixtures = [
     {
         filename: "synthetic-hotel-receipt.pdf",
@@ -62,6 +64,34 @@ void describe("synthetic local demo receipt fixtures", () => {
 
 void describe("synthetic demo transactions seed", () => {
     const approvalQueueStages = ["Submitted", "Manager Approval", "AP Review"];
+
+    void test("does not seed GL reference data with fixed demo IDs", async () => {
+        const source = await readFile(localDemoSeedSourceUrl, "utf8");
+
+        expect(source).not.toMatch(
+            /id:\s*"73000000-0000-4000-8000-00000000010[1-6]"/,
+        );
+        expect(source).not.toMatch(/\bvalues\(\{\s*id:\s*code\.id,/);
+        expect(source).toMatch(
+            /target:\s*\[glCode\.tenantId,\s*glCode\.accountCode\]/,
+        );
+    });
+
+    void test("upserts demo rows instead of deleting FK parents", async () => {
+        const sql = await readFile(demoTransactionsSeedSqlUrl, "utf8");
+
+        expect(sql).not.toMatch(/\bDELETE\s+FROM\s+expense_report\b/i);
+        expect(sql).not.toMatch(/\bDELETE\s+FROM\s+line_item\b/i);
+        expect(sql).toMatch(
+            /\bINSERT\s+INTO\s+expense_report\b[\s\S]*\bON\s+CONFLICT\s+\(id\)\s+DO\s+UPDATE\b/i,
+        );
+        expect(sql).toMatch(
+            /\bINSERT\s+INTO\s+line_item\b[\s\S]*\bON\s+CONFLICT\s+\(id\)\s+DO\s+UPDATE\b/i,
+        );
+        expect(sql).toMatch(
+            /\bINSERT\s+INTO\s+gl_coding_result\b[\s\S]*\bON\s+CONFLICT\s+\(id\)\s+DO\s+UPDATE\b/i,
+        );
+    });
 
     void test("gives every non-terminal-stage seeded report a matching gl_coding_result row", async () => {
         // findApprovalQueueLineItems joins from gl_coding_result, so a

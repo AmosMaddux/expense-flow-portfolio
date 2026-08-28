@@ -352,6 +352,7 @@ function renderCaseQueueScreen(
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
+                apiBaseUrl=""
                 authClient={createAuthClientMock(roles)}
                 clearCache={() => queryClient.clear()}
                 fetchImplementation={fetchImplementation}
@@ -394,7 +395,7 @@ describe("CaseQueueScreen", () => {
         },
         {
             stage: "AP Review",
-            canReviewLineItems: false,
+            canReviewLineItems: true,
             canClearPolicyChecks: false,
             canEditDeductibility: true,
         },
@@ -424,11 +425,13 @@ describe("CaseQueueScreen", () => {
             canEditDeductibility,
         }) => {
             expect(getReviewDialogPermissions(true, stage)).toEqual({
-                canAdvanceReport: stage === "Manager Approval",
+                canAdvanceReport:
+                    stage === "Manager Approval" || stage === "AP Review",
                 canClearPolicyChecks,
                 canEditDeductibility,
                 canReviewLineItems,
-                canSendBackReport: stage === "Manager Approval",
+                canSendBackReport:
+                    stage === "Manager Approval" || stage === "AP Review",
             });
         },
     );
@@ -2157,7 +2160,7 @@ describe("CaseQueueScreen", () => {
         );
         expect(checkbox.disabled).toBe(true);
     });
-    test("does not expose report send-back after a report reaches AP Review", async () => {
+    test("exposes report send-back after a report reaches AP Review", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(createJsonResponse(lineItems)),
         );
@@ -2177,11 +2180,138 @@ describe("CaseQueueScreen", () => {
             }),
         ).toBeTruthy();
         expect(
-            screen.queryByRole("button", {
+            screen.getByRole("button", {
                 name: "Reject / Send back to Drafted",
             }),
-        ).toBeNull();
+        ).toBeTruthy();
         expect(fetchImplementation).toHaveBeenCalledOnce();
+    });
+
+    test("settles a fully reviewed AP Review report through the payment stub route", async () => {
+        const apReviewItem: ApprovalQueueLineItem = {
+            ...lineItems[2],
+            canAdvance: true,
+            flaggedLineItem: false,
+            policyChecks: [],
+            reviewAction: "approve",
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse([apReviewItem]))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: apReviewItem.expenseReportId,
+                    currentStage: "Reconciled",
+                }),
+            );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Finance Admin"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Manager Approval", "AP Review"],
+            },
+        );
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+        expect(
+            screen
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
+        ).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "Advance" }));
+
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(fetchImplementation.mock.calls[1]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/payment-stub-settlement",
+        );
+        expect(
+            JSON.parse(fetchImplementation.mock.calls[1]?.[1]?.body as string),
+        ).toMatchObject({
+            reason: "payment stub settlement completed",
+        });
+        expect(
+            new Headers(fetchImplementation.mock.calls[1]?.[1]?.headers).get(
+                "Idempotency-Key",
+            ),
+        ).toMatch(
+            /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[\da-f]{4}-[\da-f]{12}$/i,
+        );
+    });
+
+    test("enables Finance Admin AP Review advance after approving the report source", async () => {
+        const apReviewItem: ApprovalQueueLineItem = {
+            ...lineItems[2],
+            canAdvance: false,
+            reviewAction: null,
+        };
+        const reviewedApReviewItem: ApprovalQueueLineItem = {
+            ...apReviewItem,
+            reviewAction: "approve",
+            canAdvance: true,
+        };
+        const fetchImplementation = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(createJsonResponse([apReviewItem]))
+            .mockResolvedValueOnce(createJsonResponse(reviewedApReviewItem))
+            .mockResolvedValueOnce(
+                createJsonResponse({
+                    id: apReviewItem.expenseReportId,
+                    currentStage: "Reconciled",
+                }),
+            );
+
+        renderCaseQueueScreen(
+            fetchImplementation,
+            createNoRetryQueryClient(),
+            ["Finance Admin"],
+            {
+                heading: "Approval Queue",
+                visibleStages: ["Manager Approval", "AP Review"],
+            },
+        );
+
+        const zenithRow = await screen.findByRole("row", {
+            name: /Employee 0193/i,
+        });
+        fireEvent.click(
+            within(zenithRow).getByRole("button", { name: "Review" }),
+        );
+
+        const lineItemRow = screen.getByRole("row", { name: /Zenith Air/i });
+        expect(
+            screen
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
+        ).toBe(true);
+
+        fireEvent.click(
+            within(lineItemRow).getByRole("button", { name: "Approve" }),
+        );
+
+        await waitFor(() => expect(screen.getByText("Approved")).toBeTruthy());
+        expect(
+            screen
+                .getByRole("button", { name: "Advance" })
+                .hasAttribute("disabled"),
+        ).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "Advance" }));
+
+        await waitFor(() =>
+            expect(fetchImplementation).toHaveBeenCalledTimes(3),
+        );
+        expect(fetchImplementation.mock.calls[2]?.[0]).toBe(
+            "/v1/expense-reports/d104c9ca-9de7-4f85-bb23-ed907e9db003/payment-stub-settlement",
+        );
     });
 
     test("does not send a report back when the required reason is omitted", async () => {
