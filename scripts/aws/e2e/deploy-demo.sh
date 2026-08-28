@@ -133,6 +133,29 @@ terraform_apply() {
     terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" "$@"
 }
 
+terraform_state_has() {
+    local resource_address="$1"
+
+    terraform -chdir="$TERRAFORM_DIR" state list "$resource_address" >/dev/null 2>&1
+}
+
+forget_database_privileged_state() {
+    local resource_address
+    local resource_addresses=(
+        'module.database_core_case.aws_secretsmanager_secret_version.readonly_role["gl_coding_app"]'
+        'module.database_core_case.postgresql_extension.this["vector"]'
+        'module.database_core_case.postgresql_grant.readonly_tables["gl_coding_app"]'
+        'module.database_core_case.postgresql_role.readonly["gl_coding_app"]'
+    )
+
+    for resource_address in "${resource_addresses[@]}"; do
+        if terraform_state_has "$resource_address"; then
+            echo "  Forgetting tunnel-only Terraform state entry $resource_address before the non-tunneled apply."
+            terraform -chdir="$TERRAFORM_DIR" state rm "$resource_address" >/dev/null
+        fi
+    done
+}
+
 terraform_ecr_apply() {
     terraform -chdir="$ECR_TERRAFORM_DIR" apply "${apply_args[@]}" \
         -var="aws_region=$AWS_REGION" \
@@ -280,6 +303,7 @@ gl_coding_image_uri="$gl_coding_repository_url:$IMAGE_TAG"
 stage_transition_lambda_image_uri="$stage_transition_lambda_repository_url:$IMAGE_TAG"
 
 echo "=== 5/7: Full terraform apply ==="
+forget_database_privileged_state
 terraform_apply \
     -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
     -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
@@ -303,9 +327,15 @@ tf_output() {
     terraform -chdir="$TERRAFORM_DIR" output -raw "$1"
 }
 
-run_readonly_role_step() {
+run_database_privileged_step() {
+    local mode="$1"
     local bastion_instance_id core_case_db_host db_secret_arn tunnel_pid
     local tunnel_log apply_status tunnel_cleaned
+    local terraform_extra_args=()
+
+    if [[ "$mode" == "extension" ]]; then
+        terraform_extra_args=(-target=module.database_core_case.postgresql_extension.this)
+    fi
 
     bastion_instance_id="$(tf_output bastion_instance_id)"
     core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
@@ -368,9 +398,47 @@ run_readonly_role_step() {
     db_password="$(echo "$db_secret" | jq -r .password)"
     unset db_secret
 
+    terraform_database_import() {
+        local resource_address="$1"
+        local resource_id="$2"
+
+        PGUSER=core_case_admin PGPASSWORD="$db_password" \
+            terraform -chdir="$TERRAFORM_DIR" import -input=false \
+            -var="postgresql_provider_host=localhost" \
+            -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
+            -var="db_readonly_roles_and_extensions_enabled=true" \
+            -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
+            -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
+            -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
+            -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
+            -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
+            -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
+            -var="enable_nat_gateway=false" \
+            -var="db_enable_enhanced_monitoring=false" \
+            -var="allow_plain_http_public_api=true" \
+            -var="core_case_internal_routes_enabled=true" \
+            -var="core_case_repository_url=$core_case_repository_url" \
+            -var="core_case_repository_arn=$core_case_repository_arn" \
+            -var="gl_coding_repository_url=$gl_coding_repository_url" \
+            -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
+            -var="core_case_image_uri=$core_case_image_uri" \
+            -var="gl_coding_image_uri=$gl_coding_image_uri" \
+            -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri" \
+            "$resource_address" "$resource_id" >/dev/null 2>&1
+    }
+
+    if [[ "$mode" == "extension" ]] && ! terraform_state_has 'module.database_core_case.postgresql_extension.this["vector"]'; then
+        terraform_database_import 'module.database_core_case.postgresql_extension.this["vector"]' core_case.vector || true
+    fi
+
+    if [[ "$mode" == "full" ]] && ! terraform_state_has 'module.database_core_case.postgresql_role.readonly["gl_coding_app"]'; then
+        terraform_database_import 'module.database_core_case.postgresql_role.readonly["gl_coding_app"]' gl_coding_app || true
+    fi
+
     apply_status=0
     PGUSER=core_case_admin PGPASSWORD="$db_password" \
         terraform_apply \
+        "${terraform_extra_args[@]}" \
         -var="postgresql_provider_host=localhost" \
         -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
         -var="db_readonly_roles_and_extensions_enabled=true" \
@@ -398,17 +466,17 @@ run_readonly_role_step() {
 }
 
 if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
-    echo "=== 5b/7: Applying GL-coding readonly role + vector extension (bastion tunnel) ==="
-    if run_readonly_role_step; then
-        echo "Readonly role and extension applied."
+    echo "=== 5b/7: Applying vector extension (bastion tunnel) ==="
+    if run_database_privileged_step extension; then
+        echo "Vector extension applied."
     else
-        echo "Readonly role/extension step failed - GL-coding's ECS tasks and" >&2
+        echo "Vector extension step failed - migrations that need pgvector and" >&2
         echo "pgvector-backed policy retrieval will not work correctly. See" >&2
         echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
         exit 1
     fi
 else
-    echo "=== 5b/7: Skipping readonly role + vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
+    echo "=== 5b/7: Skipping vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
 fi
 
 if [[ "$SKIP_SPA_DEPLOY" != "true" ]]; then
@@ -451,6 +519,17 @@ if [[ "$SKIP_BASTION_SEED" != "true" ]]; then
     scripts/aws/bastion-run.sh demo-seed
 else
     echo "=== 7/7: Skipping bastion migrate/seed/demo-seed (SKIP_BASTION_SEED=true) ==="
+fi
+
+if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
+    echo "=== 7b/7: Applying GL-coding readonly role grants (bastion tunnel) ==="
+    if run_database_privileged_step full; then
+        echo "Readonly role grants applied."
+    else
+        echo "Readonly role grant step failed - GL-coding's ECS tasks will not work correctly. See" >&2
+        echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+        exit 1
+    fi
 fi
 
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
