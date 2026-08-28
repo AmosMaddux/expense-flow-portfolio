@@ -69,13 +69,16 @@ export async function loadExpensePolicyCorpus(
               (policy) => policy.tenantId === parsedRequest.tenantId,
           )
         : policies;
+
     const results = await Promise.all(
         selectedPolicies.map(async (policy) => {
+            
             const chunks = chunkExpensePolicyCorpus({
                 tenantId: policy.tenantId,
                 policyText: policy.policyText,
                 updatedAt: policy.updatedAt,
             });
+
             const [firstChunk] = chunks;
             if (firstChunk === undefined) {
                 throw new Error(

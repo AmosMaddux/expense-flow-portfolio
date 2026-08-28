@@ -1,6 +1,6 @@
 import express, { type Express } from "express";
 import { type Server } from "node:http";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { CreateExpenseReportInboundRequestSchema } from "../schemas/expense-report.schema.js";
 import {
@@ -11,6 +11,12 @@ import {
     problemJsonErrorHandler,
     UnauthorizedError,
 } from "./problem-json.js";
+
+const logCoreCaseErrorMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../logging/coreCaseLogger.js", () => ({
+    logCoreCaseError: logCoreCaseErrorMock,
+}));
 
 let activeServer: Server | undefined;
 
@@ -115,6 +121,10 @@ function buildProblemJsonTestApp(): Express {
 }
 
 void describe("problemJsonErrorHandler", () => {
+    beforeEach(() => {
+        logCoreCaseErrorMock.mockClear();
+    });
+
     afterEach(async () => {
         await closeActiveServer();
     });
@@ -367,5 +377,46 @@ void describe("problemJsonErrorHandler", () => {
         });
         expect(JSON.stringify(body)).not.toContain("database password");
         expect(JSON.stringify(body)).not.toContain("stack");
+    });
+
+    void test("logs a sanitized error identity for 500 responses", async () => {
+        class DatabaseTimeoutError extends Error {
+            public readonly code = "DB_TIMEOUT";
+
+            public constructor() {
+                super("database password was accidentally included");
+                this.name = "DatabaseTimeoutError";
+            }
+        }
+
+        const app = express();
+        app.get("/unexpected-error", () => {
+            throw new DatabaseTimeoutError();
+        });
+        app.use(problemJsonErrorHandler);
+
+        const response = await requestTestApp(app, "/unexpected-error");
+
+        expect(response.status).toBe(500);
+        expect(logCoreCaseErrorMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: "unhandled_error",
+                errorCode: "DB_TIMEOUT",
+                errorName: "DatabaseTimeoutError",
+                route: "/unexpected-error",
+                statusCode: 500,
+            }),
+        );
+
+        const loggedEvent = logCoreCaseErrorMock.mock.calls[0]?.[0] as {
+            message?: string;
+            stack?: string;
+        };
+        expect(loggedEvent).toBeDefined();
+        expect(loggedEvent).not.toHaveProperty("message");
+        expect(loggedEvent).not.toHaveProperty("stack");
+        expect(JSON.stringify(loggedEvent)).not.toContain(
+            "database password",
+        );
     });
 });

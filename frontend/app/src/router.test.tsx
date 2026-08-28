@@ -234,7 +234,7 @@ describe("ExpenseFlowRouter", () => {
 
     test.each([
         ["Finance Admin", "/finance-dashboard", "Finance Dashboard"],
-        ["Department Manager", "/approval-queue", "Case Queue"],
+        ["Department Manager", "/approval-queue", "Approval Queue"],
         ["Employee", "/my-submissions", "My Submissions"],
         ["Admin", "/roles-permissions", "Roles & Permissions"],
     ] as const)(
@@ -302,7 +302,7 @@ describe("ExpenseFlowRouter", () => {
         ).toBeNull();
     });
 
-    test("mounts the current queue under Expense Reports for managers", async () => {
+    test("mounts the current queue under Approval Queue for managers", async () => {
         const authClient = createAuthClientMock("Department Manager");
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Department Manager"),
@@ -315,7 +315,7 @@ describe("ExpenseFlowRouter", () => {
                 }),
             ),
         );
-        window.history.pushState(null, "", "/expense-reports");
+        window.history.pushState(null, "", "/approval-queue");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -324,7 +324,7 @@ describe("ExpenseFlowRouter", () => {
         );
 
         expect(
-            await screen.findAllByRole("heading", { name: "Expense Reports" }),
+            await screen.findAllByRole("heading", { name: "Approval Queue" }),
         ).not.toHaveLength(0);
         expect(
             screen.queryByText(/This protected workspace route is available/),
@@ -335,7 +335,7 @@ describe("ExpenseFlowRouter", () => {
         );
         expect(
             screen
-                .getByRole("link", { name: "Expense Reports" })
+                .getByRole("link", { name: "Approval Queue" })
                 .getAttribute("aria-current"),
         ).toBe("page");
     });
@@ -378,7 +378,7 @@ describe("ExpenseFlowRouter", () => {
         window.history.pushState(null, "", "/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
-        await screen.findByRole("heading", { name: "Case Queue" });
+        await screen.findByRole("heading", { name: "Approval Queue" });
         await waitFor(() =>
             expect(window.location.pathname).toBe("/approval-queue"),
         );

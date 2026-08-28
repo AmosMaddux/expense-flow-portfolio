@@ -23,6 +23,12 @@ export type CoreCaseAuditLogger = {
     logExpenseReportAuditSuccess: (event: Record<string, unknown>) => void;
 };
 
+export type CoreCaseMetricLogEvent = Record<string, unknown> & {
+    eventType: string;
+    metricName: string;
+    metricValue: number;
+};
+
 function createCoreCasePinoLogger(
     destination?: DestinationStream,
     options: LoggerOptions = {},
@@ -78,6 +84,7 @@ export function createCoreCaseAuditLogger(
 }
 
 const coreCaseAuditLogger = createCoreCaseAuditLogger();
+const coreCaseStructuredLogger = createCoreCasePinoLogger();
 
 /**
  * Logs successful Expense Report audit activity without exposing receipt or payment data.
@@ -95,6 +102,27 @@ export function logExpenseReportAuditError(
     event: Record<string, unknown>,
 ): void {
     coreCaseAuditLogger.logExpenseReportAuditError(event);
+}
+
+/**
+ * Logs a structured Core Case informational event.
+ */
+export function logCoreCaseInfo(event: Record<string, unknown>): void {
+    coreCaseStructuredLogger.info(sanitizeLogPayload(event));
+}
+
+/**
+ * Logs a structured Core Case error event.
+ */
+export function logCoreCaseError(event: Record<string, unknown>): void {
+    coreCaseStructuredLogger.error(sanitizeLogPayload(event));
+}
+
+/**
+ * Logs a structured Core Case metric event suitable for CloudWatch filters.
+ */
+export function logCoreCaseMetric(event: CoreCaseMetricLogEvent): void {
+    coreCaseStructuredLogger.info(sanitizeLogPayload(event));
 }
 
 /**

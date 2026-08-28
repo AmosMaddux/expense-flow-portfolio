@@ -36,6 +36,7 @@ import {
 } from "./errors/problem-json.js";
 import { expenseReportRouter } from "./expenseReports/routes/expenseReportRoutes.js";
 import { glMappingRouter } from "./glMappings/glMappingRoutes.js";
+import { alertDispositionRouter } from "./alertDispositionRoutes.js";
 import { platformAdminRouter } from "./platformAdmin/platformAdminRoutes.js";
 import { teamUsersRouter } from "./teamUsers/teamUsersRoutes.js";
 import { coreCaseServiceOpenApiDocument } from "./openapi/core-case-service.openapi.js";
@@ -46,6 +47,8 @@ import {
     createRuntimeSmokeRouter,
     isGlCodingRuntimeSmokeEnabled,
 } from "./runtimeSmoke/runtimeSmokeRoutes.js";
+import { httpRequestLoggingMiddleware } from "./logging/httpRequestLoggingMiddleware.js";
+import { createRequestTracingMiddleware } from "./requestTracingMiddleware.js";
 
 export const app = express();
 const authJwtConfig = loadAuthJwtConfig();
@@ -57,6 +60,8 @@ const accessTokenVerifierConfig = createAccessTokenVerifierConfig(
 );
 loadDefaultGlCodingConfig();
 app.use(createCorsMiddleware(loadCorsConfig()));
+app.use(createRequestTracingMiddleware("core-case-service"));
+app.use(httpRequestLoggingMiddleware);
 const v1Router = express.Router();
 const protectedRoutePrefixes = [
     "/expense-reports",
@@ -156,6 +161,7 @@ v1Router.use("/users", express.json());
 v1Router.use("/platform-admin", express.json());
 v1Router.use("/internal", requireInternalRoutesEnabled);
 v1Router.use("/internal", express.json());
+v1Router.use("/internal", alertDispositionRouter);
 if (isGlCodingRuntimeSmokeEnabled()) {
     v1Router.use("/runtime-smoke", createRuntimeSmokeRouter());
 }

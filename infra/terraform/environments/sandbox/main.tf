@@ -64,6 +64,15 @@ module "alb" {
   vpc_id                             = local.vpc_id
 }
 
+resource "terraform_data" "public_alb_routing_configuration" {
+  lifecycle {
+    precondition {
+      condition     = var.public_alb_certificate_arn != null || var.allow_plain_http_public_api
+      error_message = "Sandbox public ALB must use HTTPS with public_alb_certificate_arn or temporary plaintext HTTP with allow_plain_http_public_api = true."
+    }
+  }
+}
+
 module "ecs" {
   source = "../../modules/ecs"
 
@@ -224,6 +233,17 @@ module "http_api" {
   role_permissions_boundary_arn               = var.role_permissions_boundary_arn
   tags                                        = local.tags
   vpc_id                                      = var.http_api_lambda_vpc_id
+}
+
+module "observability" {
+  source = "../../modules/observability"
+
+  aws_region                             = var.aws_region
+  core_case_log_group_name               = module.ecs.core_case_log_group_name
+  gl_coding_log_group_name               = module.ecs.gl_coding_log_group_name
+  name_prefix                            = var.name_prefix
+  stage_transition_lambda_log_group_name = module.lambda_stage_transition_consumer.log_group_name
+  tags                                   = local.tags
 }
 
 # Declared here rather than inside either module to avoid a module cycle:
