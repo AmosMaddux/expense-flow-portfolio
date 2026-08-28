@@ -557,6 +557,137 @@ void describe("login repository", () => {
             email: "audit-login@example.invalid",
         });
     });
+
+    void test("findActiveUserRoles reflects the current status and roles from the database", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000512";
+        const userId = "10000000-0000-4000-8000-000000000512";
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "refresh-active@example.invalid",
+        });
+        await db.insert(role).values([
+            { tenantId, userId, name: "Department Manager" },
+        ]);
+
+        const repository = createDrizzleLoginCredentialRepository(db);
+
+        await expect(
+            repository.findActiveUserRoles(tenantId, userId),
+        ).resolves.toEqual({
+            status: "active",
+            roles: ["Department Manager"],
+        });
+
+        await db
+            .update(user)
+            .set({ status: "deactivated" })
+            .where(eq(user.id, userId));
+
+        await expect(
+            repository.findActiveUserRoles(tenantId, userId),
+        ).resolves.toEqual({
+            status: "deactivated",
+            roles: ["Department Manager"],
+        });
+    });
+
+    void test("rotateRefreshToken revokes the previous token exactly once and inserts the new one", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000513";
+        const userId = "10000000-0000-4000-8000-000000000513";
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "refresh-rotate@example.invalid",
+        });
+        const [inserted] = await db
+            .insert(refreshToken)
+            .values({
+                tenantId,
+                userId,
+                tokenHash: "synthetic-previous-token-hash",
+                expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+            })
+            .returning({ id: refreshToken.id });
+        const previousTokenId = inserted?.id;
+        if (previousTokenId === undefined) {
+            throw new Error("Expected a previous refresh token id.");
+        }
+
+        const repository = createDrizzleLoginCredentialRepository(db);
+
+        const [firstRotation, secondRotation] = await Promise.all([
+            repository.rotateRefreshToken({
+                previousTokenId,
+                token: {
+                    tenantId,
+                    userId,
+                    tokenHash: "synthetic-rotated-token-hash-a",
+                    expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+                },
+            }),
+            repository.rotateRefreshToken({
+                previousTokenId,
+                token: {
+                    tenantId,
+                    userId,
+                    tokenHash: "synthetic-rotated-token-hash-b",
+                    expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+                },
+            }),
+        ]);
+
+        expect([firstRotation, secondRotation].filter(Boolean)).toHaveLength(
+            1,
+        );
+
+        const previousRow = await db
+            .select({ revokedAt: refreshToken.revokedAt })
+            .from(refreshToken)
+            .where(eq(refreshToken.id, previousTokenId));
+        expect(previousRow[0]?.revokedAt).not.toBeNull();
+
+        const rotatedRows = await db
+            .select({ tokenHash: refreshToken.tokenHash })
+            .from(refreshToken)
+            .where(eq(refreshToken.userId, userId));
+        expect(rotatedRows).toHaveLength(2);
+    });
+
+    void test("revokeRefreshToken marks a stored token revoked so it can no longer be used", async () => {
+        const tenantId = "00000000-0000-4000-8000-000000000514";
+        const userId = "10000000-0000-4000-8000-000000000514";
+
+        await db.insert(user).values({
+            id: userId,
+            tenantId,
+            email: "refresh-revoke@example.invalid",
+        });
+        const [inserted] = await db
+            .insert(refreshToken)
+            .values({
+                tenantId,
+                userId,
+                tokenHash: "synthetic-revocable-token-hash",
+                expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+            })
+            .returning({ id: refreshToken.id });
+        const tokenId = inserted?.id;
+        if (tokenId === undefined) {
+            throw new Error("Expected an inserted refresh token id.");
+        }
+
+        const repository = createDrizzleLoginCredentialRepository(db);
+        await repository.revokeRefreshToken(tokenId);
+
+        const revoked = await repository.findRefreshTokenByHash(
+            "synthetic-revocable-token-hash",
+        );
+        expect(revoked?.id).toBe(tokenId);
+        expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    });
 });
 
 type SeedLoginSubjectInput = {

@@ -747,11 +747,11 @@ export const referenceDataAuditEntry = pgTable(
     (table) => [
         check(
             "reference_data_audit_entry_entity_type_check",
-            sql`${table.entityType} in ('gl_mapping')`,
+            sql`${table.entityType} in ('gl_mapping', 'user')`,
         ),
         check(
             "reference_data_audit_entry_action_check",
-            sql`${table.action} in ('gl_mapping_updated')`,
+            sql`${table.action} in ('gl_mapping_updated', 'user_invited', 'user_role_changed', 'user_status_changed')`,
         ),
         index("reference_data_audit_entry_tenant_entity_idx").on(
             table.tenantId,
@@ -763,6 +763,78 @@ export const referenceDataAuditEntry = pgTable(
             table.tenantId,
             table.actorId,
             table.createdAt,
+        ),
+    ],
+);
+
+export const alertDisposition = pgTable(
+    "alert_disposition",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        tenantId: uuid("tenant_id").notNull(),
+        alertId: text("alert_id").notNull(),
+        alertName: text("alert_name").notNull(),
+        source: text("source").notNull(),
+        severity: text("severity").notNull(),
+        status: text("status").notNull(),
+        resolution: text("resolution").notNull(),
+        correlationId: uuid("correlation_id"),
+        traceId: text("trace_id"),
+        investigatedBy: uuid("investigated_by").notNull(),
+        notes: text("notes"),
+        resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+    },
+    (table) => [
+        check(
+            "alert_disposition_alert_id_not_blank_check",
+            sql`nullif(btrim(${table.alertId}), '') is not null`,
+        ),
+        check(
+            "alert_disposition_alert_name_not_blank_check",
+            sql`nullif(btrim(${table.alertName}), '') is not null`,
+        ),
+        check(
+            "alert_disposition_source_not_blank_check",
+            sql`nullif(btrim(${table.source}), '') is not null`,
+        ),
+        check(
+            "alert_disposition_severity_check",
+            sql`${table.severity} in ('low', 'medium', 'high', 'critical')`,
+        ),
+        check(
+            "alert_disposition_status_check",
+            sql`${table.status} in ('investigated', 'resolved', 'monitoring', 'escalated')`,
+        ),
+        check(
+            "alert_disposition_resolution_not_blank_check",
+            sql`nullif(btrim(${table.resolution}), '') is not null`,
+        ),
+        check(
+            "alert_disposition_resolved_at_status_check",
+            sql`(${table.status} = 'resolved' and ${table.resolvedAt} is not null) or (${table.status} <> 'resolved' and ${table.resolvedAt} is null)`,
+        ),
+        check(
+            "alert_disposition_trace_id_check",
+            sql`${table.traceId} is null or ${table.traceId} ~ '^[0-9a-f]{32}$'`,
+        ),
+        index("alert_disposition_tenant_created_at_idx").on(
+            table.tenantId,
+            table.createdAt,
+        ),
+        index("alert_disposition_tenant_alert_idx").on(
+            table.tenantId,
+            table.alertId,
+        ),
+        index("alert_disposition_tenant_correlation_idx").on(
+            table.tenantId,
+            table.correlationId,
+        ),
+        index("alert_disposition_tenant_trace_idx").on(
+            table.tenantId,
+            table.traceId,
         ),
     ],
 );
@@ -990,6 +1062,8 @@ export type ReferenceDataAuditEntry = InferSelectModel<
 export type NewReferenceDataAuditEntry = InferInsertModel<
     typeof referenceDataAuditEntry
 >;
+export type AlertDisposition = InferSelectModel<typeof alertDisposition>;
+export type NewAlertDisposition = InferInsertModel<typeof alertDisposition>;
 export type GlCodingResult = InferSelectModel<typeof glCodingResult>;
 export type NewGlCodingResult = InferInsertModel<typeof glCodingResult>;
 export type CaseComment = InferSelectModel<typeof caseComment>;

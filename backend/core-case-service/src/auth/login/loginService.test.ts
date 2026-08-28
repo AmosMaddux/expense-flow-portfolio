@@ -65,6 +65,7 @@ const storedCredential: StoredLoginCredential = {
     passwordHash,
     passwordHashAlgorithm: "argon2id",
     roles: ["Employee"],
+    status: "active",
 };
 const storedMfaEnrollment: StoredMfaLoginEnrollment = {
     secretCiphertext: "synthetic-ciphertext",
@@ -385,6 +386,40 @@ void describe("login service", () => {
                 tenantId,
                 email: "employee@example.invalid",
                 password: "incorrect-synthetic-password",
+                totpCode: validTotpCode,
+            }),
+        ).rejects.toMatchObject({
+            name: "InvalidCredentialsError",
+            message: "Invalid email or password.",
+        });
+
+        expect(repository.failedAuditEntries).toEqual([
+            {
+                tenantId,
+                userId,
+                email: "employee@example.invalid",
+                action: "login_failed",
+            },
+        ]);
+        expect(
+            repository.findMfaEnrollmentByTenantAndUserMock,
+        ).not.toHaveBeenCalled();
+        expect(repository.createRefreshTokenMock).not.toHaveBeenCalled();
+    });
+
+    void test("rejects login for a deactivated user with correct credentials", async () => {
+        const repository = createRepository({
+            ...storedCredential,
+            status: "deactivated",
+        });
+        const passwordHasher = createPasswordHasher(true);
+        const loginService = createTestLoginService(repository, passwordHasher);
+
+        await expect(
+            loginService.login({
+                tenantId,
+                email: "employee@example.invalid",
+                password,
                 totpCode: validTotpCode,
             }),
         ).rejects.toMatchObject({
