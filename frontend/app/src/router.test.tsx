@@ -330,12 +330,45 @@ describe("ExpenseFlowRouter", () => {
             screen.queryByText(/This protected workspace route is available/),
         ).toBeNull();
         expect(fetchImplementation).toHaveBeenCalledWith(
-            "/v1/expense-reports",
+            "http://127.0.0.1:3301/v1/expense-reports",
+            expect.anything(),
+        );
+    });
+
+    test("mounts the current queue under Approval Queue for managers", async () => {
+        const authClient = createAuthClientMock("Department Manager");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Department Manager"),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                new Response(JSON.stringify([]), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            ),
+        );
+        window.history.pushState(null, "", "/approval-queue");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        expect(
+            await screen.findAllByRole("heading", { name: "Approval Queue" }),
+        ).not.toHaveLength(0);
+        expect(
+            screen.queryByText(/This protected workspace route is available/),
+        ).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "http://127.0.0.1:3301/v1/case-queue/line-items",
             expect.anything(),
         );
         expect(
             screen
-                .getByRole("link", { name: "Expense Reports" })
+                .getByRole("link", { name: "Approval Queue" })
                 .getAttribute("aria-current"),
         ).toBe("page");
     });

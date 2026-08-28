@@ -153,6 +153,16 @@ output "stage_transition_consumer_event_source_mapping_uuid" {
   value       = module.lambda_stage_transition_consumer.event_source_mapping_uuid
 }
 
+output "cloudwatch_dashboard_name" {
+  description = "CloudWatch dashboard name for sandbox observability."
+  value       = module.observability.dashboard_name
+}
+
+output "cloudwatch_observability_namespace" {
+  description = "CloudWatch namespace for sandbox application metrics."
+  value       = module.observability.namespace
+}
+
 output "stage_transition_consumer_database_url_secret_arn" {
   description = "Secrets Manager ARN of the assembled database_url secret used by the stage-transition consumer Lambda, and readable by smoke tests to verify projection writes."
   value       = module.lambda_stage_transition_consumer.database_url_secret_arn

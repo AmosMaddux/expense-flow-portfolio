@@ -1,0 +1,3 @@
+ALTER TABLE "reference_data_audit_entry" DROP CONSTRAINT "reference_data_audit_entry_action_check";--> statement-breakpoint
+ALTER TABLE "gl_code" ADD CONSTRAINT "gl_code_account_code_numeric_check" CHECK ("gl_code"."account_code" ~ '^[0-9]+$');--> statement-breakpoint
+ALTER TABLE "reference_data_audit_entry" ADD CONSTRAINT "reference_data_audit_entry_action_check" CHECK ("reference_data_audit_entry"."action" in ('gl_mapping_updated', 'gl_mapping_created', 'gl_mapping_deleted', 'user_invited', 'user_role_changed', 'user_status_changed'));
