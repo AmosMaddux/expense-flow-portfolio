@@ -3,7 +3,6 @@ from uuid import UUID
 
 import pytest
 
-from backend.python.gl_coding import ExpenseCategory
 from backend.python.gl_mapping_repository import (
     GlMappingConfigurationError,
     PostgresGlAccountMappingRepository,
@@ -61,11 +60,11 @@ async def test_postgres_repository_resolves_seeded_travel_mapping() -> None:
     repository = PostgresGlAccountMappingRepository(connection_string)
     try:
         accounts = await repository.get_accounts_for_categories(
-            SEEDED_TENANT_ID, {ExpenseCategory.TRAVEL}
+            SEEDED_TENANT_ID, {"Travel"}
         )
     except OperationalError as error:
         pytest.skip(f"Postgres is unavailable for the seeded GL mapping smoke test: {error}")
 
-    travel_account = accounts[ExpenseCategory.TRAVEL]
+    travel_account = accounts["Travel"]
     assert travel_account.account_code == "6000"
     assert travel_account.account_name == "Travel Expense"

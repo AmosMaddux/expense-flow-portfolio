@@ -3,7 +3,7 @@ from typing import Any, Mapping
 from urllib.parse import quote
 from uuid import UUID
 
-from .gl_coding import ExpenseCategory, GlAccount
+from .gl_coding import GlAccount
 
 GL_MAPPING_QUERY = """
     SELECT mapping.category, code.account_code, code.account_name
@@ -47,7 +47,13 @@ class PostgresGlAccountMappingRepository:
         db_name = env.get("DB_NAME")
         db_username = env.get("DB_USERNAME")
         db_password = env.get("DB_PASSWORD")
-        if not all([db_host, db_port, db_name, db_username, db_password]):
+        if (
+            db_host is None
+            or db_port is None
+            or db_name is None
+            or db_username is None
+            or db_password is None
+        ):
             raise GlMappingConfigurationError(
                 "Database connection is not configured. Set DATABASE_URL, or "
                 "DB_HOST/DB_PORT/DB_NAME/DB_USERNAME/DB_PASSWORD."
@@ -61,8 +67,8 @@ class PostgresGlAccountMappingRepository:
         )
 
     async def get_accounts_for_categories(
-        self, tenant_id: UUID, categories: set[ExpenseCategory]
-    ) -> dict[ExpenseCategory, GlAccount]:
+        self, tenant_id: UUID, categories: set[str]
+    ) -> dict[str, GlAccount]:
         """Return tenant-scoped GL accounts keyed by expense category."""
         if len(categories) == 0:
             return {}
@@ -70,7 +76,7 @@ class PostgresGlAccountMappingRepository:
         from psycopg import AsyncConnection
         from psycopg.rows import dict_row
 
-        category_values = [category.value for category in categories]
+        category_values = sorted(categories)
         async with await AsyncConnection.connect(
             self._connection_string,
             row_factory=dict_row,
@@ -81,7 +87,7 @@ class PostgresGlAccountMappingRepository:
                 rows = await cursor.fetchall()
 
         return {
-            ExpenseCategory(row["category"]): GlAccount(
+            row["category"]: GlAccount(
                 account_code=row["account_code"],
                 account_name=row["account_name"],
             )

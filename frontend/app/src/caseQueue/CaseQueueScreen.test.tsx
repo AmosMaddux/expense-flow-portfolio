@@ -512,7 +512,7 @@ describe("CaseQueueScreen", () => {
         expect(
             within(table).getByRole("columnheader", { name: "Actions" }),
         ).toBeTruthy();
-        expect(within(northstarRow).getByText("$742.18")).toBeTruthy();
+        expect(within(northstarRow).getByText("$754.58")).toBeTruthy();
         expect(within(northstarRow).getByText("18.50 miles")).toBeTruthy();
         expect(within(northstarRow).queryByText("6240")).toBeNull();
         expect(within(northstarRow).getByText("Manager Approval")).toBeTruthy();
@@ -731,11 +731,11 @@ describe("CaseQueueScreen", () => {
         );
 
         expect(window.location.pathname).toBe("/approval-queue");
-        expect(
-            screen.getByRole("dialog", {
-                name: "Report d104c9ca",
-            }),
-        ).toBeTruthy();
+        const dialog = screen.getByRole("dialog", {
+            name: "Report d104c9ca",
+        });
+        expect(dialog).toBeTruthy();
+        expect(within(dialog).getByText("$754.58")).toBeTruthy();
         expect(
             screen.getByRole("table", { name: "Report review line items" }),
         ).toBeTruthy();
@@ -1072,7 +1072,7 @@ describe("CaseQueueScreen", () => {
         const reportRow = await screen.findByRole("row", {
             name: /Employee 0191/i,
         });
-        expect(within(reportRow).getByText("$428.50")).toBeTruthy();
+        expect(within(reportRow).getByText("$444.12")).toBeTruthy();
         expect(within(reportRow).getByText("24.60 miles")).toBeTruthy();
         expect(screen.getByText("Showing 2 of 2 reports")).toBeTruthy();
 
@@ -1108,7 +1108,9 @@ describe("CaseQueueScreen", () => {
                 name: "Clear flag",
             }),
         ).toBeTruthy();
-        expect(screen.getAllByText("$428.50")).toHaveLength(4);
+        expect(screen.getAllByText("$444.12")).toHaveLength(2);
+        expect(screen.getAllByText("$428.50")).toHaveLength(2);
+        expect(screen.getAllByText("$15.62")).toHaveLength(1);
         expect(screen.getAllByText("24.60 miles")).toHaveLength(3);
     });
 

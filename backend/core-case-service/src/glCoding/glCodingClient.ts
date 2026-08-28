@@ -2,15 +2,7 @@ import { z } from "zod";
 
 import { GlCodingServiceError } from "./glCodingErrors.js";
 
-const expenseCategorySchema = z.enum([
-    "Travel",
-    "Meals",
-    "Lodging",
-    "Mileage",
-    "Office Supplies",
-    "Software",
-    "Other",
-]);
+const expenseCategorySchema = z.string().trim().min(1).max(100);
 
 const glCodingLineItemRequestSchema = z.object({
     line_item_id: z.uuid(),

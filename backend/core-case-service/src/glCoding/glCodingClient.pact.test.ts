@@ -14,8 +14,7 @@ const flaggedLineItemId = "30000000-0000-4000-8000-000000000101";
 const unflaggedLineItemId = "30000000-0000-4000-8000-000000000102";
 const unmappedLineItemId = "30000000-0000-4000-8000-000000000103";
 const mileageEntryId = "30000000-0000-4000-8000-000000000201";
-const categoryPattern =
-    "^(Travel|Meals|Lodging|Mileage|Office Supplies|Software|Other)$";
+const categoryPattern = "^\\S.{0,99}$";
 const pactDirectory =
     process.env.PACT_OUTPUT_DIR ??
     mkdtempSync(resolve(tmpdir(), "expense-flow-pacts-"));
@@ -221,13 +220,15 @@ describe("Core Case Service GL-coding consumer contract", () => {
                 unmappedLineItemId,
                 "Synthetic Vendor",
                 "25.00",
-                "Other",
+                "Company Functions",
             );
 
             await pact
                 .addInteraction()
-                .given("the Other category has no GL mapping")
-                .uponReceiving("a request to code an unmapped Other line item")
+                .given("the Company Functions category has no GL mapping")
+                .uponReceiving(
+                    "a request to code an unmapped Company Functions line item",
+                )
                 .withRequest("POST", "/gl-coding/line-items", (builder) => {
                     builder
                         .headers({ "Content-Type": "application/json" })
@@ -239,7 +240,7 @@ describe("Core Case Service GL-coding consumer contract", () => {
                         .jsonBody({
                             coded_items: codedLineItemMatcher(
                                 unmappedLineItemId,
-                                "Other",
+                                "Company Functions",
                                 "25.00",
                                 "unmapped",
                                 Matchers.nullValue(),

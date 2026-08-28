@@ -1269,10 +1269,7 @@ export function ApprovalQueueReviewDialog({
     const areAllReviewRowsReviewed = reviewRows.every(
         (reviewRow) => reviewRow.reviewAction !== null,
     );
-    const lineItemTotal = lineItems.reduce(
-        (total, lineItem) => total + lineItem.amount,
-        0,
-    );
+    const reimbursementTotal = calculateReportReimbursementTotal(lineItems);
     const mileageTotal = calculateReportMileageTotal(lineItems);
     const handleSubmitComment = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -1351,7 +1348,7 @@ export function ApprovalQueueReviewDialog({
                     </span>
                     <span>
                         Total
-                        <strong>{formatCurrency(lineItemTotal)}</strong>
+                        <strong>{formatCurrency(reimbursementTotal)}</strong>
                     </span>
                     <span>
                         Mileage
@@ -2292,7 +2289,7 @@ function groupApprovalQueueReports(
                 employee: lineItem.employee,
                 currentStage: lineItem.currentStage,
                 flaggedLineItem: hasOpenSourceFlag(lineItem),
-                totalAmount: lineItem.amount,
+                totalAmount: calculateReportReimbursementTotal([lineItem]),
                 totalMileage: calculateReportMileageTotal([lineItem]),
                 lineItems: [lineItem],
             });
@@ -2301,8 +2298,10 @@ function groupApprovalQueueReports(
 
         existingReport.flaggedLineItem =
             existingReport.flaggedLineItem || hasOpenSourceFlag(lineItem);
-        existingReport.totalAmount += lineItem.amount;
         existingReport.lineItems.push(lineItem);
+        existingReport.totalAmount = calculateReportReimbursementTotal(
+            existingReport.lineItems,
+        );
         existingReport.totalMileage = calculateReportMileageTotal(
             existingReport.lineItems,
         );
@@ -2316,6 +2315,30 @@ function hasOpenSourceFlag(lineItem: ApprovalQueueLineItem): boolean {
         lineItem.flaggedLineItem ||
         lineItem.mileageEntries.some((entry) => entry.flaggedLineItem)
     );
+}
+
+function calculateReportReimbursementTotal(
+    lineItems: ApprovalQueueLineItem[],
+): number {
+    const mileageAmountsById = new Map<string, number>();
+    const lineItemTotal = lineItems.reduce((total, lineItem) => {
+        if (lineItem.sourceType === "mileage") {
+            mileageAmountsById.set(lineItem.id, lineItem.amount);
+            return total;
+        }
+
+        for (const mileageEntry of lineItem.mileageEntries) {
+            mileageAmountsById.set(mileageEntry.id, mileageEntry.amount);
+        }
+
+        return total + lineItem.amount;
+    }, 0);
+    const mileageTotal = [...mileageAmountsById.values()].reduce(
+        (total, amount) => total + amount,
+        0,
+    );
+
+    return lineItemTotal + mileageTotal;
 }
 
 function calculateReportMileageTotal(

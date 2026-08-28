@@ -4,7 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from backend.python.gl_coding import (
-    ExpenseCategory,
     GlCodingComputeRequest,
     GlCodingComputeResponse,
     GlCodingLineItemRequest,
@@ -38,7 +37,7 @@ def test_gl_coding_request_model_accepts_line_items_and_mileage() -> None:
     request = GlCodingComputeRequest.model_validate(valid_gl_coding_payload())
 
     assert request.line_items[0].amount == Decimal("501.00")
-    assert request.line_items[0].category is ExpenseCategory.TRAVEL
+    assert request.line_items[0].category == "Travel"
     assert request.mileage[0].distance == Decimal("18.50")
 
 
@@ -103,24 +102,25 @@ def test_gl_coding_request_rejects_negative_line_item_amount() -> None:
         )
 
 
-def test_gl_coding_request_rejects_category_outside_contract() -> None:
-    with pytest.raises(ValidationError, match="Expense category has no GL mapping"):
-        GlCodingLineItemRequest.model_validate(
-            {
-                "line_item_id": "30000000-0000-4000-8000-000000000101",
-                "merchant": "Example Air",
-                "amount": "42.50",
-                "currency": "USD",
-                "category": "Training",
-            }
-        )
+def test_gl_coding_request_accepts_tenant_configured_category() -> None:
+    request = GlCodingLineItemRequest.model_validate(
+        {
+            "line_item_id": "30000000-0000-4000-8000-000000000101",
+            "merchant": "Green Leaf Catering",
+            "amount": "42.50",
+            "currency": "USD",
+            "category": "Company Functions",
+        }
+    )
+
+    assert request.category == "Company Functions"
 
 
 @pytest.mark.parametrize("category", [{}, []], ids=["object", "list"])
 def test_gl_coding_request_rejects_non_string_category_shapes(
     category: object,
 ) -> None:
-    with pytest.raises(ValidationError, match="Expense category has no GL mapping"):
+    with pytest.raises(ValidationError, match="Input should be a valid string"):
         GlCodingLineItemRequest.model_validate(
             {
                 "line_item_id": "30000000-0000-4000-8000-000000000101",

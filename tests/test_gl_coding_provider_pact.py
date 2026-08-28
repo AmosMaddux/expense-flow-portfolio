@@ -16,7 +16,7 @@ import pytest
 import uvicorn
 
 from backend.python.auth import AuthenticatedRequestContext, require_request_context
-from backend.python.gl_coding import ExpenseCategory, GlAccount
+from backend.python.gl_coding import GlAccount
 from backend.python.main import app, get_gl_account_mapping_repository
 
 TENANT_ID = UUID("40000000-0000-4000-8000-000000000300")
@@ -29,11 +29,11 @@ class PactGlAccountMappingRepository:
     """Return state-controlled synthetic GL mappings for Pact verification."""
 
     def __init__(self) -> None:
-        self.accounts_by_category: dict[ExpenseCategory, GlAccount] = {}
+        self.accounts_by_category: dict[str, GlAccount] = {}
 
     async def get_accounts_for_categories(
-        self, tenant_id: UUID, categories: set[ExpenseCategory]
-    ) -> dict[ExpenseCategory, GlAccount]:
+        self, tenant_id: UUID, categories: set[str]
+    ) -> dict[str, GlAccount]:
         """Return only requested synthetic accounts for the active provider state."""
         assert tenant_id == TENANT_ID
         return {
@@ -104,25 +104,25 @@ def provider_state_app(repository: PactGlAccountMappingRepository) -> FastAPI:
     return state_app
 
 
-def accounts_for_state(state: str) -> dict[ExpenseCategory, GlAccount]:
+def accounts_for_state(state: str) -> dict[str, GlAccount]:
     """Return synthetic GL mappings required for a Pact provider state."""
     if state == "the Travel GL mapping is available":
         return {
-            ExpenseCategory.TRAVEL: GlAccount(
+            "Travel": GlAccount(
                 account_code="6000",
                 account_name="Travel Expense",
             )
         }
     if state == "the Meals GL mapping is available":
         return {
-            ExpenseCategory.MEALS: GlAccount(
+            "Meals": GlAccount(
                 account_code="6100",
                 account_name="Meals Expense",
             )
         }
     if state == "the Mileage GL mapping is available":
         return {
-            ExpenseCategory.MILEAGE: GlAccount(
+            "Mileage": GlAccount(
                 account_code="6300",
                 account_name="Mileage Expense",
             )
@@ -257,12 +257,12 @@ def broken_line_item_response(
     line_item: dict[str, Any], repository: PactGlAccountMappingRepository
 ) -> dict[str, Any]:
     """Return a line-item response missing flagged_line_item for regression coverage."""
-    category = ExpenseCategory(str(line_item["category"]))
+    category = str(line_item["category"])
     gl_account = repository.accounts_by_category.get(category)
     return {
         "source_id": line_item["line_item_id"],
         "source_type": "line_item",
-        "category": category.value,
+        "category": category,
         "mapping_status": "mapped" if gl_account is not None else "unmapped",
         "gl_account": gl_account.model_dump() if gl_account is not None else None,
         "amount": line_item["amount"],
@@ -274,7 +274,7 @@ def broken_mileage_response(
     mileage_entry: dict[str, Any], repository: PactGlAccountMappingRepository
 ) -> dict[str, Any]:
     """Return a mileage response missing flagged_line_item for regression coverage."""
-    gl_account = repository.accounts_by_category.get(ExpenseCategory.MILEAGE)
+    gl_account = repository.accounts_by_category.get("Mileage")
     return {
         "source_id": mileage_entry["mileage_entry_id"],
         "source_type": "mileage",
