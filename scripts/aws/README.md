@@ -224,11 +224,15 @@ This proves ECS services can run on Fargate behind ALBs, target-group health gat
 
 `scripts/aws/run-terraform-e2e-smoke.sh` is the smoke test for the Terraform-managed sandbox (`infra/terraform/environments/sandbox`), not the bash-provisioned resources above. Unlike every other script in this directory, it does not hardcode resource names — it reads `terraform output -json` for every identifier it can, so it stays correct as the Terraform modules change. Run `terraform apply` in `infra/terraform/environments/sandbox` first.
 
-It runs three checks in one invocation:
+It runs four checks in one invocation:
 
 1. **ALB request → Core Case**: wraps `run-task-smoke.sh`, passing in the Terraform-managed ALB/target-group names and cluster/subnet/bucket/table identifiers instead of that script's own hardcoded defaults (which target the older bash-provisioned names and do not match the Terraform module's shortened ALB/target-group names).
 2. **API Gateway payment path → Lambda → Core Case internal route**: wraps `scripts/aws/SCRUM-150/smoke-issue-payment-http-api.sh`, building `ISSUE_PAYMENT_URL` from the Terraform `http_api_issue_payment_url_prefix` output.
 3. **SQS event flow**: publishes a synthetic stage-transition CloudEvent to the Terraform-managed SNS topic, then polls the Postgres `stage_transition_projection` table (via the stage-transition consumer Lambda's own `database_url` Secrets Manager secret) and Lambda invocation metrics to prove SNS → SQS → Lambda → Postgres runs end to end.
+
+The wrapper also runs an X-Ray trace continuity check by default. It sends a
+synthetic AWS `X-Amzn-Trace-Id` through the public ALB and fails unless the same
+trace is visible in both Core Case CloudWatch logs and AWS X-Ray.
 
 For normal deployed-sandbox validation, use the one-command wrapper. It derives
 the public ALB URL, mints valid/expired synthetic access tokens, selects seeded
@@ -245,6 +249,26 @@ scripts/aws/e2e/run-deployed-smoke.sh
 The wrapper gives the asynchronous SNS/SQS/Lambda/Postgres projection check up
 to 10 minutes by default. Override `VERIFY_TIMEOUT_SECONDS` or
 `VERIFY_POLL_SECONDS` when troubleshooting.
+
+Run the deployed X-Ray continuity smoke after code changes that affect request
+tracing, downstream trace propagation, or observability middleware:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/e2e/verify-xray-trace.sh
+```
+
+This script does not create or update AWS resources. It reads Terraform outputs,
+sends one synthetic `X-Amzn-Trace-Id` header to the deployed Core Case
+`/health` route, then fails unless the same trace ID appears in both the Core
+Case CloudWatch log group and AWS X-Ray. If the sandbox ALB has no HTTPS
+listener, explicitly opt into plain HTTP verification:
+
+```bash
+ALLOW_PLAIN_HTTP_SMOKE=true \
+AWS_PROFILE=expenseflow-smoke \
+scripts/aws/e2e/verify-xray-trace.sh
+```
 
 If the wrapper reports that runtime-smoke is not enabled, run the prep command
 once. It creates or reuses the runtime-smoke shared secret, detects your public
@@ -276,7 +300,9 @@ scripts/aws/run-terraform-e2e-smoke.sh
 
 `PUBLIC_ALB_SMOKE_BASE_URL` has the same TLS-hostname requirement (and the same `ALLOW_PLAIN_HTTP_SMOKE=true` cert-free demo escape hatch) as `run-task-smoke.sh`. `VALID_ACCESS_TOKEN`/`EXPIRED_ACCESS_TOKEN` must be minted by the same JWT issuer configured on the HTTP API's authorizer (`http_api_jwt_issuer`/`http_api_jwt_audience`) — Terraform does not mint tokens. The event-flow check requires a synthetic `expense_report` row to already exist for `SYNTHETIC_EXPENSE_REPORT_ID`/`SYNTHETIC_TENANT_ID` (defaults provided; override to point at seeded data) and reads the database URL via Secrets Manager, never as a plaintext argument.
 
-Any of the three checks can be skipped independently: `RUN_ALB_SMOKE=false`, `RUN_PAYMENT_SMOKE=false`, `RUN_EVENT_FLOW_SMOKE=false`.
+Any of the four checks can be skipped independently: `RUN_ALB_SMOKE=false`,
+`RUN_PAYMENT_SMOKE=false`, `RUN_EVENT_FLOW_SMOKE=false`, or
+`RUN_XRAY_SMOKE=false`.
 
 ## Useful Verification Commands
 

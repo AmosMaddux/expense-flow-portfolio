@@ -1,7 +1,13 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { StageTransitionProjectionStore } from "./stageTransitionProjectionRepository.js";
 import { processStageTransitionEventBody } from "./stageTransitionEventProcessor.js";
+
+const logCoreCaseMetricMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../logging/coreCaseLogger.js", () => ({
+    logCoreCaseMetric: logCoreCaseMetricMock,
+}));
 
 const syntheticEvent = {
     specversion: "1.0",
@@ -32,6 +38,10 @@ function createStore(): StageTransitionProjectionStore & {
 }
 
 void describe("stage-transition event processor", () => {
+    beforeEach(() => {
+        logCoreCaseMetricMock.mockClear();
+    });
+
     void test("validates and projects one SQS event body", async () => {
         const store = createStore();
 
@@ -42,6 +52,14 @@ void describe("stage-transition event processor", () => {
 
         expect(event).toStrictEqual(syntheticEvent);
         expect(store.project).toHaveBeenCalledExactlyOnceWith(syntheticEvent);
+        expect(logCoreCaseMetricMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                eventType: "stage_transition_consumer",
+                metricName: "StageTransitionConsumerSuccessCount",
+                service: "stage-transition-consumer-lambda",
+                tenantId: syntheticEvent.data.tenantId,
+            }),
+        );
     });
 
     void test("rejects malformed events without updating the projection", async () => {
@@ -60,5 +78,6 @@ void describe("stage-transition event processor", () => {
             ),
         ).rejects.toThrow();
         expect(store.project).not.toHaveBeenCalled();
+        expect(logCoreCaseMetricMock).not.toHaveBeenCalled();
     });
 });

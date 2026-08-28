@@ -1,6 +1,13 @@
 import { z } from "zod";
+import type { Span } from "@opentelemetry/api";
+import { SpanStatusCode } from "@opentelemetry/api";
 
 import { GlCodingServiceError } from "./glCodingErrors.js";
+import {
+    buildDownstreamTraceHeader,
+    isTracingEnabled,
+    startChildSpan,
+} from "../tracing.js";
 
 const expenseCategorySchema = z.string().trim().min(1).max(100);
 
@@ -41,11 +48,7 @@ const glCodedItemSchema = z.object({
     mapping_status: z.enum(["mapped", "unmapped"]),
     gl_account: glAccountSchema.nullable(),
     amount: z.string().nullable().optional(),
-    currency: z
-        .string()
-        .regex(/^[A-Z]{3}$/)
-        .nullable()
-        .optional(),
+    currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional(),
     flagged_line_item: z.boolean(),
 });
 
@@ -74,6 +77,8 @@ export type GlCodingClientOptions = {
     signal?: AbortSignal;
     timeoutMs?: number;
     baseBackoffMs?: number;
+    parentSpan?: Span;
+    correlationId?: string;
 };
 
 /**
@@ -90,12 +95,27 @@ export async function codeExpenseLineItems(
     const maxRetries = options.maxRetries ?? 0;
     const delay = options.delayImplementation ?? defaultDelay;
     const random = options.random ?? Math.random;
+    const tracingEnabled = isTracingEnabled();
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
         const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
         const signal = options.signal
             ? AbortSignal.any([options.signal, timeoutSignal])
             : timeoutSignal;
+        const span =
+            tracingEnabled && options.parentSpan !== undefined
+                ? startChildSpan(
+                      "core-case-service",
+                      options.parentSpan,
+                      "POST /gl-coding/line-items",
+                      {
+                          "http.method": "POST",
+                          "http.url": endpoint,
+                          "service.name": "core-case-service",
+                      },
+                  )
+                : undefined;
+        const traceHeader = buildDownstreamTraceHeader(span);
 
         let response: Response;
         try {
@@ -106,11 +126,27 @@ export async function codeExpenseLineItems(
                     ...(options.accessToken === undefined
                         ? {}
                         : { Authorization: `Bearer ${options.accessToken}` }),
+                    ...(options.correlationId === undefined
+                        ? {}
+                        : { "x-correlation-id": options.correlationId }),
+                    ...(traceHeader === undefined
+                        ? {}
+                        : { "X-Amzn-Trace-Id": traceHeader }),
                 },
                 body: JSON.stringify(requestBody),
                 signal,
             });
         } catch (error: unknown) {
+            span?.setAttribute("gl_coding.retry_attempt", attempt);
+            span?.setStatus({
+                code: SpanStatusCode.ERROR,
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The GL-coding service could not be reached.",
+            });
+            span?.end();
+
             if (attempt < maxRetries && options.signal?.aborted !== true) {
                 await delay(calculateRetryDelay(attempt, options, random));
                 continue;
@@ -133,7 +169,14 @@ export async function codeExpenseLineItems(
             );
         }
 
+        span?.setAttribute("http.status_code", response.status);
         if (!response.ok) {
+            span?.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: `HTTP ${response.status}`,
+            });
+            span?.end();
+
             if (attempt < maxRetries && isRetryableStatus(response.status)) {
                 await delay(calculateRetryDelay(attempt, options, random));
                 continue;
@@ -147,8 +190,19 @@ export async function codeExpenseLineItems(
 
         try {
             const responseBody: unknown = await response.json();
+            span?.setStatus({ code: SpanStatusCode.OK });
+            span?.end();
             return GlCodingResponseSchema.parse(responseBody);
         } catch (error: unknown) {
+            span?.setStatus({
+                code: SpanStatusCode.ERROR,
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The GL-coding service returned an invalid response.",
+            });
+            span?.end();
+
             if (timeoutSignal.aborted) {
                 throw new GlCodingServiceError(
                     "The GL-coding service request timed out.",

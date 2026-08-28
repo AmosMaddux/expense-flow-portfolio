@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createStageTransitionLambdaHandler } from "./stageTransitionLambdaHandler.js";
 
@@ -35,6 +35,10 @@ function createLogger() {
 }
 
 void describe("stage-transition Lambda handler", () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     void test("projects a valid SQS record and returns no batch failures", async () => {
         const processEventBody = vi.fn().mockResolvedValue(undefined);
         const handler = createStageTransitionLambdaHandler({
@@ -58,6 +62,9 @@ void describe("stage-transition Lambda handler", () => {
 
     void test("returns a failed item when projection rejects", async () => {
         const logger = createLogger();
+        const consoleError = vi
+            .spyOn(console, "error")
+            .mockImplementation(() => undefined);
         const processEventBody = vi
             .fn()
             .mockRejectedValue(new Error("synthetic projection failure"));
@@ -83,6 +90,21 @@ void describe("stage-transition Lambda handler", () => {
             ],
         });
         expect(logger.recordFailed).toHaveBeenCalledOnce();
+        expect(consoleError).toHaveBeenCalledWith(
+            JSON.stringify({
+                environment: "sandbox",
+                errorName: "StageTransitionConsumerRecordFailure",
+                eventType: "stage_transition_consumer",
+                metricName: "StageTransitionConsumerErrorCount",
+                metricValue: 1,
+                outcome: "error",
+                service: "stage-transition-consumer-lambda",
+                tenantId: syntheticEvent.data.tenantId,
+            }),
+        );
+        expect(consoleError).not.toHaveBeenCalledWith(
+            expect.stringContaining("synthetic-message-1"),
+        );
     });
 
     void test("returns only failed records from a mixed batch", async () => {

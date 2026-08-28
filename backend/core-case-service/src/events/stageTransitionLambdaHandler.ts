@@ -41,6 +41,37 @@ const defaultLogger: StageTransitionLambdaLogger = {
     },
 };
 
+function emitStructuredFailureLog(details: {
+    errorName: string;
+    tenantId: string;
+}): void {
+    console.error(
+        JSON.stringify({
+            environment: "sandbox",
+            errorName: details.errorName,
+            eventType: "stage_transition_consumer",
+            metricName: "StageTransitionConsumerErrorCount",
+            metricValue: 1,
+            outcome: "error",
+            service: "stage-transition-consumer-lambda",
+            tenantId: details.tenantId,
+        }),
+    );
+}
+
+function extractTenantIdFromRecordBody(body: string): string {
+    try {
+        const parsedBody = JSON.parse(body) as {
+            data?: { tenantId?: unknown };
+        };
+        return typeof parsedBody.data?.tenantId === "string"
+            ? parsedBody.data.tenantId
+            : "unknown";
+    } catch {
+        return "unknown";
+    }
+}
+
 /**
  * Creates an SQS-triggered Lambda handler for stage-transition projection events.
  */
@@ -59,6 +90,10 @@ export function createStageTransitionLambdaHandler(
             try {
                 await processStageTransitionRecord(record.body, dependencies);
             } catch {
+                emitStructuredFailureLog({
+                    errorName: "StageTransitionConsumerRecordFailure",
+                    tenantId: extractTenantIdFromRecordBody(record.body),
+                });
                 logger.recordFailed();
                 batchItemFailures.push({ itemIdentifier: record.messageId });
             }

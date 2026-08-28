@@ -6,16 +6,14 @@ import {
     InvalidMfaCodeError,
     MfaRequiredError,
 } from "../shared/authenticationErrors.js";
-import { UnauthorizedError } from "../../errors/problem-json.js";
+import type { RefreshTokenCookieConfig } from "../shared/refreshTokenCookie.js";
+import { buildRefreshTokenCookie } from "../shared/refreshTokenCookie.js";
+import { TokenOutboundResponseSchema } from "../refresh/refreshService.js";
 import {
     loginRequestSchema,
     loginResponseSchema,
     type LoginService,
 } from "./loginService.js";
-import {
-    refreshSessionResponseSchema,
-    type SessionService,
-} from "./sessionService.js";
 
 export const loginErrorResponseSchema = z.object({
     code: z.enum(["INVALID_CREDENTIALS", "MFA_REQUIRED", "INVALID_MFA_CODE"]),
@@ -34,7 +32,6 @@ const invalidMfaCodeResponse = loginErrorResponseSchema.parse({
     code: "INVALID_MFA_CODE",
     message: "Invalid or expired MFA code.",
 });
-const refreshCookieName = "__Host-expenseflow_refresh";
 
 export const unsupportedAuthProblemResponseSchema = z.object({
     type: z.literal("about:blank"),
@@ -47,7 +44,10 @@ export const unsupportedAuthProblemResponseSchema = z.object({
 /**
  * Creates the HTTP handler for the primary login credential step.
  */
-export function createPostLogin(loginService: LoginService): RequestHandler {
+export function createPostLogin(
+    loginService: LoginService,
+    cookieConfig: RefreshTokenCookieConfig,
+): RequestHandler {
     return async (
         req: Request,
         res: Response,
@@ -56,14 +56,22 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
         try {
             const requestBody = loginRequestSchema.parse(req.body);
             const result = await loginService.login(requestBody);
-            const responseBody = loginResponseSchema.parse(result);
+            // The refresh token never leaves this handler as JSON: it is only
+            // ever transported as the HttpOnly cookie set below, so page
+            // JavaScript (and an XSS payload) cannot read it from the
+            // response body, devtools network logs, or request/response
+            // logging middleware.
+            const serviceResult = loginResponseSchema.parse(result);
 
-            setRefreshTokenCookie(
-                res,
-                responseBody.refreshToken,
-                new Date(responseBody.refreshTokenExpiresAt),
+            res.append(
+                "Set-Cookie",
+                buildRefreshTokenCookie(
+                    serviceResult.refreshToken,
+                    new Date(serviceResult.refreshTokenExpiresAt),
+                    cookieConfig,
+                ),
             );
-            res.status(200).json(responseBody);
+            res.status(200).json(TokenOutboundResponseSchema.parse(serviceResult));
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
                 res.status(401).json(invalidCredentialsResponse);
@@ -80,47 +88,6 @@ export function createPostLogin(loginService: LoginService): RequestHandler {
                 return;
             }
 
-            next(error);
-        }
-    };
-}
-
-/**
- * Creates the HTTP handler that restores an access-token session from the refresh cookie.
- */
-export function createPostRefresh(sessionService: SessionService): RequestHandler {
-    return async (
-        req: Request,
-        res: Response,
-        next: NextFunction,
-    ): Promise<void> => {
-        try {
-            const refreshToken = readRefreshTokenCookie(req);
-            const responseBody = refreshSessionResponseSchema.parse(
-                await sessionService.refresh(refreshToken),
-            );
-
-            res.status(200).json(responseBody);
-        } catch (error) {
-            next(error);
-        }
-    };
-}
-
-/**
- * Creates the HTTP handler that revokes the current refresh-token session.
- */
-export function createPostLogout(sessionService: SessionService): RequestHandler {
-    return async (
-        req: Request,
-        res: Response,
-        next: NextFunction,
-    ): Promise<void> => {
-        try {
-            await sessionService.logout(readOptionalRefreshTokenCookie(req));
-            clearRefreshTokenCookie(res);
-            res.status(204).send();
-        } catch (error) {
             next(error);
         }
     };
@@ -145,50 +112,4 @@ export function createPostUnsupportedAuthLogin(): RequestHandler {
             next(error);
         }
     };
-}
-
-function setRefreshTokenCookie(
-    res: Response,
-    refreshToken: string,
-    expires: Date,
-): void {
-    res.cookie(refreshCookieName, refreshToken, {
-        expires,
-        httpOnly: true,
-        path: "/v1/auth",
-        sameSite: "none",
-        secure: true,
-    });
-}
-
-function clearRefreshTokenCookie(res: Response): void {
-    res.clearCookie(refreshCookieName, {
-        httpOnly: true,
-        path: "/v1/auth",
-        sameSite: "none",
-        secure: true,
-    });
-}
-
-function readRefreshTokenCookie(req: Request): string {
-    const token = readOptionalRefreshTokenCookie(req);
-
-    if (token === undefined) {
-        throw new UnauthorizedError("A valid refresh token is required.");
-    }
-
-    return token;
-}
-
-function readOptionalRefreshTokenCookie(req: Request): string | undefined {
-    const cookies = req.headers.cookie?.split(";") ?? [];
-
-    for (const cookie of cookies) {
-        const [name, ...valueParts] = cookie.trim().split("=");
-        if (name === refreshCookieName) {
-            return decodeURIComponent(valueParts.join("="));
-        }
-    }
-
-    return undefined;
 }

@@ -12,8 +12,44 @@ data "aws_iam_policy_document" "ecs_tasks_assume_role" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  core_case_log_group_name = "/ecs/${var.name_prefix}/core-case-service"
-  gl_coding_log_group_name = "/ecs/${var.name_prefix}/gl-coding-service"
+  core_case_log_group_name      = "/ecs/${var.name_prefix}/core-case-service"
+  gl_coding_log_group_name      = "/ecs/${var.name_prefix}/gl-coding-service"
+  otel_collector_log_group_name = "/ecs/${var.name_prefix}/otel-collector"
+  otel_collector_config         = <<-EOT
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch/traces:
+        timeout: 1s
+        send_batch_size: 50
+      resourcedetection:
+        detectors:
+          - env
+          - ecs
+          - ec2
+        override: false
+
+    exporters:
+      awsxray: {}
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [resourcedetection, batch/traces]
+          exporters: [awsxray]
+  EOT
 
   core_case_secret_arns = compact([
     var.core_case_auth_jwt_private_key_secret_arn,
@@ -56,6 +92,31 @@ locals {
       { name = "DB_PASSWORD", valueFrom = "${var.gl_coding_db_credentials_secret_arn}:password::" },
     ],
   )
+
+  otel_collector_container_definition = {
+    name      = "aws-otel-collector"
+    image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.30.0"
+    essential = false
+    portMappings = [
+      { containerPort = 4317, hostPort = 4317, protocol = "tcp" },
+      { containerPort = 4318, hostPort = 4318, protocol = "tcp" },
+      { containerPort = 13133, hostPort = 13133, protocol = "tcp" },
+    ]
+    environment = [
+      { name = "AWS_REGION", value = var.aws_region },
+    ]
+    secrets = [
+      { name = "AOT_CONFIG_CONTENT", valueFrom = aws_ssm_parameter.otel_collector_config.name },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.otel_collector.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "aws-otel-collector"
+      }
+    }
+  }
 }
 
 resource "aws_cloudwatch_log_group" "core_case" {
@@ -70,6 +131,22 @@ resource "aws_cloudwatch_log_group" "gl_coding" {
   name              = local.gl_coding_log_group_name
   retention_in_days = var.log_retention_days
   tags              = var.tags
+}
+
+resource "aws_cloudwatch_log_group" "otel_collector" {
+  #checkov:skip=CKV_AWS_158: CloudWatch KMS CMK is deferred until log key ownership is approved, owner platform-security, review by 2026-12-31
+  name              = local.otel_collector_log_group_name
+  retention_in_days = var.log_retention_days
+  tags              = var.tags
+}
+
+resource "aws_ssm_parameter" "otel_collector_config" {
+  name      = "/${var.name_prefix}/otel-collector-config"
+  type      = "String"
+  tier      = "Standard"
+  value     = local.otel_collector_config
+  overwrite = true
+  tags      = var.tags
 }
 
 resource "aws_ecs_cluster" "this" {
@@ -324,6 +401,32 @@ resource "aws_iam_role_policy" "execution_secrets" {
   role   = aws_iam_role.execution.id
 }
 
+data "aws_iam_policy_document" "execution_telemetry" {
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:DescribeLogStreams",
+      "logs:PutLogEvents",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    resources = [aws_ssm_parameter.otel_collector_config.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "execution_telemetry" {
+  name   = "${var.name_prefix}-ecs-telemetry"
+  policy = data.aws_iam_policy_document.execution_telemetry.json
+  role   = aws_iam_role.execution.id
+}
+
 resource "aws_iam_role" "core_case_task" {
   name                 = "${var.name_prefix}-core-case-task-role"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_assume_role.json
@@ -390,6 +493,39 @@ resource "aws_iam_role_policy" "core_case_runtime" {
   name   = "${var.name_prefix}-core-case-runtime"
   policy = data.aws_iam_policy_document.core_case_runtime.json
   role   = aws_iam_role.core_case_task.id
+}
+
+data "aws_iam_policy_document" "telemetry" {
+  statement {
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    resources = [aws_ssm_parameter.otel_collector_config.arn]
+  }
+
+  statement {
+    actions = [
+      "xray:GetSamplingRules",
+      "xray:GetSamplingStatisticSummaries",
+      "xray:GetSamplingTargets",
+      "xray:PutTelemetryRecords",
+      "xray:PutTraceSegments",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "core_case_telemetry" {
+  name   = "${var.name_prefix}-core-case-telemetry"
+  policy = data.aws_iam_policy_document.telemetry.json
+  role   = aws_iam_role.core_case_task.id
+}
+
+resource "aws_iam_role_policy" "gl_coding_telemetry" {
+  name   = "${var.name_prefix}-gl-coding-telemetry"
+  policy = data.aws_iam_policy_document.telemetry.json
+  role   = aws_iam_role.gl_coding_task.id
 }
 
 resource "aws_security_group" "core_case" {
@@ -483,10 +619,15 @@ resource "aws_ecs_task_definition" "core_case" {
   }
 
   container_definitions = jsonencode([
+    local.otel_collector_container_definition,
     {
       name      = "core-case-service"
       image     = coalesce(var.core_case_image_uri, "${var.core_case_repository_url}:latest")
       essential = true
+      dependsOn = [{
+        containerName = "aws-otel-collector"
+        condition     = "START"
+      }]
       portMappings = [{
         name          = "http"
         containerPort = 3000
@@ -521,6 +662,8 @@ resource "aws_ecs_task_definition" "core_case" {
         { name = "IDEMPOTENCY_STORE_BACKEND", value = "redis" },
         { name = "MFA_TOTP_SECRET_KEY_VERSION", value = var.mfa_totp_secret_key_version },
         { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
+        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+        { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
         { name = "PORT", value = "3000" },
         { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
         { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
@@ -573,10 +716,15 @@ resource "aws_ecs_task_definition" "gl_coding" {
   }
 
   container_definitions = jsonencode([
+    local.otel_collector_container_definition,
     {
       name      = "gl-coding-service"
       image     = coalesce(var.gl_coding_image_uri, "${var.gl_coding_repository_url}:latest")
       essential = true
+      dependsOn = [{
+        containerName = "aws-otel-collector"
+        condition     = "START"
+      }]
       portMappings = [{
         name          = "http"
         containerPort = 8001
@@ -592,6 +740,8 @@ resource "aws_ecs_task_definition" "gl_coding" {
         { name = "DB_NAME", value = var.gl_coding_db_name },
         { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
         { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
+        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+        { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
       ]
       secrets = local.gl_coding_secrets
       healthCheck = {

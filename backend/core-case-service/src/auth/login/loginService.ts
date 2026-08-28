@@ -10,7 +10,7 @@ import {
     MfaRequiredError,
 } from "../shared/authenticationErrors.js";
 import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
-import type { RoleName } from "../../db/schema/index.js";
+import type { RoleName, UserStatus } from "../../db/schema/index.js";
 import { signRefreshToken } from "../shared/refreshTokenSigner.js";
 import {
     passwordHashAlgorithm,
@@ -52,6 +52,7 @@ export type StoredLoginCredential = {
     passwordHash: string;
     passwordHashAlgorithm: string;
     roles: RoleName[];
+    status: UserStatus;
 };
 
 export type FailedLoginAuditEntry = {
@@ -146,6 +147,16 @@ export function createLoginService(
                     tenantId:
                         storedCredential?.tenantId ?? validatedRequest.tenantId,
                     userId: storedCredential?.userId ?? null,
+                    email: normalizedEmail,
+                    action: "login_failed",
+                });
+                throw new InvalidCredentialsError();
+            }
+
+            if (storedCredential.status !== "active") {
+                await recordFailedLogin(loginCredentialRepository, {
+                    tenantId: storedCredential.tenantId,
+                    userId: storedCredential.userId,
                     email: normalizedEmail,
                     action: "login_failed",
                 });

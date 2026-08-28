@@ -77,23 +77,26 @@ void describe("coreCaseServiceOpenApiDocument", () => {
         });
     });
 
-    void test("documents the login endpoint and token response fields", () => {
+    void test("documents the login endpoint and excludes the refresh token from its response", () => {
         const loginPath = document.paths?.["/v1/auth/login"];
         const requestBody = loginPath?.post?.requestBody;
-        const loginResponse = document.components?.schemas?.LoginResponse;
+        const loginResponse =
+            document.components?.schemas?.RefreshTokenResponse;
 
         expect(loginPath?.post).toBeDefined();
         expect(JSON.stringify(requestBody)).toContain(
             "#/components/schemas/LoginRequest",
         );
         expect(JSON.stringify(loginPath?.post?.responses?.[200])).toContain(
-            "#/components/schemas/LoginResponse",
+            "#/components/schemas/RefreshTokenResponse",
         );
         expect(JSON.stringify(loginPath?.post?.responses?.[401])).toContain(
             "#/components/schemas/LoginErrorResponse",
         );
         expect(JSON.stringify(loginResponse)).toContain("accessToken");
-        expect(JSON.stringify(loginResponse)).toContain("refreshToken");
+        // The refresh token is only ever transported as an HttpOnly cookie;
+        // it must never appear in the documented (or actual) JSON response.
+        expect(JSON.stringify(loginResponse)).not.toContain("refreshToken");
     });
 
     void test("documents the POST request body from the create Expense Report DTO", () => {

@@ -7,8 +7,6 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
     createPostLogin,
-    createPostLogout,
-    createPostRefresh,
     createPostUnsupportedAuthLogin,
 } from "./loginController.js";
 import {
@@ -18,7 +16,6 @@ import {
     type LoginService,
     type StoredLoginCredential,
 } from "./loginService.js";
-import type { SessionService } from "./sessionService.js";
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 import type { AccessTokenSigningConfig } from "../../config/authJwtConfig.js";
 import type { PasswordHasher } from "../shared/passwordHasher.js";
@@ -26,12 +23,10 @@ import type { TotpSecretProtector } from "../shared/totpSecretProtector.js";
 import { MfaRequiredError } from "../shared/authenticationErrors.js";
 
 type TestResponse = Response & {
-    clearCookieMock: ReturnType<typeof vi.fn>;
-    cookieMock: ReturnType<typeof vi.fn>;
-    sendMock: ReturnType<typeof vi.fn>;
     statusMock: ReturnType<typeof vi.fn>;
     jsonMock: ReturnType<typeof vi.fn>;
     typeMock: ReturnType<typeof vi.fn>;
+    appendMock: ReturnType<typeof vi.fn>;
 };
 
 const tenantId = "00000000-0000-4000-8000-000000000603";
@@ -43,6 +38,7 @@ const storedCredential: StoredLoginCredential = {
     passwordHash: "$argon2id$v=19$m=8192,t=1,p=1$synthetic$hash",
     passwordHashAlgorithm: "argon2id",
     roles: ["Employee"],
+    status: "active",
 };
 const testAuthJwtConfig: AccessTokenSigningConfig = {
     issuer: "expenseflow-core-case-service-test",
@@ -59,22 +55,16 @@ function createResponse(): TestResponse {
     const statusMock = vi.fn(() => response);
     const jsonMock = vi.fn(() => response);
     const typeMock = vi.fn(() => response);
-    const cookieMock = vi.fn(() => response);
-    const clearCookieMock = vi.fn(() => response);
-    const sendMock = vi.fn(() => response);
+    const appendMock = vi.fn(() => response);
 
-    response.clearCookieMock = clearCookieMock;
-    response.cookieMock = cookieMock;
-    response.sendMock = sendMock;
     response.statusMock = statusMock;
     response.jsonMock = jsonMock;
     response.typeMock = typeMock;
-    response.clearCookie = clearCookieMock;
-    response.cookie = cookieMock;
-    response.send = sendMock;
+    response.appendMock = appendMock;
     response.status = statusMock;
     response.json = jsonMock;
     response.type = typeMock;
+    response.append = appendMock;
 
     return response;
 }
@@ -85,7 +75,7 @@ async function withLoginServer<T>(
 ): Promise<T> {
     const app = express();
     app.use(express.json());
-    app.post("/auth/login", createPostLogin(loginService));
+    app.post("/auth/login", createPostLogin(loginService, { secure: false }));
     const server = await new Promise<Server>((resolve, reject) => {
         const candidate = app.listen(0, "127.0.0.1");
         candidate.once("listening", () => {
@@ -123,7 +113,7 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 void describe("login controller", () => {
-    void test("returns refresh token after primary credentials and MFA pass", async () => {
+    void test("sets the refresh token cookie and returns only access token fields in the body", async () => {
         const loginMock = vi.fn(() =>
             Promise.resolve({
                 tenantId: "00000000-0000-4000-8000-000000000601",
@@ -137,7 +127,7 @@ void describe("login controller", () => {
         const loginService: LoginService = {
             login: loginMock,
         };
-        const handler = createPostLogin(loginService);
+        const handler = createPostLogin(loginService, { secure: false });
         const response = createResponse();
         const next = vi.fn() as NextFunction;
         const request = {
@@ -152,95 +142,22 @@ void describe("login controller", () => {
         await handler(request, response, next);
 
         expect(loginMock).toHaveBeenCalledWith(request.body);
-        expect(response.statusMock).toHaveBeenCalledWith(200);
-        expect(response.cookieMock).toHaveBeenCalledWith(
-            "__Host-expenseflow_refresh",
-            "synthetic-refresh-token",
-            {
-                expires: new Date("2026-08-13T12:00:00.000Z"),
-                httpOnly: true,
-                path: "/v1/auth",
-                sameSite: "none",
-                secure: true,
-            },
+        expect(response.appendMock).toHaveBeenCalledWith(
+            "Set-Cookie",
+            expect.stringContaining("synthetic-refresh-token"),
         );
+        expect(response.statusMock).toHaveBeenCalledWith(200);
         expect(response.jsonMock).toHaveBeenCalledWith({
             tenantId: "00000000-0000-4000-8000-000000000601",
             userId: "10000000-0000-4000-8000-000000000601",
             accessToken: "synthetic-access-token",
             accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
-            refreshToken: "synthetic-refresh-token",
-            refreshTokenExpiresAt: "2026-08-13T12:00:00.000Z",
         });
-        expect(next).not.toHaveBeenCalled();
-    });
-
-    void test("refreshes an access-token session from the refresh cookie", async () => {
-        const sessionService: SessionService = {
-            refresh: vi.fn(() =>
-                Promise.resolve({
-                    tenantId,
-                    userId,
-                    accessToken: "synthetic-refreshed-access-token",
-                    accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
-                }),
-            ),
-            logout: vi.fn(() => Promise.resolve()),
-        };
-        const handler = createPostRefresh(sessionService);
-        const response = createResponse();
-        const next = vi.fn() as NextFunction;
-        const request = {
-            headers: {
-                cookie: "__Host-expenseflow_refresh=synthetic-refresh-token",
-            },
-        } as Request;
-
-        await handler(request, response, next);
-
-        expect(sessionService.refresh).toHaveBeenCalledWith(
-            "synthetic-refresh-token",
-        );
-        expect(response.statusMock).toHaveBeenCalledWith(200);
-        expect(response.jsonMock).toHaveBeenCalledWith({
-            tenantId,
-            userId,
-            accessToken: "synthetic-refreshed-access-token",
-            accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
-        });
-        expect(next).not.toHaveBeenCalled();
-    });
-
-    void test("revokes logout sessions and clears the refresh cookie", async () => {
-        const sessionService: SessionService = {
-            refresh: vi.fn(),
-            logout: vi.fn(() => Promise.resolve()),
-        };
-        const handler = createPostLogout(sessionService);
-        const response = createResponse();
-        const next = vi.fn() as NextFunction;
-        const request = {
-            headers: {
-                cookie: "__Host-expenseflow_refresh=synthetic-refresh-token",
-            },
-        } as Request;
-
-        await handler(request, response, next);
-
-        expect(sessionService.logout).toHaveBeenCalledWith(
-            "synthetic-refresh-token",
-        );
-        expect(response.clearCookieMock).toHaveBeenCalledWith(
-            "__Host-expenseflow_refresh",
-            {
-                httpOnly: true,
-                path: "/v1/auth",
-                sameSite: "none",
-                secure: true,
-            },
-        );
-        expect(response.statusMock).toHaveBeenCalledWith(204);
-        expect(response.sendMock).toHaveBeenCalledOnce();
+        const jsonBody = response.jsonMock.mock.calls[0]?.[0] as
+            | Record<string, unknown>
+            | undefined;
+        expect(jsonBody).not.toHaveProperty("refreshToken");
+        expect(jsonBody).not.toHaveProperty("refreshTokenExpiresAt");
         expect(next).not.toHaveBeenCalled();
     });
 
@@ -248,7 +165,7 @@ void describe("login controller", () => {
         const loginService: LoginService = {
             login: vi.fn(() => Promise.reject(new MfaRequiredError())),
         };
-        const handler = createPostLogin(loginService);
+        const handler = createPostLogin(loginService, { secure: false });
         const response = createResponse();
         const next = vi.fn() as NextFunction;
         const request = {
