@@ -1,0 +1,62 @@
+flowchart LR
+    employee[Employee]
+    reviewer[Finance Admin or<br/>Department Manager]
+
+    subgraph employeeClient[Employee client trust boundary]
+        employeePortal[Employee Portal]
+    end
+
+    subgraph internalClient[Internal user client trust boundary]
+        financeWorkspace[Internal Finance Workspace]
+    end
+
+    subgraph expenseflow[ExpenseFlow application boundary]
+        identity[Identity boundary<br/>Authentication, MFA, role and tenant claims]
+        core[Core Case Service<br/>Submission, approval workflow,<br/>payment stub and audit recording]
+        gl[GL Coding Service<br/>AP coding and deductibility]
+        consumer[Stage-transition consumer<br/>Event validation and idempotent projection]
+    end
+
+    subgraph sharedStorage[Shared data-store boundary]
+        caseStore[(PostgreSQL<br/>Expense Reports, approvals,<br/>payment stubs, audit trail and outbox)]
+        glStore[(GL mapping and<br/>coding-output tables)]
+        receiptStore[(Receipt object store<br/>S3-compatible storage)]
+        projectionStore[(Stage-transition<br/>projection store)]
+    end
+
+    subgraph eventBoundary[Managed event-messaging boundary]
+        outbox[Durable stage-transition outbox]
+        sns[SNS topic]
+        sqs[SQS queue]
+        dlq[SQS dead-letter queue]
+    end
+
+    employee -->|submit expense report and receipt| employeePortal
+    reviewer -->|approve, reject, code and reconcile| financeWorkspace
+
+    employeePortal -->|authenticated API requests| identity
+    financeWorkspace -->|authenticated API requests| identity
+    identity -->|signed role and tenant claims| employeePortal
+    identity -->|signed role and tenant claims| financeWorkspace
+
+    employeePortal -->|submission and status requests<br/>tenant derived from claims| core
+    financeWorkspace -->|approval, AP Review and reconciliation<br/>tenant and role derived from claims| core
+    core -->|authorize with role and tenant claims| identity
+
+    core -->|tenant predicate and database constraints<br/>Expense Report, approval, payment-stub and audit reads/writes| caseStore
+    core -->|authorized receipt-metadata lookup, then<br/>tenant-prefixed object access| receiptStore
+    core -->|AP Review line items and tenant context| gl
+    gl -->|tenant predicate and database constraints<br/>mapping and coding reads/writes| glStore
+    gl -->|validated coding result| core
+
+    core -->|write tenant-bearing transition event| outbox
+    outbox -->|publish validated CloudEvent| sns
+    sns -->|topic policy delivery| sqs
+    sqs -->|tenant-bearing event| consumer
+    consumer -->|validate tenant and event schema;<br/>idempotent projection write| projectionStore
+    sqs -->|failed delivery or processing| dlq
+
+    classDef store fill:#eef6ff,stroke:#2563eb,stroke-width:2px;
+    class caseStore,glStore,receiptStore,projectionStore store;
+    classDef event fill:#fff7ed,stroke:#c2410c,stroke-width:2px;
+    class outbox,sns,sqs,dlq event;
