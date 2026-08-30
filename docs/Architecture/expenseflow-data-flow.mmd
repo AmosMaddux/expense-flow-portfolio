@@ -21,10 +21,10 @@ flowchart LR
         caseStore[(PostgreSQL<br/>Expense Reports, approvals,<br/>payment stubs, audit trail and outbox)]
         glStore[(GL mapping and<br/>coding-output tables)]
         receiptStore[(Receipt object store<br/>S3-compatible storage)]
-        projectionStore[(Stage-transition<br/>projection store)]
-        idempotencyStore[(DynamoDB<br/>tenant-scoped idempotency records)]
+        projectionStore[(DynamoDB<br/>tenant-scoped dashboard and<br/>Case Queue projections)]
+        idempotencyStore[(Redis<br/>tenant-scoped idempotency<br/>locks and completed results)]
         rateLimitStore[(PostgreSQL<br/>tenant rate-limit windows)]
-        cacheStore[(Redis<br/>tenant-keyed case-queue cache)]
+        cacheStore[(Redis<br/>tenant-keyed Case Queue<br/>rollup cache)]
     end
 
     subgraph eventBoundary[Managed event-messaging boundary]
@@ -48,7 +48,7 @@ flowchart LR
 
     core -->|tenant predicate and database constraints<br/>Expense Report, approval, payment-stub and audit reads/writes| caseStore
     core -->|authorized receipt-metadata lookup, then<br/>tenant-prefixed object access| receiptStore
-    core -->|tenant-scoped idempotency key check and record<br/>prevents duplicate payment-stub mutations| idempotencyStore
+    core -->|tenant-scoped lock and completed-result check<br/>prevents duplicate idempotent mutations| idempotencyStore
     core -->|tenant-scoped rate-limit window check and update| rateLimitStore
     core -->|tenant-keyed queue cache read, write and invalidation| cacheStore
     core -->|AP Review line items and tenant context| gl
