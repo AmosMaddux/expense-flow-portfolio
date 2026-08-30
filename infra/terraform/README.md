@@ -159,8 +159,9 @@ scripts/aws/e2e/deploy-demo.sh
 What it does: runs the full scripted demo deploy. It generates sandbox secrets,
 deploys the JWT issuer, applies the persistent ECR root, imports existing ECR
 repositories into that root when needed, builds and pushes images, applies
-runtime Terraform, deploys the SPA, runs migrations and demo seeding through
-the bastion, and runs the ZAP API scan.
+runtime Terraform, applies the `vector` extension through the bastion, deploys
+the SPA, runs migrations through the bastion, applies GL-coding's readonly
+table grants, runs demo seeding, and runs the ZAP API scan.
 
 The script is idempotent and safe to rerun. It deploys real, billed AWS
 infrastructure and does not tear anything down afterward.
@@ -294,6 +295,10 @@ Cause: GL-coding's readonly database role and the `vector` extension require
 Terraform's PostgreSQL provider to reach private RDS through the bastion. If
 `RUN_READONLY_ROLE_STEP=false` was used, GL-coding's readonly role secret may
 not have an `AWSCURRENT` value, so ECS cannot start the GL-coding task.
+
+On a fresh database, the `vector` extension is applied before migrations, while
+readonly table grants are applied after migrations create `gl_code` and
+`gl_mapping`.
 
 Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`, or omit the
 variable because it is the default. Add `SKIP_SPA_DEPLOY=true`,
