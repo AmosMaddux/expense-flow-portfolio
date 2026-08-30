@@ -37,6 +37,21 @@ function createAuthClientMock(loginRole: Role): AuthClient {
     };
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
+function setBrowserPath(path: string): void {
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function RoutedApp({
     authClient,
     fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -102,12 +117,12 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    window.history.pushState(null, "", "/");
+    setBrowserPath("/");
 });
 
 describe("ExpenseFlowRouter", () => {
     test("redirects unauthenticated users from protected routes to login", async () => {
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
@@ -120,7 +135,7 @@ describe("ExpenseFlowRouter", () => {
     });
 
     test("mounts the existing auth sign-in screen at the login route", async () => {
-        window.history.pushState(null, "", "/login");
+        setBrowserPath("/login");
         render(
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
@@ -133,7 +148,7 @@ describe("ExpenseFlowRouter", () => {
 
     test("signs in from the login route and lands on the role dashboard", async () => {
         const authClient = createAuthClientMock("Employee");
-        window.history.pushState(null, "", "/login");
+        setBrowserPath("/login");
         render(<RoutedApp authClient={authClient} />);
 
         await submitSignIn();
@@ -151,7 +166,7 @@ describe("ExpenseFlowRouter", () => {
 
     test("returns Employees to an allowed protected deep link after sign-in", async () => {
         const authClient = createAuthClientMock("Employee");
-        window.history.pushState(null, "", "/submit-expense");
+        setBrowserPath("/submit-expense");
         render(<RoutedApp authClient={authClient} />);
 
         await submitSignIn();
@@ -165,7 +180,7 @@ describe("ExpenseFlowRouter", () => {
     test("returns an Employee to Log Mileage after direct-link sign-in", async () => {
         const authClient = createAuthClientMock("Employee");
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            if (input === "/v1/expense-reports/drafts/current") {
+            if (requestPath(input) === "/v1/expense-reports/drafts/current") {
                 return Promise.resolve(
                     new Response(
                         JSON.stringify({
@@ -194,7 +209,7 @@ describe("ExpenseFlowRouter", () => {
                 ),
             );
         });
-        window.history.pushState(null, "", "/log-mileage");
+        setBrowserPath("/log-mileage");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -216,11 +231,7 @@ describe("ExpenseFlowRouter", () => {
         "ignores an unauthorized or external post-login redirect: %s",
         async (redirect) => {
             const authClient = createAuthClientMock("Employee");
-            window.history.pushState(
-                null,
-                "",
-                `/login?redirect=${encodeURIComponent(redirect)}`,
-            );
+            setBrowserPath(`/login?redirect=${encodeURIComponent(redirect)}`);
             render(<RoutedApp authClient={authClient} />);
 
             await submitSignIn();
@@ -244,7 +255,7 @@ describe("ExpenseFlowRouter", () => {
             vi.mocked(authClient.refresh).mockResolvedValue(
                 createSession(role),
             );
-            window.history.pushState(null, "", "/login");
+            setBrowserPath("/login");
             render(<RoutedApp authClient={authClient} />);
 
             expect(
@@ -263,7 +274,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Finance Admin", ["Finance Admin", "Employee"]),
         );
-        window.history.pushState(null, "", "/my-submissions");
+        setBrowserPath("/my-submissions");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -284,7 +295,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Department Manager"),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Approval Queue" });
@@ -315,7 +326,7 @@ describe("ExpenseFlowRouter", () => {
                 }),
             ),
         );
-        window.history.pushState(null, "", "/expense-reports");
+        setBrowserPath("/expense-reports");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -348,7 +359,7 @@ describe("ExpenseFlowRouter", () => {
                 }),
             ),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -378,7 +389,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Finance Admin"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Finance Dashboard" });
@@ -394,7 +405,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Employee"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -408,7 +419,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Department Manager"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Approval Queue" });
@@ -490,7 +501,7 @@ describe("ExpenseFlowRouter", () => {
                 ),
             ),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -508,7 +519,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Employee"),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -526,7 +537,7 @@ describe("ExpenseFlowRouter", () => {
             createSession("Employee"),
         );
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            if (input === "/v1/expense-reports/drafts/current") {
+            if (requestPath(input) === "/v1/expense-reports/drafts/current") {
                 return Promise.resolve(
                     new Response(
                         JSON.stringify({
@@ -555,7 +566,7 @@ describe("ExpenseFlowRouter", () => {
                 ),
             );
         });
-        window.history.pushState(null, "", "/log-mileage");
+        setBrowserPath("/log-mileage");
         render(
             <RoutedApp
                 authClient={authClient}

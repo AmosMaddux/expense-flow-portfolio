@@ -81,6 +81,16 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 function assistResponse(
     response: Partial<{
         answer: string;
@@ -180,9 +190,15 @@ describe("AssistPanel", () => {
             screen.queryByText(/Synthetic unrelated policy text/u),
         ).toBeNull();
         const [input, init] = fetchImplementation.mock.calls[0] ?? [];
-        expect(input).toBe("/v1/assist");
+        expect(input === undefined ? undefined : requestPath(input)).toBe(
+            "/v1/assist",
+        );
         expect(init?.method).toBe("POST");
-        expect(JSON.parse(String(init?.body))).toEqual({
+        const requestBody = init?.body;
+        if (typeof requestBody !== "string") {
+            throw new Error("Expected Assist request body to be a string.");
+        }
+        expect(JSON.parse(requestBody)).toEqual({
             question: "Is this reimbursable?",
             caseContext: { expenseReportId: reportId, lineItemId },
         });
@@ -216,7 +232,7 @@ describe("AssistPanel", () => {
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledTimes(1),
         );
-        await act(async () => {
+        act(() => {
             resolveResponse?.(createJsonResponse({}, { status: 500 }));
         });
 
@@ -246,7 +262,7 @@ describe("AssistPanel", () => {
         );
 
         renderForContext(defaultCaseContext(otherReportId));
-        await act(async () => {
+        act(() => {
             resolveResponse?.(
                 createJsonResponse(
                     assistResponse({

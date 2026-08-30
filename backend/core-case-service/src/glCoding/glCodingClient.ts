@@ -48,7 +48,11 @@ const glCodedItemSchema = z.object({
     mapping_status: z.enum(["mapped", "unmapped"]),
     gl_account: glAccountSchema.nullable(),
     amount: z.string().nullable().optional(),
-    currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional(),
+    currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .nullable()
+        .optional(),
     flagged_line_item: z.boolean(),
 });
 

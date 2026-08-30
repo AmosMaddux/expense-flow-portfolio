@@ -739,9 +739,7 @@ export async function submitExpenseReport(
                     merchant: item.merchant,
                     amount: item.amount,
                     currency: item.currency,
-                    category: item.category as Parameters<
-                        typeof codeExpenseLineItems
-                    >[1]["line_items"][number]["category"],
+                    category: item.category,
                 })),
                 mileage: sources.mileageEntries.map((entry) => ({
                     mileage_entry_id: entry.id,

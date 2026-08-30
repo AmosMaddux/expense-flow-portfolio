@@ -567,9 +567,9 @@ void describe("login repository", () => {
             tenantId,
             email: "refresh-active@example.invalid",
         });
-        await db.insert(role).values([
-            { tenantId, userId, name: "Department Manager" },
-        ]);
+        await db
+            .insert(role)
+            .values([{ tenantId, userId, name: "Department Manager" }]);
 
         const repository = createDrizzleLoginCredentialRepository(db);
 
@@ -639,9 +639,7 @@ void describe("login repository", () => {
             }),
         ]);
 
-        expect([firstRotation, secondRotation].filter(Boolean)).toHaveLength(
-            1,
-        );
+        expect([firstRotation, secondRotation].filter(Boolean)).toHaveLength(1);
 
         const previousRow = await db
             .select({ revokedAt: refreshToken.revokedAt })

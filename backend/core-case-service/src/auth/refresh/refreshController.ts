@@ -8,7 +8,10 @@ import {
     readRefreshTokenCookie,
 } from "../shared/refreshTokenCookie.js";
 import type { LogoutService } from "./logoutService.js";
-import { TokenOutboundResponseSchema, type RefreshService } from "./refreshService.js";
+import {
+    TokenOutboundResponseSchema,
+    type RefreshService,
+} from "./refreshService.js";
 
 /**
  * Creates the HTTP handler that rotates a refresh token cookie into a fresh
@@ -24,9 +27,7 @@ export function createPostRefresh(
         next: NextFunction,
     ): Promise<void> => {
         try {
-            const rawRefreshToken = readRefreshTokenCookie(
-                req.headers.cookie,
-            );
+            const rawRefreshToken = readRefreshTokenCookie(req.headers.cookie);
             const { result, refreshToken, refreshTokenExpiresAt } =
                 await refreshService.refresh(rawRefreshToken);
 
@@ -69,9 +70,7 @@ export function createPostLogout(
         next: NextFunction,
     ): Promise<void> => {
         try {
-            const rawRefreshToken = readRefreshTokenCookie(
-                req.headers.cookie,
-            );
+            const rawRefreshToken = readRefreshTokenCookie(req.headers.cookie);
             await logoutService.logout(rawRefreshToken);
 
             res.append(

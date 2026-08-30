@@ -30,7 +30,8 @@ void describe("httpRequestLoggingMiddleware", () => {
     test("emits request and error metrics for 5xx responses", () => {
         const req = {
             method: "GET",
-            originalUrl: "/v1/expense-reports/60000000-0000-4000-8000-000000000001/transitions?foo=bar",
+            originalUrl:
+                "/v1/expense-reports/60000000-0000-4000-8000-000000000001/transitions?foo=bar",
             auth: {
                 tenantId: "40000000-0000-4000-8000-000000000001",
             },

@@ -72,7 +72,6 @@ export async function loadExpensePolicyCorpus(
 
     const results = await Promise.all(
         selectedPolicies.map(async (policy) => {
-            
             const chunks = chunkExpensePolicyCorpus({
                 tenantId: policy.tenantId,
                 policyText: policy.policyText,

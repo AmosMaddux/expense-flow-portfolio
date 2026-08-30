@@ -415,8 +415,6 @@ void describe("problemJsonErrorHandler", () => {
         expect(loggedEvent).toBeDefined();
         expect(loggedEvent).not.toHaveProperty("message");
         expect(loggedEvent).not.toHaveProperty("stack");
-        expect(JSON.stringify(loggedEvent)).not.toContain(
-            "database password",
-        );
+        expect(JSON.stringify(loggedEvent)).not.toContain("database password");
     });
 });

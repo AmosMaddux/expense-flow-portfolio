@@ -24,9 +24,9 @@ void describe("chunkExpensePolicyCorpus", () => {
         if (firstChunk === undefined || secondChunk === undefined) {
             throw new Error("Expected at least two chunks.");
         }
-        expect(secondChunk.content.startsWith(firstChunk.content.slice(-150))).toBe(
-            true,
-        );
+        expect(
+            secondChunk.content.startsWith(firstChunk.content.slice(-150)),
+        ).toBe(true);
         expect(chunks.map((chunk) => chunk.chunkIndex)).toStrictEqual(
             chunks.map((_, index) => index),
         );

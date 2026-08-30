@@ -104,8 +104,12 @@ describe("refresh service", () => {
         expect(outcome.result.tenantId).toBe(tenantId);
         expect(outcome.result.userId).toBe(userId);
         expect(outcome.result.accessToken).not.toBe("");
-        const rotateCall = repository.rotateRefreshTokenMock.mock.calls[0]?.[0] as
-            | { previousTokenId: string; token: { tenantId: string; userId: string } }
+        const rotateCall = repository.rotateRefreshTokenMock.mock
+            .calls[0]?.[0] as
+            | {
+                  previousTokenId: string;
+                  token: { tenantId: string; userId: string };
+              }
             | undefined;
         expect(rotateCall?.previousTokenId).toBe(storedTokenId);
         expect(rotateCall?.token.tenantId).toBe(tenantId);
@@ -135,9 +139,9 @@ describe("refresh service", () => {
             testAuthJwtConfig,
         );
 
-        await expect(
-            service.refresh(tamperedToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(tamperedToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
     });
 
     test("rejects a refresh token that is not recorded in the database", async () => {
@@ -152,9 +156,9 @@ describe("refresh service", () => {
             testAuthJwtConfig,
         );
 
-        await expect(
-            service.refresh(rawRefreshToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(rawRefreshToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
         expect(repository.rotateRefreshTokenMock).not.toHaveBeenCalled();
     });
 
@@ -177,9 +181,9 @@ describe("refresh service", () => {
             testAuthJwtConfig,
         );
 
-        await expect(
-            service.refresh(rawRefreshToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(rawRefreshToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
         expect(repository.rotateRefreshTokenMock).not.toHaveBeenCalled();
     });
 
@@ -202,9 +206,9 @@ describe("refresh service", () => {
             testAuthJwtConfig,
         );
 
-        await expect(
-            service.refresh(rawRefreshToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(rawRefreshToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
         expect(repository.revokeRefreshTokenMock).toHaveBeenCalledWith(
             storedTokenId,
         );
@@ -230,9 +234,9 @@ describe("refresh service", () => {
             testAuthJwtConfig,
         );
 
-        await expect(
-            service.refresh(rawRefreshToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(rawRefreshToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
     });
 
     test("rejects an expired refresh token", async () => {
@@ -247,9 +251,9 @@ describe("refresh service", () => {
             () => new Date("2026-08-04T12:00:00.000Z"),
         );
 
-        await expect(
-            service.refresh(rawRefreshToken),
-        ).rejects.toBeInstanceOf(UnauthorizedError);
+        await expect(service.refresh(rawRefreshToken)).rejects.toBeInstanceOf(
+            UnauthorizedError,
+        );
     });
 
     test("returns updated roles picked up since the token was issued", async () => {

@@ -41,9 +41,7 @@ export function initializeTracing(serviceName: string): void {
             "deployment.environment.name": "sandbox",
         }),
         spanProcessors: [
-            new BatchSpanProcessor(
-                new OTLPTraceExporter({ url: endpoint }) as never,
-            ),
+            new BatchSpanProcessor(new OTLPTraceExporter({ url: endpoint })),
         ],
     });
     trace.setGlobalTracerProvider(tracerProvider);
@@ -83,7 +81,8 @@ export function buildDownstreamTraceHeader(
 
     return formatXRayTraceHeader(
         spanContext,
-        (spanContext.traceFlags & TraceFlags.SAMPLED) === TraceFlags.SAMPLED,
+        (spanContext.traceFlags & Number(TraceFlags.SAMPLED)) ===
+            Number(TraceFlags.SAMPLED),
     );
 }
 
@@ -126,7 +125,9 @@ export function startChildSpan(
         {
             kind: SpanKind.CLIENT,
             attributes: Object.fromEntries(
-                Object.entries(attributes).filter(([, value]) => value !== undefined),
+                Object.entries(attributes).filter(
+                    ([, value]) => value !== undefined,
+                ),
             ),
         },
         trace.setSpan(context.active(), parentSpan),
@@ -152,4 +153,3 @@ export function finishSpan(span: Span | undefined, statusCode: number): void {
     }
     span.end();
 }
-

@@ -7,7 +7,7 @@ import {
     useLocation,
     useNavigate,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
@@ -117,7 +117,11 @@ const routeTree = rootRoute.addChildren([
     authenticatedRoute.addChildren(protectedRoutes),
 ]);
 
-export const router = createRouter({ routeTree });
+function createExpenseFlowRouter() {
+    return createRouter({ routeTree });
+}
+
+export const router = createExpenseFlowRouter();
 
 declare module "@tanstack/react-router" {
     interface Register {
@@ -129,7 +133,9 @@ declare module "@tanstack/react-router" {
  * Provides the authenticated ExpenseFlow route tree.
  */
 export function ExpenseFlowRouter(): JSX.Element {
-    return <RouterProvider router={router} />;
+    const appRouter = useMemo(() => createExpenseFlowRouter(), []);
+
+    return <RouterProvider router={appRouter} />;
 }
 
 function IndexRedirect(): JSX.Element {

@@ -14,11 +14,7 @@ import {
 } from "vitest";
 
 import * as schema from "../db/schema/index.js";
-import {
-    referenceDataAuditEntry,
-    role,
-    user,
-} from "../db/schema/index.js";
+import { referenceDataAuditEntry, role, user } from "../db/schema/index.js";
 import { ConflictError, NotFoundError } from "../errors/problem-json.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
 import {
@@ -235,7 +231,10 @@ describe("Team Users repository", () => {
             );
         expect(roleRows).toStrictEqual([{ name: "Finance Admin" }]);
 
-        const auditRows = await readAuditRows(context.tenantA, context.employeeA);
+        const auditRows = await readAuditRows(
+            context.tenantA,
+            context.employeeA,
+        );
         expect(auditRows).toHaveLength(1);
         expect(auditRows[0]).toMatchObject({ action: "user_role_changed" });
         expect(auditRows[0]?.before).toStrictEqual({ roles: ["Employee"] });
@@ -330,7 +329,10 @@ describe("Team Users repository", () => {
         );
         expect(reactivated.status).toBe("active");
 
-        const auditRows = await readAuditRows(context.tenantA, context.employeeA);
+        const auditRows = await readAuditRows(
+            context.tenantA,
+            context.employeeA,
+        );
         expect(auditRows).toHaveLength(2);
         expect(auditRows.map((row) => row.action)).toStrictEqual([
             "user_status_changed",

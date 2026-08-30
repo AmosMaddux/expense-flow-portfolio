@@ -695,11 +695,7 @@ export async function postExpenseReportTransition(
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
         const correlationId = parseOrCreateCorrelationId(req);
-        annotateRequestTrace(
-            req,
-            correlationId,
-            "transition_expense_report",
-        );
+        annotateRequestTrace(req, correlationId, "transition_expense_report");
         res.set("X-Correlation-Id", correlationId);
         const report = await transitionExpenseReportWorkflow({
             id: parsedParams.id,

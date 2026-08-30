@@ -252,7 +252,12 @@ export function createDrizzleLoginCredentialRepository(
             await db
                 .update(refreshToken)
                 .set({ revokedAt: new Date() })
-                .where(and(eq(refreshToken.id, id), isNull(refreshToken.revokedAt)));
+                .where(
+                    and(
+                        eq(refreshToken.id, id),
+                        isNull(refreshToken.revokedAt),
+                    ),
+                );
         },
         async rotateRefreshToken(input): Promise<boolean> {
             return db.transaction(async (tx) => {
