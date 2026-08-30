@@ -22,6 +22,9 @@ flowchart LR
         glStore[(GL mapping and<br/>coding-output tables)]
         receiptStore[(Receipt object store<br/>S3-compatible storage)]
         projectionStore[(Stage-transition<br/>projection store)]
+        idempotencyStore[(DynamoDB<br/>tenant-scoped idempotency records)]
+        rateLimitStore[(PostgreSQL<br/>tenant rate-limit windows)]
+        cacheStore[(Redis<br/>tenant-keyed case-queue cache)]
     end
 
     subgraph eventBoundary[Managed event-messaging boundary]
@@ -45,6 +48,9 @@ flowchart LR
 
     core -->|tenant predicate and database constraints<br/>Expense Report, approval, payment-stub and audit reads/writes| caseStore
     core -->|authorized receipt-metadata lookup, then<br/>tenant-prefixed object access| receiptStore
+    core -->|tenant-scoped idempotency key check and record<br/>prevents duplicate payment-stub mutations| idempotencyStore
+    core -->|tenant-scoped rate-limit window check and update| rateLimitStore
+    core -->|tenant-keyed queue cache read, write and invalidation| cacheStore
     core -->|AP Review line items and tenant context| gl
     gl -->|tenant predicate and database constraints<br/>mapping and coding reads/writes| glStore
     gl -->|validated coding result| core
@@ -57,6 +63,6 @@ flowchart LR
     sqs -->|failed delivery or processing| dlq
 
     classDef store fill:#eef6ff,stroke:#2563eb,stroke-width:2px;
-    class caseStore,glStore,receiptStore,projectionStore store;
+    class caseStore,glStore,receiptStore,projectionStore,idempotencyStore,rateLimitStore,cacheStore store;
     classDef event fill:#fff7ed,stroke:#c2410c,stroke-width:2px;
     class outbox,sns,sqs,dlq event;
