@@ -90,9 +90,18 @@ function assistResponse(
             section: string;
             content: string;
             score: number;
+            source: "baseline" | "retrieved";
         }>;
         expenseReportId: string;
         lineItemId: string | null;
+        policyRetrievalStatus:
+            | "baseline_and_retrieved"
+            | "baseline_only"
+            | "retrieved_only"
+            | "empty";
+        modelInvoked: boolean;
+        baselineContextCount: number;
+        retrievedContextCount: number;
     }> = {},
 ) {
     return {
@@ -105,12 +114,17 @@ function assistResponse(
                 content:
                     "Receipts are required for reimbursable transit expenses.",
                 score: 0.98,
+                source: "retrieved",
             },
         ],
         refused: false,
         abstained: false,
         refusalCategory: null,
         flagAssessment: null,
+        policyRetrievalStatus: "retrieved_only",
+        modelInvoked: true,
+        baselineContextCount: 0,
+        retrievedContextCount: 1,
         ...response,
         caseContext: {
             expenseReportId: response.expenseReportId ?? reportId,
@@ -145,6 +159,7 @@ describe("AssistPanel", () => {
                                 content:
                                     "Receipts are required for reimbursable transit expenses.",
                                 score: 0.98,
+                                source: "baseline",
                             },
                             {
                                 citation: "policy:unrelated",
@@ -152,8 +167,12 @@ describe("AssistPanel", () => {
                                 content:
                                     "Synthetic unrelated policy text must not be shown.",
                                 score: 0.75,
+                                source: "retrieved",
                             },
                         ],
+                        policyRetrievalStatus: "baseline_and_retrieved",
+                        baselineContextCount: 1,
+                        retrievedContextCount: 1,
                     }),
                 ),
             ),
@@ -177,12 +196,20 @@ describe("AssistPanel", () => {
         ).toBeTruthy();
         expect(screen.getByText(/Receipts are required/u)).toBeTruthy();
         expect(
+            screen.getByText(/Baseline and retrieved policy context/u),
+        ).toBeTruthy();
+        expect(screen.getByText(/Model reached/u)).toBeTruthy();
+        expect(screen.getByText("Baseline")).toBeTruthy();
+        expect(
             screen.queryByText(/Synthetic unrelated policy text/u),
         ).toBeNull();
         const [input, init] = fetchImplementation.mock.calls[0] ?? [];
         expect(input).toBe("/v1/assist");
         expect(init?.method).toBe("POST");
-        expect(JSON.parse(String(init?.body))).toEqual({
+        if (typeof init?.body !== "string") {
+            throw new Error("Expected a JSON request body.");
+        }
+        expect(JSON.parse(init.body)).toEqual({
             question: "Is this reimbursable?",
             caseContext: { expenseReportId: reportId, lineItemId },
         });
@@ -216,7 +243,7 @@ describe("AssistPanel", () => {
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledTimes(1),
         );
-        await act(async () => {
+        act(() => {
             resolveResponse?.(createJsonResponse({}, { status: 500 }));
         });
 
@@ -246,7 +273,7 @@ describe("AssistPanel", () => {
         );
 
         renderForContext(defaultCaseContext(otherReportId));
-        await act(async () => {
+        act(() => {
             resolveResponse?.(
                 createJsonResponse(
                     assistResponse({
@@ -275,6 +302,7 @@ describe("AssistPanel", () => {
                                 section: "Meals",
                                 content: "Meals require a business purpose.",
                                 score: 0.92,
+                                source: "retrieved",
                             },
                         ],
                     }),

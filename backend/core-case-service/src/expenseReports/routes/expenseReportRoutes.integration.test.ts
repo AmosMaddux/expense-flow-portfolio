@@ -56,6 +56,9 @@ vi.mock(
         answerPolicyQuestion: answerPolicyQuestionMock,
     }),
 );
+vi.mock("../../policyReference/policyAssistModelClient.js", () => ({
+    createOptionalPolicyAssistModelAnswerer: () => undefined,
+}));
 const einValidationAclValidateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../tinEin/tinEinValidationAcl.js", () => ({
@@ -7960,7 +7963,8 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
                 {
                     citation: "policy:synthetic",
                     section: "Synthetic policy",
-                    content: "Synthetic policy text.",
+                    content:
+                        "Any expense line item over 500 dollars is flagged.",
                     score: 1,
                 },
             ],
@@ -8026,6 +8030,18 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
         expect(success.status).toBe(200);
         await expect(success.json()).resolves.toMatchObject({
             caseContext: { expenseReportId: reportA, lineItemId: lineItemA },
+            expenseReportFindings: [
+                {
+                    severity: "warning",
+                    type: "amount_threshold",
+                },
+            ],
+            flagAssessment: {
+                amount: "501.00",
+                isFlagged: true,
+                rule: "line_item_amount_over_500",
+                threshold: "500.00",
+            },
         });
         expect(answerPolicyQuestionMock).toHaveBeenCalledTimes(1);
         expect(

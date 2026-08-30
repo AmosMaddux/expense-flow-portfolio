@@ -824,13 +824,18 @@
                                 },
                                 "score": {
                                     "type": "number"
+                                },
+                                "source": {
+                                    "type": "string",
+                                    "enum": ["baseline", "retrieved"]
                                 }
                             },
                             "required": [
                                 "citation",
                                 "section",
                                 "content",
-                                "score"
+                                "score",
+                                "source"
                             ],
                             "additionalProperties": false
                         }
@@ -891,6 +896,81 @@
                             "rule"
                         ],
                         "additionalProperties": false
+                    },
+                    "expenseReportFindings": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "policy_match",
+                                        "missing_receipt",
+                                        "amount_threshold",
+                                        "deductibility_review",
+                                        "insufficient_context"
+                                    ]
+                                },
+                                "severity": {
+                                    "type": "string",
+                                    "enum": ["info", "warning"]
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                },
+                                "relatedLineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "citations": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            },
+                            "required": [
+                                "type",
+                                "severity",
+                                "summary",
+                                "relatedLineItemId",
+                                "citations"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "recommendedNextActions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 240
+                        },
+                        "maxItems": 5
+                    },
+                    "policyRetrievalStatus": {
+                        "type": "string",
+                        "enum": [
+                            "baseline_and_retrieved",
+                            "baseline_only",
+                            "retrieved_only",
+                            "empty"
+                        ]
+                    },
+                    "modelInvoked": {
+                        "type": "boolean"
+                    },
+                    "baselineContextCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "retrievedContextCount": {
+                        "type": "integer",
+                        "minimum": 0
                     }
                 },
                 "required": [
@@ -901,7 +981,13 @@
                     "abstained",
                     "refusalCategory",
                     "caseContext",
-                    "flagAssessment"
+                    "flagAssessment",
+                    "expenseReportFindings",
+                    "recommendedNextActions",
+                    "policyRetrievalStatus",
+                    "modelInvoked",
+                    "baselineContextCount",
+                    "retrievedContextCount"
                 ],
                 "additionalProperties": false
             },

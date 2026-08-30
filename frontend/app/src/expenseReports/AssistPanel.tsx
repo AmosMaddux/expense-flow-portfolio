@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 
 import { useSession } from "../auth";
-import { Button } from "../components";
+import { Badge, Button } from "../components";
 import { QueryRequestError } from "../query/queryClient";
 
 export type AssistPanelLineItem = {
@@ -24,6 +24,7 @@ const assistResponseSchema = z.object({
             section: z.string(),
             content: z.string(),
             score: z.number(),
+            source: z.enum(["baseline", "retrieved"]),
         }),
     ),
     refused: z.boolean(),
@@ -41,6 +42,35 @@ const assistResponseSchema = z.object({
             rule: z.literal("line_item_amount_over_500"),
         })
         .nullable(),
+    expenseReportFindings: z
+        .array(
+            z.object({
+                type: z.enum([
+                    "policy_match",
+                    "missing_receipt",
+                    "amount_threshold",
+                    "deductibility_review",
+                    "insufficient_context",
+                ]),
+                severity: z.enum(["info", "warning"]),
+                summary: z.string(),
+                relatedLineItemId: z.uuid().nullable(),
+                citations: z.array(z.string()),
+            }),
+        )
+        .default([]),
+    recommendedNextActions: z.array(z.string()).default([]),
+    policyRetrievalStatus: z
+        .enum([
+            "baseline_and_retrieved",
+            "baseline_only",
+            "retrieved_only",
+            "empty",
+        ])
+        .default("empty"),
+    modelInvoked: z.boolean().default(false),
+    baselineContextCount: z.number().int().nonnegative().default(0),
+    retrievedContextCount: z.number().int().nonnegative().default(0),
 });
 
 type AssistResponse = z.infer<typeof assistResponseSchema>;
@@ -212,6 +242,15 @@ export function AssistPanel({
             {answer === null ? null : (
                 <article aria-live="polite">
                     <p>{answer.answer}</p>
+                    <p className="assist-panel__diagnostics">
+                        {formatPolicyRetrievalStatus(
+                            answer.policyRetrievalStatus,
+                        )}
+                        {" · "}
+                        {answer.modelInvoked
+                            ? "Model reached"
+                            : "Policy-only answer"}
+                    </p>
                     {answer.flagAssessment === null ? null : (
                         <p>
                             Deterministic flag rule:{" "}
@@ -226,6 +265,46 @@ export function AssistPanel({
                             .
                         </p>
                     )}
+                    {answer.expenseReportFindings.length === 0 ? null : (
+                        <section aria-labelledby="assist-findings-heading">
+                            <h5 id="assist-findings-heading">
+                                Expense Report findings
+                            </h5>
+                            <ul className="assist-panel__findings">
+                                {answer.expenseReportFindings.map(
+                                    (finding, index) => (
+                                        <li
+                                            key={`${finding.type}-${String(index)}`}
+                                        >
+                                            <Badge
+                                                tone={
+                                                    finding.severity ===
+                                                    "warning"
+                                                        ? "warning"
+                                                        : "info"
+                                                }
+                                            >
+                                                {formatFindingType(
+                                                    finding.type,
+                                                )}
+                                            </Badge>
+                                            <p>{finding.summary}</p>
+                                        </li>
+                                    ),
+                                )}
+                            </ul>
+                        </section>
+                    )}
+                    {answer.recommendedNextActions.length === 0 ? null : (
+                        <section aria-labelledby="assist-actions-heading">
+                            <h5 id="assist-actions-heading">Next actions</h5>
+                            <ul className="assist-panel__actions">
+                                {answer.recommendedNextActions.map((action) => (
+                                    <li key={action}>{action}</li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
                     {citedContexts.length === 0 ? null : (
                         <section aria-labelledby="assist-sources-heading">
                             <h5 id="assist-sources-heading">Policy sources</h5>
@@ -235,6 +314,17 @@ export function AssistPanel({
                                         key={`${context.citation}-${context.section}`}
                                     >
                                         <strong>{context.section}</strong>
+                                        <Badge
+                                            tone={
+                                                context.source === "baseline"
+                                                    ? "info"
+                                                    : "neutral"
+                                            }
+                                        >
+                                            {context.source === "baseline"
+                                                ? "Baseline"
+                                                : "Retrieved"}
+                                        </Badge>
                                         <p>{context.content}</p>
                                         <span>
                                             Citation: {context.citation}
@@ -248,4 +338,36 @@ export function AssistPanel({
             )}
         </section>
     );
+}
+
+function formatFindingType(
+    type: AssistResponse["expenseReportFindings"][number]["type"],
+): string {
+    switch (type) {
+        case "amount_threshold":
+            return "Amount threshold";
+        case "deductibility_review":
+            return "Deductibility review";
+        case "insufficient_context":
+            return "Insufficient context";
+        case "missing_receipt":
+            return "Missing receipt";
+        case "policy_match":
+            return "Policy match";
+    }
+}
+
+function formatPolicyRetrievalStatus(
+    status: AssistResponse["policyRetrievalStatus"],
+): string {
+    switch (status) {
+        case "baseline_and_retrieved":
+            return "Baseline and retrieved policy context";
+        case "baseline_only":
+            return "Baseline policy context";
+        case "empty":
+            return "No policy context found";
+        case "retrieved_only":
+            return "Retrieved policy context";
+    }
 }
