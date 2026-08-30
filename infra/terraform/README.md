@@ -63,8 +63,9 @@ rules.
 
 ## Sign In Instructions
 
-Use the CloudFront URL printed by `deploy-demo.sh` after a successful deploy,
-or resolve it again with Terraform when you need it.
+Use the CloudFront SPA URL printed by `deploy-demo.sh` after a successful deploy,
+or resolve it again with Terraform when you need it. The demo script also prints
+the public Core Case API ALB URL used for sandbox smoke/debug.
 
 ### Retrieve The CloudFront URL
 
@@ -76,6 +77,31 @@ printf 'https://%s\n' "$(AWS_PROFILE=expenseflow-smoke \
 ```
 
 What it does: prints the CloudFront URL for the deployed SPA.
+
+### Retrieve The Core Case API Gateway URL
+
+Command:
+
+```bash
+AWS_PROFILE=expenseflow-smoke \
+  terraform -chdir=infra/terraform/environments/sandbox output -raw core_case_api_gateway_base_url
+```
+
+What it does: prints the HTTPS API Gateway origin that the CloudFront SPA uses
+for browser-safe `/v1/*` Core Case requests.
+
+### Retrieve The Direct Public ALB Origin
+
+Command:
+
+```bash
+printf 'http://%s\n' "$(AWS_PROFILE=expenseflow-smoke \
+  terraform -chdir=infra/terraform/environments/sandbox output -raw public_alb_dns_name)"
+```
+
+What it does: prints the public HTTP ALB origin behind the API Gateway proxy.
+This remains directly reachable in the small sandbox setup. A future private
+version should move API Gateway to a VPC Link integration with the internal ALB.
 
 All seeded accounts use this synthetic password:
 
@@ -133,8 +159,9 @@ scripts/aws/e2e/deploy-demo.sh
 What it does: runs the full scripted demo deploy. It generates sandbox secrets,
 deploys the JWT issuer, applies the persistent ECR root, imports existing ECR
 repositories into that root when needed, builds and pushes images, applies
-runtime Terraform, deploys the SPA, runs migrations and demo seeding through
-the bastion, and runs the ZAP API scan.
+runtime Terraform, applies the `vector` extension through the bastion, deploys
+the SPA, runs migrations through the bastion, applies GL-coding's readonly
+table grants, runs demo seeding, and runs the ZAP API scan.
 
 The script is idempotent and safe to rerun. It deploys real, billed AWS
 infrastructure and does not tear anything down afterward.
@@ -150,7 +177,7 @@ Optional environment variables:
 | `VITE_TENANT_ID` | Primary synthetic tenant ID | Tenant baked into the SPA build. |
 | `HTTP_API_LAMBDA_VPC_ID` | Discovered from `EXISTING_VPC_NAME` | Override the VPC used by the Issue Payment Lambda. |
 | `EXISTING_VPC_NAME` | `project-vpc` | Existing sandbox VPC `Name` tag used when discovering `HTTP_API_LAMBDA_VPC_ID`. |
-| `RUN_READONLY_ROLE_STEP` | `false` | Also apply GL-coding's readonly database role and the `vector` extension through a bastion SSM tunnel. |
+| `RUN_READONLY_ROLE_STEP` | `true` | Apply GL-coding's readonly database role and the `vector` extension through a bastion SSM tunnel. Set to `false` only for a partial deploy where GL-coding is intentionally not verified. |
 | `READONLY_ROLE_STEP_LOCAL_PORT` | `15432` | Local port for the readonly-role SSM tunnel. |
 | `ZAP_IMAGE` | Pinned `ghcr.io/zaproxy/zaproxy` digest | Override the ZAP scan container image. |
 
@@ -256,12 +283,18 @@ set `HTTP_API_LAMBDA_VPC_ID` and rerun the script.
 ### GL-Coding Tasks Stay Unhealthy
 
 Cause: GL-coding's readonly database role and the `vector` extension require
-Terraform's PostgreSQL provider to reach private RDS through the bastion. The
-main deploy skips that step unless `RUN_READONLY_ROLE_STEP=true`.
+Terraform's PostgreSQL provider to reach private RDS through the bastion. If
+`RUN_READONLY_ROLE_STEP=false` was used, GL-coding's readonly role secret may
+not have an `AWSCURRENT` value, so ECS cannot start the GL-coding task.
 
-Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`. Add
-`SKIP_SPA_DEPLOY=true`, `SKIP_BASTION_SEED=true`, and `SKIP_ZAP_SCAN=true` if
-you only want to complete the database role/extension step.
+On a fresh database, the `vector` extension is applied before migrations, while
+readonly table grants are applied after migrations create `gl_code` and
+`gl_mapping`.
+
+Fix: rerun `deploy-demo.sh` with `RUN_READONLY_ROLE_STEP=true`, or omit the
+variable because it is the default. Add `SKIP_SPA_DEPLOY=true`,
+`SKIP_BASTION_SEED=true`, and `SKIP_ZAP_SCAN=true` if you only want to complete
+the database role/extension step.
 
 ### ZAP Scan Fails After Deploy
 
