@@ -231,6 +231,12 @@ void describe("answerAssistQuestion", () => {
         expect(answerer).toHaveBeenCalledTimes(1);
         expect(response.flagAssessment?.isFlagged).toBe(true);
         expect(response.citations).toContain("policy:threshold");
+        expect(response.answerSummary).toContain("Needs review");
+        expect(response.findingBadges.map((badge) => badge.label)).toContain(
+            "Over $500",
+        );
+        expect(response.policyEvidence[0]?.citation).toBe("policy:threshold");
+        expect(response.modelInvoked).toBe(false);
     });
 
     void test("returns deterministic flag guidance even when retrieved citations miss the threshold", async () => {
@@ -295,6 +301,15 @@ void describe("answerAssistQuestion", () => {
             .fn<PolicyAssistModelAnswerer>()
             .mockResolvedValue({
                 answer: "Synthetic Merchant has a receipt and cites policy:receipts.",
+                answerSummary:
+                    "Synthetic Merchant has receipt support for reviewer validation.",
+                reviewConclusion: "potentially_reimbursable",
+                reimbursabilityAssessment: {
+                    status: "potentially_reimbursable",
+                    reason: "The selected line item has receipt metadata.",
+                },
+                flagAssessmentNarrative:
+                    "500.01 is over the $500.00 line-item flag threshold.",
                 citations: ["policy:receipts", "policy:not-retrieved"],
                 abstained: false,
                 expenseReportFindings: [
@@ -306,6 +321,30 @@ void describe("answerAssistQuestion", () => {
                         citations: ["policy:receipts", "policy:not-retrieved"],
                     },
                 ],
+                findingBadges: [
+                    {
+                        type: "review_conclusion",
+                        label: "Potentially reimbursable",
+                        tone: "success",
+                    },
+                    {
+                        type: "policy_match",
+                        label: "Receipt present",
+                        tone: "success",
+                    },
+                ],
+                policyEvidence: [
+                    {
+                        summary:
+                            "Receipts are required for reimbursable transit expenses.",
+                        citation: "policy:receipts",
+                    },
+                    {
+                        summary: "This unsupported citation must be removed.",
+                        citation: "policy:not-retrieved",
+                    },
+                ],
+                missingInformation: [],
                 recommendedNextActions: ["Compare the receipt to the policy."],
             });
 
@@ -392,6 +431,16 @@ void describe("answerAssistQuestion", () => {
         expect(response.expenseReportFindings[0]?.citations).toStrictEqual([
             "policy:receipts",
         ]);
+        expect(response.findingBadges.map((badge) => badge.label)).toContain(
+            "Receipt present",
+        );
+        expect(response.policyEvidence).toStrictEqual([
+            {
+                summary:
+                    "Receipts are required for reimbursable transit expenses.",
+                citation: "policy:receipts",
+            },
+        ]);
         expect(response.recommendedNextActions).toStrictEqual([
             "Compare the receipt to the policy.",
         ]);
@@ -416,6 +465,15 @@ void describe("answerAssistQuestion", () => {
             .fn<PolicyAssistModelAnswerer>()
             .mockResolvedValue({
                 answer: "The selected line item exceeds the review threshold.",
+                answerSummary:
+                    "The selected line item needs review because it exceeds the threshold.",
+                reviewConclusion: "needs_review",
+                reimbursabilityAssessment: {
+                    status: "needs_more_info",
+                    reason: "The threshold flag needs review before reimbursability is finalized.",
+                },
+                flagAssessmentNarrative:
+                    "500.01 is over the $500.00 line-item flag threshold.",
                 citations: [
                     "tenant_expense_policy:synthetic-policy-hash:chunk-0",
                 ],
@@ -432,6 +490,27 @@ void describe("answerAssistQuestion", () => {
                         ],
                     },
                 ],
+                findingBadges: [
+                    {
+                        type: "review_conclusion",
+                        label: "Needs review",
+                        tone: "warning",
+                    },
+                    {
+                        type: "amount_threshold",
+                        label: "Over $500",
+                        tone: "warning",
+                    },
+                ],
+                policyEvidence: [
+                    {
+                        summary:
+                            "Line items over $500.00 are flagged for review.",
+                        citation:
+                            "tenant_expense_policy:synthetic-policy-hash:chunk-0",
+                    },
+                ],
+                missingInformation: [],
                 recommendedNextActions: [
                     "Review the flagged line item before workflow action.",
                 ],
@@ -464,5 +543,8 @@ void describe("answerAssistQuestion", () => {
         expect(response.policyRetrievalStatus).toBe("baseline_only");
         expect(response.modelInvoked).toBe(true);
         expect(response.flagAssessment?.isFlagged).toBe(true);
+        expect(response.findingBadges.map((badge) => badge.label)).toContain(
+            "Over $500",
+        );
     });
 });

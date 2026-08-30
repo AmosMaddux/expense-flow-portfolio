@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { Express } from "express";
 import { beforeEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 
 import {
     IdempotencyRequestMismatchError,
@@ -47,6 +48,31 @@ import { getCoreCaseTestDatabaseUrl } from "../../testSupport/coreCaseTestDataba
 import { syntheticRsaPrivateKeyBase64 } from "../../testSupport/jwtTestKeys.js";
 
 const answerPolicyQuestionMock = vi.hoisted(() => vi.fn());
+const routeAssistResponseAssertionSchema = z.object({
+    caseContext: z.object({
+        expenseReportId: z.uuid(),
+        lineItemId: z.uuid().nullable(),
+    }),
+    expenseReportFindings: z.array(
+        z.object({
+            type: z.string(),
+            severity: z.string(),
+        }),
+    ),
+    findingBadges: z.array(
+        z.object({
+            label: z.string(),
+            tone: z.string(),
+        }),
+    ),
+    flagAssessment: z.object({
+        amount: z.string(),
+        isFlagged: z.boolean(),
+        rule: z.string(),
+        threshold: z.string(),
+    }),
+    reviewConclusion: z.string(),
+});
 vi.mock(
     "../../policyReference/policyAssistantService.js",
     async (importOriginal) => ({
@@ -8028,14 +8054,11 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
             validBody,
         );
         expect(success.status).toBe(200);
-        await expect(success.json()).resolves.toMatchObject({
+        const successBody = routeAssistResponseAssertionSchema.parse(
+            await success.json(),
+        );
+        expect(successBody).toMatchObject({
             caseContext: { expenseReportId: reportA, lineItemId: lineItemA },
-            expenseReportFindings: [
-                {
-                    severity: "warning",
-                    type: "amount_threshold",
-                },
-            ],
             flagAssessment: {
                 amount: "501.00",
                 isFlagged: true,
@@ -8043,6 +8066,20 @@ FOR EACH ROW EXECUTE FUNCTION ${functionName}();
                 threshold: "500.00",
             },
         });
+        expect(
+            successBody.expenseReportFindings.some(
+                (finding) =>
+                    finding.type === "amount_threshold" &&
+                    finding.severity === "warning",
+            ),
+        ).toBe(true);
+        expect(
+            successBody.findingBadges.some(
+                (badge) =>
+                    badge.label === "Over $500" && badge.tone === "warning",
+            ),
+        ).toBe(true);
+        expect(successBody.reviewConclusion).toBe("needs_review");
         expect(answerPolicyQuestionMock).toHaveBeenCalledTimes(1);
         expect(
             (

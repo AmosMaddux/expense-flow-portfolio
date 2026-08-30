@@ -17,6 +17,29 @@ export type AssistPanelCaseContext = {
 
 const assistResponseSchema = z.object({
     answer: z.string(),
+    answerSummary: z.string().default("No summary was returned."),
+    reviewConclusion: z
+        .enum([
+            "potentially_reimbursable",
+            "not_reimbursable",
+            "needs_review",
+            "insufficient_context",
+        ])
+        .default("insufficient_context"),
+    reimbursabilityAssessment: z
+        .object({
+            status: z.enum([
+                "potentially_reimbursable",
+                "not_reimbursable",
+                "needs_more_info",
+            ]),
+            reason: z.string(),
+        })
+        .default({
+            status: "needs_more_info",
+            reason: "No reimbursability assessment was returned.",
+        }),
+    flagAssessmentNarrative: z.string().nullable().default(null),
     citations: z.array(z.string()),
     contexts: z.array(
         z.object({
@@ -59,6 +82,39 @@ const assistResponseSchema = z.object({
             }),
         )
         .default([]),
+    findingBadges: z
+        .array(
+            z.object({
+                type: z.enum([
+                    "policy_match",
+                    "missing_receipt",
+                    "amount_threshold",
+                    "deductibility_review",
+                    "insufficient_context",
+                    "review_conclusion",
+                    "policy_context",
+                    "model_status",
+                ]),
+                label: z.string(),
+                tone: z.enum([
+                    "neutral",
+                    "info",
+                    "success",
+                    "warning",
+                    "danger",
+                ]),
+            }),
+        )
+        .default([]),
+    policyEvidence: z
+        .array(
+            z.object({
+                summary: z.string(),
+                citation: z.string(),
+            }),
+        )
+        .default([]),
+    missingInformation: z.array(z.string()).default([]),
     recommendedNextActions: z.array(z.string()).default([]),
     policyRetrievalStatus: z
         .enum([
@@ -241,7 +297,25 @@ export function AssistPanel({
             ) : null}
             {answer === null ? null : (
                 <article aria-live="polite">
-                    <p>{answer.answer}</p>
+                    {answer.findingBadges.length === 0 ? null : (
+                        <div
+                            className="assist-panel__badge-row"
+                            aria-label="Assist result badges"
+                        >
+                            {answer.findingBadges.map((badge, index) => (
+                                <Badge
+                                    key={`${badge.type}-${badge.label}-${String(index)}`}
+                                    tone={badge.tone}
+                                >
+                                    {badge.label}
+                                </Badge>
+                            ))}
+                        </div>
+                    )}
+                    <section aria-labelledby="assist-summary-heading">
+                        <h5 id="assist-summary-heading">Summary</h5>
+                        <p>{answer.answerSummary}</p>
+                    </section>
                     <p className="assist-panel__diagnostics">
                         {formatPolicyRetrievalStatus(
                             answer.policyRetrievalStatus,
@@ -251,6 +325,26 @@ export function AssistPanel({
                             ? "Model reached"
                             : "Policy-only answer"}
                     </p>
+                    <section aria-labelledby="assist-reimbursability-heading">
+                        <h5 id="assist-reimbursability-heading">
+                            Reimbursability
+                        </h5>
+                        <p>
+                            <strong>
+                                {formatReimbursabilityStatus(
+                                    answer.reimbursabilityAssessment.status,
+                                )}
+                            </strong>
+                            {": "}
+                            {answer.reimbursabilityAssessment.reason}
+                        </p>
+                    </section>
+                    {answer.flagAssessmentNarrative === null ? null : (
+                        <section aria-labelledby="assist-flag-heading">
+                            <h5 id="assist-flag-heading">Flag review</h5>
+                            <p>{answer.flagAssessmentNarrative}</p>
+                        </section>
+                    )}
                     {answer.flagAssessment === null ? null : (
                         <p>
                             Deterministic flag rule:{" "}
@@ -292,6 +386,35 @@ export function AssistPanel({
                                         </li>
                                     ),
                                 )}
+                            </ul>
+                        </section>
+                    )}
+                    {answer.policyEvidence.length === 0 ? null : (
+                        <section aria-labelledby="assist-evidence-heading">
+                            <h5 id="assist-evidence-heading">
+                                Policy evidence
+                            </h5>
+                            <ul className="assist-panel__evidence">
+                                {answer.policyEvidence.map((evidence) => (
+                                    <li key={evidence.citation}>
+                                        <p>{evidence.summary}</p>
+                                        <span>
+                                            Citation: {evidence.citation}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
+                    {answer.missingInformation.length === 0 ? null : (
+                        <section aria-labelledby="assist-missing-heading">
+                            <h5 id="assist-missing-heading">
+                                Missing information
+                            </h5>
+                            <ul className="assist-panel__missing">
+                                {answer.missingInformation.map((item) => (
+                                    <li key={item}>{item}</li>
+                                ))}
                             </ul>
                         </section>
                     )}
@@ -369,5 +492,18 @@ function formatPolicyRetrievalStatus(
             return "No policy context found";
         case "retrieved_only":
             return "Retrieved policy context";
+    }
+}
+
+function formatReimbursabilityStatus(
+    status: AssistResponse["reimbursabilityAssessment"]["status"],
+): string {
+    switch (status) {
+        case "needs_more_info":
+            return "Needs more information";
+        case "not_reimbursable":
+            return "Not reimbursable";
+        case "potentially_reimbursable":
+            return "Potentially reimbursable";
     }
 }

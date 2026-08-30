@@ -12,6 +12,14 @@ void describe("createPolicyAssistModelAnswer", () => {
                     JSON.stringify({
                         output_text: JSON.stringify({
                             answer: "The receipt policy applies.",
+                            answerSummary:
+                                "The selected line item appears potentially reimbursable with receipt support.",
+                            reviewConclusion: "potentially_reimbursable",
+                            reimbursabilityAssessment: {
+                                status: "potentially_reimbursable",
+                                reason: "The selected line item has matching receipt metadata.",
+                            },
+                            flagAssessmentNarrative: null,
                             citations: ["policy:receipts"],
                             abstained: false,
                             expenseReportFindings: [
@@ -24,6 +32,26 @@ void describe("createPolicyAssistModelAnswer", () => {
                                     citations: ["policy:receipts"],
                                 },
                             ],
+                            findingBadges: [
+                                {
+                                    type: "review_conclusion",
+                                    label: "Potentially reimbursable",
+                                    tone: "success",
+                                },
+                                {
+                                    type: "policy_match",
+                                    label: "Receipt present",
+                                    tone: "success",
+                                },
+                            ],
+                            policyEvidence: [
+                                {
+                                    summary:
+                                        "Receipts are required for transit expenses.",
+                                    citation: "policy:receipts",
+                                },
+                            ],
+                            missingInformation: [],
                             recommendedNextActions: [
                                 "Compare the receipt amount with the line item.",
                             ],
@@ -80,6 +108,7 @@ void describe("createPolicyAssistModelAnswer", () => {
                         section: "Receipts",
                         content: "Receipts are required for transit expenses.",
                         score: 1,
+                        source: "retrieved",
                     },
                 ],
             },
@@ -96,6 +125,9 @@ void describe("createPolicyAssistModelAnswer", () => {
         );
 
         expect(answer.answer).toBe("The receipt policy applies.");
+        expect(answer.findingBadges.map((badge) => badge.label)).toContain(
+            "Potentially reimbursable",
+        );
         const [url, init] = fetchImplementation.mock.calls[0] ?? [];
         expect(url).toBe("https://api.openai.com/v1/responses");
         expect(init?.headers).toMatchObject({

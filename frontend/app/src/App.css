@@ -3315,12 +3315,22 @@ button:disabled {
 }
 
 .assist-panel__actions,
+.assist-panel__evidence,
 .assist-panel__findings,
+.assist-panel__missing,
 .assist-panel__sources {
     display: grid;
     gap: 0.75rem;
     margin: 0.75rem 0 0;
     padding-left: 1.25rem;
+}
+
+.assist-panel__badge-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
 }
 
 .assist-panel__diagnostics {
@@ -3335,6 +3345,7 @@ button:disabled {
 }
 
 .assist-panel__actions li,
+.assist-panel__evidence p,
 .assist-panel__findings p,
 .assist-panel__sources p {
     margin: 0.25rem 0;
