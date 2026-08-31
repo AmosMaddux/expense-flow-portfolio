@@ -768,6 +768,13 @@ export const referenceDataAuditEntry = pgTable(
             table.actorId,
             table.createdAt,
         ),
+        // Serves the Platform Admin Audit Log's deliberately cross-tenant
+        // global read (ORDER BY created_at DESC, id DESC): the tenant-scoped
+        // indexes above can't back that scan or its keyset pagination.
+        index("reference_data_audit_entry_created_at_id_idx").on(
+            table.createdAt.desc(),
+            table.id.desc(),
+        ),
     ],
 );
 

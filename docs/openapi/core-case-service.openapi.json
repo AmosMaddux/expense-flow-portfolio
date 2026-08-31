@@ -978,6 +978,96 @@
                     ]
                 }
             },
+            "AuditLogEntryPageResponse": {
+                "type": "object",
+                "properties": {
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "tenantId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "actor": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                        },
+                                        "email": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "displayName": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "email",
+                                        "displayName"
+                                    ]
+                                },
+                                "entityType": {
+                                    "type": "string",
+                                    "enum": [
+                                        "gl_mapping",
+                                        "user"
+                                    ]
+                                },
+                                "entityId": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                "action": {
+                                    "type": "string",
+                                    "enum": [
+                                        "gl_mapping_updated",
+                                        "user_invited",
+                                        "user_role_changed",
+                                        "user_status_changed"
+                                    ]
+                                },
+                                "occurredAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "tenantId",
+                                "actor",
+                                "entityType",
+                                "entityId",
+                                "action",
+                                "occurredAt"
+                            ]
+                        }
+                    },
+                    "nextCursor": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "events",
+                    "nextCursor"
+                ]
+            },
             "CaseCommentListResponse": {
                 "type": "array",
                 "items": {
@@ -2313,6 +2403,24 @@
                     "cursor": {
                         "type": "string",
                         "minLength": 1
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ReadAuditLogEventsRequest": {
+                "type": "object",
+                "properties": {
+                    "cursor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "pageSize": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50
                     }
                 },
                 "additionalProperties": false
@@ -5056,6 +5164,96 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/TenantSummaryListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid bearer access token.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Platform administration is limited to Platform Admins.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimitExceeded"
+                    },
+                    "500": {
+                        "description": "Unexpected server error.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/platform-admin/audit-log": {
+            "get": {
+                "summary": "List recent cross-tenant administrative audit events",
+                "description": "Loads one keyset-paginated page of administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "required": false,
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        },
+                        "required": false,
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Audit log events found.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditLogEntryPageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed audit log request.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemJson"
                                 }
                             }
                         }
