@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const dbReturningMock = vi.hoisted(() => vi.fn());
 const dbValuesMock = vi.hoisted(() =>
-    vi.fn(() => ({
-        returning: dbReturningMock,
-    })),
+    vi.fn((values: unknown) => {
+        void values;
+        return {
+            returning: dbReturningMock,
+        };
+    }),
 );
 const dbInsertMock = vi.hoisted(() =>
     vi.fn(() => ({
@@ -141,11 +144,9 @@ void describe("alertDisposition service", () => {
             investigatedBy: syntheticInvestigatorId,
         });
 
-        expect(dbValuesMock).toHaveBeenCalledWith(
-            expect.objectContaining({
-                resolvedAt: expect.any(Date),
-            }),
-        );
+        const insertedDisposition = dbValuesMock.mock.calls[0]?.[0] as
+            { resolvedAt?: unknown } | undefined;
+        expect(insertedDisposition?.resolvedAt).toBeInstanceOf(Date);
         expect(response.resolvedAt).toStrictEqual(resolvedAt);
         expect(logCoreCaseInfoMock).toHaveBeenCalledWith(
             expect.objectContaining({

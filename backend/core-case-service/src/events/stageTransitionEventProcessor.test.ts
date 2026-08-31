@@ -29,11 +29,18 @@ const syntheticEvent = {
     },
 };
 
-function createStore(): StageTransitionProjectionStore & {
-    project: ReturnType<typeof vi.fn>;
+function createStore(): {
+    project: ReturnType<
+        typeof vi.fn<StageTransitionProjectionStore["project"]>
+    >;
+    store: StageTransitionProjectionStore;
 } {
+    const project = vi
+        .fn<StageTransitionProjectionStore["project"]>()
+        .mockResolvedValue(undefined);
     return {
-        project: vi.fn().mockResolvedValue(undefined),
+        project,
+        store: { project },
     };
 }
 
@@ -43,7 +50,7 @@ void describe("stage-transition event processor", () => {
     });
 
     void test("validates and projects one SQS event body", async () => {
-        const store = createStore();
+        const { project, store } = createStore();
 
         const event = await processStageTransitionEventBody(
             JSON.stringify(syntheticEvent),
@@ -51,7 +58,7 @@ void describe("stage-transition event processor", () => {
         );
 
         expect(event).toStrictEqual(syntheticEvent);
-        expect(store.project).toHaveBeenCalledExactlyOnceWith(syntheticEvent);
+        expect(project).toHaveBeenCalledExactlyOnceWith(syntheticEvent);
         expect(logCoreCaseMetricMock).toHaveBeenCalledWith(
             expect.objectContaining({
                 eventType: "stage_transition_consumer",
@@ -63,7 +70,7 @@ void describe("stage-transition event processor", () => {
     });
 
     void test("rejects malformed events without updating the projection", async () => {
-        const store = createStore();
+        const { project, store } = createStore();
 
         await expect(
             processStageTransitionEventBody(
@@ -77,7 +84,7 @@ void describe("stage-transition event processor", () => {
                 store,
             ),
         ).rejects.toThrow();
-        expect(store.project).not.toHaveBeenCalled();
+        expect(project).not.toHaveBeenCalled();
         expect(logCoreCaseMetricMock).not.toHaveBeenCalled();
     });
 });

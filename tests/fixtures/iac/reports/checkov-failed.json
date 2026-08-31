@@ -1,12 +1,12 @@
 {
-  "results": {
-    "failed_checks": [
-      {
-        "check_id": "CKV_AWS_999",
-        "check_name": "Synthetic failed Terraform check",
-        "file_path": "tests/fixtures/iac/insecure/main.tf",
-        "resource": "aws_security_group.synthetic"
-      }
-    ]
-  }
+    "results": {
+        "failed_checks": [
+            {
+                "check_id": "CKV_AWS_999",
+                "check_name": "Synthetic failed Terraform check",
+                "file_path": "tests/fixtures/iac/insecure/main.tf",
+                "resource": "aws_security_group.synthetic"
+            }
+        ]
+    }
 }

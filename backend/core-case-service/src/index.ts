@@ -59,7 +59,8 @@ async function startCoreCaseService(): Promise<void> {
 startCoreCaseService().catch((error: unknown) => {
     logCoreCaseInfo({
         eventType: "service_startup_failed",
-        error: error instanceof Error ? error.message : "Unknown startup error.",
+        error:
+            error instanceof Error ? error.message : "Unknown startup error.",
         service: "core-case-service",
     });
     process.exit(1);

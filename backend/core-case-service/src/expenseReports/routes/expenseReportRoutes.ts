@@ -23,6 +23,7 @@ import {
     getMySubmissions,
     postExpenseReportFlagClear,
     postExpenseReportLineItemReview,
+    postExpenseReportPaymentStubSettlement,
     postExpenseReportSourceReview,
     postDraftExpenseContent,
     postExpenseReportSubmission,
@@ -99,6 +100,10 @@ expenseReportRouter.post(
 expenseReportRouter.post(
     "/expense-reports/:id/transitions",
     postExpenseReportTransition,
+);
+expenseReportRouter.post(
+    "/expense-reports/:id/payment-stub-settlement",
+    postExpenseReportPaymentStubSettlement,
 );
 expenseReportRouter.post(
     "/internal/expense-reports/:id/payment-stub-settlement",

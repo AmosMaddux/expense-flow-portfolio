@@ -71,14 +71,10 @@ void describe.skipIf(!shouldRunLocalStackRedriveTests)(
                 tenantId,
                 expenseReportId,
             );
-            const store: StageTransitionProjectionStore & {
-                project: ReturnType<typeof vi.fn>;
-            } = {
-                project: vi.fn(),
-            };
-            store.project.mockRejectedValue(
-                new Error("synthetic projection failure"),
-            );
+            const project = vi
+                .fn<StageTransitionProjectionStore["project"]>()
+                .mockRejectedValue(new Error("synthetic projection failure"));
+            const store: StageTransitionProjectionStore = { project };
 
             try {
                 await db.insert(expenseReport).values({
@@ -133,7 +129,7 @@ void describe.skipIf(!shouldRunLocalStackRedriveTests)(
                             currentStage: "Manager Approval",
                         });
                         expect(failedProjectionRows).toHaveLength(0);
-                        expect(store.project).toHaveBeenCalled();
+                        expect(project).toHaveBeenCalled();
                         return;
                     }
                 }

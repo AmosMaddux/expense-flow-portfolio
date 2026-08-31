@@ -72,14 +72,6 @@ export function createMileageEntryInboundRequestSchema(
 export const CreateMileageEntryInboundRequestSchema =
     createMileageEntryInboundRequestSchema();
 
-export const expenseCategories = [
-    "Travel",
-    "Meals",
-    "Lodging",
-    "Office Supplies",
-    "Software",
-    "Other",
-] as const;
 export const receiptContentTypes = [
     "application/pdf",
     "image/png",
@@ -91,7 +83,7 @@ const DraftLineItemInboundSchema = z
     .object({
         merchant: z.string().trim().min(1).max(240),
         expenseDate: z.iso.date(),
-        category: z.enum(expenseCategories),
+        category: z.string().trim().min(1).max(100),
         amount: z.number().positive().max(9_999_999_999.99).multipleOf(0.01),
         currency: z.literal("USD"),
     })
@@ -217,7 +209,7 @@ export const DraftExpenseContentOutboundResponseSchema = z.object({
             id: z.uuid(),
             merchant: z.string(),
             expenseDate: z.iso.date(),
-            category: z.enum(expenseCategories),
+            category: z.string(),
             amount: z.number().nonnegative(),
             currency: z.literal("USD"),
         }),

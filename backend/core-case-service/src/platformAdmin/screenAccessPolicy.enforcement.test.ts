@@ -86,7 +86,10 @@ describe("screenAccessPolicy stays in sync with real enforcement", () => {
 
             for (const role of roleValues) {
                 const next = vi.fn();
-                const res = { status: vi.fn(() => res), json: vi.fn(() => res) };
+                const res = {
+                    status: vi.fn(() => res),
+                    json: vi.fn(() => res),
+                };
                 const req = {
                     auth: { tenantId, userId, roles: [role] as RoleName[] },
                     params: {},

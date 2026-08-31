@@ -19,7 +19,9 @@ export function httpRequestLoggingMiddleware(
 ): void {
     res.on("finish", () => {
         const tenantId = req.auth?.tenantId ?? "unknown";
-        const route = normalizePath(req.originalUrl.split("?")[0] ?? req.originalUrl);
+        const route = normalizePath(
+            req.originalUrl.split("?")[0] ?? req.originalUrl,
+        );
         const traceId = req.tracing?.span.spanContext().traceId ?? "unknown";
         const correlationId = req.tracing?.correlationId ?? "unknown";
         const baseEvent = {

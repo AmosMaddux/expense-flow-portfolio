@@ -34,6 +34,7 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     StageTransitionCorrelationHeaderSchema,
     SubmitExpenseReportInboundRequestSchema,
     SubmitExpenseReportOperationResultSchema,
@@ -92,6 +93,8 @@ const createExpenseReportRouteLogName = "POST /v1/expense-reports";
 const auditEntriesRouteLogName = "GET /v1/expense-reports/:id/audit-entries";
 const transitionExpenseReportRouteLogName =
     "POST /v1/expense-reports/:id/transitions";
+const paymentStubSettlementRouteLogName =
+    "POST /v1/expense-reports/:id/payment-stub-settlement";
 const internalPaymentStubSettlementRouteLogName =
     "POST /v1/internal/expense-reports/:id/payment-stub-settlement";
 
@@ -692,11 +695,7 @@ export async function postExpenseReportTransition(
         const parsedRequest =
             TransitionExpenseReportWorkflowInboundRequestSchema.parse(req.body);
         const correlationId = parseOrCreateCorrelationId(req);
-        annotateRequestTrace(
-            req,
-            correlationId,
-            "transition_expense_report",
-        );
+        annotateRequestTrace(req, correlationId, "transition_expense_report");
         res.set("X-Correlation-Id", correlationId);
         const report = await transitionExpenseReportWorkflow({
             id: parsedParams.id,
@@ -747,6 +746,63 @@ export async function postExpenseReportTransition(
             route: transitionExpenseReportRouteLogName,
             service: "core-case-service",
             tenantId: req.auth?.tenantId ?? "unknown",
+        });
+        next(error);
+    }
+}
+
+/**
+ * Handles authenticated internal reviewer payment-stub settlement requests.
+ */
+export async function postExpenseReportPaymentStubSettlement(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    let parsedExpenseReportId: string | undefined;
+
+    try {
+        const auth = requireAuthContext(req);
+        const parsedParams = GetExpenseReportInboundRequestSchema.parse({
+            id: req.params.id,
+        });
+        parsedExpenseReportId = parsedParams.id;
+        const parsedRequest = SettleExpenseReportInboundRequestSchema.parse(
+            req.body ?? {},
+        );
+        const correlationId = parseOrCreateCorrelationId(req);
+        const idempotencyKey = parseIdempotencyKey(req);
+        res.set("X-Correlation-Id", correlationId);
+        const report = await settleExpenseReportWorkflow({
+            id: parsedParams.id,
+            tenantId: auth.tenantId,
+            actorId: auth.userId,
+            roles: auth.roles,
+            reason:
+                parsedRequest.reason ??
+                "Finance Admin completed payment stub settlement.",
+            correlationId,
+            idempotencyKey,
+        });
+
+        logExpenseReportAuditSuccess({
+            action: "payment_stub_settlement_applied",
+            actorId: auth.userId,
+            expenseReportId: parsedParams.id,
+            currentStage: report.currentStage,
+            route: paymentStubSettlementRouteLogName,
+            tenantId: auth.tenantId,
+            toStage: report.currentStage,
+        });
+        res.status(200).json(report);
+    } catch (error: unknown) {
+        logExpenseReportAuditError({
+            action: "payment_stub_settlement_applied",
+            actorId: req.auth?.userId,
+            error,
+            expenseReportId: parsedExpenseReportId,
+            route: paymentStubSettlementRouteLogName,
+            tenantId: req.auth?.tenantId,
         });
         next(error);
     }

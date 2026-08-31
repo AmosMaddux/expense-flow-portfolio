@@ -63,6 +63,16 @@ function createJsonResponse(body: unknown, status = 200): Response {
     });
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 function renderMileageScreen(fetchImplementation: typeof fetch): void {
     const queryClient = new QueryClient({
         defaultOptions: {
@@ -87,7 +97,8 @@ function renderMileageScreen(fetchImplementation: typeof fetch): void {
 
 function createMileageFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
     return vi.fn<typeof fetch>((input, init) => {
-        if (input === "/v1/expense-reports/drafts/current") {
+        const path = requestPath(input);
+        if (path === "/v1/expense-reports/drafts/current") {
             return Promise.resolve(
                 createJsonResponse({
                     id: reportId,
@@ -95,7 +106,7 @@ function createMileageFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
                 }),
             );
         }
-        if (input === "/v1/expense-reports/config/mileage") {
+        if (path === "/v1/expense-reports/config/mileage") {
             return Promise.resolve(
                 createJsonResponse({
                     ratePerMile: 0.7,
@@ -104,7 +115,7 @@ function createMileageFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
             );
         }
         if (
-            input === `/v1/expense-reports/${reportId}/mileage-entries` &&
+            path === `/v1/expense-reports/${reportId}/mileage-entries` &&
             init?.method === "POST"
         ) {
             return Promise.resolve(
@@ -221,8 +232,12 @@ describe("LogMileageScreen", () => {
                 .getAttribute("href"),
         ).toBe("/submit-expense");
         await waitFor(() => {
-            expect(fetchImplementation).toHaveBeenCalledWith(
-                `/v1/expense-reports/${reportId}/mileage-entries`,
+            const mileageRequest = fetchImplementation.mock.calls.find(
+                ([input]) =>
+                    requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/mileage-entries`,
+            );
+            expect(mileageRequest?.[1]).toEqual(
                 expect.objectContaining({
                     method: "POST",
                     body: JSON.stringify({
@@ -231,11 +246,6 @@ describe("LogMileageScreen", () => {
                         mileageDate: "2026-07-23",
                     }),
                 }),
-            );
-            const mileageRequest = fetchImplementation.mock.calls.find(
-                ([input]) =>
-                    input ===
-                    `/v1/expense-reports/${reportId}/mileage-entries`,
             );
             expect(
                 new Headers(mileageRequest?.[1]?.headers).get(

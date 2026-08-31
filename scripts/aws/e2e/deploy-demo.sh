@@ -16,12 +16,12 @@ set -euo pipefail
 #      consumer Lambda images, tagged with the current UTC timestamp so
 #      re-runs never collide with the ECR repositories' IMMUTABLE tag
 #      setting.
-#   5. Runs the full terraform apply with everything wired together. This
-#      also creates the bastion (module.bastion). GL-coding's least-privilege
-#      database role and the "vector" extension
-#      (module.database_core_case's readonly_roles/extensions) are applied in
-#      step 5b through a bastion SSM tunnel, because Terraform's postgresql
-#      provider must reach private RDS directly.
+#   5. Runs the full terraform apply with everything wired together. On a
+#      fresh deploy, this creates the bastion (module.bastion) before the
+#      PostgreSQL-managed resources are applied in step 5b. On a redeploy
+#      where those PostgreSQL resources already exist in state, this apply
+#      runs through the bastion SSM tunnel too, because Terraform must refresh
+#      those state entries before it can plan anything else.
 #   6. Builds the SPA with VITE_TENANT_ID baked in and deploys it to the SPA
 #      bucket + CloudFront.
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
@@ -51,6 +51,7 @@ set -euo pipefail
 
 EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
+export AWS_PROFILE
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 export AWS_PAGER=""
@@ -130,7 +131,9 @@ if [[ "$AUTO_APPROVE" == "true" ]]; then
 fi
 
 terraform_apply() {
-    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" "$@"
+    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
+        "$@"
 }
 
 terraform_state_has() {
@@ -158,6 +161,7 @@ forget_database_privileged_state() {
 
 terraform_ecr_apply() {
     terraform -chdir="$ECR_TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$@"
@@ -173,11 +177,21 @@ resolve_http_api_lambda_vpc_id() {
         return
     fi
 
-    local discovered_vpc_id
-    discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
+    local discovered_vpc_id describe_vpcs_error
+    describe_vpcs_error="$(mktemp)"
+    if ! discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
         --filters "Name=tag:Name,Values=$EXISTING_VPC_NAME" "Name=tag:env,Values=sandbox" \
         --query "Vpcs[0].VpcId" \
-        --output text)"
+        --output text 2>"$describe_vpcs_error")"; then
+        echo "Could not query sandbox VPCs with AWS_PROFILE=$AWS_PROFILE in $AWS_REGION:" >&2
+        cat "$describe_vpcs_error" >&2
+        rm -f "$describe_vpcs_error"
+        echo >&2
+        echo "If the AWS error is RequestExpired, refresh the AWS profile credentials" >&2
+        echo "and check that the local clock is synchronized before rerunning." >&2
+        exit 1
+    fi
+    rm -f "$describe_vpcs_error"
 
     if [[ -z "$discovered_vpc_id" || "$discovered_vpc_id" == "None" ]]; then
         echo "Could not discover sandbox VPC by tags Name=$EXISTING_VPC_NAME and env=sandbox." >&2
@@ -211,6 +225,7 @@ import_existing_ecr_repository() {
 
     echo "  Importing existing $repository_name into persistent ECR Terraform state."
     terraform -chdir="$ECR_TERRAFORM_DIR" import -input=false \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$resource_address" "$repository_name"
@@ -302,26 +317,25 @@ core_case_image_uri="$core_case_repository_url:$IMAGE_TAG"
 gl_coding_image_uri="$gl_coding_repository_url:$IMAGE_TAG"
 stage_transition_lambda_image_uri="$stage_transition_lambda_repository_url:$IMAGE_TAG"
 
-echo "=== 5/7: Full terraform apply ==="
-forget_database_privileged_state
-terraform_apply \
-    -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-    -var="enable_nat_gateway=false" \
-    -var="db_enable_enhanced_monitoring=false" \
-    -var="allow_plain_http_public_api=true" \
-    -var="core_case_internal_routes_enabled=true" \
-    -var="core_case_repository_url=$core_case_repository_url" \
-    -var="core_case_repository_arn=$core_case_repository_arn" \
-    -var="gl_coding_repository_url=$gl_coding_repository_url" \
-    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-    -var="core_case_image_uri=$core_case_image_uri" \
-    -var="gl_coding_image_uri=$gl_coding_image_uri" \
+terraform_runtime_vars=(
+    -var="http_api_jwt_issuer=$http_api_jwt_issuer"
+    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn"
+    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn"
+    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn"
+    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn"
+    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN"
+    -var="enable_nat_gateway=false"
+    -var="db_enable_enhanced_monitoring=false"
+    -var="allow_plain_http_public_api=true"
+    -var="core_case_internal_routes_enabled=true"
+    -var="core_case_repository_url=$core_case_repository_url"
+    -var="core_case_repository_arn=$core_case_repository_arn"
+    -var="gl_coding_repository_url=$gl_coding_repository_url"
+    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url"
+    -var="core_case_image_uri=$core_case_image_uri"
+    -var="gl_coding_image_uri=$gl_coding_image_uri"
     -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri"
+)
 
 tf_output() {
     terraform -chdir="$TERRAFORM_DIR" output -raw "$1"
@@ -407,23 +421,7 @@ run_database_privileged_step() {
             -var="postgresql_provider_host=localhost" \
             -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
             -var="db_readonly_roles_and_extensions_enabled=true" \
-            -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-            -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-            -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-            -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-            -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-            -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-            -var="enable_nat_gateway=false" \
-            -var="db_enable_enhanced_monitoring=false" \
-            -var="allow_plain_http_public_api=true" \
-            -var="core_case_internal_routes_enabled=true" \
-            -var="core_case_repository_url=$core_case_repository_url" \
-            -var="core_case_repository_arn=$core_case_repository_arn" \
-            -var="gl_coding_repository_url=$gl_coding_repository_url" \
-            -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-            -var="core_case_image_uri=$core_case_image_uri" \
-            -var="gl_coding_image_uri=$gl_coding_image_uri" \
-            -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri" \
+            "${terraform_runtime_vars[@]}" \
             "$resource_address" "$resource_id" >/dev/null 2>&1
     }
 
@@ -442,28 +440,18 @@ run_database_privileged_step() {
         -var="postgresql_provider_host=localhost" \
         -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
         -var="db_readonly_roles_and_extensions_enabled=true" \
-        -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-        -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-        -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-        -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-        -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-        -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-        -var="enable_nat_gateway=false" \
-        -var="db_enable_enhanced_monitoring=false" \
-        -var="allow_plain_http_public_api=true" \
-        -var="core_case_internal_routes_enabled=true" \
-        -var="core_case_repository_url=$core_case_repository_url" \
-        -var="core_case_repository_arn=$core_case_repository_arn" \
-        -var="gl_coding_repository_url=$gl_coding_repository_url" \
-        -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-        -var="core_case_image_uri=$core_case_image_uri" \
-        -var="gl_coding_image_uri=$gl_coding_image_uri" \
-        -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri" \
+        "${terraform_runtime_vars[@]}" \
         || apply_status=$?
     unset db_password
 
     return "$apply_status"
 }
+
+echo "=== 5/7: Full terraform apply ==="
+forget_database_privileged_state
+terraform_apply \
+    -var="db_readonly_roles_and_extensions_enabled=false" \
+    "${terraform_runtime_vars[@]}"
 
 if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
     echo "=== 5b/7: Applying vector extension (bastion tunnel) ==="

@@ -163,7 +163,9 @@ export async function updateTeamUserRole(
         const [existingUser] = await transaction
             .select({ id: user.id })
             .from(user)
-            .where(and(eq(user.tenantId, input.tenantId), eq(user.id, input.id)))
+            .where(
+                and(eq(user.tenantId, input.tenantId), eq(user.id, input.id)),
+            )
             .limit(1)
             .for("update");
 

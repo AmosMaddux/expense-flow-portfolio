@@ -2,34 +2,25 @@ import os
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
-from typing import Mapping, Protocol
+from typing import Annotated, Mapping, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from backend.python.domain_exceptions import (
     MalformedCurrencyError,
     InvalidMileageRateError,
     NegativeAmountError,
-    UnknownExpenseCategoryError,
 )
 
 MILEAGE_REIMBURSEMENT_RATE_ENVIRONMENT_VARIABLE = "MILEAGE_REIMBURSEMENT_RATE"
 DEFAULT_MILEAGE_REIMBURSEMENT_RATE = Decimal("0.70")
 MILEAGE_REIMBURSEMENT_CURRENCY = "USD"
 LINE_ITEM_FLAG_THRESHOLD = Decimal("500.00")
-
-
-class ExpenseCategory(StrEnum):
-    """List baseline expense categories accepted by the GL-coding contract."""
-
-    TRAVEL = "Travel"
-    MEALS = "Meals"
-    LODGING = "Lodging"
-    MILEAGE = "Mileage"
-    OFFICE_SUPPLIES = "Office Supplies"
-    SOFTWARE = "Software"
-    OTHER = "Other"
+ExpenseCategory = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+]
+MILEAGE_EXPENSE_CATEGORY = "Mileage"
 
 
 class GlSourceType(StrEnum):
@@ -89,18 +80,6 @@ class GlCodingLineItemRequest(BaseModel):
 
         return value
 
-    @field_validator("category", mode="before")
-    @classmethod
-    def validate_known_category(cls, value: str) -> str:
-        """Reject categories that are outside the GL-coding request contract."""
-        if not isinstance(value, str):
-            raise UnknownExpenseCategoryError(value)
-
-        if value not in {category.value for category in ExpenseCategory}:
-            raise UnknownExpenseCategoryError(value)
-
-        return value
-
 
 class GlCodingMileageRequest(BaseModel):
     """Validate a mileage entry submitted for GL coding."""
@@ -151,8 +130,8 @@ class GlAccountMappingRepository(Protocol):
     """Resolve tenant-scoped GL accounts for expense categories."""
 
     async def get_accounts_for_categories(
-        self, tenant_id: UUID, categories: set[ExpenseCategory]
-    ) -> dict[ExpenseCategory, GlAccount]:
+        self, tenant_id: UUID, categories: set[str]
+    ) -> dict[str, GlAccount]:
         """Return GL accounts keyed by category for the requested tenant."""
 
 
@@ -165,7 +144,7 @@ async def code_line_items_to_gl_accounts(
     """Return GL account mappings and review flags for submitted expense items."""
     categories = {line_item.category for line_item in request.line_items}
     if request.mileage:
-        categories.add(ExpenseCategory.MILEAGE)
+        categories.add(MILEAGE_EXPENSE_CATEGORY)
     accounts_by_category = await mapping_repository.get_accounts_for_categories(
         tenant_id, categories
     )
@@ -209,7 +188,7 @@ async def code_line_items_to_gl_accounts(
 
 def code_line_item_to_gl_account(
     line_item: GlCodingLineItemRequest,
-    accounts_by_category: dict[ExpenseCategory, GlAccount],
+    accounts_by_category: dict[str, GlAccount],
 ) -> GlCodedItem:
     """Return the mapped or explicitly unmapped GL coding result for one item."""
     gl_account = accounts_by_category.get(line_item.category)
@@ -233,11 +212,11 @@ def code_line_item_to_gl_account(
 
 def code_mileage_to_gl_account(
     mileage_entry: GlCodingMileageRequest,
-    accounts_by_category: dict[ExpenseCategory, GlAccount],
+    accounts_by_category: dict[str, GlAccount],
     mileage_reimbursement_rate: Decimal,
 ) -> GlCodedItem:
     """Return the GL coding result for one reimbursable mileage entry."""
-    gl_account = accounts_by_category.get(ExpenseCategory.MILEAGE)
+    gl_account = accounts_by_category.get(MILEAGE_EXPENSE_CATEGORY)
     reimbursement_amount = calculate_mileage_reimbursement(
         mileage_entry.distance, mileage_reimbursement_rate
     )
@@ -245,7 +224,7 @@ def code_mileage_to_gl_account(
     return GlCodedItem(
         source_id=mileage_entry.mileage_entry_id,
         source_type=GlSourceType.MILEAGE,
-        category=ExpenseCategory.MILEAGE,
+        category=MILEAGE_EXPENSE_CATEGORY,
         mapping_status=(
             GlMappingStatus.MAPPED
             if gl_account is not None

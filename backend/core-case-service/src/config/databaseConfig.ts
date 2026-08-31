@@ -38,8 +38,7 @@ export function loadDatabaseConfig(
         return { connectionString: parsed.data.DATABASE_URL };
     }
 
-    const { DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USERNAME } =
-        parsed.data;
+    const { DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USERNAME } = parsed.data;
     const encodedUsername = encodeURIComponent(DB_USERNAME);
     const encodedPassword = encodeURIComponent(DB_PASSWORD);
 

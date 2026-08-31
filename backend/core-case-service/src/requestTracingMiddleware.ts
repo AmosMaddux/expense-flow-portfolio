@@ -1,11 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { SpanKind } from "@opentelemetry/api";
 
-import {
-    buildSpanName,
-    finishSpan,
-    getTracer,
-} from "./tracing.js";
+import { buildSpanName, finishSpan, getTracer } from "./tracing.js";
 import {
     formatXRayTraceHeader,
     parentContextFromXRayHeader,

@@ -56,6 +56,16 @@ function renderScreen(fetchImplementation: typeof fetch): void {
     );
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -106,10 +116,13 @@ describe("MySubmissionsScreen", () => {
             await screen.findByRole("heading", { name: "My Submissions" }),
         ).toBeTruthy();
         await waitFor(() =>
-            expect(fetchImplementation).toHaveBeenCalledWith(
-                "/v1/expense-reports/my-submissions?pageSize=25",
-                expect.any(Object),
-            ),
+            expect(
+                fetchImplementation.mock.calls.some(
+                    ([input]) =>
+                        requestPath(input) ===
+                        "/v1/expense-reports/my-submissions?pageSize=25",
+                ),
+            ).toBe(true),
         );
 
         const overdueReport = screen.getByLabelText(
@@ -142,17 +155,15 @@ describe("MySubmissionsScreen", () => {
     test("loads and displays employee line items when details are opened", async () => {
         const reportId = "30000000-0000-4000-8000-000000000011";
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            const path =
-                typeof input === "string"
-                    ? input
-                    : input instanceof URL
-                      ? input.toString()
-                      : input.url;
+            const path = requestPath(input);
             const body = path.endsWith("/submission-detail")
                 ? {
                       id: reportId,
                       currentStage: "Submitted",
                       rejectionReason: null,
+                      employerEin: null,
+                      employerLegalName: null,
+                      employerEinValidation: null,
                       lineItems: [
                           {
                               id: "40000000-0000-4000-8000-000000000011",
@@ -202,10 +213,13 @@ describe("MySubmissionsScreen", () => {
         expect(await within(report).findByText("Synthetic Rail")).toBeTruthy();
         expect(within(report).getByText("Travel")).toBeTruthy();
         expect(within(report).getByText("$84.25")).toBeTruthy();
-        expect(fetchImplementation).toHaveBeenCalledWith(
-            `/v1/expense-reports/${reportId}/submission-detail`,
-            expect.any(Object),
-        );
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([input]) =>
+                    requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/submission-detail`,
+            ),
+        ).toBe(true);
         expect(
             within(report).getByRole("button", { name: "Hide details" }),
         ).toBeTruthy();
@@ -214,12 +228,7 @@ describe("MySubmissionsScreen", () => {
     test("shows the send-back reason and submits the selected draft from details", async () => {
         const reportId = "30000000-0000-4000-8000-000000000012";
         const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
-            const path =
-                typeof input === "string"
-                    ? input
-                    : input instanceof URL
-                      ? input.toString()
-                      : input.url;
+            const path = requestPath(input);
             if (path.endsWith("/submit") && init?.method === "POST") {
                 return Promise.resolve(
                     new Response(
@@ -241,6 +250,15 @@ describe("MySubmissionsScreen", () => {
                       currentStage: "Drafted",
                       rejectionReason:
                           "Receipt does not match the submitted amount.",
+                      employerEin: "123456789",
+                      employerLegalName: "Synthetic Holdings LLC",
+                      employerEinValidation: {
+                          status: "valid",
+                          isValid: true,
+                          reason: null,
+                          serviceReferenceId: "ref-001",
+                          validatedAt: "2026-07-19T12:00:00.000Z",
+                      },
                       lineItems: [
                           {
                               id: "40000000-0000-4000-8000-000000000012",
@@ -315,7 +333,8 @@ describe("MySubmissionsScreen", () => {
             await within(report).findByText("Expense Report submitted."),
         ).toBeTruthy();
         const submitCall = fetchImplementation.mock.calls.find(
-            ([input]) => input === `/v1/expense-reports/${reportId}/submit`,
+            ([input]) =>
+                requestPath(input) === `/v1/expense-reports/${reportId}/submit`,
         );
         expect(submitCall?.[1]?.method).toBe("POST");
         expect(
@@ -327,12 +346,7 @@ describe("MySubmissionsScreen", () => {
         const firstReportId = "30000000-0000-4000-8000-000000000021";
         const secondReportId = "30000000-0000-4000-8000-000000000022";
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            const path =
-                typeof input === "string"
-                    ? input
-                    : input instanceof URL
-                      ? input.toString()
-                      : input.url;
+            const path = requestPath(input);
             const isNextPage = path.includes("cursor=cursor_one");
             const body = {
                 items: [
@@ -369,10 +383,13 @@ describe("MySubmissionsScreen", () => {
             await screen.findByLabelText(`Expense Report ${secondReportId}`),
         ).toBeTruthy();
         expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
-        expect(fetchImplementation).toHaveBeenCalledWith(
-            "/v1/expense-reports/my-submissions?cursor=cursor_one&pageSize=25",
-            expect.any(Object),
-        );
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([input]) =>
+                    requestPath(input) ===
+                    "/v1/expense-reports/my-submissions?cursor=cursor_one&pageSize=25",
+            ),
+        ).toBe(true);
     });
 
     test("renders an empty state when the employee has no reports", async () => {

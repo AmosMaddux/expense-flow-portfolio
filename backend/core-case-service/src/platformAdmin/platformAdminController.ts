@@ -77,9 +77,7 @@ function requireAuthContext(req: Request): NonNullable<Request["auth"]> {
     return req.auth;
 }
 
-function requirePlatformAdminAccess(
-    auth: NonNullable<Request["auth"]>,
-): void {
+function requirePlatformAdminAccess(auth: NonNullable<Request["auth"]>): void {
     if (auth.roles.includes("Admin")) {
         return;
     }

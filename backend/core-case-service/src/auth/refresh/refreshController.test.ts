@@ -26,7 +26,9 @@ describe("refresh controller", () => {
         const next = vi.fn();
 
         await handler(
-            { headers: { cookie: "ef_refresh_token=synthetic-old-token" } } as never,
+            {
+                headers: { cookie: "ef_refresh_token=synthetic-old-token" },
+            } as never,
             res as never,
             next,
         );
@@ -54,7 +56,11 @@ describe("refresh controller", () => {
         const next = vi.fn();
 
         await handler(
-            { headers: { cookie: "ef_refresh_token=synthetic-deactivated-token" } } as never,
+            {
+                headers: {
+                    cookie: "ef_refresh_token=synthetic-deactivated-token",
+                },
+            } as never,
             res as never,
             next,
         );
@@ -76,7 +82,9 @@ describe("refresh controller", () => {
         const next = vi.fn();
 
         await handler(
-            { headers: { cookie: "ef_refresh_token=synthetic-valid-token" } } as never,
+            {
+                headers: { cookie: "ef_refresh_token=synthetic-valid-token" },
+            } as never,
             res as never,
             next,
         );
@@ -93,7 +101,9 @@ describe("refresh controller", () => {
         const next = vi.fn();
 
         await handler(
-            { headers: { cookie: "ef_refresh_token=synthetic-token" } } as never,
+            {
+                headers: { cookie: "ef_refresh_token=synthetic-token" },
+            } as never,
             res as never,
             next,
         );

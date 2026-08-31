@@ -2,17 +2,27 @@ import type { NextFunction, Request, Response } from "express";
 
 import type { RoleName } from "../db/schema/index.js";
 import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
-import { answerAssistQuestion, AssistInboundRequestSchema } from "./assistService.js";
+import {
+    answerAssistQuestion,
+    AssistInboundRequestSchema,
+} from "./assistService.js";
 
 const assistRoles = new Set<RoleName>(["Finance Admin", "Department Manager"]);
 
 /** Handles tenant-scoped policy assistance for internal Expense Report review. */
-export async function postAssist(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function postAssist(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
     try {
         const auth = requireAuthContext(req);
         requireAssistAccess(auth);
         const request = AssistInboundRequestSchema.parse(req.body);
-        const answer = await answerAssistQuestion({ ...request, tenantId: auth.tenantId });
+        const answer = await answerAssistQuestion({
+            ...request,
+            tenantId: auth.tenantId,
+        });
         res.status(200).json(answer);
     } catch (error: unknown) {
         next(error);

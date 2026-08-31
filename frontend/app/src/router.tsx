@@ -7,7 +7,7 @@ import {
     useLocation,
     useNavigate,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 import { AppShell, RoutedWorkspaceOutlet } from "./App";
@@ -24,7 +24,11 @@ import {
     PasswordResetRequestScreen,
     SignInScreen,
 } from "./auth/AuthScreens";
-import { CaseQueueScreen, managerApprovalQueueStages } from "./caseQueue/CaseQueueScreen";
+import {
+    CaseQueueScreen,
+    financeAdminApprovalQueueStages,
+    managerApprovalQueueStages,
+} from "./caseQueue/CaseQueueScreen";
 import { ExpenseReportsScreen } from "./expenseReports/ExpenseReportsScreen";
 import { FinanceDashboardScreen } from "./financeDashboard/FinanceDashboardScreen";
 import { GlMappingScreen } from "./glMapping/GlMappingScreen";
@@ -83,10 +87,7 @@ const protectedRoutes = navigationItems.map((item) =>
             ) : item.path === "/expense-reports" ? (
                 <ExpenseReportsScreen />
             ) : item.path === "/approval-queue" ? (
-                <CaseQueueScreen
-                    heading="Approval Queue"
-                    visibleStages={managerApprovalQueueStages}
-                />
+                <ApprovalQueueRoute />
             ) : item.path === "/transactions" ? (
                 <AllTransactionsScreen />
             ) : item.path === "/gl-mapping" ? (
@@ -119,7 +120,11 @@ const routeTree = rootRoute.addChildren([
     authenticatedRoute.addChildren(protectedRoutes),
 ]);
 
-export const router = createRouter({ routeTree });
+function createExpenseFlowRouter() {
+    return createRouter({ routeTree });
+}
+
+export const router = createExpenseFlowRouter();
 
 declare module "@tanstack/react-router" {
     interface Register {
@@ -131,7 +136,9 @@ declare module "@tanstack/react-router" {
  * Provides the authenticated ExpenseFlow route tree.
  */
 export function ExpenseFlowRouter(): JSX.Element {
-    return <RouterProvider router={router} />;
+    const appRouter = useMemo(() => createExpenseFlowRouter(), []);
+
+    return <RouterProvider router={appRouter} />;
 }
 
 function IndexRedirect(): JSX.Element {
@@ -300,6 +307,21 @@ function RouteRedirect({
     }, [location.pathname, navigate, redirect, to]);
 
     return null;
+}
+
+function ApprovalQueueRoute(): JSX.Element {
+    const session = useSession();
+    const roles = session.user?.roles ?? [];
+    const visibleStages = roles.includes("Finance Admin")
+        ? financeAdminApprovalQueueStages
+        : managerApprovalQueueStages;
+
+    return (
+        <CaseQueueScreen
+            heading="Approval Queue"
+            visibleStages={visibleStages}
+        />
+    );
 }
 
 function WorkspaceScreen({ item }: { item: NavigationItem }): JSX.Element {

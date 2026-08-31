@@ -678,6 +678,10 @@ export const glCode = pgTable(
             sql`nullif(btrim(${table.accountCode}), '') is not null`,
         ),
         check(
+            "gl_code_account_code_numeric_check",
+            sql`${table.accountCode} ~ '^[0-9]+$'`,
+        ),
+        check(
             "gl_code_account_name_not_blank_check",
             sql`nullif(btrim(${table.accountName}), '') is not null`,
         ),
@@ -751,7 +755,7 @@ export const referenceDataAuditEntry = pgTable(
         ),
         check(
             "reference_data_audit_entry_action_check",
-            sql`${table.action} in ('gl_mapping_updated', 'user_invited', 'user_role_changed', 'user_status_changed')`,
+            sql`${table.action} in ('gl_mapping_updated', 'gl_mapping_created', 'gl_mapping_deleted', 'user_invited', 'user_role_changed', 'user_status_changed')`,
         ),
         index("reference_data_audit_entry_tenant_entity_idx").on(
             table.tenantId,

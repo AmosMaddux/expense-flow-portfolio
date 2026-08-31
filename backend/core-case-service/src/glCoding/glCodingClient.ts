@@ -9,15 +9,7 @@ import {
     startChildSpan,
 } from "../tracing.js";
 
-const expenseCategorySchema = z.enum([
-    "Travel",
-    "Meals",
-    "Lodging",
-    "Mileage",
-    "Office Supplies",
-    "Software",
-    "Other",
-]);
+const expenseCategorySchema = z.string().trim().min(1).max(100);
 
 const glCodingLineItemRequestSchema = z.object({
     line_item_id: z.uuid(),
@@ -56,7 +48,11 @@ const glCodedItemSchema = z.object({
     mapping_status: z.enum(["mapped", "unmapped"]),
     gl_account: glAccountSchema.nullable(),
     amount: z.string().nullable().optional(),
-    currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional(),
+    currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .nullable()
+        .optional(),
     flagged_line_item: z.boolean(),
 });
 

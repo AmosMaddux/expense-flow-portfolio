@@ -71,7 +71,9 @@ export function createPostLogin(
                     cookieConfig,
                 ),
             );
-            res.status(200).json(TokenOutboundResponseSchema.parse(serviceResult));
+            res.status(200).json(
+                TokenOutboundResponseSchema.parse(serviceResult),
+            );
         } catch (error) {
             if (error instanceof InvalidCredentialsError) {
                 res.status(401).json(invalidCredentialsResponse);

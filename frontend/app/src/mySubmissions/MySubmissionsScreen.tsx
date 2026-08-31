@@ -46,39 +46,49 @@ const mySubmissionPageSchema = z
 
 type MySubmissionPage = z.infer<typeof mySubmissionPageSchema>;
 
-const mySubmissionDetailSchema = z
+const employerEinValidationSchema = z
     .object({
-        id: z.uuid(),
-        currentStage: z.enum(EXPENSE_REPORT_STAGES),
-        rejectionReason: z.string().nullable(),
-        lineItems: z.array(
-            z
-                .object({
-                    id: z.uuid(),
-                    merchant: z.string(),
-                    expenseDate: z.iso.date(),
-                    category: z.string(),
-                    amount: z.number().nonnegative(),
-                    currency: z.string(),
-                    reviewAction: z.enum(["approve", "reject"]).nullable(),
-                })
-                .strict(),
-        ),
-        mileageEntries: z.array(
-            z
-                .object({
-                    id: z.uuid(),
-                    route: z.string(),
-                    distance: z.number().positive(),
-                    mileageDate: z.iso.date(),
-                    reimbursementAmount: z.number().nonnegative(),
-                    currency: z.literal("USD"),
-                    reviewAction: z.enum(["approve", "reject"]).nullable(),
-                })
-                .strict(),
-        ),
+        status: z.enum(["valid", "invalid", "unreachable"]),
+        isValid: z.boolean(),
+        reason: z.string().nullable(),
+        serviceReferenceId: z.string().nullable(),
+        validatedAt: z.iso.datetime({ offset: true }),
     })
-    .strict();
+    .nullable();
+
+const mySubmissionDetailSchema = z.object({
+    id: z.uuid(),
+    currentStage: z.enum(EXPENSE_REPORT_STAGES),
+    rejectionReason: z.string().nullable(),
+    employerEin: z
+        .string()
+        .regex(/^\d{9}$/)
+        .nullable(),
+    employerLegalName: z.string().nullable(),
+    employerEinValidation: employerEinValidationSchema,
+    lineItems: z.array(
+        z.object({
+            id: z.uuid(),
+            merchant: z.string(),
+            expenseDate: z.iso.date(),
+            category: z.string(),
+            amount: z.number().nonnegative(),
+            currency: z.string(),
+            reviewAction: z.enum(["approve", "reject"]).nullable(),
+        }),
+    ),
+    mileageEntries: z.array(
+        z.object({
+            id: z.uuid(),
+            route: z.string(),
+            distance: z.number().positive(),
+            mileageDate: z.iso.date(),
+            reimbursementAmount: z.number().nonnegative(),
+            currency: z.literal("USD"),
+            reviewAction: z.enum(["approve", "reject"]).nullable(),
+        }),
+    ),
+});
 
 type MySubmissionDetail = z.infer<typeof mySubmissionDetailSchema>;
 
