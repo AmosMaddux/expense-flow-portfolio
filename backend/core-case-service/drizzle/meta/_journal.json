@@ -288,6 +288,13 @@
       "when": 1787930001000,
       "tag": "0040_team_users",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0039_audit_log_created_at_idx",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,7 @@ const repository = {
             passwordHash: "synthetic-password-hash",
             passwordHashAlgorithm: "argon2id",
             roles: ["Employee"],
+            status: "active",
         };
     },
     async findMfaEnrollmentByTenantAndUser(requestTenantId, requestUserId) {

@@ -150,6 +150,10 @@ const allTransactionsPaginationMigrationSqlUrl = new URL(
     "../../../drizzle/0026_all_transactions_pagination_idx.sql",
     import.meta.url,
 );
+const auditLogCreatedAtIndexMigrationSqlUrl = new URL(
+    "../../../drizzle/0039_audit_log_created_at_idx.sql",
+    import.meta.url,
+);
 
 async function readLatestMigrationSql(): Promise<string> {
     // Drizzle chooses a generated suffix, so pin this test to the next migration number.
@@ -1126,6 +1130,16 @@ void describe("lineItem schema", () => {
         );
         expect(migrationSql).toContain(
             'create index concurrently if not exists "line_item_tenant_category_expense_date_id_idx" on "line_item" using btree ("tenant_id","category","expense_date" desc,"id" asc)',
+        );
+    });
+
+    void test("creates the Audit Log's cross-tenant created_at index concurrently for production rollout", async () => {
+        const migrationSql = (
+            await readFile(auditLogCreatedAtIndexMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "reference_data_audit_entry_created_at_id_idx" on "reference_data_audit_entry" using btree ("created_at" desc,"id" desc)',
         );
     });
 });

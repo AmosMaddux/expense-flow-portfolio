@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+    getAuditLogEvents,
     getRolePermissionMatrix,
     getTenantSummaries,
 } from "./platformAdminController.js";
@@ -12,3 +13,4 @@ platformAdminRouter.get(
     getRolePermissionMatrix,
 );
 platformAdminRouter.get("/platform-admin/tenants", getTenantSummaries);
+platformAdminRouter.get("/platform-admin/audit-log", getAuditLogEvents);

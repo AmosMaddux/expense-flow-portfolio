@@ -2,7 +2,11 @@ import type { NextFunction, Request, Response } from "express";
 
 import { ForbiddenError, UnauthorizedError } from "../errors/problem-json.js";
 import { buildRolePermissionMatrix } from "./screenAccessPolicy.js";
-import { readTenantSummaries } from "./platformAdminRepository.js";
+import { ReadAuditLogEventsQuerySchema } from "./platformAdminDto.js";
+import {
+    readAuditLogEvents,
+    readTenantSummaries,
+} from "./platformAdminRepository.js";
 
 /**
  * Handles Platform Admin reads of the read-only role-to-screen-access matrix.
@@ -36,6 +40,30 @@ export async function getTenantSummaries(
         const tenants = await readTenantSummaries();
 
         res.status(200).json({ tenants });
+    } catch (error: unknown) {
+        next(error);
+    }
+}
+
+/**
+ * Handles Platform Admin reads of recent cross-tenant administrative audit
+ * events for the read-only Audit Log screen.
+ */
+export async function getAuditLogEvents(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): Promise<void> {
+    try {
+        const auth = requireAuthContext(req);
+        requirePlatformAdminAccess(auth);
+        const parsedQuery = ReadAuditLogEventsQuerySchema.parse({
+            cursor: req.query.cursor,
+            pageSize: req.query.pageSize,
+        });
+        const page = await readAuditLogEvents(parsedQuery);
+
+        res.status(200).json(page);
     } catch (error: unknown) {
         next(error);
     }
