@@ -15,31 +15,39 @@ export type AssistPanelCaseContext = {
     lineItems: AssistPanelLineItem[];
 };
 
+const findingTypeSchema = z.enum([
+    "policy_match",
+    "missing_receipt",
+    "amount_threshold",
+    "deductibility_review",
+    "insufficient_context",
+]);
+const badgeToneSchema = z.enum([
+    "neutral",
+    "info",
+    "success",
+    "warning",
+    "danger",
+]);
+
 const assistResponseSchema = z.object({
     answer: z.string(),
-    answerSummary: z.string().default("No summary was returned."),
-    reviewConclusion: z
-        .enum([
+    answerSummary: z.string(),
+    reviewConclusion: z.enum([
+        "potentially_reimbursable",
+        "not_reimbursable",
+        "needs_review",
+        "insufficient_context",
+    ]),
+    reimbursabilityAssessment: z.object({
+        status: z.enum([
             "potentially_reimbursable",
             "not_reimbursable",
-            "needs_review",
-            "insufficient_context",
-        ])
-        .default("insufficient_context"),
-    reimbursabilityAssessment: z
-        .object({
-            status: z.enum([
-                "potentially_reimbursable",
-                "not_reimbursable",
-                "needs_more_info",
-            ]),
-            reason: z.string(),
-        })
-        .default({
-            status: "needs_more_info",
-            reason: "No reimbursability assessment was returned.",
-        }),
-    flagAssessmentNarrative: z.string().nullable().default(null),
+            "needs_more_info",
+        ]),
+        reason: z.string(),
+    }),
+    flagAssessmentNarrative: z.string().nullable(),
     citations: z.array(z.string()),
     contexts: z.array(
         z.object({
@@ -65,68 +73,39 @@ const assistResponseSchema = z.object({
             rule: z.literal("line_item_amount_over_500"),
         })
         .nullable(),
-    expenseReportFindings: z
-        .array(
-            z.object({
-                type: z.enum([
-                    "policy_match",
-                    "missing_receipt",
-                    "amount_threshold",
-                    "deductibility_review",
-                    "insufficient_context",
-                ]),
-                severity: z.enum(["info", "warning"]),
-                summary: z.string(),
-                relatedLineItemId: z.uuid().nullable(),
-                citations: z.array(z.string()),
-            }),
-        )
-        .default([]),
-    findingBadges: z
-        .array(
-            z.object({
-                type: z.enum([
-                    "policy_match",
-                    "missing_receipt",
-                    "amount_threshold",
-                    "deductibility_review",
-                    "insufficient_context",
-                    "review_conclusion",
-                    "policy_context",
-                    "model_status",
-                ]),
-                label: z.string(),
-                tone: z.enum([
-                    "neutral",
-                    "info",
-                    "success",
-                    "warning",
-                    "danger",
-                ]),
-            }),
-        )
-        .default([]),
-    policyEvidence: z
-        .array(
-            z.object({
-                summary: z.string(),
-                citation: z.string(),
-            }),
-        )
-        .default([]),
-    missingInformation: z.array(z.string()).default([]),
-    recommendedNextActions: z.array(z.string()).default([]),
-    policyRetrievalStatus: z
-        .enum([
-            "baseline_and_retrieved",
-            "baseline_only",
-            "retrieved_only",
-            "empty",
-        ])
-        .default("empty"),
-    modelInvoked: z.boolean().default(false),
-    baselineContextCount: z.number().int().nonnegative().default(0),
-    retrievedContextCount: z.number().int().nonnegative().default(0),
+    expenseReportFindings: z.array(
+        z.object({
+            type: findingTypeSchema,
+            severity: z.enum(["info", "warning"]),
+            summary: z.string(),
+            relatedLineItemId: z.uuid().nullable(),
+            citations: z.array(z.string()),
+        }),
+    ),
+    findingBadges: z.array(
+        z.object({
+            type: z.string(),
+            label: z.string(),
+            tone: badgeToneSchema,
+        }),
+    ),
+    policyEvidence: z.array(
+        z.object({
+            summary: z.string(),
+            citation: z.string(),
+        }),
+    ),
+    missingInformation: z.array(z.string()),
+    recommendedNextActions: z.array(z.string()),
+    policyRetrievalStatus: z.enum([
+        "baseline_and_retrieved",
+        "baseline_only",
+        "retrieved_only",
+        "empty",
+    ]),
+    modelInvoked: z.boolean(),
+    baselineContextCount: z.number(),
+    retrievedContextCount: z.number(),
 });
 
 type AssistResponse = z.infer<typeof assistResponseSchema>;
@@ -286,45 +265,44 @@ export function AssistPanel({
                     type="submit"
                     variant="secondary"
                 >
-                    {isSubmitting ? "Checking policy…" : "Ask Assist"}
+                    {isSubmitting ? "Checking policy..." : "Ask Assist"}
                 </Button>
             </form>
             {error === null ? null : <p role="alert">{error}</p>}
             {isSubmitting ? (
                 <p aria-live="polite" role="status">
-                    Checking the policy guidance…
+                    Checking the policy guidance...
                 </p>
             ) : null}
             {answer === null ? null : (
                 <article aria-live="polite">
-                    {answer.findingBadges.length === 0 ? null : (
-                        <div
-                            className="assist-panel__badge-row"
-                            aria-label="Assist result badges"
-                        >
-                            {answer.findingBadges.map((badge, index) => (
-                                <Badge
-                                    key={`${badge.type}-${badge.label}-${String(index)}`}
-                                    tone={badge.tone}
-                                >
-                                    {badge.label}
-                                </Badge>
-                            ))}
-                        </div>
-                    )}
+                    <div className="assist-panel__badge-row">
+                        {answer.findingBadges.map((badge) => (
+                            <Badge
+                                key={`${badge.type}-${badge.label}`}
+                                tone={badge.tone}
+                            >
+                                {badge.label}
+                            </Badge>
+                        ))}
+                    </div>
+                    <p className="assist-panel__diagnostics">
+                        {formatPolicyRetrievalStatus(
+                            answer.policyRetrievalStatus,
+                        )}{" "}
+                        |{" "}
+                        {answer.modelInvoked
+                            ? "Model response used"
+                            : "Policy-only fallback"}
+                    </p>
                     <section aria-labelledby="assist-summary-heading">
                         <h5 id="assist-summary-heading">Summary</h5>
                         <p>{answer.answerSummary}</p>
                     </section>
-                    <p className="assist-panel__diagnostics">
-                        {formatPolicyRetrievalStatus(
-                            answer.policyRetrievalStatus,
-                        )}
-                        {" · "}
-                        {answer.modelInvoked
-                            ? "Model reached"
-                            : "Policy-only answer"}
-                    </p>
+                    <section aria-labelledby="assist-answer-heading">
+                        <h5 id="assist-answer-heading">Answer</h5>
+                        <p>{answer.answer}</p>
+                    </section>
                     <section aria-labelledby="assist-reimbursability-heading">
                         <h5 id="assist-reimbursability-heading">
                             Reimbursability
@@ -335,40 +313,40 @@ export function AssistPanel({
                                     answer.reimbursabilityAssessment.status,
                                 )}
                             </strong>
-                            {": "}
-                            {answer.reimbursabilityAssessment.reason}
+                            : {answer.reimbursabilityAssessment.reason}
                         </p>
                     </section>
-                    {answer.flagAssessmentNarrative === null ? null : (
-                        <section aria-labelledby="assist-flag-heading">
-                            <h5 id="assist-flag-heading">Flag review</h5>
-                            <p>{answer.flagAssessmentNarrative}</p>
+                    {answer.flagAssessmentNarrative === null &&
+                    answer.flagAssessment === null ? null : (
+                        <section aria-labelledby="assist-flags-heading">
+                            <h5 id="assist-flags-heading">Flag review</h5>
+                            {answer.flagAssessmentNarrative === null ? null : (
+                                <p>{answer.flagAssessmentNarrative}</p>
+                            )}
+                            {answer.flagAssessment === null ? null : (
+                                <p>
+                                    Deterministic flag rule:{" "}
+                                    {answer.flagAssessment.amount} is{" "}
+                                    {answer.flagAssessment.isFlagged
+                                        ? "over"
+                                        : "not over"}{" "}
+                                    $500.00, so this line item is{" "}
+                                    {answer.flagAssessment.isFlagged
+                                        ? "flagged"
+                                        : "not flagged"}
+                                    .
+                                </p>
+                            )}
                         </section>
-                    )}
-                    {answer.flagAssessment === null ? null : (
-                        <p>
-                            Deterministic flag rule:{" "}
-                            {answer.flagAssessment.amount} is{" "}
-                            {answer.flagAssessment.isFlagged
-                                ? "over"
-                                : "not over"}{" "}
-                            $500.00, so this line item is{" "}
-                            {answer.flagAssessment.isFlagged
-                                ? "flagged"
-                                : "not flagged"}
-                            .
-                        </p>
                     )}
                     {answer.expenseReportFindings.length === 0 ? null : (
                         <section aria-labelledby="assist-findings-heading">
-                            <h5 id="assist-findings-heading">
-                                Expense Report findings
-                            </h5>
+                            <h5 id="assist-findings-heading">Findings</h5>
                             <ul className="assist-panel__findings">
                                 {answer.expenseReportFindings.map(
                                     (finding, index) => (
                                         <li
-                                            key={`${finding.type}-${String(index)}`}
+                                            key={`${finding.type}-${finding.relatedLineItemId ?? "report"}-${String(index)}`}
                                         >
                                             <Badge
                                                 tone={
@@ -397,10 +375,8 @@ export function AssistPanel({
                             <ul className="assist-panel__evidence">
                                 {answer.policyEvidence.map((evidence) => (
                                     <li key={evidence.citation}>
+                                        <strong>{evidence.citation}</strong>
                                         <p>{evidence.summary}</p>
-                                        <span>
-                                            Citation: {evidence.citation}
-                                        </span>
                                     </li>
                                 ))}
                             </ul>
@@ -422,8 +398,8 @@ export function AssistPanel({
                         <section aria-labelledby="assist-actions-heading">
                             <h5 id="assist-actions-heading">Next actions</h5>
                             <ul className="assist-panel__actions">
-                                {answer.recommendedNextActions.map((action) => (
-                                    <li key={action}>{action}</li>
+                                {answer.recommendedNextActions.map((item) => (
+                                    <li key={item}>{item}</li>
                                 ))}
                             </ul>
                         </section>
@@ -436,18 +412,14 @@ export function AssistPanel({
                                     <li
                                         key={`${context.citation}-${context.section}`}
                                     >
-                                        <strong>{context.section}</strong>
-                                        <Badge
-                                            tone={
-                                                context.source === "baseline"
-                                                    ? "info"
-                                                    : "neutral"
-                                            }
-                                        >
-                                            {context.source === "baseline"
-                                                ? "Baseline"
-                                                : "Retrieved"}
-                                        </Badge>
+                                        <div className="assist-panel__source-heading">
+                                            <strong>{context.section}</strong>
+                                            <Badge tone="neutral">
+                                                {context.source === "baseline"
+                                                    ? "Baseline"
+                                                    : "Retrieved"}
+                                            </Badge>
+                                        </div>
                                         <p>{context.content}</p>
                                         <span>
                                             Citation: {context.citation}
@@ -463,9 +435,7 @@ export function AssistPanel({
     );
 }
 
-function formatFindingType(
-    type: AssistResponse["expenseReportFindings"][number]["type"],
-): string {
+function formatFindingType(type: z.infer<typeof findingTypeSchema>): string {
     switch (type) {
         case "amount_threshold":
             return "Amount threshold";
@@ -489,7 +459,7 @@ function formatPolicyRetrievalStatus(
         case "baseline_only":
             return "Baseline policy context";
         case "empty":
-            return "No policy context found";
+            return "No policy context";
         case "retrieved_only":
             return "Retrieved policy context";
     }
@@ -500,7 +470,7 @@ function formatReimbursabilityStatus(
 ): string {
     switch (status) {
         case "needs_more_info":
-            return "Needs more information";
+            return "Needs more info";
         case "not_reimbursable":
             return "Not reimbursable";
         case "potentially_reimbursable":

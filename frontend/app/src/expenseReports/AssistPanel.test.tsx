@@ -85,19 +85,6 @@ function assistResponse(
     response: Partial<{
         answer: string;
         answerSummary: string;
-        reviewConclusion:
-            | "potentially_reimbursable"
-            | "not_reimbursable"
-            | "needs_review"
-            | "insufficient_context";
-        reimbursabilityAssessment: {
-            status:
-                | "potentially_reimbursable"
-                | "not_reimbursable"
-                | "needs_more_info";
-            reason: string;
-        };
-        flagAssessmentNarrative: string | null;
         citations: string[];
         contexts: Array<{
             citation: string;
@@ -108,41 +95,18 @@ function assistResponse(
         }>;
         expenseReportId: string;
         lineItemId: string | null;
-        policyRetrievalStatus:
-            | "baseline_and_retrieved"
-            | "baseline_only"
-            | "retrieved_only"
-            | "empty";
-        modelInvoked: boolean;
-        baselineContextCount: number;
-        retrievedContextCount: number;
-        findingBadges: Array<{
-            type:
-                | "policy_match"
-                | "missing_receipt"
-                | "amount_threshold"
-                | "deductibility_review"
-                | "insufficient_context"
-                | "review_conclusion"
-                | "policy_context"
-                | "model_status";
-            label: string;
-            tone: "neutral" | "info" | "success" | "warning" | "danger";
-        }>;
-        policyEvidence: Array<{ summary: string; citation: string }>;
-        missingInformation: string[];
     }> = {},
 ) {
     return {
         answer: "Synthetic policy answer.",
-        answerSummary:
-            "Synthetic Transit appears potentially reimbursable with receipt support.",
+        answerSummary: "Potentially reimbursable with receipt review.",
         reviewConclusion: "potentially_reimbursable",
         reimbursabilityAssessment: {
             status: "potentially_reimbursable",
-            reason: "Receipt metadata is present and policy evidence is available.",
+            reason: "Receipt metadata is present.",
         },
-        flagAssessmentNarrative: null,
+        flagAssessmentNarrative:
+            "500.01 is over the $500.00 line-item flag threshold.",
         citations: ["policy:receipts"],
         contexts: [
             {
@@ -151,21 +115,36 @@ function assistResponse(
                 content:
                     "Receipts are required for reimbursable transit expenses.",
                 score: 0.98,
-                source: "retrieved",
+                source: "baseline" as const,
             },
         ],
         refused: false,
         abstained: false,
         refusalCategory: null,
-        flagAssessment: null,
-        policyRetrievalStatus: "retrieved_only",
-        modelInvoked: true,
-        baselineContextCount: 0,
-        retrievedContextCount: 1,
+        flagAssessment: {
+            amount: "500.01",
+            threshold: "500.00",
+            isFlagged: true,
+            rule: "line_item_amount_over_500",
+        },
+        expenseReportFindings: [
+            {
+                type: "amount_threshold",
+                severity: "warning",
+                summary: "500.01 is over the $500.00 line-item flag threshold.",
+                relatedLineItemId: lineItemId,
+                citations: [],
+            },
+        ],
         findingBadges: [
             {
                 type: "review_conclusion",
                 label: "Potentially reimbursable",
+                tone: "success",
+            },
+            {
+                type: "model_status",
+                label: "Model reached",
                 tone: "success",
             },
             {
@@ -176,12 +155,16 @@ function assistResponse(
         ],
         policyEvidence: [
             {
-                summary:
-                    "Receipt requirements: Receipts are required for reimbursable transit expenses.",
                 citation: "policy:receipts",
+                summary: "Receipt requirements: Receipts are required.",
             },
         ],
         missingInformation: [],
+        recommendedNextActions: ["Review the line-item flag."],
+        policyRetrievalStatus: "baseline_and_retrieved",
+        modelInvoked: true,
+        baselineContextCount: 1,
+        retrievedContextCount: 1,
         ...response,
         caseContext: {
             expenseReportId: response.expenseReportId ?? reportId,
@@ -202,7 +185,7 @@ afterEach(() => {
 });
 
 describe("AssistPanel", () => {
-    test("submits selected context and renders only cited policy chunks", async () => {
+    test("submits selected context and renders structured grounded response", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 createJsonResponse(
@@ -227,9 +210,6 @@ describe("AssistPanel", () => {
                                 source: "retrieved",
                             },
                         ],
-                        policyRetrievalStatus: "baseline_and_retrieved",
-                        baselineContextCount: 1,
-                        retrievedContextCount: 1,
                     }),
                 ),
             ),
@@ -246,15 +226,18 @@ describe("AssistPanel", () => {
         fireEvent.click(screen.getByRole("button", { name: "Ask Assist" }));
 
         expect(
-            await screen.findByText(
-                /Synthetic Transit appears potentially reimbursable/u,
-            ),
+            await screen.findByText(/Synthetic Transit is reimbursable/u),
         ).toBeTruthy();
         expect(screen.getAllByText("Potentially reimbursable").length).toBe(2);
+        expect(screen.getByText("Model reached")).toBeTruthy();
         expect(screen.getByText("Receipt present")).toBeTruthy();
+        expect(
+            screen.getByText(/Baseline and retrieved policy context/u),
+        ).toBeTruthy();
         expect(
             screen.getByRole("heading", { name: "Reimbursability" }),
         ).toBeTruthy();
+        expect(screen.getByRole("heading", { name: "Findings" })).toBeTruthy();
         expect(
             screen.getByRole("heading", { name: "Policy evidence" }),
         ).toBeTruthy();
@@ -262,21 +245,18 @@ describe("AssistPanel", () => {
             screen.getByRole("heading", { name: "Policy sources" }),
         ).toBeTruthy();
         expect(screen.getAllByText(/Receipts are required/u).length).toBe(2);
-        expect(
-            screen.getByText(/Baseline and retrieved policy context/u),
-        ).toBeTruthy();
-        expect(screen.getByText(/Model reached/u)).toBeTruthy();
         expect(screen.getByText("Baseline")).toBeTruthy();
         expect(
             screen.queryByText(/Synthetic unrelated policy text/u),
         ).toBeNull();
         const [input, init] = fetchImplementation.mock.calls[0] ?? [];
-        expect(input).toBe("/v1/assist");
-        expect(init?.method).toBe("POST");
-        if (typeof init?.body !== "string") {
-            throw new Error("Expected a JSON request body.");
+        if (init === undefined) {
+            throw new Error("Expected Assist request init.");
         }
-        expect(JSON.parse(init.body)).toEqual({
+        expect(input).toBe("/v1/assist");
+        expect(init.method).toBe("POST");
+        expect(typeof init.body).toBe("string");
+        expect(JSON.parse(init.body as string)).toEqual({
             question: "Is this reimbursable?",
             caseContext: { expenseReportId: reportId, lineItemId },
         });
@@ -303,15 +283,16 @@ describe("AssistPanel", () => {
         );
         expect(
             screen.getByRole<HTMLButtonElement>("button", {
-                name: "Checking policy…",
+                name: "Checking policy...",
             }).disabled,
         ).toBe(true);
 
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledTimes(1),
         );
-        act(() => {
+        await act(async () => {
             resolveResponse?.(createJsonResponse({}, { status: 500 }));
+            await Promise.resolve();
         });
 
         expect((await screen.findByRole("alert")).textContent).toContain(
@@ -340,7 +321,7 @@ describe("AssistPanel", () => {
         );
 
         renderForContext(defaultCaseContext(otherReportId));
-        act(() => {
+        await act(async () => {
             resolveResponse?.(
                 createJsonResponse(
                     assistResponse({
@@ -348,6 +329,7 @@ describe("AssistPanel", () => {
                     }),
                 ),
             );
+            await Promise.resolve();
         });
 
         expect(
@@ -384,9 +366,7 @@ describe("AssistPanel", () => {
             target: { value: "Are meals reimbursable?" },
         });
         fireEvent.click(screen.getByRole("button", { name: "Ask Assist" }));
-        await screen.findByText(
-            "Synthetic Transit appears potentially reimbursable with receipt support.",
-        );
+        await screen.findByText("Synthetic policy answer.");
 
         const axeResults = await axe.run(container);
         expect(axeResults.violations).toHaveLength(0);

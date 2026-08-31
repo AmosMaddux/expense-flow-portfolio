@@ -2,11 +2,13 @@ import { z } from "zod";
 
 import { NotFoundError } from "../errors/problem-json.js";
 import { findExpenseReportReviewDetail } from "../expenseReports/repository/expenseReportRepository.js";
+import { logCoreCaseError } from "../logging/coreCaseLogger.js";
 import {
     buildAssistPolicyContextBundle,
     type AssistPolicyContext,
     type AssistPolicyContextRepository,
 } from "./assistPolicyContext.js";
+import { PolicyAssistServiceError } from "./policyAssistErrors.js";
 import {
     answerPolicyQuestion,
     type PolicyAnswer,
@@ -17,6 +19,31 @@ import {
 } from "./policyAssistModelClient.js";
 import { findTenantPolicyCorpusChunks } from "./policyCorpusRepository.js";
 import { findTenantExpensePolicy } from "./policyReferenceRepository.js";
+
+const findingTypeSchema = z.enum([
+    "policy_match",
+    "missing_receipt",
+    "amount_threshold",
+    "deductibility_review",
+    "insufficient_context",
+]);
+const badgeTypeSchema = z.enum([
+    "policy_match",
+    "missing_receipt",
+    "amount_threshold",
+    "deductibility_review",
+    "insufficient_context",
+    "review_conclusion",
+    "policy_context",
+    "model_status",
+]);
+const badgeToneSchema = z.enum([
+    "neutral",
+    "info",
+    "success",
+    "warning",
+    "danger",
+]);
 
 export const AssistInboundRequestSchema = z
     .object({
@@ -86,13 +113,7 @@ export const AssistOutboundResponseSchema = z
         expenseReportFindings: z.array(
             z
                 .object({
-                    type: z.enum([
-                        "policy_match",
-                        "missing_receipt",
-                        "amount_threshold",
-                        "deductibility_review",
-                        "insufficient_context",
-                    ]),
+                    type: findingTypeSchema,
                     severity: z.enum(["info", "warning"]),
                     summary: z.string().min(1).max(500),
                     relatedLineItemId: z.uuid().nullable(),
@@ -100,28 +121,12 @@ export const AssistOutboundResponseSchema = z
                 })
                 .strict(),
         ),
-        recommendedNextActions: z.array(z.string().min(1).max(240)).max(5),
         findingBadges: z.array(
             z
                 .object({
-                    type: z.enum([
-                        "policy_match",
-                        "missing_receipt",
-                        "amount_threshold",
-                        "deductibility_review",
-                        "insufficient_context",
-                        "review_conclusion",
-                        "policy_context",
-                        "model_status",
-                    ]),
+                    type: badgeTypeSchema,
                     label: z.string().min(1).max(80),
-                    tone: z.enum([
-                        "neutral",
-                        "info",
-                        "success",
-                        "warning",
-                        "danger",
-                    ]),
+                    tone: badgeToneSchema,
                 })
                 .strict(),
         ),
@@ -134,6 +139,7 @@ export const AssistOutboundResponseSchema = z
                 .strict(),
         ),
         missingInformation: z.array(z.string().min(1).max(240)).max(5),
+        recommendedNextActions: z.array(z.string().min(1).max(240)).max(5),
         policyRetrievalStatus: z.enum([
             "baseline_and_retrieved",
             "baseline_only",
@@ -178,8 +184,13 @@ const categoryPolicyHints: Record<string, string> = {
     Lodging: "lodging accommodation receipts",
 };
 const assistPolicyTopK = 8;
+const maxFullReportLineItems = 12;
+const maxFullReportMileageEntries = 8;
+const maxFullReportReceipts = 12;
 const generalRetrievalHint =
     "reimbursable business purpose receipt documentation flags approval threshold deductibility review";
+const thresholdEvidenceHint =
+    "approval threshold flag over 500 dollars second review";
 const defaultRepository: AssistRepository = {
     findExpenseReportReviewDetail,
     findTenantPolicyCorpusChunks,
@@ -216,12 +227,12 @@ export async function answerAssistQuestion(
     if (parsed.caseContext.lineItemId !== undefined && lineItem === undefined) {
         throw new NotFoundError("Expense Report line item not found.");
     }
+    const selectedLineItemId = lineItem?.id ?? null;
     const expenseReportContext = buildExpenseReportContext(
         detail,
-        lineItem?.id ?? null,
+        selectedLineItemId,
     );
 
-    // Stored case fields are retrieval data, never instruction-bearing question text.
     const policyAnswer = await answerer({
         tenantId: request.tenantId,
         question: parsed.question,
@@ -251,7 +262,10 @@ export async function answerAssistQuestion(
     const modelAnswer =
         policyAnswer.refused || policyContextBundle.policyContexts.length === 0
             ? undefined
-            : await modelAnswerer?.({
+            : await answerWithModelFallback({
+                  tenantId: request.tenantId,
+                  expenseReportId: detail.expenseReportId,
+                  modelAnswerer,
                   question: parsed.question,
                   expenseReportContext,
                   policyContexts: policyContextBundle.policyContexts,
@@ -278,11 +292,12 @@ export async function answerAssistQuestion(
         policyContextBundle.policyContexts,
         expenseReportContext,
         flagAssessment,
-        modelAnswer !== undefined,
+        groundedModelAnswer !== undefined,
     );
     const expenseReportFindings =
         groundedModelAnswer?.expenseReportFindings ??
         fallbackReview.expenseReportFindings;
+
     return AssistOutboundResponseSchema.parse({
         answer: groundedModelAnswer?.answer ?? fallbackReview.answer,
         answerSummary:
@@ -303,7 +318,7 @@ export async function answerAssistQuestion(
         refusalCategory: policyAnswer.refusalCategory,
         caseContext: {
             expenseReportId: detail.expenseReportId,
-            lineItemId: lineItem?.id ?? null,
+            lineItemId: selectedLineItemId,
         },
         flagAssessment,
         expenseReportFindings,
@@ -319,7 +334,7 @@ export async function answerAssistQuestion(
             groundedModelAnswer?.missingInformation ??
             fallbackReview.missingInformation,
         policyRetrievalStatus: policyContextBundle.policyRetrievalStatus,
-        modelInvoked: modelAnswer !== undefined,
+        modelInvoked: groundedModelAnswer !== undefined,
         baselineContextCount: policyContextBundle.baselinePolicyContexts.length,
         retrievedContextCount:
             policyContextBundle.retrievedPolicyContexts.length,
@@ -331,7 +346,7 @@ export function categoryPolicyHint(category: string): string | undefined {
     return categoryPolicyHints[category];
 }
 
-/** Builds a minimal report snapshot for the model without receipt files or secrets. */
+/** Builds a bounded report snapshot for the model without receipt files or secrets. */
 export function buildExpenseReportContext(
     detail: Awaited<ReturnType<typeof findExpenseReportReviewDetail>>,
     selectedLineItemId: string | null,
@@ -340,6 +355,25 @@ export function buildExpenseReportContext(
         throw new NotFoundError("Expense Report not found.");
     }
 
+    const selectedLineItem =
+        selectedLineItemId === null
+            ? undefined
+            : detail.lineItems.find((item) => item.id === selectedLineItemId);
+    const lineItems =
+        selectedLineItem === undefined
+            ? detail.lineItems.slice(0, maxFullReportLineItems)
+            : [selectedLineItem];
+    const mileageEntries =
+        selectedLineItem === undefined
+            ? detail.mileageEntries.slice(0, maxFullReportMileageEntries)
+            : [];
+    const receipts =
+        selectedLineItem === undefined
+            ? detail.receipts.slice(0, maxFullReportReceipts)
+            : detail.receipts.filter(
+                  (receipt) => receipt.lineItemId === selectedLineItem.id,
+              );
+
     return {
         expenseReportId: detail.expenseReportId,
         currentStage: detail.status,
@@ -347,7 +381,20 @@ export function buildExpenseReportContext(
         dueDate: detail.dueDate,
         onHold: detail.onHold,
         selectedLineItemId,
-        lineItems: detail.lineItems.map((item) => ({
+        contextTruncation: {
+            lineItemsIncluded: lineItems.length,
+            lineItemsTotal: detail.lineItems.length,
+            mileageEntriesIncluded: mileageEntries.length,
+            mileageEntriesTotal: detail.mileageEntries.length,
+            receiptsIncluded: receipts.length,
+            receiptsTotal: detail.receipts.length,
+            truncated:
+                selectedLineItem === undefined &&
+                (lineItems.length < detail.lineItems.length ||
+                    mileageEntries.length < detail.mileageEntries.length ||
+                    receipts.length < detail.receipts.length),
+        },
+        lineItems: lineItems.map((item) => ({
             id: item.id,
             merchant: item.merchant,
             category: item.category,
@@ -359,7 +406,7 @@ export function buildExpenseReportContext(
             reviewAction: item.reviewAction,
             deductible: item.deductible,
         })),
-        mileageEntries: detail.mileageEntries.map((entry) => ({
+        mileageEntries: mileageEntries.map((entry) => ({
             id: entry.id,
             route: entry.route,
             distance: entry.distance,
@@ -371,7 +418,7 @@ export function buildExpenseReportContext(
             reviewAction: entry.reviewAction,
             deductible: entry.deductible,
         })),
-        receipts: detail.receipts.map((receipt) => ({
+        receipts: receipts.map((receipt) => ({
             id: receipt.id,
             lineItemId: receipt.lineItemId,
             merchant: receipt.merchant,
@@ -382,8 +429,45 @@ export function buildExpenseReportContext(
         })),
     };
 }
-const thresholdEvidenceHint =
-    "approval threshold flag over 500 dollars second review";
+
+async function answerWithModelFallback(input: {
+    tenantId: string;
+    expenseReportId: string;
+    modelAnswerer: PolicyAssistModelAnswerer | undefined;
+    question: string;
+    expenseReportContext: NormalizedExpenseReportContext;
+    policyContexts: AssistPolicyContext[];
+}): Promise<PolicyAssistModelAnswer | undefined> {
+    if (input.modelAnswerer === undefined) {
+        return undefined;
+    }
+
+    try {
+        return await input.modelAnswerer({
+            question: input.question,
+            expenseReportContext: input.expenseReportContext,
+            policyContexts: input.policyContexts,
+        });
+    } catch (error: unknown) {
+        logCoreCaseError({
+            environment: "sandbox",
+            eventType: "policy_assist_model_fallback",
+            expenseReportId: input.expenseReportId,
+            failureKind:
+                error instanceof PolicyAssistServiceError
+                    ? error.kind
+                    : "unknown",
+            providerStatusCode:
+                error instanceof PolicyAssistServiceError
+                    ? error.statusCode
+                    : undefined,
+            service: "core-case-service",
+            tenantId: input.tenantId,
+        });
+        return undefined;
+    }
+}
+
 /** Applies the MVP's deterministic line-item flag threshold without ML inference. */
 export function isAmountOverFlagThreshold(amount: string): boolean {
     const match = /^(?<sign>-?)(?<whole>\d+)\.(?<fraction>\d{2})$/u.exec(
@@ -420,6 +504,20 @@ function groundModelAnswer(
     const lineItemIds = new Set(
         expenseReportContext.lineItems.map((item) => item.id),
     );
+    const expenseReportFindings = modelAnswer.expenseReportFindings
+        .map((finding) => ({
+            ...finding,
+            relatedLineItemId:
+                finding.relatedLineItemId !== null &&
+                lineItemIds.has(finding.relatedLineItemId)
+                    ? finding.relatedLineItemId
+                    : null,
+            citations: finding.citations.filter((citation) =>
+                allowedCitations.has(citation),
+            ),
+        }))
+        .filter((finding) => finding.citations.length > 0);
+
     return {
         answer: modelAnswer.answer,
         answerSummary: modelAnswer.answerSummary,
@@ -428,19 +526,7 @@ function groundModelAnswer(
         flagAssessmentNarrative: modelAnswer.flagAssessmentNarrative,
         citations,
         abstained: modelAnswer.abstained,
-        expenseReportFindings: modelAnswer.expenseReportFindings.map(
-            (finding) => ({
-                ...finding,
-                relatedLineItemId:
-                    finding.relatedLineItemId !== null &&
-                    lineItemIds.has(finding.relatedLineItemId)
-                        ? finding.relatedLineItemId
-                        : null,
-                citations: finding.citations.filter((citation) =>
-                    allowedCitations.has(citation),
-                ),
-            }),
-        ),
+        expenseReportFindings,
         findingBadges: modelAnswer.findingBadges,
         policyEvidence: modelAnswer.policyEvidence.filter((evidence) =>
             allowedCitations.has(evidence.citation),
@@ -455,7 +541,7 @@ function buildFallbackReviewResponse(
     policyContexts: readonly AssistPolicyContext[],
     expenseReportContext: NormalizedExpenseReportContext,
     flagAssessment: AssistResponse["flagAssessment"],
-    modelInvoked: boolean,
+    modelOutputUsed: boolean,
 ): Pick<
     AssistResponse,
     | "answer"
@@ -530,7 +616,7 @@ function buildFallbackReviewResponse(
             hasSelectedReceipt: selectedReceipts.length > 0,
             flagAssessment,
             policyEvidenceCount: policyEvidence.length,
-            modelInvoked,
+            modelOutputUsed,
         }),
         policyEvidence,
         missingInformation: fallbackMissingInformation(
@@ -571,7 +657,6 @@ function fallbackExpenseReportFindings(
             citations: [],
         });
     }
-
     if (selectedLineItem !== undefined && !hasSelectedReceipt) {
         findings.push({
             type: "missing_receipt",
@@ -582,7 +667,6 @@ function fallbackExpenseReportFindings(
             citations: [],
         });
     }
-
     if (selectedLineItem?.deductible === null) {
         findings.push({
             type: "deductibility_review",
@@ -713,11 +797,10 @@ function buildFallbackAnswerSummary(
         return policyAnswer.answer;
     }
 
-    const conclusion = formatReviewConclusion(reviewConclusion);
     const flagText =
         flagAssessmentNarrative === null ? "" : ` ${flagAssessmentNarrative}`;
 
-    return `${conclusion}. ${reimbursabilityReason}${flagText}`;
+    return `${formatReviewConclusion(reviewConclusion)}. ${reimbursabilityReason}${flagText}`;
 }
 
 function fallbackFindingBadges(input: {
@@ -727,7 +810,7 @@ function fallbackFindingBadges(input: {
     hasSelectedReceipt: boolean;
     flagAssessment: AssistResponse["flagAssessment"];
     policyEvidenceCount: number;
-    modelInvoked: boolean;
+    modelOutputUsed: boolean;
 }): FindingBadge[] {
     const badges: FindingBadge[] = [
         {
@@ -737,8 +820,10 @@ function fallbackFindingBadges(input: {
         },
         {
             type: "model_status",
-            label: input.modelInvoked ? "Model reached" : "Policy-only answer",
-            tone: input.modelInvoked ? "success" : "neutral",
+            label: input.modelOutputUsed
+                ? "Model reached"
+                : "Policy-only answer",
+            tone: input.modelOutputUsed ? "success" : "neutral",
         },
     ];
 

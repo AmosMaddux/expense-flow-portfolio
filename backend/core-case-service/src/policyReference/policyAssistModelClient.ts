@@ -5,9 +5,34 @@ import {
     loadDefaultPolicyAssistConfig,
     type PolicyAssistConfig,
 } from "../config/policyAssistConfig.js";
-import { BadGatewayError } from "../errors/problem-json.js";
 import type { NormalizedExpenseReportContext } from "./assistService.js";
+import { PolicyAssistServiceError } from "./policyAssistErrors.js";
 import type { PolicyAnswerContext } from "./policyAssistantService.js";
+
+const findingTypeSchema = z.enum([
+    "policy_match",
+    "missing_receipt",
+    "amount_threshold",
+    "deductibility_review",
+    "insufficient_context",
+]);
+const badgeTypeSchema = z.enum([
+    "policy_match",
+    "missing_receipt",
+    "amount_threshold",
+    "deductibility_review",
+    "insufficient_context",
+    "review_conclusion",
+    "policy_context",
+    "model_status",
+]);
+const badgeToneSchema = z.enum([
+    "neutral",
+    "info",
+    "success",
+    "warning",
+    "danger",
+]);
 
 const policyAssistModelAnswerSchema = z
     .object({
@@ -35,13 +60,7 @@ const policyAssistModelAnswerSchema = z
         expenseReportFindings: z.array(
             z
                 .object({
-                    type: z.enum([
-                        "policy_match",
-                        "missing_receipt",
-                        "amount_threshold",
-                        "deductibility_review",
-                        "insufficient_context",
-                    ]),
+                    type: findingTypeSchema,
                     severity: z.enum(["info", "warning"]),
                     summary: z.string().min(1).max(500),
                     relatedLineItemId: z.uuid().nullable(),
@@ -52,24 +71,9 @@ const policyAssistModelAnswerSchema = z
         findingBadges: z.array(
             z
                 .object({
-                    type: z.enum([
-                        "policy_match",
-                        "missing_receipt",
-                        "amount_threshold",
-                        "deductibility_review",
-                        "insufficient_context",
-                        "review_conclusion",
-                        "policy_context",
-                        "model_status",
-                    ]),
+                    type: badgeTypeSchema,
                     label: z.string().min(1).max(80),
-                    tone: z.enum([
-                        "neutral",
-                        "info",
-                        "success",
-                        "warning",
-                        "danger",
-                    ]),
+                    tone: badgeToneSchema,
                 })
                 .strict(),
         ),
@@ -132,15 +136,23 @@ export async function createPolicyAssistModelAnswer(
     request: PolicyAssistModelRequest,
     options: PolicyAssistModelOptions,
 ): Promise<PolicyAssistModelAnswer> {
-    const endpoint = `${options.baseUrl.replace(/\/$/, "")}/responses`;
+    const endpoint = `${options.POLICY_ASSIST_BASE_URL.replace(/\/$/, "")}/responses`;
     const fetchImplementation = options.fetchImplementation ?? fetch;
-    const maxRetries = options.maxRetries;
     const delay = options.delayImplementation ?? defaultDelay;
     const random = options.random ?? Math.random;
-    const body = buildPolicyAssistRequestBody(request, options.model);
+    const body = buildPolicyAssistRequestBody(
+        request,
+        options.POLICY_ASSIST_MODEL,
+    );
 
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-        const timeoutSignal = AbortSignal.timeout(options.timeoutMs);
+    for (
+        let attempt = 0;
+        attempt <= options.POLICY_ASSIST_MAX_RETRIES;
+        attempt += 1
+    ) {
+        const timeoutSignal = AbortSignal.timeout(
+            options.POLICY_ASSIST_TIMEOUT_MS,
+        );
         const signal = options.signal
             ? AbortSignal.any([options.signal, timeoutSignal])
             : timeoutSignal;
@@ -151,33 +163,43 @@ export async function createPolicyAssistModelAnswer(
                 body: JSON.stringify(body),
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${options.apiKey}`,
+                    Authorization: `Bearer ${options.POLICY_ASSIST_API_KEY}`,
                 },
                 method: "POST",
                 signal,
             });
         } catch (error: unknown) {
-            if (attempt < maxRetries && options.signal?.aborted !== true) {
+            if (
+                attempt < options.POLICY_ASSIST_MAX_RETRIES &&
+                options.signal?.aborted !== true
+            ) {
                 await delay(calculateRetryDelay(attempt, options, random));
                 continue;
             }
 
-            throw new BadGatewayError(
+            throw new PolicyAssistServiceError(
                 timeoutSignal.aborted
                     ? "The policy assist model request timed out."
                     : "The policy assist model provider could not be reached.",
+                timeoutSignal.aborted ? "timeout" : "network",
+                undefined,
                 { cause: error },
             );
         }
 
         if (!response.ok) {
-            if (attempt < maxRetries && isRetryableStatus(response.status)) {
+            if (
+                attempt < options.POLICY_ASSIST_MAX_RETRIES &&
+                isRetryableStatus(response.status)
+            ) {
                 await delay(calculateRetryDelay(attempt, options, random));
                 continue;
             }
 
-            throw new BadGatewayError(
+            throw new PolicyAssistServiceError(
                 "The policy assist model provider rejected the request.",
+                "provider_rejected",
+                response.status,
             );
         }
 
@@ -185,14 +207,19 @@ export async function createPolicyAssistModelAnswer(
             const responseBody: unknown = await response.json();
             return parseModelAnswer(responseBody);
         } catch (error: unknown) {
-            throw new BadGatewayError(
+            throw new PolicyAssistServiceError(
                 "The policy assist model provider returned an invalid response.",
+                "invalid_response",
+                response.status,
                 { cause: error },
             );
         }
     }
 
-    throw new BadGatewayError("The policy assist model request failed.");
+    throw new PolicyAssistServiceError(
+        "The policy assist model request failed.",
+        "network",
+    );
 }
 
 /**
@@ -321,24 +348,14 @@ const policyAssistJsonSchema = {
                             "insufficient_context",
                         ],
                     },
-                    severity: {
-                        type: "string",
-                        enum: ["info", "warning"],
-                    },
+                    severity: { type: "string", enum: ["info", "warning"] },
                     summary: { type: "string" },
                     relatedLineItemId: {
                         anyOf: [{ type: "string" }, { type: "null" }],
                     },
-                    citations: {
-                        type: "array",
-                        items: { type: "string" },
-                    },
+                    citations: { type: "array", items: { type: "string" } },
                 },
             },
-        },
-        recommendedNextActions: {
-            type: "array",
-            items: { type: "string" },
         },
         findingBadges: {
             type: "array",
@@ -386,10 +403,8 @@ const policyAssistJsonSchema = {
                 },
             },
         },
-        missingInformation: {
-            type: "array",
-            items: { type: "string" },
-        },
+        missingInformation: { type: "array", items: { type: "string" } },
+        recommendedNextActions: { type: "array", items: { type: "string" } },
     },
 };
 
@@ -414,12 +429,15 @@ function isRetryableStatus(statusCode: number): boolean {
 
 function calculateRetryDelay(
     attempt: number,
-    options: Pick<PolicyAssistModelOptions, "baseBackoffMs" | "maxBackoffMs">,
+    options: Pick<
+        PolicyAssistModelOptions,
+        "POLICY_ASSIST_BASE_BACKOFF_MS" | "POLICY_ASSIST_MAX_BACKOFF_MS"
+    >,
     random: () => number,
 ): number {
     const exponentialDelay = Math.min(
-        options.maxBackoffMs,
-        options.baseBackoffMs * 2 ** attempt,
+        options.POLICY_ASSIST_MAX_BACKOFF_MS,
+        options.POLICY_ASSIST_BASE_BACKOFF_MS * 2 ** attempt,
     );
 
     return Math.floor(exponentialDelay / 2 + random() * (exponentialDelay / 2));

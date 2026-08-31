@@ -982,15 +982,6 @@
                             "additionalProperties": false
                         }
                     },
-                    "recommendedNextActions": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 240
-                        },
-                        "maxItems": 5
-                    },
                     "findingBadges": {
                         "type": "array",
                         "items": {
@@ -1057,6 +1048,15 @@
                         },
                         "maxItems": 5
                     },
+                    "recommendedNextActions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 240
+                        },
+                        "maxItems": 5
+                    },
                     "policyRetrievalStatus": {
                         "type": "string",
                         "enum": [
@@ -1092,10 +1092,10 @@
                     "caseContext",
                     "flagAssessment",
                     "expenseReportFindings",
-                    "recommendedNextActions",
                     "findingBadges",
                     "policyEvidence",
                     "missingInformation",
+                    "recommendedNextActions",
                     "policyRetrievalStatus",
                     "modelInvoked",
                     "baselineContextCount",
