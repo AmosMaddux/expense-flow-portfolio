@@ -53,6 +53,10 @@ aws_region = "us-east-1"
 # core_case_mfa_totp_secret_encryption_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/mfa-totp-secret-encryption-key-SYNTHETIC"
 # core_case_internal_command_token_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/internal-command-token-SYNTHETIC"
 
+# Optional. Enables model-backed Policy Assist in Core Case. Publish the local .env key with
+# scripts/aws/publish-policy-assist-secret.sh, then paste the printed ARN below.
+# core_case_policy_assist_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/policy-assist-api-key-SYNTHETIC"
+
 # Optional. Only needed to exercise the /v1/runtime-smoke/gl-coding health check. Generate with
 # scripts/aws/generate-sandbox-secrets.sh INCLUDE_RUNTIME_SMOKE_SECRET=true.
 # core_case_runtime_smoke_shared_secret_arn = "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:expenseflow/sandbox/core-case/runtime-smoke-shared-secret-SYNTHETIC"

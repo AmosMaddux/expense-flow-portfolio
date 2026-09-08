@@ -74,3 +74,18 @@ AWS_PROFILE=expenseflow-smoke scripts/aws/deploy-jwt-issuer.sh
 
 `deploy-jwt-issuer.sh` prints the stack's `IssuerUrl` output — pass that as
 `http_api_jwt_issuer`.
+
+## Optional Policy Assist model key
+
+Core Case can call the OpenAI-backed Policy Assist model when
+`POLICY_ASSIST_API_KEY` is present in the ECS task environment. Publish the
+local `.env` value to Secrets Manager without printing it:
+
+```bash
+AWS_PROFILE=expenseflow-smoke scripts/aws/publish-policy-assist-secret.sh
+```
+
+The script accepts either `POLICY_ASSIST_API_KEY` or `OPENAI_API_KEY` from the
+environment or `.env`, stores it under the `POLICY_ASSIST_API_KEY` JSON key in
+Secrets Manager, and prints the `core_case_policy_assist_api_key_secret_arn`
+Terraform variable value to use on `terraform apply`.

@@ -243,6 +243,12 @@ variable "core_case_mfa_totp_secret_encryption_key_secret_arn" {
   default     = null
 }
 
+variable "core_case_policy_assist_api_key_secret_arn" {
+  description = "Secrets Manager ARN for the OpenAI API key used by Core Case policy assist. The secret must contain a POLICY_ASSIST_API_KEY JSON key."
+  type        = string
+  default     = null
+}
+
 variable "core_case_runtime_smoke_shared_secret_arn" {
   description = "Secrets Manager ARN for runtime smoke shared secret."
   type        = string
