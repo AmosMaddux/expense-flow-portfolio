@@ -620,85 +620,89 @@ resource "aws_ecs_task_definition" "core_case" {
     operating_system_family = "LINUX"
   }
 
-  container_definitions = jsonencode([
-    local.otel_collector_container_definition,
-    {
-      name      = "core-case-service"
-      image     = coalesce(var.core_case_image_uri, "${var.core_case_repository_url}:latest")
-      essential = true
-      dependsOn = [{
-        containerName = "aws-otel-collector"
-        condition     = "START"
-      }]
-      portMappings = [{
-        name          = "http"
-        containerPort = 3000
-        hostPort      = 3000
-        protocol      = "tcp"
-        appProtocol   = "http"
-      }]
-      environment = [
-        { name = "ARGON2_HASH_LENGTH", value = "32" },
-        { name = "ARGON2_MEMORY_COST", value = "19456" },
-        { name = "ARGON2_PARALLELISM", value = "1" },
-        { name = "ARGON2_TIME_COST", value = "2" },
-        { name = "AUTH_ACCESS_TOKEN_TTL_SECONDS", value = "900" },
-        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
-        { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
-        { name = "AUTO_APPLY_MIGRATIONS", value = tostring(var.core_case_auto_apply_migrations) },
-        { name = "AWS_REGION", value = var.aws_region },
-        { name = "CASE_QUEUE_ROLLUP_TTL_SECONDS", value = "30" },
-        { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
-        { name = "CORE_CASE_RATE_LIMIT_REQUESTS", value = "100" },
-        { name = "CORE_CASE_RATE_LIMIT_WINDOW_SECONDS", value = "60" },
-        { name = "DB_HOST", value = var.core_case_db_host },
-        { name = "DB_NAME", value = var.core_case_db_name },
-        { name = "DB_PORT", value = tostring(var.core_case_db_port) },
-        { name = "DYNAMODB_EXPENSE_REPORT_TABLE", value = aws_dynamodb_table.expense_report_projection.name },
-        { name = "DYNAMODB_EXPENSE_REPORT_TENANT_INDEX", value = var.dynamodb_expense_report_tenant_index_name },
-        { name = "GL_CODING_BASE_BACKOFF_MS", value = "100" },
-        { name = "GL_CODING_MAX_BACKOFF_MS", value = "1000" },
-        { name = "GL_CODING_MAX_RETRIES", value = "2" },
-        { name = "GL_CODING_SERVICE_BASE_URL", value = "http://${var.internal_alb_dns_name}" },
-        { name = "GL_CODING_TIMEOUT_MS", value = "5000" },
-        { name = "IDEMPOTENCY_STORE_BACKEND", value = "redis" },
-        { name = "MFA_TOTP_SECRET_KEY_VERSION", value = var.mfa_totp_secret_key_version },
-        { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
-        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-        { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
-        { name = "PORT", value = "3000" },
-        { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
-        { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
-        { name = "RUNTIME_SMOKE_GL_CODING_ENABLED", value = tostring(var.runtime_smoke_gl_coding_enabled) },
-        { name = "SPA_ORIGIN", value = var.spa_origin },
-        { name = "STAGE_TRANSITION_SNS_TOPIC_ARN", value = aws_sns_topic.stage_transitions.arn },
-        { name = "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE", value = "50" },
-        { name = "TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS", value = "30000" },
-        { name = "TIN_EIN_VALIDATION_ENDPOINT_URL", value = var.tin_ein_validation_endpoint_url },
-        { name = "TIN_EIN_VALIDATION_OPERATION_NAME", value = "VerifyTaxpayer" },
-        { name = "TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED", value = "true" },
-        { name = "TIN_EIN_VALIDATION_STATUS_OPERATION_NAME", value = "GetTaxpayerStatus" },
-        { name = "TIN_EIN_VALIDATION_TIMEOUT_MS", value = "5000" },
-        { name = "TIN_EIN_VALIDATION_WSDL_URL", value = var.tin_ein_validation_wsdl_url },
-      ]
-      secrets = local.core_case_secrets
-      healthCheck = {
-        command     = ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));\""]
-        interval    = 30
-        timeout     = 3
-        retries     = 3
-        startPeriod = 10
-      }
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.core_case.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "core-case-service"
+  container_definitions = jsonencode(concat(
+    var.otel_collector_enabled ? [local.otel_collector_container_definition] : [],
+    [
+      {
+        name      = "core-case-service"
+        image     = coalesce(var.core_case_image_uri, "${var.core_case_repository_url}:latest")
+        essential = true
+        dependsOn = var.otel_collector_enabled ? [{
+          containerName = "aws-otel-collector"
+          condition     = "START"
+        }] : []
+        portMappings = [{
+          name          = "http"
+          containerPort = 3000
+          hostPort      = 3000
+          protocol      = "tcp"
+          appProtocol   = "http"
+        }]
+        environment = concat([
+          { name = "ARGON2_HASH_LENGTH", value = "32" },
+          { name = "ARGON2_MEMORY_COST", value = "19456" },
+          { name = "ARGON2_PARALLELISM", value = "1" },
+          { name = "ARGON2_TIME_COST", value = "2" },
+          { name = "AUTH_ACCESS_TOKEN_TTL_SECONDS", value = "900" },
+          { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
+          { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
+          { name = "AUTO_APPLY_MIGRATIONS", value = tostring(var.core_case_auto_apply_migrations) },
+          { name = "AWS_REGION", value = var.aws_region },
+          { name = "CASE_QUEUE_ROLLUP_TTL_SECONDS", value = "30" },
+          { name = "CORE_CASE_INTERNAL_ROUTES_ENABLED", value = tostring(var.core_case_internal_routes_enabled) },
+          { name = "CORE_CASE_RATE_LIMIT_REQUESTS", value = "100" },
+          { name = "CORE_CASE_RATE_LIMIT_WINDOW_SECONDS", value = "60" },
+          { name = "DB_HOST", value = var.core_case_db_host },
+          { name = "DB_NAME", value = var.core_case_db_name },
+          { name = "DB_PORT", value = tostring(var.core_case_db_port) },
+          { name = "DYNAMODB_EXPENSE_REPORT_TABLE", value = aws_dynamodb_table.expense_report_projection.name },
+          { name = "DYNAMODB_EXPENSE_REPORT_TENANT_INDEX", value = var.dynamodb_expense_report_tenant_index_name },
+          { name = "GL_CODING_BASE_BACKOFF_MS", value = "100" },
+          { name = "GL_CODING_MAX_BACKOFF_MS", value = "1000" },
+          { name = "GL_CODING_MAX_RETRIES", value = "2" },
+          { name = "GL_CODING_SERVICE_BASE_URL", value = "http://${var.internal_alb_dns_name}" },
+          { name = "GL_CODING_TIMEOUT_MS", value = "5000" },
+          { name = "IDEMPOTENCY_STORE_BACKEND", value = "redis" },
+          { name = "MFA_TOTP_SECRET_KEY_VERSION", value = var.mfa_totp_secret_key_version },
+          { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
+          { name = "PORT", value = "3000" },
+          { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
+          { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
+          { name = "RUNTIME_SMOKE_GL_CODING_ENABLED", value = tostring(var.runtime_smoke_gl_coding_enabled) },
+          { name = "SPA_ORIGIN", value = var.spa_origin },
+          { name = "STAGE_TRANSITION_SNS_TOPIC_ARN", value = aws_sns_topic.stage_transitions.arn },
+          { name = "TIN_EIN_VALIDATION_BREAKER_ERROR_THRESHOLD_PERCENTAGE", value = "50" },
+          { name = "TIN_EIN_VALIDATION_BREAKER_RESET_TIMEOUT_MS", value = "30000" },
+          { name = "TIN_EIN_VALIDATION_ENDPOINT_URL", value = var.tin_ein_validation_endpoint_url },
+          { name = "TIN_EIN_VALIDATION_OPERATION_NAME", value = "VerifyTaxpayer" },
+          { name = "TIN_EIN_VALIDATION_STATUS_ENRICHMENT_ENABLED", value = "true" },
+          { name = "TIN_EIN_VALIDATION_STATUS_OPERATION_NAME", value = "GetTaxpayerStatus" },
+          { name = "TIN_EIN_VALIDATION_TIMEOUT_MS", value = "5000" },
+          { name = "TIN_EIN_VALIDATION_WSDL_URL", value = var.tin_ein_validation_wsdl_url },
+          ],
+          var.otel_collector_enabled ? [
+            { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+            { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
+          ] : [],
+        )
+        secrets = local.core_case_secrets
+        healthCheck = {
+          command     = ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));\""]
+          interval    = 30
+          timeout     = 3
+          retries     = 3
+          startPeriod = 10
+        }
+        logConfiguration = {
+          logDriver = "awslogs"
+          options = {
+            awslogs-group         = aws_cloudwatch_log_group.core_case.name
+            awslogs-region        = var.aws_region
+            awslogs-stream-prefix = "core-case-service"
+          }
         }
       }
-    }
-  ])
+  ]))
 }
 
 resource "aws_ecs_task_definition" "gl_coding" {
@@ -717,52 +721,56 @@ resource "aws_ecs_task_definition" "gl_coding" {
     operating_system_family = "LINUX"
   }
 
-  container_definitions = jsonencode([
-    local.otel_collector_container_definition,
-    {
-      name      = "gl-coding-service"
-      image     = coalesce(var.gl_coding_image_uri, "${var.gl_coding_repository_url}:latest")
-      essential = true
-      dependsOn = [{
-        containerName = "aws-otel-collector"
-        condition     = "START"
-      }]
-      portMappings = [{
-        name          = "http"
-        containerPort = 8001
-        hostPort      = 8001
-        protocol      = "tcp"
-        appProtocol   = "http"
-      }]
-      environment = [
-        { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
-        { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
-        { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
-        { name = "DB_HOST", value = var.gl_coding_db_host },
-        { name = "DB_NAME", value = var.gl_coding_db_name },
-        { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
-        { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
-        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-        { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
-      ]
-      secrets = local.gl_coding_secrets
-      healthCheck = {
-        command     = ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
-        interval    = 30
-        timeout     = 3
-        retries     = 3
-        startPeriod = 10
-      }
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.gl_coding.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "gl-coding-service"
+  container_definitions = jsonencode(concat(
+    var.otel_collector_enabled ? [local.otel_collector_container_definition] : [],
+    [
+      {
+        name      = "gl-coding-service"
+        image     = coalesce(var.gl_coding_image_uri, "${var.gl_coding_repository_url}:latest")
+        essential = true
+        dependsOn = var.otel_collector_enabled ? [{
+          containerName = "aws-otel-collector"
+          condition     = "START"
+        }] : []
+        portMappings = [{
+          name          = "http"
+          containerPort = 8001
+          hostPort      = 8001
+          protocol      = "tcp"
+          appProtocol   = "http"
+        }]
+        environment = concat([
+          { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
+          { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
+          { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
+          { name = "DB_HOST", value = var.gl_coding_db_host },
+          { name = "DB_NAME", value = var.gl_coding_db_name },
+          { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
+          { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
+          ],
+          var.otel_collector_enabled ? [
+            { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+            { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
+          ] : [],
+        )
+        secrets = local.gl_coding_secrets
+        healthCheck = {
+          command     = ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+          interval    = 30
+          timeout     = 3
+          retries     = 3
+          startPeriod = 10
+        }
+        logConfiguration = {
+          logDriver = "awslogs"
+          options = {
+            awslogs-group         = aws_cloudwatch_log_group.gl_coding.name
+            awslogs-region        = var.aws_region
+            awslogs-stream-prefix = "gl-coding-service"
+          }
         }
       }
-    }
-  ])
+  ]))
 }
 
 resource "aws_ecs_service" "core_case" {

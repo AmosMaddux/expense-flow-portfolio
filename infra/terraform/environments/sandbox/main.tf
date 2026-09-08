@@ -115,16 +115,18 @@ module "ecs" {
   internal_alb_security_group_id                      = module.alb.internal_alb_security_group_id
   mfa_totp_secret_key_version                         = var.mfa_totp_secret_key_version
   name_prefix                                         = var.name_prefix
-  public_alb_security_group_id                        = module.alb.public_alb_security_group_id
-  receipt_storage_bucket_name                         = local.receipt_storage_bucket_name
-  role_permissions_boundary_arn                       = var.role_permissions_boundary_arn
-  runtime_smoke_gl_coding_enabled                     = var.runtime_smoke_gl_coding_enabled
-  service_subnet_ids                                  = local.private_subnet_ids
-  spa_origin                                          = "https://${module.spa.cloudfront_domain_name}"
-  tin_ein_validation_endpoint_url                     = var.tin_ein_validation_endpoint_url
-  tin_ein_validation_wsdl_url                         = var.tin_ein_validation_wsdl_url
-  tags                                                = local.tags
-  vpc_id                                              = local.vpc_id
+  # The ADOT image lives in public ECR; this sandbox has no NAT egress when VPC endpoints are used.
+  otel_collector_enabled          = var.enable_nat_gateway
+  public_alb_security_group_id    = module.alb.public_alb_security_group_id
+  receipt_storage_bucket_name     = local.receipt_storage_bucket_name
+  role_permissions_boundary_arn   = var.role_permissions_boundary_arn
+  runtime_smoke_gl_coding_enabled = var.runtime_smoke_gl_coding_enabled
+  service_subnet_ids              = local.private_subnet_ids
+  spa_origin                      = "https://${module.spa.cloudfront_domain_name}"
+  tin_ein_validation_endpoint_url = var.tin_ein_validation_endpoint_url
+  tin_ein_validation_wsdl_url     = var.tin_ein_validation_wsdl_url
+  tags                            = local.tags
+  vpc_id                          = local.vpc_id
 }
 
 module "bastion" {
