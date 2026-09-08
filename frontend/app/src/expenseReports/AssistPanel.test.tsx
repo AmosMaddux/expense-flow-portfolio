@@ -94,12 +94,14 @@ function requestPath(input: Parameters<typeof fetch>[0]): string {
 function assistResponse(
     response: Partial<{
         answer: string;
+        answerSummary: string;
         citations: string[];
         contexts: Array<{
             citation: string;
             section: string;
             content: string;
             score: number;
+            source: "baseline" | "retrieved";
         }>;
         expenseReportId: string;
         lineItemId: string | null;
@@ -107,6 +109,14 @@ function assistResponse(
 ) {
     return {
         answer: "Synthetic policy answer.",
+        answerSummary: "Potentially reimbursable with receipt review.",
+        reviewConclusion: "potentially_reimbursable",
+        reimbursabilityAssessment: {
+            status: "potentially_reimbursable",
+            reason: "Receipt metadata is present.",
+        },
+        flagAssessmentNarrative:
+            "500.01 is over the $500.00 line-item flag threshold.",
         citations: ["policy:receipts"],
         contexts: [
             {
@@ -115,12 +125,56 @@ function assistResponse(
                 content:
                     "Receipts are required for reimbursable transit expenses.",
                 score: 0.98,
+                source: "baseline" as const,
             },
         ],
         refused: false,
         abstained: false,
         refusalCategory: null,
-        flagAssessment: null,
+        flagAssessment: {
+            amount: "500.01",
+            threshold: "500.00",
+            isFlagged: true,
+            rule: "line_item_amount_over_500",
+        },
+        expenseReportFindings: [
+            {
+                type: "amount_threshold",
+                severity: "warning",
+                summary: "500.01 is over the $500.00 line-item flag threshold.",
+                relatedLineItemId: lineItemId,
+                citations: [],
+            },
+        ],
+        findingBadges: [
+            {
+                type: "review_conclusion",
+                label: "Potentially reimbursable",
+                tone: "success",
+            },
+            {
+                type: "model_status",
+                label: "Model reached",
+                tone: "success",
+            },
+            {
+                type: "policy_match",
+                label: "Receipt present",
+                tone: "success",
+            },
+        ],
+        policyEvidence: [
+            {
+                citation: "policy:receipts",
+                summary: "Receipt requirements: Receipts are required.",
+            },
+        ],
+        missingInformation: [],
+        recommendedNextActions: ["Review the line-item flag."],
+        policyRetrievalStatus: "baseline_and_retrieved",
+        modelInvoked: true,
+        baselineContextCount: 1,
+        retrievedContextCount: 1,
         ...response,
         caseContext: {
             expenseReportId: response.expenseReportId ?? reportId,
@@ -141,7 +195,7 @@ afterEach(() => {
 });
 
 describe("AssistPanel", () => {
-    test("submits selected context and renders only cited policy chunks", async () => {
+    test("submits selected context and renders structured grounded response", async () => {
         const fetchImplementation = vi.fn<typeof fetch>(() =>
             Promise.resolve(
                 createJsonResponse(
@@ -155,6 +209,7 @@ describe("AssistPanel", () => {
                                 content:
                                     "Receipts are required for reimbursable transit expenses.",
                                 score: 0.98,
+                                source: "baseline",
                             },
                             {
                                 citation: "policy:unrelated",
@@ -162,6 +217,7 @@ describe("AssistPanel", () => {
                                 content:
                                     "Synthetic unrelated policy text must not be shown.",
                                 score: 0.75,
+                                source: "retrieved",
                             },
                         ],
                     }),
@@ -182,23 +238,37 @@ describe("AssistPanel", () => {
         expect(
             await screen.findByText(/Synthetic Transit is reimbursable/u),
         ).toBeTruthy();
+        expect(screen.getAllByText("Potentially reimbursable").length).toBe(2);
+        expect(screen.getByText("Model reached")).toBeTruthy();
+        expect(screen.getByText("Receipt present")).toBeTruthy();
+        expect(
+            screen.getByText(/Baseline and retrieved policy context/u),
+        ).toBeTruthy();
+        expect(
+            screen.getByRole("heading", { name: "Reimbursability" }),
+        ).toBeTruthy();
+        expect(screen.getByRole("heading", { name: "Findings" })).toBeTruthy();
+        expect(
+            screen.getByRole("heading", { name: "Policy evidence" }),
+        ).toBeTruthy();
         expect(
             screen.getByRole("heading", { name: "Policy sources" }),
         ).toBeTruthy();
-        expect(screen.getByText(/Receipts are required/u)).toBeTruthy();
+        expect(screen.getAllByText(/Receipts are required/u).length).toBe(2);
+        expect(screen.getByText("Baseline")).toBeTruthy();
         expect(
             screen.queryByText(/Synthetic unrelated policy text/u),
         ).toBeNull();
         const [input, init] = fetchImplementation.mock.calls[0] ?? [];
+        if (init === undefined) {
+            throw new Error("Expected Assist request init.");
+        }
         expect(input === undefined ? undefined : requestPath(input)).toBe(
             "/v1/assist",
         );
-        expect(init?.method).toBe("POST");
-        const requestBody = init?.body;
-        if (typeof requestBody !== "string") {
-            throw new Error("Expected Assist request body to be a string.");
-        }
-        expect(JSON.parse(requestBody)).toEqual({
+        expect(init.method).toBe("POST");
+        expect(typeof init.body).toBe("string");
+        expect(JSON.parse(init.body as string)).toEqual({
             question: "Is this reimbursable?",
             caseContext: { expenseReportId: reportId, lineItemId },
         });
@@ -225,15 +295,16 @@ describe("AssistPanel", () => {
         );
         expect(
             screen.getByRole<HTMLButtonElement>("button", {
-                name: "Checking policy…",
+                name: "Checking policy...",
             }).disabled,
         ).toBe(true);
 
         await waitFor(() =>
             expect(fetchImplementation).toHaveBeenCalledTimes(1),
         );
-        act(() => {
+        await act(async () => {
             resolveResponse?.(createJsonResponse({}, { status: 500 }));
+            await Promise.resolve();
         });
 
         expect((await screen.findByRole("alert")).textContent).toContain(
@@ -262,7 +333,7 @@ describe("AssistPanel", () => {
         );
 
         renderForContext(defaultCaseContext(otherReportId));
-        act(() => {
+        await act(async () => {
             resolveResponse?.(
                 createJsonResponse(
                     assistResponse({
@@ -270,6 +341,7 @@ describe("AssistPanel", () => {
                     }),
                 ),
             );
+            await Promise.resolve();
         });
 
         expect(
@@ -291,6 +363,7 @@ describe("AssistPanel", () => {
                                 section: "Meals",
                                 content: "Meals require a business purpose.",
                                 score: 0.92,
+                                source: "retrieved",
                             },
                         ],
                     }),

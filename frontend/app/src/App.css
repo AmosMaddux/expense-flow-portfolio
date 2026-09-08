@@ -3353,6 +3353,27 @@ button:disabled {
     padding: 0.5rem;
 }
 
+.assist-panel__badge-row,
+.assist-panel__source-heading {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.assist-panel__badge-row {
+    margin-top: 1rem;
+}
+
+.assist-panel__diagnostics {
+    color: var(--muted-text, #52606d);
+    font-size: 0.875rem;
+}
+
+.assist-panel__actions,
+.assist-panel__evidence,
+.assist-panel__findings,
+.assist-panel__missing,
 .assist-panel__sources {
     display: grid;
     gap: 0.75rem;
@@ -3360,6 +3381,8 @@ button:disabled {
     padding-left: 1.25rem;
 }
 
+.assist-panel__evidence p,
+.assist-panel__findings p,
 .assist-panel__sources p {
     margin: 0.25rem 0;
 }

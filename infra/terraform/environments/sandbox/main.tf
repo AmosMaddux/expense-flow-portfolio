@@ -92,6 +92,7 @@ module "ecs" {
   core_case_internal_target_group_arn                 = module.alb.core_case_internal_target_group_arn
   core_case_internal_routes_enabled                   = var.core_case_internal_routes_enabled
   core_case_mfa_totp_secret_encryption_key_secret_arn = var.core_case_mfa_totp_secret_encryption_key_secret_arn
+  core_case_policy_assist_api_key_secret_arn          = var.core_case_policy_assist_api_key_secret_arn
   core_case_runtime_smoke_shared_secret_arn           = var.core_case_runtime_smoke_shared_secret_arn
   core_case_redis_url_secret_arn                      = module.redis.redis_url_secret_arn
   core_case_target_group_arn                          = module.alb.core_case_target_group_arn

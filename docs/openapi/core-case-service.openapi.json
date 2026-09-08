@@ -799,6 +799,45 @@
                         "type": "string",
                         "minLength": 1
                     },
+                    "answerSummary": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                    },
+                    "reviewConclusion": {
+                        "type": "string",
+                        "enum": [
+                            "potentially_reimbursable",
+                            "not_reimbursable",
+                            "needs_review",
+                            "insufficient_context"
+                        ]
+                    },
+                    "reimbursabilityAssessment": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "potentially_reimbursable",
+                                    "not_reimbursable",
+                                    "needs_more_info"
+                                ]
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                            }
+                        },
+                        "required": ["status", "reason"],
+                        "additionalProperties": false
+                    },
+                    "flagAssessmentNarrative": {
+                        "type": ["string", "null"],
+                        "minLength": 1,
+                        "maxLength": 1000
+                    },
                     "citations": {
                         "type": "array",
                         "items": {
@@ -825,13 +864,18 @@
                                 },
                                 "score": {
                                     "type": "number"
+                                },
+                                "source": {
+                                    "type": "string",
+                                    "enum": ["baseline", "retrieved"]
                                 }
                             },
                             "required": [
                                 "citation",
                                 "section",
                                 "content",
-                                "score"
+                                "score",
+                                "source"
                             ],
                             "additionalProperties": false
                         }
@@ -892,17 +936,171 @@
                             "rule"
                         ],
                         "additionalProperties": false
+                    },
+                    "expenseReportFindings": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "policy_match",
+                                        "missing_receipt",
+                                        "amount_threshold",
+                                        "deductibility_review",
+                                        "insufficient_context"
+                                    ]
+                                },
+                                "severity": {
+                                    "type": "string",
+                                    "enum": ["info", "warning"]
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                },
+                                "relatedLineItemId": {
+                                    "type": ["string", "null"],
+                                    "format": "uuid"
+                                },
+                                "citations": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                }
+                            },
+                            "required": [
+                                "type",
+                                "severity",
+                                "summary",
+                                "relatedLineItemId",
+                                "citations"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "findingBadges": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "policy_match",
+                                        "missing_receipt",
+                                        "amount_threshold",
+                                        "deductibility_review",
+                                        "insufficient_context",
+                                        "review_conclusion",
+                                        "policy_context",
+                                        "model_status"
+                                    ]
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 80
+                                },
+                                "tone": {
+                                    "type": "string",
+                                    "enum": [
+                                        "neutral",
+                                        "info",
+                                        "success",
+                                        "warning",
+                                        "danger"
+                                    ]
+                                }
+                            },
+                            "required": ["type", "label", "tone"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "policyEvidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "summary": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                },
+                                "citation": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "required": ["summary", "citation"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "missingInformation": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 240
+                        },
+                        "maxItems": 5
+                    },
+                    "recommendedNextActions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 240
+                        },
+                        "maxItems": 5
+                    },
+                    "policyRetrievalStatus": {
+                        "type": "string",
+                        "enum": [
+                            "baseline_and_retrieved",
+                            "baseline_only",
+                            "retrieved_only",
+                            "empty"
+                        ]
+                    },
+                    "modelInvoked": {
+                        "type": "boolean"
+                    },
+                    "baselineContextCount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "retrievedContextCount": {
+                        "type": "integer",
+                        "minimum": 0
                     }
                 },
                 "required": [
                     "answer",
+                    "answerSummary",
+                    "reviewConclusion",
+                    "reimbursabilityAssessment",
+                    "flagAssessmentNarrative",
                     "citations",
                     "contexts",
                     "refused",
                     "abstained",
                     "refusalCategory",
                     "caseContext",
-                    "flagAssessment"
+                    "flagAssessment",
+                    "expenseReportFindings",
+                    "findingBadges",
+                    "policyEvidence",
+                    "missingInformation",
+                    "recommendedNextActions",
+                    "policyRetrievalStatus",
+                    "modelInvoked",
+                    "baselineContextCount",
+                    "retrievedContextCount"
                 ],
                 "additionalProperties": false
             },
