@@ -37,6 +37,21 @@ function createAuthClientMock(loginRole: Role): AuthClient {
     };
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
+function setBrowserPath(path: string): void {
+    window.history.pushState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 function RoutedApp({
     authClient,
     fetchImplementation = vi.fn<typeof fetch>(() =>
@@ -102,12 +117,12 @@ afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    window.history.pushState(null, "", "/");
+    setBrowserPath("/");
 });
 
 describe("ExpenseFlowRouter", () => {
     test("redirects unauthenticated users from protected routes to login", async () => {
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
@@ -120,7 +135,7 @@ describe("ExpenseFlowRouter", () => {
     });
 
     test("mounts the existing auth sign-in screen at the login route", async () => {
-        window.history.pushState(null, "", "/login");
+        setBrowserPath("/login");
         render(
             <RoutedApp authClient={createAuthClientMock("Finance Admin")} />,
         );
@@ -133,7 +148,7 @@ describe("ExpenseFlowRouter", () => {
 
     test("signs in from the login route and lands on the role dashboard", async () => {
         const authClient = createAuthClientMock("Employee");
-        window.history.pushState(null, "", "/login");
+        setBrowserPath("/login");
         render(<RoutedApp authClient={authClient} />);
 
         await submitSignIn();
@@ -151,7 +166,7 @@ describe("ExpenseFlowRouter", () => {
 
     test("returns Employees to an allowed protected deep link after sign-in", async () => {
         const authClient = createAuthClientMock("Employee");
-        window.history.pushState(null, "", "/submit-expense");
+        setBrowserPath("/submit-expense");
         render(<RoutedApp authClient={authClient} />);
 
         await submitSignIn();
@@ -165,7 +180,7 @@ describe("ExpenseFlowRouter", () => {
     test("returns an Employee to Log Mileage after direct-link sign-in", async () => {
         const authClient = createAuthClientMock("Employee");
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            if (input === "/v1/expense-reports/drafts/current") {
+            if (requestPath(input) === "/v1/expense-reports/drafts/current") {
                 return Promise.resolve(
                     new Response(
                         JSON.stringify({
@@ -194,7 +209,7 @@ describe("ExpenseFlowRouter", () => {
                 ),
             );
         });
-        window.history.pushState(null, "", "/log-mileage");
+        setBrowserPath("/log-mileage");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -216,11 +231,7 @@ describe("ExpenseFlowRouter", () => {
         "ignores an unauthorized or external post-login redirect: %s",
         async (redirect) => {
             const authClient = createAuthClientMock("Employee");
-            window.history.pushState(
-                null,
-                "",
-                `/login?redirect=${encodeURIComponent(redirect)}`,
-            );
+            setBrowserPath(`/login?redirect=${encodeURIComponent(redirect)}`);
             render(<RoutedApp authClient={authClient} />);
 
             await submitSignIn();
@@ -244,7 +255,7 @@ describe("ExpenseFlowRouter", () => {
             vi.mocked(authClient.refresh).mockResolvedValue(
                 createSession(role),
             );
-            window.history.pushState(null, "", "/login");
+            setBrowserPath("/login");
             render(<RoutedApp authClient={authClient} />);
 
             expect(
@@ -263,7 +274,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Finance Admin", ["Finance Admin", "Employee"]),
         );
-        window.history.pushState(null, "", "/my-submissions");
+        setBrowserPath("/my-submissions");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -284,7 +295,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Department Manager"),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Approval Queue" });
@@ -302,6 +313,39 @@ describe("ExpenseFlowRouter", () => {
         ).toBeNull();
     });
 
+    test("mounts the expense reports browser for finance admins", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Finance Admin"),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                new Response(JSON.stringify([]), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 200,
+                }),
+            ),
+        );
+        setBrowserPath("/expense-reports");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        expect(
+            await screen.findAllByRole("heading", { name: "Expense Reports" }),
+        ).not.toHaveLength(0);
+        expect(
+            screen.queryByText(/This protected workspace route is available/),
+        ).toBeNull();
+        expect(fetchImplementation).toHaveBeenCalledWith(
+            "http://127.0.0.1:3301/v1/expense-reports",
+            expect.anything(),
+        );
+    });
+
     test("mounts the current queue under Approval Queue for managers", async () => {
         const authClient = createAuthClientMock("Department Manager");
         vi.mocked(authClient.refresh).mockResolvedValue(
@@ -315,7 +359,7 @@ describe("ExpenseFlowRouter", () => {
                 }),
             ),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(
             <RoutedApp
                 authClient={authClient}
@@ -330,7 +374,7 @@ describe("ExpenseFlowRouter", () => {
             screen.queryByText(/This protected workspace route is available/),
         ).toBeNull();
         expect(fetchImplementation).toHaveBeenCalledWith(
-            "/v1/case-queue/line-items",
+            "http://127.0.0.1:3301/v1/case-queue/line-items",
             expect.anything(),
         );
         expect(
@@ -345,7 +389,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Finance Admin"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Finance Dashboard" });
@@ -361,7 +405,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Employee"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -375,7 +419,7 @@ describe("ExpenseFlowRouter", () => {
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Department Manager"),
         );
-        window.history.pushState(null, "", "/finance-dashboard");
+        setBrowserPath("/finance-dashboard");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "Approval Queue" });
@@ -383,12 +427,99 @@ describe("ExpenseFlowRouter", () => {
             expect(window.location.pathname).toBe("/approval-queue"),
         );
     });
+    test("scopes the Finance Admin approval queue to Manager Approval and AP Review stages", async () => {
+        const authClient = createAuthClientMock("Finance Admin");
+        vi.mocked(authClient.refresh).mockResolvedValue(
+            createSession("Finance Admin"),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+            Promise.resolve(
+                new Response(
+                    JSON.stringify([
+                        {
+                            id: "a7a69670-b8ad-4850-9d55-4c15db31786f",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db001",
+                            employee: "50000000-0000-4000-8000-000000000191",
+                            merchant: "Northstar Hotels",
+                            amount: 742.18,
+                            glCode: "6240",
+                            currentStage: "Manager Approval",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                        {
+                            id: "b21bf320-a041-4ec6-8550-3c2315cc0c68",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db002",
+                            employee: "50000000-0000-4000-8000-000000000192",
+                            merchant: "Metro Meals",
+                            amount: 86.42,
+                            glCode: "6210",
+                            currentStage: "Submitted",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                        {
+                            id: "e6f4d30b-20fc-4a72-9e44-190eb7d30c72",
+                            sourceType: "line_item",
+                            expenseReportId:
+                                "d104c9ca-9de7-4f85-bb23-ed907e9db003",
+                            employee: "50000000-0000-4000-8000-000000000193",
+                            merchant: "Zenith Air",
+                            amount: 512,
+                            glCode: "6220",
+                            currentStage: "AP Review",
+                            flaggedLineItem: false,
+                            policyChecks: [],
+                            reviewAction: null,
+                            deductible: false,
+                            canAdvance: false,
+                            reportTotalMileage: 0,
+                            receipts: [],
+                            mileageEntries: [],
+                        },
+                    ]),
+                    {
+                        headers: { "Content-Type": "application/json" },
+                        status: 200,
+                    },
+                ),
+            ),
+        );
+        setBrowserPath("/approval-queue");
+        render(
+            <RoutedApp
+                authClient={authClient}
+                fetchImplementation={fetchImplementation}
+            />,
+        );
+
+        await screen.findByText("Employee 0191");
+        expect(screen.getByText("Employee 0193")).toBeTruthy();
+        expect(screen.queryByText("Employee 0192")).toBeNull();
+    });
+
     test("redirects Employee users away from the internal Case Queue route", async () => {
         const authClient = createAuthClientMock("Employee");
         vi.mocked(authClient.refresh).mockResolvedValue(
             createSession("Employee"),
         );
-        window.history.pushState(null, "", "/approval-queue");
+        setBrowserPath("/approval-queue");
         render(<RoutedApp authClient={authClient} />);
 
         await screen.findByRole("heading", { name: "My Submissions" });
@@ -396,7 +527,7 @@ describe("ExpenseFlowRouter", () => {
             expect(window.location.pathname).toBe("/my-submissions"),
         );
         expect(
-            screen.queryByRole("heading", { name: "Case Queue" }),
+            screen.queryByRole("heading", { name: "Approval Queue" }),
         ).toBeNull();
     });
 
@@ -406,7 +537,7 @@ describe("ExpenseFlowRouter", () => {
             createSession("Employee"),
         );
         const fetchImplementation = vi.fn<typeof fetch>((input) => {
-            if (input === "/v1/expense-reports/drafts/current") {
+            if (requestPath(input) === "/v1/expense-reports/drafts/current") {
                 return Promise.resolve(
                     new Response(
                         JSON.stringify({
@@ -435,7 +566,7 @@ describe("ExpenseFlowRouter", () => {
                 ),
             );
         });
-        window.history.pushState(null, "", "/log-mileage");
+        setBrowserPath("/log-mileage");
         render(
             <RoutedApp
                 authClient={authClient}

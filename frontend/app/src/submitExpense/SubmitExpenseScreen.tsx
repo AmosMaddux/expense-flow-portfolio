@@ -14,10 +14,10 @@ import {
     assembledDraftSchema,
     draftExpenseContentSchema,
     draftExpenseReportSchema,
-    expenseCategories,
     receiptUploadResponseSchema,
     submittedExpenseReportSchema,
     submitExpenseFormSchema,
+    useExpenseCategories,
     type DraftExpenseContent,
     type SubmitExpenseFormValues,
 } from "./submitExpenseSchemas";
@@ -25,7 +25,7 @@ import {
 type EditableLineItem = {
     merchant: string;
     expenseDate: string;
-    category: "" | (typeof expenseCategories)[number];
+    category: string;
     amount: string;
     receipt: File | null;
 };
@@ -45,7 +45,7 @@ const savedDraftSourceMutationSchema = z.discriminatedUnion("sourceType", [
             .object({
                 merchant: z.string().trim().min(1).max(240),
                 expenseDate: z.iso.date(),
-                category: z.enum(expenseCategories),
+                category: z.string().trim().min(1).max(100),
                 amount: z.number().positive().multipleOf(0.01),
                 currency: z.literal("USD"),
             })
@@ -116,6 +116,8 @@ export function SubmitExpenseScreen(): JSX.Element {
         submit: crypto.randomUUID(),
     });
     const receiptUploadIds = useRef(new WeakMap<File, string>());
+    const categoriesQuery = useExpenseCategories();
+    const categories = categoriesQuery.data ?? [];
     const selectedDraftId = selectedDraftSearchSchema.safeParse(location.search)
         .data?.draftId;
     const draftQuery = useExpenseFlowQuery({
@@ -623,6 +625,7 @@ export function SubmitExpenseScreen(): JSX.Element {
                 {savedContent.lineItems.length > 0 ||
                 savedContent.mileageEntries.length > 0 ? (
                     <SavedDraftContent
+                        categories={categories}
                         content={savedContent}
                         isMutating={savedSourceMutation.isPending}
                         onMutate={(input) =>
@@ -667,6 +670,7 @@ export function SubmitExpenseScreen(): JSX.Element {
                         ) : (
                             lineItems.map((item, index) => (
                                 <LineItemEditor
+                                    categories={categories}
                                     displayNumber={
                                         savedContent.lineItems.length +
                                         index +
@@ -778,10 +782,12 @@ export function SubmitExpenseScreen(): JSX.Element {
 }
 
 function SavedDraftContent({
+    categories,
     content,
     isMutating,
     onMutate,
 }: {
+    categories: string[];
     content: DraftExpenseContent;
     isMutating: boolean;
     onMutate: (input: SavedDraftSourceMutation) => Promise<DraftExpenseContent>;
@@ -792,7 +798,7 @@ function SavedDraftContent({
               sourceId: string;
               merchant: string;
               expenseDate: string;
-              category: (typeof expenseCategories)[number];
+              category: string;
               amount: string;
           }
         | {
@@ -930,22 +936,20 @@ function SavedDraftContent({
                                             onChange={(event) =>
                                                 setEditing({
                                                     ...editing,
-                                                    category: event.target
-                                                        .value as (typeof expenseCategories)[number],
+                                                    category:
+                                                        event.target.value,
                                                 })
                                             }
                                             value={editing.category}
                                         >
-                                            {expenseCategories.map(
-                                                (category) => (
-                                                    <option
-                                                        key={category}
-                                                        value={category}
-                                                    >
-                                                        {category}
-                                                    </option>
-                                                ),
-                                            )}
+                                            {categories.map((category) => (
+                                                <option
+                                                    key={category}
+                                                    value={category}
+                                                >
+                                                    {category}
+                                                </option>
+                                            ))}
                                         </select>
                                     </label>
                                     <label>
@@ -1183,6 +1187,7 @@ function SavedDraftContent({
 }
 
 function LineItemEditor({
+    categories,
     displayNumber,
     errors,
     index,
@@ -1191,6 +1196,7 @@ function LineItemEditor({
     onRemove,
     removable,
 }: {
+    categories: string[];
     displayNumber: number;
     errors: Record<string, string>;
     index: number;
@@ -1244,14 +1250,13 @@ function LineItemEditor({
                     onChange={(event) =>
                         onChange({
                             ...item,
-                            category: event.target
-                                .value as EditableLineItem["category"],
+                            category: event.target.value,
                         })
                     }
                     value={item.category}
                 >
                     <option value="">Choose a category</option>
-                    {expenseCategories.map((category) => (
+                    {categories.map((category) => (
                         <option key={category} value={category}>
                             {category}
                         </option>

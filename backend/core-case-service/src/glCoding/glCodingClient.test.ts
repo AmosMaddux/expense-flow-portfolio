@@ -127,6 +127,43 @@ describe("GL-coding client", () => {
         expect(response.flags[0]?.code).toBe("mileage_over_threshold");
     });
 
+    it("accepts tenant-configured line item categories", () => {
+        const request = GlCodingRequestSchema.parse({
+            line_items: [
+                {
+                    line_item_id: "30000000-0000-4000-8000-000000000102",
+                    merchant: "Green Leaf Catering",
+                    amount: "42.50",
+                    currency: "USD",
+                    category: "Company Functions",
+                },
+            ],
+            mileage: [],
+        });
+
+        const response = GlCodingResponseSchema.parse({
+            coded_items: [
+                {
+                    source_id: "30000000-0000-4000-8000-000000000102",
+                    source_type: "line_item",
+                    category: "Company Functions",
+                    mapping_status: "mapped",
+                    gl_account: {
+                        account_code: "5001",
+                        account_name: "Company Functions Expense",
+                    },
+                    amount: "42.50",
+                    currency: "USD",
+                    flagged_line_item: false,
+                },
+            ],
+            flags: [],
+        });
+
+        expect(request.line_items[0]?.category).toBe("Company Functions");
+        expect(response.coded_items[0]?.category).toBe("Company Functions");
+    });
+
     it("aborts a GL-coding request after the configured timeout", async () => {
         const hangingFetch = (async (
             _input: string | URL | Request,

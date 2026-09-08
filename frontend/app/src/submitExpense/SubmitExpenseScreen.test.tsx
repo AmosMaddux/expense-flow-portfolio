@@ -55,6 +55,16 @@ function createJsonResponse(body: unknown, status = 200): Response {
     });
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 function createFetchMock(
     draftContent: {
         expenseReportId: string;
@@ -69,7 +79,32 @@ function createFetchMock(
     },
 ): ReturnType<typeof vi.fn<typeof fetch>> {
     return vi.fn<typeof fetch>((input, init) => {
-        if (input === "/v1/expense-reports/drafts/current") {
+        const path = requestPath(input);
+        if (path === "/v1/gl-mappings") {
+            return Promise.resolve(
+                createJsonResponse({
+                    mappings: [
+                        "Travel",
+                        "Meals",
+                        "Lodging",
+                        "Mileage",
+                        "Office Supplies",
+                        "Software",
+                        "Other",
+                    ].map((category, index) => ({
+                        id: `70000000-0000-4000-8000-00000000030${index}`,
+                        category,
+                        glCodeId: `70000000-0000-4000-8000-00000000031${index}`,
+                        accountCode: `600${index}`,
+                        accountName: category,
+                        description: null,
+                        updatedAt: "2026-07-24T12:00:00.000Z",
+                    })),
+                    glCodes: [],
+                }),
+            );
+        }
+        if (path === "/v1/expense-reports/drafts/current") {
             return Promise.resolve(
                 createJsonResponse({
                     id: reportId,
@@ -78,13 +113,13 @@ function createFetchMock(
             );
         }
         if (
-            input === `/v1/expense-reports/${reportId}/draft-content` &&
+            path === `/v1/expense-reports/${reportId}/draft-content` &&
             (init?.method === undefined || init.method === "GET")
         ) {
             return Promise.resolve(createJsonResponse(draftContent));
         }
         if (
-            input === `/v1/expense-reports/${reportId}/draft-content` &&
+            path === `/v1/expense-reports/${reportId}/draft-content` &&
             init?.method === "POST"
         ) {
             return Promise.resolve(
@@ -99,13 +134,12 @@ function createFetchMock(
             );
         }
         if (
-            typeof input === "string" &&
-            input.startsWith(
+            path.startsWith(
                 `/v1/expense-reports/${reportId}/receipt-uploads/`,
             ) &&
             init?.method === "PUT"
         ) {
-            const uploadId = input.split("/receipt-uploads/")[1]?.split("?")[0];
+            const uploadId = path.split("/receipt-uploads/")[1]?.split("?")[0];
 
             return Promise.resolve(
                 createJsonResponse(
@@ -120,7 +154,7 @@ function createFetchMock(
             );
         }
         if (
-            input === `/v1/expense-reports/${reportId}/submit` &&
+            path === `/v1/expense-reports/${reportId}/submit` &&
             init?.method === "POST"
         ) {
             return Promise.resolve(
@@ -209,8 +243,9 @@ describe("SubmitExpenseScreen", () => {
             ],
         };
         const fetchImplementation = vi.fn<typeof fetch>((input, init) => {
+            const path = requestPath(input);
             if (
-                input ===
+                path ===
                     `/v1/expense-reports/${reportId}/line-items/${lineItemId}` &&
                 init?.method === "PATCH"
             ) {
@@ -227,7 +262,7 @@ describe("SubmitExpenseScreen", () => {
                 return Promise.resolve(createJsonResponse(content));
             }
             if (
-                input ===
+                path ===
                     `/v1/expense-reports/${reportId}/mileage-entries/${receiptId}` &&
                 init?.method === "DELETE"
             ) {
@@ -235,7 +270,7 @@ describe("SubmitExpenseScreen", () => {
                 return Promise.resolve(createJsonResponse(content));
             }
             if (
-                input === `/v1/expense-reports/${reportId}/draft-content` &&
+                path === `/v1/expense-reports/${reportId}/draft-content` &&
                 (init?.method === undefined || init.method === "GET")
             ) {
                 return Promise.resolve(createJsonResponse(content));
@@ -249,7 +284,8 @@ describe("SubmitExpenseScreen", () => {
         expect(await screen.findByText("Selected Draft")).toBeTruthy();
         expect(
             fetchImplementation.mock.calls.some(
-                ([input]) => input === "/v1/expense-reports/drafts/current",
+                ([input]) =>
+                    requestPath(input) === "/v1/expense-reports/drafts/current",
             ),
         ).toBe(false);
 
@@ -356,18 +392,20 @@ describe("SubmitExpenseScreen", () => {
         await waitFor(() => {
             const contentCall = fetchImplementation.mock.calls.find(
                 ([input, init]) =>
-                    input === `/v1/expense-reports/${reportId}/draft-content` &&
+                    requestPath(input) ===
+                        `/v1/expense-reports/${reportId}/draft-content` &&
                     init?.method === "POST",
             );
             const submitCall = fetchImplementation.mock.calls.find(
-                ([input]) => input === `/v1/expense-reports/${reportId}/submit`,
+                ([input]) =>
+                    requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/submit`,
             );
             expect(contentCall).toBeDefined();
             expect(submitCall).toBeDefined();
             const uploadCall = fetchImplementation.mock.calls.find(
                 ([input, init]) =>
-                    typeof input === "string" &&
-                    input.includes("/receipt-uploads/") &&
+                    requestPath(input).includes("/receipt-uploads/") &&
                     init?.method === "PUT",
             );
             expect(uploadCall?.[1]?.body).toBe(receipt);
@@ -426,10 +464,13 @@ describe("SubmitExpenseScreen", () => {
         expect(await screen.findByText("Draft saved.")).toBeTruthy();
         expect(screen.getByText("Saved in this draft")).toBeTruthy();
         expect(screen.getByText("Synthetic Rail")).toBeTruthy();
-        expect(fetchImplementation).not.toHaveBeenCalledWith(
-            `/v1/expense-reports/${reportId}/submit`,
-            expect.anything(),
-        );
+        expect(
+            fetchImplementation.mock.calls.some(
+                ([input]) =>
+                    requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/submit`,
+            ),
+        ).toBe(false);
     });
 
     test("saves the draft before opening Mileage Tracker", async () => {
@@ -462,7 +503,8 @@ describe("SubmitExpenseScreen", () => {
         expect(
             fetchImplementation.mock.calls.some(
                 ([input]) =>
-                    input === `/v1/expense-reports/${reportId}/draft-content`,
+                    requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/draft-content`,
             ),
         ).toBe(true);
     });
@@ -528,7 +570,8 @@ describe("SubmitExpenseScreen", () => {
         ).toBeTruthy();
         const contentPosts = fetchImplementation.mock.calls.filter(
             ([input, init]) =>
-                input === `/v1/expense-reports/${reportId}/draft-content` &&
+                requestPath(input) ===
+                    `/v1/expense-reports/${reportId}/draft-content` &&
                 init?.method === "POST",
         );
         expect(contentPosts).toHaveLength(0);
@@ -553,10 +596,8 @@ describe("SubmitExpenseScreen", () => {
         const baseFetch = createFetchMock(existingContent);
         let wasSubmitted = false;
         const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
-            if (
-                input === "/v1/expense-reports/drafts/current" &&
-                wasSubmitted
-            ) {
+            const path = requestPath(input);
+            if (path === "/v1/expense-reports/drafts/current" && wasSubmitted) {
                 return createJsonResponse(
                     {
                         detail: "No Drafted Expense Report was found.",
@@ -567,7 +608,7 @@ describe("SubmitExpenseScreen", () => {
 
             const response = await baseFetch(input, init);
             if (
-                input === `/v1/expense-reports/${reportId}/submit` &&
+                path === `/v1/expense-reports/${reportId}/submit` &&
                 init?.method === "POST"
             ) {
                 wasSubmitted = true;

@@ -71,13 +71,16 @@ describe("TeamAndUsersScreen", () => {
         fireEvent.click(screen.getByRole("button", { name: "Invite" }));
 
         await waitFor(() => {
-            expect(fetchImplementation).toHaveBeenCalledWith(
-                "/v1/users/invite",
-                expect.objectContaining({ method: "POST" }),
-            );
+            expect(
+                fetchImplementation.mock.calls.some(
+                    ([input, init]) =>
+                        requestPath(input) === "/v1/users/invite" &&
+                        init?.method === "POST",
+                ),
+            ).toBe(true);
         });
         const inviteCall = fetchImplementation.mock.calls.find(
-            ([input]) => input === "/v1/users/invite",
+            ([input]) => requestPath(input) === "/v1/users/invite",
         );
 
         expect(inviteCall?.[1]?.body).toBe(
@@ -160,11 +163,12 @@ function createSession(role: Role): AuthSession {
 
 function createFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
     return vi.fn<typeof fetch>((input, init) => {
-        if (input === "/v1/users" && init?.method === undefined) {
+        const path = requestPath(input);
+        if (path === "/v1/users" && init?.method === undefined) {
             return Promise.resolve(jsonResponse(usersResponse));
         }
 
-        if (input === "/v1/users/invite" && init?.method === "POST") {
+        if (path === "/v1/users/invite" && init?.method === "POST") {
             return Promise.resolve(
                 jsonResponse(
                     {
@@ -189,6 +193,16 @@ function createFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
             ),
         );
     });
+}
+
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

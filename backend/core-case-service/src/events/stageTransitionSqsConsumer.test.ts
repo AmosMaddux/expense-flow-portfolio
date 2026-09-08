@@ -36,11 +36,18 @@ const syntheticEvent = {
     },
 };
 
-function createStore(): StageTransitionProjectionStore & {
-    project: ReturnType<typeof vi.fn>;
+function createStore(): {
+    project: ReturnType<
+        typeof vi.fn<StageTransitionProjectionStore["project"]>
+    >;
+    store: StageTransitionProjectionStore;
 } {
+    const project = vi
+        .fn<StageTransitionProjectionStore["project"]>()
+        .mockResolvedValue(undefined);
     return {
-        project: vi.fn().mockResolvedValue(undefined),
+        project,
+        store: { project },
     };
 }
 
@@ -64,14 +71,14 @@ void describe("plain stage-transition SQS consumer", () => {
                 ],
             })
             .mockResolvedValueOnce({});
-        const store = createStore();
+        const { project, store } = createStore();
 
         const result = await pollStageTransitionQueueOnce({ send }, config, {
             store,
         });
 
         expect(result).toStrictEqual({ failed: 0, processed: 1 });
-        expect(store.project).toHaveBeenCalledExactlyOnceWith(syntheticEvent);
+        expect(project).toHaveBeenCalledExactlyOnceWith(syntheticEvent);
         expect(send).toHaveBeenCalledTimes(2);
         expect(send.mock.calls[0]?.[0]).toBeInstanceOf(ReceiveMessageCommand);
         expect(send.mock.calls[1]?.[0]).toBeInstanceOf(DeleteMessageCommand);
@@ -95,7 +102,7 @@ void describe("plain stage-transition SQS consumer", () => {
                 },
             ],
         });
-        const store = createStore();
+        const { project, store } = createStore();
         const logger = createLogger();
 
         const result = await pollStageTransitionQueueOnce({ send }, config, {
@@ -104,7 +111,7 @@ void describe("plain stage-transition SQS consumer", () => {
         });
 
         expect(result).toStrictEqual({ failed: 1, processed: 0 });
-        expect(store.project).not.toHaveBeenCalled();
+        expect(project).not.toHaveBeenCalled();
         expect(logger.messageFailed).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledOnce();
         expect(send.mock.calls[0]?.[0]).toBeInstanceOf(ReceiveMessageCommand);
@@ -119,10 +126,8 @@ void describe("plain stage-transition SQS consumer", () => {
                 },
             ],
         });
-        const store = createStore();
-        store.project.mockRejectedValue(
-            new Error("synthetic projection failure"),
-        );
+        const { project, store } = createStore();
+        project.mockRejectedValue(new Error("synthetic projection failure"));
         const logger = createLogger();
 
         const result = await pollStageTransitionQueueOnce({ send }, config, {
@@ -131,7 +136,7 @@ void describe("plain stage-transition SQS consumer", () => {
         });
 
         expect(result).toStrictEqual({ failed: 1, processed: 0 });
-        expect(store.project).toHaveBeenCalledOnce();
+        expect(project).toHaveBeenCalledOnce();
         expect(logger.messageFailed).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledOnce();
     });
@@ -153,18 +158,15 @@ void describe("plain stage-transition SQS consumer", () => {
             currentStage: "Manager Approval",
             projectionRows: new Map<string, string>(),
         };
-        const store: StageTransitionProjectionStore & {
-            project: ReturnType<typeof vi.fn>;
-        } = {
-            project: vi.fn(async (event: typeof syntheticEvent) => {
+        const project = vi.fn<StageTransitionProjectionStore["project"]>(
+            async (event) => {
                 await Promise.resolve();
                 persistedState.projectionRows.set(event.id, event.data.toStage);
                 persistedState.currentStage = event.data.toStage;
-            }),
-        };
-        store.project.mockRejectedValue(
-            new Error("synthetic projection failure"),
+            },
         );
+        const store: StageTransitionProjectionStore = { project };
+        project.mockRejectedValue(new Error("synthetic projection failure"));
         const logger = createLogger();
 
         for (let attempt = 0; attempt < maxReceiveCount; attempt += 1) {
@@ -182,7 +184,7 @@ void describe("plain stage-transition SQS consumer", () => {
 
         expect(persistedState.currentStage).toBe("Manager Approval");
         expect(persistedState.projectionRows.size).toBe(0);
-        expect(store.project).toHaveBeenCalledTimes(maxReceiveCount);
+        expect(project).toHaveBeenCalledTimes(maxReceiveCount);
         expect(logger.messageFailed).toHaveBeenCalledTimes(maxReceiveCount);
         expect(send).toHaveBeenCalledTimes(maxReceiveCount);
         expect(
@@ -222,7 +224,7 @@ void describe("plain stage-transition SQS consumer", () => {
             shutdownController.signal,
             {
                 logger,
-                store: createStore(),
+                store: createStore().store,
                 waitForRetry,
             },
         );
@@ -264,7 +266,7 @@ void describe("plain stage-transition SQS consumer", () => {
             shutdownController.signal,
             {
                 logger: createLogger(),
-                store: createStore(),
+                store: createStore().store,
                 waitForRetry,
             },
         );

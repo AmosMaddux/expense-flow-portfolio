@@ -8,7 +8,6 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.python.auth import AuthenticatedRequestContext, require_request_context
 from backend.python.gl_coding import (
-    ExpenseCategory,
     GlAccount,
     GlCodingComputeRequest,
     GlMappingStatus,
@@ -19,6 +18,7 @@ from backend.python.domain_exceptions import InvalidMileageRateError
 from backend.python.main import app, get_gl_account_mapping_repository, lifespan
 
 TENANT_ID = UUID("40000000-0000-4000-8000-000000000300")
+MILEAGE_CATEGORY = "Mileage"
 
 
 @pytest.fixture(autouse=True)
@@ -31,14 +31,14 @@ class FakeGlAccountMappingRepository:
     """Return synthetic tenant-scoped GL mappings for endpoint tests."""
 
     def __init__(
-        self, accounts_by_category: dict[ExpenseCategory, GlAccount] | None = None
+        self, accounts_by_category: dict[str, GlAccount] | None = None
     ) -> None:
         self.accounts_by_category = accounts_by_category or {}
-        self.requests: list[tuple[UUID, set[ExpenseCategory]]] = []
+        self.requests: list[tuple[UUID, set[str]]] = []
 
     async def get_accounts_for_categories(
-        self, tenant_id: UUID, categories: set[ExpenseCategory]
-    ) -> dict[ExpenseCategory, GlAccount]:
+        self, tenant_id: UUID, categories: set[str]
+    ) -> dict[str, GlAccount]:
         """Return only requested accounts to mimic the repository contract."""
         self.requests.append((tenant_id, categories))
         return {
@@ -49,29 +49,33 @@ class FakeGlAccountMappingRepository:
 
 
 SEEDED_GL_ACCOUNTS = {
-    ExpenseCategory.TRAVEL: GlAccount(
+    "Travel": GlAccount(
         account_code="6000",
         account_name="Travel Expense",
     ),
-    ExpenseCategory.MEALS: GlAccount(
+    "Meals": GlAccount(
         account_code="6100",
         account_name="Meals Expense",
     ),
-    ExpenseCategory.LODGING: GlAccount(
+    "Lodging": GlAccount(
         account_code="6200",
         account_name="Lodging Expense",
     ),
-    ExpenseCategory.MILEAGE: GlAccount(
+    MILEAGE_CATEGORY: GlAccount(
         account_code="6300",
         account_name="Mileage Expense",
     ),
-    ExpenseCategory.OFFICE_SUPPLIES: GlAccount(
+    "Office Supplies": GlAccount(
         account_code="6400",
         account_name="Office Supplies Expense",
     ),
-    ExpenseCategory.SOFTWARE: GlAccount(
+    "Software": GlAccount(
         account_code="6500",
         account_name="Software Expense",
+    ),
+    "Company Functions": GlAccount(
+        account_code="5001",
+        account_name="Company Functions Expense",
     ),
 }
 
@@ -89,10 +93,10 @@ def gl_coding_payload() -> dict[str, object]:
             },
             {
                 "line_item_id": "30000000-0000-4000-8000-000000000102",
-                "merchant": "Example Vendor",
+                "merchant": "Green Leaf Catering",
                 "amount": "42.50",
                 "currency": "USD",
-                "category": "Other",
+                "category": "Company Functions",
             },
         ],
         "mileage": [],
@@ -122,21 +126,20 @@ async def test_code_line_items_uses_seeded_tenant_mapping_and_marks_missing_cate
     response = await code_line_items_to_gl_accounts(request, TENANT_ID, repository)
 
     mapped_item = response.coded_items[0]
-    assert mapped_item.category is ExpenseCategory.TRAVEL
+    assert mapped_item.category == "Travel"
     assert mapped_item.mapping_status is GlMappingStatus.MAPPED
     assert mapped_item.gl_account is not None
     assert mapped_item.gl_account.account_code == "6000"
     assert mapped_item.gl_account.account_name == "Travel Expense"
     assert mapped_item.flagged_line_item is True
 
-    unmapped_item = response.coded_items[1]
-    assert unmapped_item.category is ExpenseCategory.OTHER
-    assert unmapped_item.mapping_status is GlMappingStatus.UNMAPPED
-    assert unmapped_item.gl_account is None
-    assert unmapped_item.flagged_line_item is False
-    assert repository.requests == [
-        (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
-    ]
+    custom_item = response.coded_items[1]
+    assert custom_item.category == "Company Functions"
+    assert custom_item.mapping_status is GlMappingStatus.MAPPED
+    assert custom_item.gl_account is not None
+    assert custom_item.gl_account.account_code == "5001"
+    assert custom_item.flagged_line_item is False
+    assert repository.requests == [(TENANT_ID, {"Travel", "Company Functions"})]
 
 
 @pytest.mark.anyio
@@ -148,13 +151,13 @@ async def test_code_line_items_maps_mileage_entries() -> None:
 
     mileage_item = response.coded_items[0]
     assert mileage_item.source_id == UUID("30000000-0000-4000-8000-000000000201")
-    assert mileage_item.category is ExpenseCategory.MILEAGE
+    assert mileage_item.category == MILEAGE_CATEGORY
     assert mileage_item.mapping_status is GlMappingStatus.MAPPED
     assert mileage_item.gl_account is not None
     assert mileage_item.gl_account.account_code == "6300"
     assert mileage_item.flagged_line_item is False
     assert response.flags == []
-    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
+    assert repository.requests == [(TENANT_ID, {MILEAGE_CATEGORY})]
 
 
 @pytest.mark.anyio
@@ -200,9 +203,12 @@ async def test_gl_coding_endpoint_returns_mapped_and_unmapped_line_items() -> No
             {
                 "source_id": "30000000-0000-4000-8000-000000000102",
                 "source_type": "line_item",
-                "category": "Other",
-                "mapping_status": "unmapped",
-                "gl_account": None,
+                "category": "Company Functions",
+                "mapping_status": "mapped",
+                "gl_account": {
+                    "account_code": "5001",
+                    "account_name": "Company Functions Expense",
+                },
                 "amount": "42.50",
                 "currency": "USD",
                 "flagged_line_item": False,
@@ -217,9 +223,7 @@ async def test_gl_coding_endpoint_returns_mapped_and_unmapped_line_items() -> No
             }
         ],
     }
-    assert repository.requests == [
-        (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
-    ]
+    assert repository.requests == [(TENANT_ID, {"Travel", "Company Functions"})]
 
 
 @pytest.mark.anyio
@@ -290,7 +294,7 @@ async def test_gl_coding_endpoint_calculates_and_flags_mileage_from_configured_r
             }
         ],
     }
-    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
+    assert repository.requests == [(TENANT_ID, {MILEAGE_CATEGORY})]
 
 
 @pytest.mark.anyio
@@ -376,9 +380,7 @@ async def test_gl_coding_endpoint_accepts_scoped_employee_submission() -> None:
         app.dependency_overrides.pop(get_gl_account_mapping_repository, None)
 
     assert response.status_code == 200
-    assert repository.requests == [
-        (TENANT_ID, {ExpenseCategory.TRAVEL, ExpenseCategory.OTHER})
-    ]
+    assert repository.requests == [(TENANT_ID, {"Travel", "Company Functions"})]
 
 
 @pytest.mark.anyio
@@ -418,7 +420,7 @@ async def test_code_line_items_calculates_and_flags_mileage_reimbursements() -> 
     assert response.coded_items[0].currency == "USD"
     assert response.coded_items[0].flagged_line_item is True
     assert response.flags[0].code.value == "mileage_over_threshold"
-    assert repository.requests == [(TENANT_ID, {ExpenseCategory.MILEAGE})]
+    assert repository.requests == [(TENANT_ID, {MILEAGE_CATEGORY})]
 
 
 def test_mileage_reimbursement_rate_uses_environment_override() -> None:

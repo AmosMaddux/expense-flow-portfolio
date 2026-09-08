@@ -23,21 +23,40 @@ const event: ClaimedStageTransitionOutboxEvent = {
 
 function createStore(
     claimedEvents: ClaimedStageTransitionOutboxEvent[] = [event],
-): StageTransitionOutboxStore & {
-    claim: ReturnType<typeof vi.fn>;
-    markFailed: ReturnType<typeof vi.fn>;
-    markPublished: ReturnType<typeof vi.fn>;
+): {
+    claim: ReturnType<typeof vi.fn<StageTransitionOutboxStore["claim"]>>;
+    markFailed: ReturnType<
+        typeof vi.fn<StageTransitionOutboxStore["markFailed"]>
+    >;
+    markPublished: ReturnType<
+        typeof vi.fn<StageTransitionOutboxStore["markPublished"]>
+    >;
+    store: StageTransitionOutboxStore;
 } {
+    const claim = vi
+        .fn<StageTransitionOutboxStore["claim"]>()
+        .mockResolvedValue(claimedEvents);
+    const markFailed = vi
+        .fn<StageTransitionOutboxStore["markFailed"]>()
+        .mockResolvedValue(true);
+    const markPublished = vi
+        .fn<StageTransitionOutboxStore["markPublished"]>()
+        .mockResolvedValue(true);
     return {
-        claim: vi.fn().mockResolvedValue(claimedEvents),
-        markFailed: vi.fn().mockResolvedValue(true),
-        markPublished: vi.fn().mockResolvedValue(true),
+        claim,
+        markFailed,
+        markPublished,
+        store: {
+            claim,
+            markFailed,
+            markPublished,
+        },
     };
 }
 
 void describe("stage-transition outbox dispatcher", () => {
     void test("publishes a claimed event exactly once and marks it complete", async () => {
-        const store = createStore();
+        const { markFailed, markPublished, store } = createStore();
         const publish = vi.fn().mockResolvedValue(undefined);
         const publishedAt = new Date("2026-07-29T18:00:01.000Z");
 
@@ -57,12 +76,12 @@ void describe("stage-transition outbox dispatcher", () => {
             eventId: event.id,
             occurredAt: event.occurredAt,
         });
-        expect(store.markPublished).toHaveBeenCalledWith(event, publishedAt);
-        expect(store.markFailed).not.toHaveBeenCalled();
+        expect(markPublished).toHaveBeenCalledWith(event, publishedAt);
+        expect(markFailed).not.toHaveBeenCalled();
     });
 
     void test("retains an event for retry when SNS publishing fails", async () => {
-        const store = createStore();
+        const { markFailed, markPublished, store } = createStore();
         const failedAt = new Date("2026-07-29T18:00:01.000Z");
 
         await expect(
@@ -77,8 +96,8 @@ void describe("stage-transition outbox dispatcher", () => {
             }),
         ).resolves.toBeUndefined();
 
-        expect(store.markPublished).not.toHaveBeenCalled();
-        expect(store.markFailed).toHaveBeenCalledWith(
+        expect(markPublished).not.toHaveBeenCalled();
+        expect(markFailed).toHaveBeenCalledWith(
             event,
             new Date("2026-07-29T18:00:02.000Z"),
             undefined,
@@ -86,9 +105,9 @@ void describe("stage-transition outbox dispatcher", () => {
     });
 
     void test("does not mark a published event failed when completion marking fails", async () => {
-        const store = createStore();
+        const { markFailed, markPublished, store } = createStore();
         const publish = vi.fn().mockResolvedValue(undefined);
-        store.markPublished.mockRejectedValue(
+        markPublished.mockRejectedValue(
             new Error("synthetic stale completion"),
         );
 
@@ -101,14 +120,14 @@ void describe("stage-transition outbox dispatcher", () => {
         ).rejects.toThrow("synthetic stale completion");
 
         expect(publish).toHaveBeenCalledTimes(1);
-        expect(store.markPublished).toHaveBeenCalledTimes(1);
-        expect(store.markFailed).not.toHaveBeenCalled();
+        expect(markPublished).toHaveBeenCalledTimes(1);
+        expect(markFailed).not.toHaveBeenCalled();
     });
 
     void test("reports stale ownership when publishing cannot be marked complete", async () => {
-        const store = createStore();
+        const { markFailed, markPublished, store } = createStore();
         const publish = vi.fn().mockResolvedValue(undefined);
-        store.markPublished.mockResolvedValue(false);
+        markPublished.mockResolvedValue(false);
 
         await expect(
             dispatchStageTransitionOutboxEvents(event.id, {
@@ -119,13 +138,13 @@ void describe("stage-transition outbox dispatcher", () => {
         ).rejects.toBeInstanceOf(StageTransitionOutboxOwnershipLostError);
 
         expect(publish).toHaveBeenCalledTimes(1);
-        expect(store.markPublished).toHaveBeenCalledTimes(1);
-        expect(store.markFailed).not.toHaveBeenCalled();
+        expect(markPublished).toHaveBeenCalledTimes(1);
+        expect(markFailed).not.toHaveBeenCalled();
     });
 
     void test("reports stale ownership when a publish failure cannot be marked failed", async () => {
-        const store = createStore();
-        store.markFailed.mockResolvedValue(false);
+        const { markFailed, markPublished, store } = createStore();
+        markFailed.mockResolvedValue(false);
 
         await expect(
             dispatchStageTransitionOutboxEvents(event.id, {
@@ -139,13 +158,13 @@ void describe("stage-transition outbox dispatcher", () => {
             }),
         ).rejects.toBeInstanceOf(StageTransitionOutboxOwnershipLostError);
 
-        expect(store.markPublished).not.toHaveBeenCalled();
-        expect(store.markFailed).toHaveBeenCalledTimes(1);
+        expect(markPublished).not.toHaveBeenCalled();
+        expect(markFailed).toHaveBeenCalledTimes(1);
     });
 
     void test("dead-letters an event after the final failed attempt", async () => {
         const finalAttemptEvent = { ...event, attemptCount: 10 };
-        const store = createStore([finalAttemptEvent]);
+        const { markFailed, store } = createStore([finalAttemptEvent]);
         const failedAt = new Date("2026-07-29T18:00:01.000Z");
 
         await dispatchStageTransitionOutboxEvents(event.id, {
@@ -158,7 +177,7 @@ void describe("stage-transition outbox dispatcher", () => {
             store,
         });
 
-        expect(store.markFailed).toHaveBeenCalledWith(
+        expect(markFailed).toHaveBeenCalledWith(
             finalAttemptEvent,
             new Date("2026-07-29T18:05:01.000Z"),
             failedAt,

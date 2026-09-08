@@ -270,7 +270,6 @@ export function AllTransactionsScreen(): JSX.Element {
                         ) : null}
                         {selectedExpenseReportId !== null ? (
                             <ExpenseReportDetailDialog
-                                auditActionFormat="raw"
                                 mileageUnitLabel="miles"
                                 onClose={() => setSelectedExpenseReportId(null)}
                                 reportId={selectedExpenseReportId}

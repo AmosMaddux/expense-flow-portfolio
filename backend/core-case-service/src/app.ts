@@ -213,6 +213,11 @@ function onlyProtectedRoutes(
 }
 
 function isProtectedRoute(path: string): boolean {
+    // Internal command routes authenticate with a dedicated trust token instead of a user bearer JWT.
+    if (path === "/internal" || path.startsWith("/internal/")) {
+        return false;
+    }
+
     return protectedRoutePrefixes.some(
         (prefix) => path === prefix || path.startsWith(`${prefix}/`),
     );

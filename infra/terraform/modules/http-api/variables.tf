@@ -72,6 +72,16 @@ variable "core_case_internal_base_url" {
   }
 }
 
+variable "core_case_public_base_url" {
+  description = "Public Core Case ALB origin used by the sandbox API Gateway HTTPS proxy. Must be the origin only, without /v1."
+  type        = string
+
+  validation {
+    condition     = can(regex("^http://[^/]+$", var.core_case_public_base_url))
+    error_message = "core_case_public_base_url must be an http:// origin without a path."
+  }
+}
+
 variable "core_case_internal_command_token_secret_arn" {
   description = "Secrets Manager secret ARN containing the shared internal command token accepted by Core Case."
   type        = string

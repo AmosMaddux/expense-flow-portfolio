@@ -23,7 +23,10 @@ export const CreateAlertDispositionInboundRequestSchema = z
         status: z.enum(alertDispositionStatusValues).default("resolved"),
         resolution: z.string().trim().min(1).max(2_000),
         correlationId: z.uuid().optional(),
-        traceId: z.string().regex(/^[0-9a-f]{32}$/i).optional(),
+        traceId: z
+            .string()
+            .regex(/^[0-9a-f]{32}$/i)
+            .optional(),
         notes: z.string().trim().max(4_000).optional(),
     })
     .strict();

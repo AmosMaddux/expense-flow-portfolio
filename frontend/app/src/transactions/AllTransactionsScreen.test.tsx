@@ -144,6 +144,7 @@ function renderAllTransactionsScreen(
     render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider
+                apiBaseUrl=""
                 authClient={createAuthClientMock()}
                 clearCache={() => queryClient.clear()}
                 fetchImplementation={fetchImplementation}
@@ -632,7 +633,7 @@ describe("AllTransactionsScreen", () => {
             within(dialog).getByRole("tab", { name: "Audit Trail" }),
         );
         expect(
-            await within(dialog).findByText("receipt_preview_opened"),
+            await within(dialog).findByText("Receipt Preview Opened"),
         ).toBeTruthy();
         expect(
             within(dialog).getByText("Synthetic audit detail."),

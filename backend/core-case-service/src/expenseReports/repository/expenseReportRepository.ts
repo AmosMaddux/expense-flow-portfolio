@@ -2014,7 +2014,7 @@ export async function clearExpenseReportFlags(request: {
 }
 
 /**
- * Records a manager review decision for one reviewable source in Manager Approval.
+ * Records a review decision for one reviewable source in an active review stage.
  */
 export async function reviewExpenseReportLineItem(request: {
     tenantId: string;
@@ -2037,7 +2037,10 @@ export async function reviewExpenseReportLineItem(request: {
             return { kind: "not_found" };
         }
 
-        if (report.currentStage !== "Manager Approval") {
+        if (
+            report.currentStage !== "Manager Approval" &&
+            report.currentStage !== "AP Review"
+        ) {
             return {
                 kind: "invalid_stage",
                 currentStage: report.currentStage,
@@ -3747,9 +3750,10 @@ function toApprovalQueueLineItemResponse(
         reviewAction: row.reviewAction,
         deductible: row.deductible,
         canAdvance:
-            row.currentStage === "Manager Approval" &&
-            openFlagCount === 0 &&
-            unreviewedLineItemCount === 0,
+            (row.currentStage === "Manager Approval" &&
+                openFlagCount === 0 &&
+                unreviewedLineItemCount === 0) ||
+            (row.currentStage === "AP Review" && unreviewedLineItemCount === 0),
         reportTotalMileage:
             row.sourceType === "mileage"
                 ? Number(row.mileageDistance ?? 0)

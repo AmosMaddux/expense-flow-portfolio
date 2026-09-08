@@ -19,6 +19,7 @@ import {
     mileageEntry,
     priorityLevels,
     receiptMetadata,
+    referenceDataAuditEntry,
     stageTransition,
     stageTransitionOutbox,
     stageTransitionProjection,
@@ -148,6 +149,10 @@ const glReferenceMigrationSqlUrl = new URL(
 );
 const allTransactionsPaginationMigrationSqlUrl = new URL(
     "../../../drizzle/0026_all_transactions_pagination_idx.sql",
+    import.meta.url,
+);
+const auditLogCreatedAtIndexMigrationSqlUrl = new URL(
+    "../../../drizzle/0039_audit_log_created_at_idx.sql",
     import.meta.url,
 );
 
@@ -1128,6 +1133,16 @@ void describe("lineItem schema", () => {
             'create index concurrently if not exists "line_item_tenant_category_expense_date_id_idx" on "line_item" using btree ("tenant_id","category","expense_date" desc,"id" asc)',
         );
     });
+
+    void test("creates the Audit Log's cross-tenant created_at index concurrently for production rollout", async () => {
+        const migrationSql = (
+            await readFile(auditLogCreatedAtIndexMigrationSqlUrl, "utf8")
+        ).toLowerCase();
+
+        expect(migrationSql).toContain(
+            'create index concurrently if not exists "reference_data_audit_entry_created_at_id_idx" on "reference_data_audit_entry" using btree ("created_at" desc,"id" desc)',
+        );
+    });
 });
 
 void describe("gl reference schema", () => {
@@ -1154,6 +1169,7 @@ void describe("gl reference schema", () => {
         expect(columnNames).toContain("description");
         expect(tableConfig.checks.map((check) => check.name).sort()).toEqual([
             "gl_code_account_code_not_blank_check",
+            "gl_code_account_code_numeric_check",
             "gl_code_account_name_not_blank_check",
         ]);
         expect(
@@ -1231,6 +1247,41 @@ void describe("gl reference schema", () => {
                 foreignColumns: ["tenant_id", "id"],
                 name: "gl_mapping_gl_code_tenant_fk",
             },
+        ]);
+    });
+
+    void test("only allows numeric GL account codes", () => {
+        const tableConfig = getTableConfig(glCode);
+        const numericCheck = tableConfig.checks.find(
+            (check) => check.name === "gl_code_account_code_numeric_check",
+        );
+
+        expect(numericCheck).toBeDefined();
+    });
+
+    void test("allows create and delete actions on the reference data audit log", async () => {
+        const tableConfig = getTableConfig(referenceDataAuditEntry);
+
+        expect(tableConfig.checks.map((check) => check.name)).toContain(
+            "reference_data_audit_entry_action_check",
+        );
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const previousSnapshot = generateDrizzleJson({});
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const currentSnapshot = generateDrizzleJson({
+            referenceDataAuditEntry,
+        });
+        const migrationStatements = await generateMigration(
+            previousSnapshot,
+            currentSnapshot,
+        );
+        const migrationSql = migrationStatements.join("\n").toLowerCase();
+
+        expectMigrationSqlToContainValues(migrationSql, [
+            "gl_mapping_updated",
+            "gl_mapping_created",
+            "gl_mapping_deleted",
         ]);
     });
 

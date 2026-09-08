@@ -20,10 +20,10 @@ import {
     referenceDataAuditEntry,
 } from "../db/schema/index.js";
 import { getCoreCaseTestDatabaseUrl } from "../testSupport/coreCaseTestDatabase.js";
-import { NotFoundError } from "../errors/problem-json.js";
+import { ConflictError, NotFoundError } from "../errors/problem-json.js";
 import {
     readGlMappingReference,
-    updateGlMapping,
+    saveGlMappings,
 } from "./glMappingRepository.js";
 
 type GlMappingTestContext = {
@@ -32,6 +32,8 @@ type GlMappingTestContext = {
     actorId: string;
     mappingA: string;
     mappingB: string;
+    mealsCodeAMappingId: string;
+    suppliesCodeAMappingId: string;
     travelCodeA: string;
     mealsCodeA: string;
     suppliesCodeA: string;
@@ -90,12 +92,16 @@ describe("GL Mapping repository", () => {
     test("lists only the authenticated tenant's mappings and GL codes", async () => {
         const reference = await readGlMappingReference(context.tenantA, testDb);
 
-        expect(reference.mappings).toHaveLength(1);
-        expect(reference.mappings[0]).toMatchObject({
+        expect(reference.mappings).toHaveLength(3);
+        expect(
+            reference.mappings.find(
+                (mapping) => mapping.id === context.mappingA,
+            ),
+        ).toMatchObject({
             id: context.mappingA,
             category: "Travel",
             glCodeId: context.travelCodeA,
-            accountCode: "6100-A",
+            accountCode: "6100",
         });
         expect(reference.glCodes.map((code) => code.id).sort()).toStrictEqual(
             [
@@ -105,106 +111,259 @@ describe("GL Mapping repository", () => {
             ].sort(),
         );
         expect(JSON.stringify(reference)).not.toContain(context.tenantB);
-        expect(JSON.stringify(reference)).not.toContain("6100-B");
+        expect(JSON.stringify(reference)).not.toContain("6199");
     });
 
-    test("updates a tenant-owned mapping and writes one audit entry", async () => {
-        const updated = await updateGlMapping(
+    test("creates a new mapping with its own private GL code and writes one audit entry", async () => {
+        const saved = await saveGlMappings(
             {
                 actorId: context.actorId,
-                glCodeId: context.mealsCodeA,
-                id: context.mappingA,
                 tenantId: context.tenantA,
+                creates: [
+                    {
+                        clientId: "draft-1",
+                        category: "Parking",
+                        accountCode: "6700",
+                        description: "Synthetic parking account",
+                    },
+                ],
+                updates: [],
+                deletes: [],
             },
             testDb,
         );
 
+        const created = saved.mappings.find(
+            (mapping) => mapping.category === "Parking",
+        );
+        expect(created).toMatchObject({
+            category: "Parking",
+            accountCode: "6700",
+            accountName: "Parking",
+            description: "Synthetic parking account",
+        });
+        expect(saved.mappings).toHaveLength(4);
+
+        const auditRows = await readAuditRows(created?.id ?? "");
+        expect(auditRows).toHaveLength(1);
+        expect(auditRows[0]).toMatchObject({
+            action: "gl_mapping_created",
+            actorId: context.actorId,
+            tenantId: context.tenantA,
+        });
+    });
+
+    test("updates a tenant-owned mapping's current GL code without touching other mappings", async () => {
+        const saved = await saveGlMappings(
+            {
+                actorId: context.actorId,
+                tenantId: context.tenantA,
+                creates: [],
+                updates: [
+                    {
+                        id: context.mappingA,
+                        category: "Travel",
+                        accountCode: "6150",
+                        description: "Updated travel account",
+                    },
+                ],
+                deletes: [],
+            },
+            testDb,
+        );
+
+        const updated = saved.mappings.find(
+            (mapping) => mapping.id === context.mappingA,
+        );
         expect(updated).toMatchObject({
             id: context.mappingA,
             category: "Travel",
-            glCodeId: context.mealsCodeA,
-            accountCode: "6200-A",
-            accountName: "Tenant A Meals Expense",
+            accountCode: "6150",
+            accountName: "Travel",
+            description: "Updated travel account",
         });
+        expect(updated?.glCodeId).not.toBe(context.travelCodeA);
 
-        const [persistedMapping] = await testDb
-            .select({ glCodeId: glMapping.glCodeId })
-            .from(glMapping)
-            .where(
-                and(
-                    eq(glMapping.tenantId, context.tenantA),
-                    eq(glMapping.id, context.mappingA),
-                ),
-            );
-        expect(persistedMapping).toStrictEqual({
-            glCodeId: context.mealsCodeA,
-        });
+        const originalCode = saved.glCodes.find(
+            (code) => code.id === context.travelCodeA,
+        );
+        expect(originalCode).toMatchObject({ accountCode: "6100" });
+
+        const otherCode = saved.glCodes.find(
+            (code) => code.id === context.mealsCodeA,
+        );
+        expect(otherCode).toMatchObject({ accountCode: "6200" });
 
         const auditRows = await readAuditRows(context.mappingA);
-
         expect(auditRows).toHaveLength(1);
         expect(auditRows[0]).toMatchObject({
             action: "gl_mapping_updated",
             actorId: context.actorId,
-            entityId: context.mappingA,
-            entityType: "gl_mapping",
             tenantId: context.tenantA,
         });
-        expect(auditRows[0]?.before).toStrictEqual({
-            category: "Travel",
-            glCodeId: context.travelCodeA,
-            accountCode: "6100-A",
-            accountName: "Tenant A Travel Expense",
-        });
+        expect(auditRows[0]?.before).toStrictEqual({ category: "Travel" });
         expect(auditRows[0]?.after).toStrictEqual({
             category: "Travel",
-            glCodeId: context.mealsCodeA,
-            accountCode: "6200-A",
-            accountName: "Tenant A Meals Expense",
+            accountCode: "6150",
         });
     });
 
-    test("returns the existing mapping without auditing no-op updates", async () => {
-        const existing = await updateGlMapping(
+    test("repoints an updated mapping to an existing tenant GL code", async () => {
+        const saved = await saveGlMappings(
             {
                 actorId: context.actorId,
-                glCodeId: context.travelCodeA,
-                id: context.mappingA,
                 tenantId: context.tenantA,
+                creates: [],
+                updates: [
+                    {
+                        id: context.mappingA,
+                        category: "Travel",
+                        accountCode: "6200",
+                        description: "Use the existing meals account.",
+                    },
+                ],
+                deletes: [],
             },
             testDb,
         );
 
-        expect(existing).toMatchObject({
+        const updated = saved.mappings.find(
+            (mapping) => mapping.id === context.mappingA,
+        );
+        expect(updated).toMatchObject({
             id: context.mappingA,
             category: "Travel",
-            glCodeId: context.travelCodeA,
-            accountCode: "6100-A",
-            accountName: "Tenant A Travel Expense",
+            glCodeId: context.mealsCodeA,
+            accountCode: "6200",
+            accountName: "Meals",
         });
-        await expect(readAuditRows(context.mappingA)).resolves.toHaveLength(0);
+
+        const originalTravelCode = saved.glCodes.find(
+            (code) => code.id === context.travelCodeA,
+        );
+        expect(originalTravelCode).toMatchObject({
+            accountCode: "6100",
+            accountName: "Travel",
+        });
     });
 
-    test("rejects cross-tenant mappings and cross-tenant GL codes", async () => {
+    test("deletes a mapping, including a default mapping, and writes one audit entry", async () => {
+        const saved = await saveGlMappings(
+            {
+                actorId: context.actorId,
+                tenantId: context.tenantA,
+                creates: [],
+                updates: [],
+                deletes: [context.mappingA],
+            },
+            testDb,
+        );
+
+        expect(
+            saved.mappings.some((mapping) => mapping.id === context.mappingA),
+        ).toBe(false);
+
+        const [persistedMapping] = await testDb
+            .select({ id: glMapping.id })
+            .from(glMapping)
+            .where(eq(glMapping.id, context.mappingA));
+        expect(persistedMapping).toBeUndefined();
+
+        const auditRows = await readAuditRows(context.mappingA);
+        expect(auditRows).toHaveLength(1);
+        expect(auditRows[0]).toMatchObject({
+            action: "gl_mapping_deleted",
+            actorId: context.actorId,
+            tenantId: context.tenantA,
+        });
+    });
+
+    test("applies creates, updates, and deletes atomically in one save", async () => {
+        const saved = await saveGlMappings(
+            {
+                actorId: context.actorId,
+                tenantId: context.tenantA,
+                creates: [
+                    {
+                        clientId: "draft-1",
+                        category: "Parking",
+                        accountCode: "6700",
+                        description: null,
+                    },
+                ],
+                updates: [
+                    {
+                        id: context.mealsCodeAMappingId,
+                        category: "Meals",
+                        accountCode: "6250",
+                        description: null,
+                    },
+                ],
+                deletes: [context.suppliesCodeAMappingId],
+            },
+            testDb,
+        );
+
+        const categories = saved.mappings
+            .map((mapping) => mapping.category)
+            .sort();
+        expect(categories).toStrictEqual(["Meals", "Parking", "Travel"]);
+    });
+
+    test("rejects a save that would create a duplicate category", async () => {
         await expect(
-            updateGlMapping(
+            saveGlMappings(
                 {
                     actorId: context.actorId,
-                    glCodeId: context.mealsCodeA,
-                    id: context.mappingB,
                     tenantId: context.tenantA,
+                    creates: [
+                        {
+                            clientId: "draft-1",
+                            category: "Travel",
+                            accountCode: "6800",
+                            description: null,
+                        },
+                    ],
+                    updates: [],
+                    deletes: [],
+                },
+                testDb,
+            ),
+        ).rejects.toBeInstanceOf(ConflictError);
+
+        const reference = await readGlMappingReference(context.tenantA, testDb);
+        expect(reference.mappings).toHaveLength(3);
+    });
+
+    test("rejects updates and deletes for mappings outside the tenant", async () => {
+        await expect(
+            saveGlMappings(
+                {
+                    actorId: context.actorId,
+                    tenantId: context.tenantA,
+                    creates: [],
+                    updates: [
+                        {
+                            id: context.mappingB,
+                            category: "Travel",
+                            accountCode: "6999",
+                            description: null,
+                        },
+                    ],
+                    deletes: [],
                 },
                 testDb,
             ),
         ).rejects.toBeInstanceOf(NotFoundError);
 
         await expect(
-            updateGlMapping(
+            saveGlMappings(
                 {
                     actorId: context.actorId,
-                    glCodeId: context.travelCodeB,
-                    id: context.mappingA,
                     tenantId: context.tenantA,
+                    creates: [],
+                    updates: [],
+                    deletes: [context.mappingB],
                 },
                 testDb,
             ),
@@ -222,72 +381,96 @@ describe("GL Mapping repository", () => {
         expect(mapping).toStrictEqual({ glCodeId: context.travelCodeA });
     });
 
-    test("serializes concurrent updates so audit before matches the prior committed after", async () => {
-        await Promise.all([
-            updateGlMapping(
+    test("rolls back the entire save when one change in the batch is invalid", async () => {
+        await expect(
+            saveGlMappings(
                 {
                     actorId: context.actorId,
-                    glCodeId: context.mealsCodeA,
-                    id: context.mappingA,
                     tenantId: context.tenantA,
+                    creates: [
+                        {
+                            clientId: "draft-1",
+                            category: "Parking",
+                            accountCode: "6700",
+                            description: null,
+                        },
+                    ],
+                    updates: [
+                        {
+                            id: context.mappingB,
+                            category: "Travel",
+                            accountCode: "6999",
+                            description: null,
+                        },
+                    ],
+                    deletes: [],
                 },
                 testDb,
             ),
-            updateGlMapping(
+        ).rejects.toBeInstanceOf(NotFoundError);
+
+        const reference = await readGlMappingReference(context.tenantA, testDb);
+        expect(reference.mappings).toHaveLength(3);
+        expect(
+            reference.mappings.some(
+                (mapping) => mapping.category === "Parking",
+            ),
+        ).toBe(false);
+    });
+
+    test("serializes concurrent saves so audit before matches the prior committed after", async () => {
+        await Promise.all([
+            saveGlMappings(
                 {
                     actorId: context.actorId,
-                    glCodeId: context.suppliesCodeA,
-                    id: context.mappingA,
                     tenantId: context.tenantA,
+                    creates: [],
+                    updates: [
+                        {
+                            id: context.mappingA,
+                            category: "Travel",
+                            accountCode: "6151",
+                            description: null,
+                        },
+                    ],
+                    deletes: [],
+                },
+                testDb,
+            ),
+            saveGlMappings(
+                {
+                    actorId: context.actorId,
+                    tenantId: context.tenantA,
+                    creates: [],
+                    updates: [
+                        {
+                            id: context.mappingA,
+                            category: "Travel",
+                            accountCode: "6152",
+                            description: null,
+                        },
+                    ],
+                    deletes: [],
                 },
                 secondTestDb,
             ),
         ]);
 
         const auditRows = await readAuditRows(context.mappingA);
-        const firstAudit = auditRows.find(
-            (row) =>
-                isAuditSnapshot(row.before, context.travelCodeA) &&
-                (isAuditSnapshot(row.after, context.mealsCodeA) ||
-                    isAuditSnapshot(row.after, context.suppliesCodeA)),
-        );
-        const secondAudit = auditRows.find(
-            (row) =>
-                firstAudit !== undefined &&
-                JSON.stringify(row.before) === JSON.stringify(firstAudit.after),
-        );
-
         expect(auditRows).toHaveLength(2);
-        expect(firstAudit).toBeDefined();
-        expect(secondAudit).toBeDefined();
-    });
 
-    test("rolls back the mapping update when audit insertion fails", async () => {
-        await expect(
-            updateGlMapping(
-                {
-                    actorId: "not-a-uuid",
-                    glCodeId: context.mealsCodeA,
-                    id: context.mappingA,
-                    tenantId: context.tenantA,
-                },
-                testDb,
-            ),
-        ).rejects.toThrow();
-
-        const [mapping] = await testDb
-            .select({ glCodeId: glMapping.glCodeId })
+        const [persisted] = await testDb
+            .select({ accountCode: glCode.accountCode })
             .from(glMapping)
-            .where(
+            .innerJoin(
+                glCode,
                 and(
-                    eq(glMapping.tenantId, context.tenantA),
-                    eq(glMapping.id, context.mappingA),
+                    eq(glCode.tenantId, glMapping.tenantId),
+                    eq(glCode.id, glMapping.glCodeId),
                 ),
-            );
-        const auditRows = await readAuditRows(context.mappingA);
-
-        expect(mapping).toStrictEqual({ glCodeId: context.travelCodeA });
-        expect(auditRows).toHaveLength(0);
+            )
+            .where(eq(glMapping.id, context.mappingA));
+        expect(["6151", "6152"]).toContain(persisted?.accountCode);
     });
 });
 
@@ -300,6 +483,8 @@ function createGlMappingTestContext(): GlMappingTestContext {
         actorId: randomUUID(),
         mappingA: randomUUID(),
         mappingB: randomUUID(),
+        mealsCodeAMappingId: randomUUID(),
+        suppliesCodeAMappingId: randomUUID(),
         travelCodeA: randomUUID(),
         mealsCodeA: randomUUID(),
         suppliesCodeA: randomUUID(),
@@ -309,32 +494,32 @@ function createGlMappingTestContext(): GlMappingTestContext {
 
 async function seedGlReferenceRows(
     transaction: Transaction,
-    testContext: GlMappingTestContext,
+    testContext: ReturnType<typeof createGlMappingTestContext>,
 ): Promise<void> {
     await transaction.insert(glCode).values([
         {
             id: testContext.travelCodeA,
             tenantId: testContext.tenantA,
-            accountCode: "6100-A",
-            accountName: "Tenant A Travel Expense",
+            accountCode: "6100",
+            accountName: "Travel",
         },
         {
             id: testContext.mealsCodeA,
             tenantId: testContext.tenantA,
-            accountCode: "6200-A",
-            accountName: "Tenant A Meals Expense",
+            accountCode: "6200",
+            accountName: "Meals",
         },
         {
             id: testContext.suppliesCodeA,
             tenantId: testContext.tenantA,
-            accountCode: "6300-A",
-            accountName: "Tenant A Supplies Expense",
+            accountCode: "6300",
+            accountName: "Supplies",
         },
         {
             id: testContext.travelCodeB,
             tenantId: testContext.tenantB,
-            accountCode: "6100-B",
-            accountName: "Tenant B Travel Expense",
+            accountCode: "6100",
+            accountName: "Travel",
         },
     ]);
     await transaction.insert(glMapping).values([
@@ -343,6 +528,18 @@ async function seedGlReferenceRows(
             tenantId: testContext.tenantA,
             category: "Travel",
             glCodeId: testContext.travelCodeA,
+        },
+        {
+            id: testContext.mealsCodeAMappingId,
+            tenantId: testContext.tenantA,
+            category: "Meals",
+            glCodeId: testContext.mealsCodeA,
+        },
+        {
+            id: testContext.suppliesCodeAMappingId,
+            tenantId: testContext.tenantA,
+            category: "Supplies",
+            glCodeId: testContext.suppliesCodeA,
         },
         {
             id: testContext.mappingB,
@@ -366,13 +563,4 @@ async function readAuditRows(entityId: string) {
         })
         .from(referenceDataAuditEntry)
         .where(eq(referenceDataAuditEntry.entityId, entityId));
-}
-
-function isAuditSnapshot(value: unknown, glCodeId: string): boolean {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        "glCodeId" in value &&
-        value.glCodeId === glCodeId
-    );
 }

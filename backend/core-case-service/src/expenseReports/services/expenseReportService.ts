@@ -739,9 +739,7 @@ export async function submitExpenseReport(
                     merchant: item.merchant,
                     amount: item.amount,
                     currency: item.currency,
-                    category: item.category as Parameters<
-                        typeof codeExpenseLineItems
-                    >[1]["line_items"][number]["category"],
+                    category: item.category,
                 })),
                 mileage: sources.mileageEntries.map((entry) => ({
                     mileage_entry_id: entry.id,
@@ -955,7 +953,7 @@ export async function reviewExpenseReportSource(
 
     if (result.kind === "invalid_stage") {
         throw new ConflictError(
-            `Expense Report sources can only be reviewed during Manager Approval; Expense Report is in ${result.currentStage}.`,
+            `Expense Report sources can only be reviewed during Manager Approval or AP Review; Expense Report is in ${result.currentStage}.`,
         );
     }
 

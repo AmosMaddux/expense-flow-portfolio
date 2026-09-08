@@ -6,7 +6,8 @@ import { loadDatabaseConfig } from "./databaseConfig.js";
 void describe("loadDatabaseConfig", () => {
     void test("prefers DATABASE_URL when set", () => {
         const config = loadDatabaseConfig({
-            DATABASE_URL: "postgres://synthetic-user@db.example.invalid:5432/expenseflow",
+            DATABASE_URL:
+                "postgres://synthetic-user@db.example.invalid:5432/expenseflow",
             DB_HOST: "should-be-ignored.example.invalid",
             DB_NAME: "should_be_ignored",
             DB_PASSWORD: "should-be-ignored",

@@ -7,7 +7,10 @@ import {
 import type { LoginService } from "./loginService.js";
 import { createPostMfaEnrollment } from "../mfa/mfaEnrollmentController.js";
 import type { MfaEnrollmentService } from "../mfa/mfaEnrollmentService.js";
-import { createPostLogout, createPostRefresh } from "../refresh/refreshController.js";
+import {
+    createPostLogout,
+    createPostRefresh,
+} from "../refresh/refreshController.js";
 import type { LogoutService } from "../refresh/logoutService.js";
 import type { RefreshService } from "../refresh/refreshService.js";
 import type { RefreshTokenCookieConfig } from "../shared/refreshTokenCookie.js";

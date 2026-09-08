@@ -57,11 +57,9 @@ void describe("SCRUM-149 AWS scripts", () => {
         // Verify the deploy script does not expose resolved database credentials in environment
         expect(deployScript).not.toContain("require_resolved_database_url");
         expect(deployScript).toContain("DATABASE_SECRET_ARN=");
-        expect(deployScript).not.toContain(
-            'Variables={DATABASE_URL=',
-        );
+        expect(deployScript).not.toContain("Variables={DATABASE_URL=");
         expect(deployScript).toContain(
-            'Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}',
+            "Variables={DATABASE_SECRET_ARN=$DATABASE_SECRET_ARN}",
         );
 
         // Verify the deploy script rejects resolved DATABASE_URL
@@ -87,12 +85,20 @@ void describe("SCRUM-149 AWS scripts", () => {
             new URL("verify-stage-transition-lambda.sh", scrum149ScriptsUrl),
             "utf8",
         );
+        const stageTransitionVerifyHelper = readFileSync(
+            new URL(
+                "../../../scripts/aws/lib/stage-transition-verify.sh",
+                import.meta.url,
+            ),
+            "utf8",
+        );
+        const combinedSource = `${verifyScript}\n${stageTransitionVerifyHelper}`;
 
         expect(verifyScript).toContain("VERIFY_CONSUMER_BEHAVIOR");
-        expect(verifyScript).toContain("poll_lambda_invocations");
-        expect(verifyScript).toContain("stage_transition_projection");
-        expect(verifyScript).toContain("poll_projection_count 1");
-        expect(verifyScript).toContain("require_projection_count 1");
+        expect(combinedSource).toContain("poll_lambda_invocations");
+        expect(combinedSource).toContain("stage_transition_projection");
+        expect(combinedSource).toContain("poll_projection_count 1");
+        expect(combinedSource).toContain("require_projection_count 1");
         expect(verifyScript).toContain("publish_invalid_message");
         expect(verifyScript).toContain("poll_dlq_for_invalid_message");
         expect(verifyScript).toContain("poll_lambda_failure_logs");

@@ -28,6 +28,7 @@ import { z } from "zod";
 
 import { useSession } from "../auth";
 import {
+    AuditTrail,
     Badge,
     Button,
     EmptyState,
@@ -35,6 +36,7 @@ import {
     EXPENSE_REPORT_STAGES,
     LoadingSkeleton,
     StatusBadge,
+    useExpenseReportAuditEntries,
     type ExpenseReportStage,
 } from "../components";
 import { QueryRequestError, useExpenseFlowQuery } from "../query/queryClient";
@@ -113,14 +115,15 @@ export function getReviewDialogPermissions(
 ): ReviewDialogPermissions {
     const canEditManagerApproval =
         canManageReviewWorkflow && currentStage === "Manager Approval";
+    const canEditApReview =
+        canManageReviewWorkflow && currentStage === "AP Review";
 
     return {
-        canAdvanceReport: canEditManagerApproval,
+        canAdvanceReport: canEditManagerApproval || canEditApReview,
         canClearPolicyChecks: canEditManagerApproval,
-        canEditDeductibility:
-            canManageReviewWorkflow && currentStage === "AP Review",
-        canReviewLineItems: canEditManagerApproval,
-        canSendBackReport: canEditManagerApproval,
+        canEditDeductibility: canEditApReview,
+        canReviewLineItems: canEditManagerApproval || canEditApReview,
+        canSendBackReport: canEditManagerApproval || canEditApReview,
     };
 }
 
@@ -214,6 +217,11 @@ export const managerApprovalQueueStages = [
     "Manager Approval",
 ] as const satisfies readonly ExpenseReportStage[];
 
+export const financeAdminApprovalQueueStages = [
+    "Manager Approval",
+    "AP Review",
+] as const satisfies readonly ExpenseReportStage[];
+
 const reviewLineItemRequestSchema = z
     .object({
         action: z.enum(["approve", "reject"]),
@@ -246,21 +254,14 @@ const transitionExpenseReportRequestSchema = z
         reason: z.string().trim().min(1),
     })
     .strict();
+const settleExpenseReportRequestSchema = z
+    .object({
+        reason: z.string().trim().min(1),
+    })
+    .strict();
 const expenseReportTransitionResponseSchema = z.object({
     id: z.uuid(),
     currentStage: z.enum(EXPENSE_REPORT_STAGES),
-});
-const auditEntrySchema = z.object({
-    id: z.string().uuid(),
-    tenantId: z.string().uuid(),
-    expenseReportId: z.string().uuid(),
-    actorId: z.string().uuid(),
-    action: z.string().min(1),
-    stageBeforeAction: z.enum(EXPENSE_REPORT_STAGES),
-    stageAfterProposedAction: z.enum(EXPENSE_REPORT_STAGES),
-    denialReason: z.string().nullable(),
-    outcomeReason: z.string().nullable(),
-    createdAt: z.string().datetime({ offset: true }),
 });
 const caseCommentSchema = z.object({
     id: z.string().uuid(),
@@ -270,7 +271,6 @@ const caseCommentSchema = z.object({
     body: z.string().min(1),
     createdAt: z.string().datetime({ offset: true }),
 });
-const auditEntryListSchema = z.array(auditEntrySchema);
 const caseCommentListSchema = z.array(caseCommentSchema);
 const createCaseCommentRequestSchema = z
     .object({
@@ -279,7 +279,6 @@ const createCaseCommentRequestSchema = z
     .strict();
 
 const approvalQueueLineItemKeyParts = ["case-queue", "line-items"] as const;
-type ApprovalQueueAuditEntry = z.infer<typeof auditEntrySchema>;
 type ApprovalQueueCaseComment = z.infer<typeof caseCommentSchema>;
 
 /**
@@ -291,23 +290,6 @@ export function useApprovalQueueLineItems() {
         keyParts: approvalQueueLineItemKeyParts,
         parseResponse: async (response) =>
             approvalQueueLineItemListSchema.parse(await response.json()),
-        staleTime: 30_000,
-    });
-}
-
-/**
- * Fetches tenant-scoped Audit Trail entries for a report review dialog.
- */
-export function useExpenseReportAuditEntries(
-    expenseReportId: string,
-    enabled = true,
-) {
-    return useExpenseFlowQuery<ApprovalQueueAuditEntry[]>({
-        enabled,
-        input: `/v1/expense-reports/${expenseReportId}/audit-entries`,
-        keyParts: ["expense-report-audit-entries", expenseReportId],
-        parseResponse: async (response) =>
-            auditEntryListSchema.parse(await response.json()),
         staleTime: 30_000,
     });
 }
@@ -392,28 +374,30 @@ export function CaseQueueScreen({
             await queryClient.cancelQueries(approvalQueueQueryFilter);
             const previousLineItems = readApprovalQueueSnapshots(queryClient);
             setApprovalQueueData(queryClient, (current = []) =>
-                current.map((lineItem) =>
-                    lineItem.id === variables.lineItem.id &&
-                    variables.sourceId === lineItem.id
-                        ? {
-                              ...lineItem,
-                              reviewAction: variables.action,
-                          }
-                        : lineItem.id === variables.lineItem.id
-                          ? {
-                                ...lineItem,
-                                mileageEntries: lineItem.mileageEntries.map(
-                                    (entry) =>
-                                        entry.id === variables.sourceId
-                                            ? {
-                                                  ...entry,
-                                                  reviewAction:
-                                                      variables.action,
-                                              }
-                                            : entry,
-                                ),
-                            }
-                          : lineItem,
+                recalculateAdvanceEligibility(
+                    current.map((lineItem) =>
+                        lineItem.id === variables.lineItem.id &&
+                        variables.sourceId === lineItem.id
+                            ? {
+                                  ...lineItem,
+                                  reviewAction: variables.action,
+                              }
+                            : lineItem.id === variables.lineItem.id
+                              ? {
+                                    ...lineItem,
+                                    mileageEntries: lineItem.mileageEntries.map(
+                                        (entry) =>
+                                            entry.id === variables.sourceId
+                                                ? {
+                                                      ...entry,
+                                                      reviewAction:
+                                                          variables.action,
+                                                  }
+                                                : entry,
+                                    ),
+                                }
+                              : lineItem,
+                    ),
                 ),
             );
 
@@ -621,11 +605,65 @@ export function CaseQueueScreen({
             updateQueueReportStage(queryClient, report);
         },
     });
+    const settlementMutation = useMutation({
+        mutationFn: async ({
+            expenseReportId,
+            reason,
+        }: Pick<TransitionMutationVariables, "expenseReportId" | "reason">) => {
+            const requestBody = settleExpenseReportRequestSchema.parse({
+                reason,
+            });
+            const response = await session.authenticatedFetch(
+                `/v1/expense-reports/${expenseReportId}/payment-stub-settlement`,
+                {
+                    body: JSON.stringify(requestBody),
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Idempotency-Key": crypto.randomUUID(),
+                    },
+                    method: "POST",
+                },
+            );
+
+            if (!response.ok) {
+                throw await createQueueActionError(response);
+            }
+
+            return expenseReportTransitionResponseSchema.parse(
+                await response.json(),
+            );
+        },
+        onMutate: async (variables) => {
+            setActionError(null);
+            await queryClient.cancelQueries(approvalQueueQueryFilter);
+            const previousLineItems = readApprovalQueueSnapshots(queryClient);
+            setApprovalQueueData(queryClient, (current = []) =>
+                updateQueueReportStageInLineItems(
+                    current,
+                    variables.expenseReportId,
+                    "Reconciled",
+                ),
+            );
+
+            return { previousLineItems };
+        },
+        onError: (error, _variables, context) => {
+            restoreApprovalQueueSnapshots(
+                queryClient,
+                context?.previousLineItems,
+            );
+            setActionError(getQueueActionErrorMessage(error));
+        },
+        onSuccess: (report) => {
+            updateQueueReportStage(queryClient, report);
+        },
+    });
     const isActionPending =
         reviewMutation.isPending ||
         clearFlagMutation.isPending ||
         deductibilityMutation.isPending ||
-        transitionMutation.isPending;
+        transitionMutation.isPending ||
+        settlementMutation.isPending;
     const canManageReviewWorkflow =
         session.user?.roles.some(
             (role) => role === "Department Manager" || role === "Finance Admin",
@@ -699,13 +737,22 @@ export function CaseQueueScreen({
                             canManageReviewWorkflow={canManageReviewWorkflow}
                             isActionPending={isActionPending}
                             lineItems={selectedReportLineItems}
-                            onAdvanceReport={(lineItem) =>
+                            onAdvanceReport={(lineItem) => {
+                                if (lineItem.currentStage === "AP Review") {
+                                    settlementMutation.mutate({
+                                        expenseReportId:
+                                            lineItem.expenseReportId,
+                                        reason: "payment stub settlement completed",
+                                    });
+                                    return;
+                                }
+
                                 transitionMutation.mutate({
                                     expenseReportId: lineItem.expenseReportId,
                                     toStage: "AP Review",
                                     reason: "manager approved after flag review",
-                                })
-                            }
+                                });
+                            }}
                             onClearFlag={(lineItem, sourceId) => {
                                 const reason = window.prompt(
                                     "Reason for clearing this flag",
@@ -1222,10 +1269,7 @@ export function ApprovalQueueReviewDialog({
     const areAllReviewRowsReviewed = reviewRows.every(
         (reviewRow) => reviewRow.reviewAction !== null,
     );
-    const lineItemTotal = lineItems.reduce(
-        (total, lineItem) => total + lineItem.amount,
-        0,
-    );
+    const reimbursementTotal = calculateReportReimbursementTotal(lineItems);
     const mileageTotal = calculateReportMileageTotal(lineItems);
     const handleSubmitComment = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -1304,7 +1348,7 @@ export function ApprovalQueueReviewDialog({
                     </span>
                     <span>
                         Total
-                        <strong>{formatCurrency(lineItemTotal)}</strong>
+                        <strong>{formatCurrency(reimbursementTotal)}</strong>
                     </span>
                     <span>
                         Mileage
@@ -1361,9 +1405,7 @@ export function ApprovalQueueReviewDialog({
                         Policy Checks
                     </button>
                     <button
-                        aria-controls="report-audit-trail-panel"
                         aria-selected={activeTab === "audit-trail"}
-                        id="report-audit-trail-tab"
                         role="tab"
                         type="button"
                         onClick={() => setActiveTab("audit-trail")}
@@ -1603,14 +1645,7 @@ export function ApprovalQueueReviewDialog({
                         )}
                     </div>
                 ) : activeTab === "audit-trail" ? (
-                    <div
-                        aria-labelledby="report-audit-trail-tab"
-                        className="case-queue-dialog__table-wrap"
-                        id="report-audit-trail-panel"
-                        role="tabpanel"
-                    >
-                        <AuditTrailPanel query={auditQuery} />
-                    </div>
+                    <AuditTrail query={auditQuery} />
                 ) : (
                     <div
                         aria-labelledby="report-comments-tab"
@@ -1657,63 +1692,6 @@ export function ApprovalQueueReviewDialog({
                 </footer>
             </section>
         </div>
-    );
-}
-
-function AuditTrailPanel({
-    query,
-}: {
-    query: UseQueryResult<ApprovalQueueAuditEntry[], Error>;
-}): JSX.Element {
-    if (query.isPending) {
-        return <LoadingSkeleton label="Loading Audit Trail" rows={3} />;
-    }
-
-    if (query.isError) {
-        return (
-            <ErrorState
-                isRetrying={query.isFetching}
-                message={getQueueActionErrorMessage(query.error)}
-                onRetry={() => {
-                    void query.refetch();
-                }}
-                title="Unable to load Audit Trail"
-            />
-        );
-    }
-
-    const entries = query.data ?? [];
-
-    if (entries.length === 0) {
-        return (
-            <div className="case-queue-dialog__empty-tab" role="status">
-                No audit entries recorded for this report.
-            </div>
-        );
-    }
-
-    return (
-        <ol className="case-detail-audit">
-            {entries.map((entry) => (
-                <li className="case-detail-audit__entry" key={entry.id}>
-                    <strong>{getAuditActionLabel(entry.action)}</strong>
-                    <span>
-                        {entry.stageBeforeAction} to{" "}
-                        {entry.stageAfterProposedAction}
-                    </span>
-                    <small>Actor {getReportDisplayId(entry.actorId)}</small>
-                    {entry.outcomeReason !== null ? (
-                        <p>{entry.outcomeReason}</p>
-                    ) : null}
-                    {entry.denialReason !== null ? (
-                        <p>{entry.denialReason}</p>
-                    ) : null}
-                    <time dateTime={entry.createdAt}>
-                        {formatDateTime(entry.createdAt)}
-                    </time>
-                </li>
-            ))}
-        </ol>
     );
 }
 
@@ -2227,12 +2205,6 @@ function formatDateTime(dateTime: string): string {
     }).format(new Date(dateTime));
 }
 
-function getAuditActionLabel(action: string): string {
-    return action === "workflow_transition_applied"
-        ? "Transition Approved"
-        : action;
-}
-
 function formatMileageDistance(mileageDistance: number): string {
     if (mileageDistance === 0) {
         return "-";
@@ -2317,7 +2289,7 @@ function groupApprovalQueueReports(
                 employee: lineItem.employee,
                 currentStage: lineItem.currentStage,
                 flaggedLineItem: hasOpenSourceFlag(lineItem),
-                totalAmount: lineItem.amount,
+                totalAmount: calculateReportReimbursementTotal([lineItem]),
                 totalMileage: calculateReportMileageTotal([lineItem]),
                 lineItems: [lineItem],
             });
@@ -2326,8 +2298,10 @@ function groupApprovalQueueReports(
 
         existingReport.flaggedLineItem =
             existingReport.flaggedLineItem || hasOpenSourceFlag(lineItem);
-        existingReport.totalAmount += lineItem.amount;
         existingReport.lineItems.push(lineItem);
+        existingReport.totalAmount = calculateReportReimbursementTotal(
+            existingReport.lineItems,
+        );
         existingReport.totalMileage = calculateReportMileageTotal(
             existingReport.lineItems,
         );
@@ -2341,6 +2315,30 @@ function hasOpenSourceFlag(lineItem: ApprovalQueueLineItem): boolean {
         lineItem.flaggedLineItem ||
         lineItem.mileageEntries.some((entry) => entry.flaggedLineItem)
     );
+}
+
+function calculateReportReimbursementTotal(
+    lineItems: ApprovalQueueLineItem[],
+): number {
+    const mileageAmountsById = new Map<string, number>();
+    const lineItemTotal = lineItems.reduce((total, lineItem) => {
+        if (lineItem.sourceType === "mileage") {
+            mileageAmountsById.set(lineItem.id, lineItem.amount);
+            return total;
+        }
+
+        for (const mileageEntry of lineItem.mileageEntries) {
+            mileageAmountsById.set(mileageEntry.id, mileageEntry.amount);
+        }
+
+        return total + lineItem.amount;
+    }, 0);
+    const mileageTotal = [...mileageAmountsById.values()].reduce(
+        (total, amount) => total + amount,
+        0,
+    );
+
+    return lineItemTotal + mileageTotal;
 }
 
 function calculateReportMileageTotal(
@@ -2604,9 +2602,13 @@ function recalculateAdvanceEligibility(
     return lineItems.map((lineItem) => ({
         ...lineItem,
         canAdvance:
-            lineItem.currentStage === "Manager Approval" &&
-            (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
-            (unreviewedLineItemCounts.get(lineItem.expenseReportId) ?? 0) === 0,
+            (lineItem.currentStage === "Manager Approval" &&
+                (openFlagCounts.get(lineItem.expenseReportId) ?? 0) === 0 &&
+                (unreviewedLineItemCounts.get(lineItem.expenseReportId) ??
+                    0) === 0) ||
+            (lineItem.currentStage === "AP Review" &&
+                (unreviewedLineItemCounts.get(lineItem.expenseReportId) ??
+                    0) === 0),
     }));
 }
 

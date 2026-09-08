@@ -154,8 +154,7 @@ void describe("login controller", () => {
             accessTokenExpiresAt: "2026-07-15T12:15:00.000Z",
         });
         const jsonBody = response.jsonMock.mock.calls[0]?.[0] as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
         expect(jsonBody).not.toHaveProperty("refreshToken");
         expect(jsonBody).not.toHaveProperty("refreshTokenExpiresAt");
         expect(next).not.toHaveBeenCalled();

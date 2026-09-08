@@ -38,6 +38,16 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 function createNoRetryQueryClient(): QueryClient {
     return new QueryClient({
         defaultOptions: {
@@ -117,7 +127,9 @@ describe("PolicyReferenceScreen", () => {
         const [input, init] = fetchImplementation.mock.calls[0] ?? [];
         const headers = new Headers(init?.headers);
 
-        expect(input).toBe("/v1/policy-reference");
+        expect(input === undefined ? undefined : requestPath(input)).toBe(
+            "/v1/policy-reference",
+        );
         expect(headers.get("Authorization")).toBe(
             "Bearer synthetic-policy-access-token",
         );

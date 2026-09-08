@@ -12,7 +12,10 @@ export type LogoutService = {
  * the client from clearing its local session.
  */
 export function createLogoutService(
-    repository: Pick<RefreshTokenRepository, "findRefreshTokenByHash" | "revokeRefreshToken">,
+    repository: Pick<
+        RefreshTokenRepository,
+        "findRefreshTokenByHash" | "revokeRefreshToken"
+    >,
 ): LogoutService {
     return {
         async logout(rawRefreshToken): Promise<void> {

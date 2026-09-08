@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { type Server } from "node:http";
 
 import type { Express } from "express";

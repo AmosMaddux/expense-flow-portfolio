@@ -7,6 +7,9 @@ export default [
     {
         ignores: [
             "**/node_modules/**",
+            "**/.venv/**",
+            "**/.uv-cache/**",
+            "**/.pytest_cache/**",
             "**/dist/**",
             "**/build/**",
             "**/issuer-build/**",

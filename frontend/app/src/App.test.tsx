@@ -24,7 +24,7 @@ import {
 
 const tenantId = "8e2bfbb1-9f72-4810-b8b1-a02a25cdd2fb";
 const userId = "cf8ea46a-778d-4634-9363-f4864a3d4424";
-const originalMatchMedia = window.matchMedia;
+const originalMatchMedia = window.matchMedia?.bind(window);
 
 type MatchMediaController = {
     setMatches: (matches: boolean) => void;

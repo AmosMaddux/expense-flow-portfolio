@@ -81,6 +81,16 @@ function createJsonResponse(body: unknown, init: ResponseInit = {}): Response {
     });
 }
 
+function requestPath(input: Parameters<typeof fetch>[0]): string {
+    const url =
+        typeof input === "string"
+            ? new URL(input, "http://test")
+            : input instanceof URL
+              ? input
+              : new URL(input.url);
+    return `${url.pathname}${url.search}`;
+}
+
 function assistResponse(
     response: Partial<{
         answer: string;
@@ -253,7 +263,9 @@ describe("AssistPanel", () => {
         if (init === undefined) {
             throw new Error("Expected Assist request init.");
         }
-        expect(input).toBe("/v1/assist");
+        expect(input === undefined ? undefined : requestPath(input)).toBe(
+            "/v1/assist",
+        );
         expect(init.method).toBe("POST");
         expect(typeof init.body).toBe("string");
         expect(JSON.parse(init.body as string)).toEqual({

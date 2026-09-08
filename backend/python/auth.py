@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Mapping
 from uuid import UUID
 
-import anyio
 import jwt
 from fastapi import Depends, HTTPException, Request
 from jwt import InvalidTokenError, PyJWK, PyJWKError
@@ -124,8 +123,8 @@ class AuthJwtVerifier:
         return cls(load_auth_jwt_verifier_config(environment))
 
     async def verify_async(self, token: str) -> AuthenticatedIdentity:
-        """Return validated identity while keeping blocking JWKS I/O off the event loop."""
-        return await anyio.to_thread.run_sync(self.verify, token)
+        """Return validated identity for protected async request handlers."""
+        return self.verify(token)
 
     def verify(self, token: str) -> AuthenticatedIdentity:
         """Return identity claims after signature, issuer, and expiry validation."""

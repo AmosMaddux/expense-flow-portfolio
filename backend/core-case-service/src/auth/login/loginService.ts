@@ -1,4 +1,4 @@
-import { createHmac, createHash, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import {
     passwordHashAlgorithm,
     type PasswordHasher,
 } from "../shared/passwordHasher.js";
+import { hashToken } from "../shared/tokenHash.js";
 import type {
     ProtectedTotpSecret,
     TotpSecretProtector,
@@ -374,8 +375,4 @@ function decodeBase32(secret: string): Buffer {
     }
 
     return Buffer.from(bytes);
-}
-
-function hashToken(token: string): string {
-    return createHash("sha256").update(token).digest("base64url");
 }

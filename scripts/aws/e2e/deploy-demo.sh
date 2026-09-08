@@ -16,14 +16,12 @@ set -euo pipefail
 #      consumer Lambda images, tagged with the current UTC timestamp so
 #      re-runs never collide with the ECR repositories' IMMUTABLE tag
 #      setting.
-#   5. Runs the full terraform apply with everything wired together. This
-#      also creates the bastion (module.bastion). GL-coding's least-privilege
-#      database role and the "vector" extension
-#      (module.database_core_case's readonly_roles/extensions) are
-#      deliberately left out of this apply - see "What this script does NOT
-#      do" below - so db_readonly_roles_and_extensions_enabled is not passed
-#      here and defaults to false, which this apply relies on to skip those
-#      resources rather than fail on a connection timeout.
+#   5. Runs the full terraform apply with everything wired together. On a
+#      fresh deploy, this creates the bastion (module.bastion) before the
+#      PostgreSQL-managed resources are applied in step 5b. On a redeploy
+#      where those PostgreSQL resources already exist in state, this apply
+#      runs through the bastion SSM tunnel too, because Terraform must refresh
+#      those state entries before it can plan anything else.
 #   6. Builds the SPA with VITE_TENANT_ID baked in and deploys it to the SPA
 #      bucket + CloudFront.
 #   7. Runs database migrations, seeds the ten synthetic sign-in accounts,
@@ -36,17 +34,12 @@ set -euo pipefail
 #      docs/secure-release-gate.md's "ZAP" section. SKIP_ZAP_SCAN=true
 #      skips this step.
 #
-# What this script does NOT do: GL-coding's least-privilege database role
-# and the "vector" extension (module.database_core_case's
-# readonly_roles/extensions) need Terraform's postgresql provider to reach
-# RDS directly, which only works from inside the VPC. Step 5's apply passes
-# db_readonly_roles_and_extensions_enabled=false (the default) so those
-# resources are skipped instead of failing the whole apply on a connection
-# timeout - this is left as one manual step, and this script prints the
-# exact commands (including the required
-# db_readonly_roles_and_extensions_enabled=true) at the end. On a genuinely
-# fresh environment, GL-coding's ECS tasks and Core Case's pgvector-backed
-# policy retrieval will not work correctly until that manual step runs.
+# GL-coding's least-privilege database role and the "vector" extension
+# (module.database_core_case's readonly_roles/extensions) are intentionally
+# split into step 5b because they need Terraform's postgresql provider to
+# reach private RDS through the bastion. Set RUN_READONLY_ROLE_STEP=false only
+# for a partial deploy where GL-coding and pgvector-backed policy retrieval are
+# explicitly not being verified.
 #
 # This does not run the Trivy/Syft/Cosign secure release gate that
 # build-push-images.sh normally runs after each push - see that script's
@@ -58,6 +51,7 @@ set -euo pipefail
 
 EXPECTED_PROFILE="expenseflow-smoke"
 AWS_PROFILE="${AWS_PROFILE:-$EXPECTED_PROFILE}"
+export AWS_PROFILE
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALLOW_NON_SMOKE_PROFILE="${ALLOW_NON_SMOKE_PROFILE:-false}"
 export AWS_PAGER=""
@@ -84,15 +78,12 @@ SKIP_BASTION_SEED="${SKIP_BASTION_SEED:-false}"
 SKIP_ZAP_SCAN="${SKIP_ZAP_SCAN:-false}"
 
 # Applies GL-coding's readonly database role and the "vector" extension
-# (module.database_core_case's readonly_roles/extensions), which step 5's
-# main apply always skips (db_readonly_roles_and_extensions_enabled=false)
-# because they need the postgresql provider to reach RDS directly - only
-# possible from inside the VPC. Set to true only when this script itself
-# can reach the bastion via SSM (i.e. you have AWS credentials with
-# ssm:StartSession on it) - it opens its own tunnel, fetches the RDS master
-# password itself (never via asm-exec; see run_readonly_role_step below),
-# and tears the tunnel down when done, on success or failure.
-RUN_READONLY_ROLE_STEP="${RUN_READONLY_ROLE_STEP:-false}"
+# (module.database_core_case's readonly_roles/extensions). This is on by
+# default because GL-coding tasks cannot start without the generated readonly
+# role secret. It opens its own SSM tunnel through the bastion, fetches the RDS
+# master password itself (never via asm-exec; see run_readonly_role_step
+# below), and tears the tunnel down when done, on success or failure.
+RUN_READONLY_ROLE_STEP="${RUN_READONLY_ROLE_STEP:-true}"
 READONLY_ROLE_STEP_LOCAL_PORT="${READONLY_ROLE_STEP_LOCAL_PORT:-15432}"
 
 # Pinned by digest, matching TRIVY_IMAGE/SYFT_IMAGE in
@@ -140,11 +131,37 @@ if [[ "$AUTO_APPROVE" == "true" ]]; then
 fi
 
 terraform_apply() {
-    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" "$@"
+    terraform -chdir="$TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
+        "$@"
+}
+
+terraform_state_has() {
+    local resource_address="$1"
+
+    terraform -chdir="$TERRAFORM_DIR" state list "$resource_address" >/dev/null 2>&1
+}
+
+forget_database_privileged_state() {
+    local resource_address
+    local resource_addresses=(
+        'module.database_core_case.aws_secretsmanager_secret_version.readonly_role["gl_coding_app"]'
+        'module.database_core_case.postgresql_extension.this["vector"]'
+        'module.database_core_case.postgresql_grant.readonly_tables["gl_coding_app"]'
+        'module.database_core_case.postgresql_role.readonly["gl_coding_app"]'
+    )
+
+    for resource_address in "${resource_addresses[@]}"; do
+        if terraform_state_has "$resource_address"; then
+            echo "  Forgetting tunnel-only Terraform state entry $resource_address before the non-tunneled apply."
+            terraform -chdir="$TERRAFORM_DIR" state rm "$resource_address" >/dev/null
+        fi
+    done
 }
 
 terraform_ecr_apply() {
     terraform -chdir="$ECR_TERRAFORM_DIR" apply "${apply_args[@]}" \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$@"
@@ -160,11 +177,21 @@ resolve_http_api_lambda_vpc_id() {
         return
     fi
 
-    local discovered_vpc_id
-    discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
+    local discovered_vpc_id describe_vpcs_error
+    describe_vpcs_error="$(mktemp)"
+    if ! discovered_vpc_id="$(aws_cli ec2 describe-vpcs \
         --filters "Name=tag:Name,Values=$EXISTING_VPC_NAME" "Name=tag:env,Values=sandbox" \
         --query "Vpcs[0].VpcId" \
-        --output text)"
+        --output text 2>"$describe_vpcs_error")"; then
+        echo "Could not query sandbox VPCs with AWS_PROFILE=$AWS_PROFILE in $AWS_REGION:" >&2
+        cat "$describe_vpcs_error" >&2
+        rm -f "$describe_vpcs_error"
+        echo >&2
+        echo "If the AWS error is RequestExpired, refresh the AWS profile credentials" >&2
+        echo "and check that the local clock is synchronized before rerunning." >&2
+        exit 1
+    fi
+    rm -f "$describe_vpcs_error"
 
     if [[ -z "$discovered_vpc_id" || "$discovered_vpc_id" == "None" ]]; then
         echo "Could not discover sandbox VPC by tags Name=$EXISTING_VPC_NAME and env=sandbox." >&2
@@ -198,6 +225,7 @@ import_existing_ecr_repository() {
 
     echo "  Importing existing $repository_name into persistent ECR Terraform state."
     terraform -chdir="$ECR_TERRAFORM_DIR" import -input=false \
+        -var="aws_profile=$AWS_PROFILE" \
         -var="aws_region=$AWS_REGION" \
         -var="name_prefix=$NAME_PREFIX" \
         "$resource_address" "$repository_name"
@@ -289,33 +317,39 @@ core_case_image_uri="$core_case_repository_url:$IMAGE_TAG"
 gl_coding_image_uri="$gl_coding_repository_url:$IMAGE_TAG"
 stage_transition_lambda_image_uri="$stage_transition_lambda_repository_url:$IMAGE_TAG"
 
-echo "=== 5/7: Full terraform apply ==="
-terraform_apply \
-    -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-    -var="enable_nat_gateway=false" \
-    -var="db_enable_enhanced_monitoring=false" \
-    -var="allow_plain_http_public_api=true" \
-    -var="core_case_internal_routes_enabled=true" \
-    -var="core_case_repository_url=$core_case_repository_url" \
-    -var="core_case_repository_arn=$core_case_repository_arn" \
-    -var="gl_coding_repository_url=$gl_coding_repository_url" \
-    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-    -var="core_case_image_uri=$core_case_image_uri" \
-    -var="gl_coding_image_uri=$gl_coding_image_uri" \
+terraform_runtime_vars=(
+    -var="http_api_jwt_issuer=$http_api_jwt_issuer"
+    -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn"
+    -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn"
+    -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn"
+    -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn"
+    -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN"
+    -var="enable_nat_gateway=false"
+    -var="db_enable_enhanced_monitoring=false"
+    -var="allow_plain_http_public_api=true"
+    -var="core_case_internal_routes_enabled=true"
+    -var="core_case_repository_url=$core_case_repository_url"
+    -var="core_case_repository_arn=$core_case_repository_arn"
+    -var="gl_coding_repository_url=$gl_coding_repository_url"
+    -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url"
+    -var="core_case_image_uri=$core_case_image_uri"
+    -var="gl_coding_image_uri=$gl_coding_image_uri"
     -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri"
+)
 
 tf_output() {
     terraform -chdir="$TERRAFORM_DIR" output -raw "$1"
 }
 
-run_readonly_role_step() {
+run_database_privileged_step() {
+    local mode="$1"
     local bastion_instance_id core_case_db_host db_secret_arn tunnel_pid
     local tunnel_log apply_status tunnel_cleaned
+    local terraform_extra_args=()
+
+    if [[ "$mode" == "extension" ]]; then
+        terraform_extra_args=(-target=module.database_core_case.postgresql_extension.this)
+    fi
 
     bastion_instance_id="$(tf_output bastion_instance_id)"
     core_case_db_host="$(tf_output core_case_db_endpoint | cut -d: -f1)"
@@ -378,58 +412,68 @@ run_readonly_role_step() {
     db_password="$(echo "$db_secret" | jq -r .password)"
     unset db_secret
 
+    terraform_database_import() {
+        local resource_address="$1"
+        local resource_id="$2"
+
+        PGUSER=core_case_admin PGPASSWORD="$db_password" \
+            terraform -chdir="$TERRAFORM_DIR" import -input=false \
+            -var="postgresql_provider_host=localhost" \
+            -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
+            -var="db_readonly_roles_and_extensions_enabled=true" \
+            "${terraform_runtime_vars[@]}" \
+            "$resource_address" "$resource_id" >/dev/null 2>&1
+    }
+
+    if [[ "$mode" == "extension" ]] && ! terraform_state_has 'module.database_core_case.postgresql_extension.this["vector"]'; then
+        terraform_database_import 'module.database_core_case.postgresql_extension.this["vector"]' core_case.vector || true
+    fi
+
+    if [[ "$mode" == "full" ]] && ! terraform_state_has 'module.database_core_case.postgresql_role.readonly["gl_coding_app"]'; then
+        terraform_database_import 'module.database_core_case.postgresql_role.readonly["gl_coding_app"]' gl_coding_app || true
+    fi
+
     apply_status=0
     PGUSER=core_case_admin PGPASSWORD="$db_password" \
         terraform_apply \
+        "${terraform_extra_args[@]}" \
         -var="postgresql_provider_host=localhost" \
         -var="postgresql_provider_port=$READONLY_ROLE_STEP_LOCAL_PORT" \
         -var="db_readonly_roles_and_extensions_enabled=true" \
-        -var="http_api_jwt_issuer=$http_api_jwt_issuer" \
-        -var="core_case_internal_command_token_secret_arn=$core_case_internal_command_token_secret_arn" \
-        -var="core_case_auth_jwt_private_key_secret_arn=$core_case_auth_jwt_private_key_secret_arn" \
-        -var="gl_coding_auth_jwt_public_keys_json_secret_arn=$gl_coding_auth_jwt_public_keys_json_secret_arn" \
-        -var="core_case_mfa_totp_secret_encryption_key_secret_arn=$core_case_mfa_totp_secret_encryption_key_secret_arn" \
-        -var="role_permissions_boundary_arn=$ROLE_PERMISSIONS_BOUNDARY_ARN" \
-        -var="enable_nat_gateway=false" \
-        -var="db_enable_enhanced_monitoring=false" \
-        -var="allow_plain_http_public_api=true" \
-        -var="core_case_internal_routes_enabled=true" \
-        -var="core_case_repository_url=$core_case_repository_url" \
-        -var="core_case_repository_arn=$core_case_repository_arn" \
-        -var="gl_coding_repository_url=$gl_coding_repository_url" \
-        -var="stage_transition_lambda_repository_url=$stage_transition_lambda_repository_url" \
-        -var="core_case_image_uri=$core_case_image_uri" \
-        -var="gl_coding_image_uri=$gl_coding_image_uri" \
-        -var="stage_transition_lambda_image_uri=$stage_transition_lambda_image_uri" \
+        "${terraform_runtime_vars[@]}" \
         || apply_status=$?
     unset db_password
 
     return "$apply_status"
 }
 
+echo "=== 5/7: Full terraform apply ==="
+forget_database_privileged_state
+terraform_apply \
+    -var="db_readonly_roles_and_extensions_enabled=false" \
+    "${terraform_runtime_vars[@]}"
+
 if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
-    echo "=== 5b/7: Applying GL-coding readonly role + vector extension (bastion tunnel) ==="
-    if run_readonly_role_step; then
-        echo "Readonly role and extension applied."
+    echo "=== 5b/7: Applying vector extension (bastion tunnel) ==="
+    if run_database_privileged_step extension; then
+        echo "Vector extension applied."
     else
-        echo "Readonly role/extension step failed - GL-coding's ECS tasks and" >&2
+        echo "Vector extension step failed - migrations that need pgvector and" >&2
         echo "pgvector-backed policy retrieval will not work correctly. See" >&2
         echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+        exit 1
     fi
 else
-    echo "=== 5b/7: Skipping readonly role + vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
+    echo "=== 5b/7: Skipping vector extension step (RUN_READONLY_ROLE_STEP=false) ==="
 fi
 
 if [[ "$SKIP_SPA_DEPLOY" != "true" ]]; then
     echo "=== 6/7: Building and deploying the SPA ==="
-    # VITE_API_BASE_URL is deliberately left unset/empty so the SPA calls the
-    # API with a relative path, which CloudFront proxies to the ALB
-    # (module.spa's ordered_cache_behavior for /v1/*) - this keeps the
-    # browser talking HTTPS-only to CloudFront even though the ALB itself
-    # has no certificate. The repo-root .env sets VITE_API_BASE_URL for
-    # local docker-compose dev and Vite loads it by default; the explicit
-    # empty assignment here overrides that for this build.
-    VITE_API_BASE_URL="" VITE_TENANT_ID="$VITE_TENANT_ID" \
+    # CloudFront serves only the SPA. The built SPA points at API Gateway's
+    # HTTPS execute-api origin, which proxies Core Case /v1 requests to the
+    # public ALB without sending them through the SPA distribution fallback.
+    api_base_url="$(tf_output core_case_api_gateway_base_url)"
+    VITE_API_BASE_URL="$api_base_url" VITE_TENANT_ID="$VITE_TENANT_ID" \
         npm --workspace frontend/app run build
 
     spa_bucket="$(tf_output spa_bucket_name)"
@@ -465,13 +509,24 @@ else
     echo "=== 7/7: Skipping bastion migrate/seed/demo-seed (SKIP_BASTION_SEED=true) ==="
 fi
 
+if [[ "$RUN_READONLY_ROLE_STEP" == "true" ]]; then
+    echo "=== 7b/7: Applying GL-coding readonly role grants (bastion tunnel) ==="
+    if run_database_privileged_step full; then
+        echo "Readonly role grants applied."
+    else
+        echo "Readonly role grant step failed - GL-coding's ECS tasks will not work correctly. See" >&2
+        echo "infra/terraform/README.md's GL-Coding troubleshooting entry." >&2
+        exit 1
+    fi
+fi
+
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
     echo "=== 8/8: Running ZAP baseline DAST scan ==="
-    # Points at the live OpenAPI document, not the bare ALB URL - ZAP
+    # Points at the live OpenAPI document, not the bare API URL - ZAP
     # imports it and actively calls every documented /v1/* route, which is
-    # the only way this exercises Core Case's real API surface rather than
-    # just the ALB's generic 404 page. See scripts/ci/run-zap-baseline-gate.sh.
-    zap_target="http://$(tf_output public_alb_dns_name)/v1/openapi.json"
+    # the only way this exercises Core Case's real API surface through the
+    # same API Gateway origin used by the SPA. See scripts/ci/run-zap-baseline-gate.sh.
+    zap_target="$(tf_output core_case_api_gateway_base_url)/v1/openapi.json"
     zap_report_path="evidence/secure-release-gate/core-case-service-zap-report.json"
     mkdir -p "$(dirname "$zap_report_path")"
 
@@ -496,11 +551,13 @@ core_case_db_master_user_secret_arn="$(tf_output core_case_db_master_user_secret
 
 echo
 echo "Demo deploy complete."
-echo "Public ALB:    http://$(tf_output public_alb_dns_name)"
-echo "CloudFront:    https://$(tf_output spa_cloudfront_domain_name)"
-echo "Image tag:     $IMAGE_TAG"
+echo "CloudFront SPA:        https://$(tf_output spa_cloudfront_domain_name)"
+echo "Core Case API Gateway: $(tf_output core_case_api_gateway_base_url)"
+echo "Core Case ALB:         http://$(tf_output public_alb_dns_name)"
+echo "Image tag:             $IMAGE_TAG"
+echo "Browser note:          The SPA uses API Gateway HTTPS; the public HTTP ALB remains a directly reachable sandbox origin."
 if [[ "$SKIP_ZAP_SCAN" != "true" ]]; then
-    echo "ZAP report:    evidence/secure-release-gate/core-case-service-zap-report.json"
+    echo "ZAP report:            evidence/secure-release-gate/core-case-service-zap-report.json"
 fi
 echo
 echo "Nothing was torn down. This environment is running real, billed AWS resources."
@@ -510,7 +567,7 @@ if [[ "$RUN_READONLY_ROLE_STEP" != "true" ]]; then
     echo "database role and the \"vector\" extension (needed for policy"
     echo "retrieval embeddings) need Terraform's postgresql provider to reach"
     echo "RDS directly, which only works from inside the VPC - this run had"
-    echo "RUN_READONLY_ROLE_STEP=false (the default), so those resources were"
+    echo "RUN_READONLY_ROLE_STEP=false, so those resources were"
     echo "skipped. GL-coding's ECS tasks and pgvector-backed policy retrieval"
     echo "will not work correctly until this step runs."
     echo

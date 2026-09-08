@@ -43,16 +43,15 @@ import {
     ReviewExpenseReportLineItemInboundRequestSchema,
     ReviewExpenseReportLineItemParamsSchema,
     ReviewExpenseReportSourceParamsSchema,
+    SettleExpenseReportInboundRequestSchema,
     SubmitExpenseReportInboundRequestSchema,
     TransitionExpenseReportWorkflowInboundRequestSchema,
     UpdateExpenseReportSourceDeductibilityInboundRequestSchema,
     UpdateDraftLineItemInboundRequestSchema,
 } from "../schemas/expense-report.schema.js";
 import {
-    GlMappingPathParamsSchema,
     GlMappingReferenceOutboundResponseSchema,
-    GlMappingOutboundResponseSchema,
-    UpdateGlMappingInboundRequestSchema,
+    SaveGlMappingsInboundRequestSchema,
 } from "../glMappings/glMappingDto.js";
 import {
     InviteTeamUserInboundRequestSchema,
@@ -63,6 +62,8 @@ import {
     UpdateTeamUserStatusInboundRequestSchema,
 } from "../teamUsers/teamUsersDto.js";
 import {
+    AuditLogEntryPageOutboundResponseSchema,
+    ReadAuditLogEventsQuerySchema,
     RolePermissionMatrixOutboundResponseSchema,
     TenantSummaryListOutboundResponseSchema,
 } from "../platformAdmin/platformAdminDto.js";
@@ -178,6 +179,10 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "TransitionExpenseReportWorkflowRequest",
         TransitionExpenseReportWorkflowInboundRequestSchema,
     );
+    const settleExpenseReportRequest = registry.register(
+        "SettleExpenseReportRequest",
+        SettleExpenseReportInboundRequestSchema,
+    );
     const internalSettlePaymentStubRequest = registry.register(
         "InternalSettlePaymentStubRequest",
         InternalSettlePaymentStubBodySchema,
@@ -282,17 +287,9 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         "GlMappingReferenceResponse",
         GlMappingReferenceOutboundResponseSchema,
     );
-    const glMappingResponse = registry.register(
-        "GlMappingResponse",
-        GlMappingOutboundResponseSchema,
-    );
-    const updateGlMappingRequest = registry.register(
-        "UpdateGlMappingRequest",
-        UpdateGlMappingInboundRequestSchema,
-    );
-    const glMappingPathParams = registry.register(
-        "GlMappingPathParams",
-        GlMappingPathParamsSchema,
+    const saveGlMappingsRequest = registry.register(
+        "SaveGlMappingsRequest",
+        SaveGlMappingsInboundRequestSchema,
     );
     const teamUsersListResponse = registry.register(
         "TeamUsersListResponse",
@@ -325,6 +322,14 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     const tenantSummaryListResponse = registry.register(
         "TenantSummaryListResponse",
         TenantSummaryListOutboundResponseSchema,
+    );
+    const auditLogEntryPageResponse = registry.register(
+        "AuditLogEntryPageResponse",
+        AuditLogEntryPageOutboundResponseSchema,
+    );
+    const readAuditLogEventsRequest = registry.register(
+        "ReadAuditLogEventsRequest",
+        ReadAuditLogEventsQuerySchema,
     );
     const mfaEnrollmentRequest = registry.register(
         "MfaEnrollmentRequest",
@@ -737,12 +742,22 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/assist",
         summary: "Answer a cited tenant policy question",
         security: [{ bearerAuth: [] }],
-        request: { body: { content: { "application/json": { schema: assistRequest } } } },
+        request: {
+            body: {
+                content: { "application/json": { schema: assistRequest } },
+            },
+        },
         responses: {
-            200: { description: "Grounded policy answer.", headers: rateLimitHeaders, content: { "application/json": { schema: assistResponse } } },
+            200: {
+                description: "Grounded policy answer.",
+                headers: rateLimitHeaders,
+                content: { "application/json": { schema: assistResponse } },
+            },
             400: problemJsonResponse("Malformed assist request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
-            403: problemJsonResponse("AI Assist access is limited to internal roles."),
+            403: problemJsonResponse(
+                "AI Assist access is limited to internal roles.",
+            ),
             404: problemJsonResponse("Expense Report or line item not found."),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
@@ -806,7 +821,7 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
         path: "/v1/gl-mappings",
         summary: "List GL Mapping reference data",
         description:
-            "Loads tenant-scoped category account mappings from gl_mapping for internal Finance Admin and Department Manager workspaces.",
+            "Loads tenant-scoped category account mappings from gl_mapping. Finance Admin and Department Manager use this for the GL Mapping admin screen; Employees use it to populate expense category options when submitting an expense report.",
         security: [{ bearerAuth: [] }],
         responses: {
             200: {
@@ -827,38 +842,42 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
     });
 
     registry.registerPath({
-        method: "patch",
-        path: "/v1/gl-mappings/{id}",
-        summary: "Update a GL Mapping",
+        method: "put",
+        path: "/v1/gl-mappings",
+        summary: "Save GL Mapping changes",
         description:
-            "Allows Finance Admins to update one tenant-owned gl_mapping row and records a reference-data audit entry in the same transaction.",
+            "Allows Finance Admins to atomically create, edit, and delete tenant-owned gl_mapping rows in a single all-or-nothing save, recording a reference-data audit entry per change in the same transaction.",
         security: [{ bearerAuth: [] }],
         request: {
-            params: glMappingPathParams,
             body: {
                 required: true,
                 content: {
                     "application/json": {
-                        schema: updateGlMappingRequest,
+                        schema: saveGlMappingsRequest,
                     },
                 },
             },
         },
         responses: {
             200: {
-                description: "GL Mapping updated.",
+                description: "GL Mapping changes saved.",
                 content: {
                     "application/json": {
-                        schema: glMappingResponse,
+                        schema: glMappingReferenceResponse,
                     },
                 },
             },
-            400: problemJsonResponse("Malformed GL Mapping update request."),
+            400: problemJsonResponse("Malformed GL Mapping save request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse(
                 "GL Mapping edits are limited to Finance Admins.",
             ),
-            404: problemJsonResponse("GL Mapping or GL Code was not found."),
+            404: problemJsonResponse(
+                "A GL Mapping referenced by the save was not found.",
+            ),
+            409: problemJsonResponse(
+                "The save would create a duplicate GL Mapping category.",
+            ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
         },
@@ -1050,6 +1069,35 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
                     },
                 },
             },
+            401: problemJsonResponse("Missing or invalid bearer access token."),
+            403: problemJsonResponse(
+                "Platform administration is limited to Platform Admins.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "get",
+        path: "/v1/platform-admin/audit-log",
+        summary: "List recent cross-tenant administrative audit events",
+        description:
+            "Loads one keyset-paginated page of administrative audit events (actor, action, entity, and timestamp) across every tenant for the read-only Platform Admin Audit Log screen. Returns metadata only, never a tenant's case content.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            query: readAuditLogEventsRequest,
+        },
+        responses: {
+            200: {
+                description: "Audit log events found.",
+                content: {
+                    "application/json": {
+                        schema: auditLogEntryPageResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed audit log request."),
             401: problemJsonResponse("Missing or invalid bearer access token."),
             403: problemJsonResponse(
                 "Platform administration is limited to Platform Admins.",
@@ -1499,6 +1547,66 @@ export function generateCoreCaseServiceOpenApiDocument(): OpenAPIObject {
             404: problemJsonResponse("Expense Report not found."),
             409: problemJsonResponse(
                 "Expense Report cannot transition from its current stage or has uncleared flags.",
+            ),
+            429: rateLimitExceededResponse.ref,
+            500: problemJsonResponse("Unexpected server error."),
+        },
+    });
+
+    registry.registerPath({
+        method: "post",
+        path: "/v1/expense-reports/{id}/payment-stub-settlement",
+        summary: "Settle an AP Review Expense Report",
+        description:
+            "Lets an authenticated internal reviewer issue the MVP payment stub and complete the settlement-owned AP Review workflow.",
+        security: [{ bearerAuth: [] }],
+        request: {
+            params: expenseReportIdPathParamsSchema,
+            headers: z.object({
+                "Idempotency-Key": z.string().max(128).openapi({
+                    description:
+                        "Required tenant-scoped key used to safely retry payment-stub settlement.",
+                }),
+                "x-correlation-id": z.uuid().optional().openapi({
+                    description:
+                        "End-to-end request correlation identifier. The service generates one when omitted.",
+                }),
+            }),
+            body: {
+                required: true,
+                content: {
+                    "application/json": {
+                        schema: settleExpenseReportRequest,
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: "Expense Report payment stub settled.",
+                headers: {
+                    ...rateLimitHeaders,
+                    "X-Correlation-Id": {
+                        description:
+                            "Correlation identifier carried by settlement saga events.",
+                        schema: {
+                            type: "string",
+                            format: "uuid",
+                        },
+                    },
+                },
+                content: {
+                    "application/json": {
+                        schema: expenseReportResponse,
+                    },
+                },
+            },
+            400: problemJsonResponse("Malformed settlement request."),
+            401: problemJsonResponse("Valid access token required."),
+            403: problemJsonResponse("Authenticated role is not permitted."),
+            404: problemJsonResponse("Expense Report not found."),
+            409: problemJsonResponse(
+                "Expense Report settlement cannot start from its current stage.",
             ),
             429: rateLimitExceededResponse.ref,
             500: problemJsonResponse("Unexpected server error."),
