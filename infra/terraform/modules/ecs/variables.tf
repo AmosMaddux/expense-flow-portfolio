@@ -88,6 +88,12 @@ variable "log_retention_days" {
   default     = 365
 }
 
+variable "otel_collector_enabled" {
+  description = "Whether to run the ADOT collector sidecar with each service task."
+  type        = bool
+  default     = true
+}
+
 variable "core_case_image_uri" {
   description = "Optional immutable image URI for Core Case."
   type        = string
