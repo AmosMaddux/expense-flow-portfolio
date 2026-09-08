@@ -638,7 +638,7 @@ resource "aws_ecs_task_definition" "core_case" {
           protocol      = "tcp"
           appProtocol   = "http"
         }]
-        environment = [
+        environment = concat([
           { name = "ARGON2_HASH_LENGTH", value = "32" },
           { name = "ARGON2_MEMORY_COST", value = "19456" },
           { name = "ARGON2_PARALLELISM", value = "1" },
@@ -665,8 +665,6 @@ resource "aws_ecs_task_definition" "core_case" {
           { name = "IDEMPOTENCY_STORE_BACKEND", value = "redis" },
           { name = "MFA_TOTP_SECRET_KEY_VERSION", value = var.mfa_totp_secret_key_version },
           { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
-          { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-          { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
           { name = "PORT", value = "3000" },
           { name = "RECEIPT_STORAGE_BUCKET", value = aws_s3_bucket.receipts.bucket },
           { name = "RECEIPT_STORAGE_FORCE_PATH_STYLE", value = "false" },
@@ -681,7 +679,12 @@ resource "aws_ecs_task_definition" "core_case" {
           { name = "TIN_EIN_VALIDATION_STATUS_OPERATION_NAME", value = "GetTaxpayerStatus" },
           { name = "TIN_EIN_VALIDATION_TIMEOUT_MS", value = "5000" },
           { name = "TIN_EIN_VALIDATION_WSDL_URL", value = var.tin_ein_validation_wsdl_url },
-        ]
+          ],
+          var.otel_collector_enabled ? [
+            { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+            { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
+          ] : [],
+        )
         secrets = local.core_case_secrets
         healthCheck = {
           command     = ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));\""]
@@ -736,7 +739,7 @@ resource "aws_ecs_task_definition" "gl_coding" {
           protocol      = "tcp"
           appProtocol   = "http"
         }]
-        environment = [
+        environment = concat([
           { name = "AUTH_JWT_CLOCK_SKEW_SECONDS", value = "10" },
           { name = "AUTH_JWT_ISSUER", value = var.auth_jwt_issuer },
           { name = "AUTH_JWT_KEY_ID", value = var.auth_jwt_key_id },
@@ -744,9 +747,12 @@ resource "aws_ecs_task_definition" "gl_coding" {
           { name = "DB_NAME", value = var.gl_coding_db_name },
           { name = "DB_PORT", value = tostring(var.gl_coding_db_port) },
           { name = "MILEAGE_REIMBURSEMENT_RATE", value = "0.70" },
-          { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
-          { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
-        ]
+          ],
+          var.otel_collector_enabled ? [
+            { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+            { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "http://127.0.0.1:4318/v1/traces" },
+          ] : [],
+        )
         secrets = local.gl_coding_secrets
         healthCheck = {
           command     = ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
